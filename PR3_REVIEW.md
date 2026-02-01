@@ -6,75 +6,42 @@ Cette PR remplace le système d'authentification custom (JWT + KV sessions + bcr
 
 ---
 
-## Revue initiale — Points corrigés dans `623b0a6`
-
-Les 11 points suivants de la première revue ont été traités :
+## Revue initiale — 12 points (tous corrigés)
 
 1. ~~Middleware `cookies.has()` non sécurisé~~ → validation via `auth.api.getSession()`
-2. ~~Turnstile supprimé~~ → noté comme TODO (voir point R5 ci-dessous)
+2. ~~Turnstile supprimé~~ → réintégré via plugin `captcha` Better Auth
 3. ~~Rate-limiting absent~~ → plugin Better Auth activé
 4. ~~Singleton `initAuth()` stale sur Workers~~ → nouvelle instance par requête
 5. ~~Cast unsafe `Record<string, unknown>`~~ → types `Auth`/`Session` exportés + `inferAdditionalFields`
 6. ~~Auth paths incomplets dans middleware~~ → couvre tout `/auth/*`
-7. ~~`requireGuest` absent~~ → ajouté dans `guards.ts`
-8. **`better-auth-ui` et design system** → Les variables CSS shadcn/ui sont en place, rendu à valider visuellement. Risque faible.
-9. ~~Table `users` / `lib/db/users.ts`~~ → clarifié
-10. ~~Variables d'environnement orphelines~~ → nettoyées
+7. ~~`requireGuest` absent~~ → ajouté dans `guards.ts` + utilisé dans `auth/layout.tsx`
+8. **`better-auth-ui` et design system** → Variables CSS shadcn/ui en place, à valider visuellement. Risque faible.
+9. ~~Table `users` / `lib/db/users.ts`~~ → clarifié (conservée pour FK orders/addresses/reviews)
+10. ~~Variables d'environnement orphelines~~ → nettoyées, `TURNSTILE_SECRET_KEY` réajouté
 11. ~~Dépendances orphelines `jose`, `bcryptjs`~~ → retirées
-12. ~~Metadata pages auth~~ → `generateMetadata` ajouté
+12. ~~Metadata pages auth~~ → `generateMetadata` dynamique ajouté
 
 ---
 
-## Seconde revue — Nouveaux problèmes (`623b0a6`)
+## Seconde revue — 3 blockers (tous corrigés)
 
-### Bugs (bloquants)
+1. ~~`import { headers } from "next/headers"` dans middleware~~ → remplacé par `request.headers`
+2. ~~`runtime: "nodejs"` dans config middleware~~ → supprimé
+3. ~~Typo `"/forget-password"` dans rate-limit~~ → corrigé en `"/forgot-password"`
 
-#### R1. `import { headers } from "next/headers"` dans le middleware
-
-**`middleware.ts:3`** — Le middleware Next.js ne supporte pas `next/headers`. Cette API n'est disponible que dans les Server Components et Server Actions. Le middleware reçoit la requête via son paramètre `request: NextRequest`.
-
-**Correction :**
-```ts
-// Supprimer: import { headers } from "next/headers";
-// Remplacer:
-const session = await auth.api.getSession({
-  headers: request.headers,  // utiliser les headers de la NextRequest
-});
-```
-
-Ceci va provoquer une **erreur runtime** sur toute requête matchant le middleware.
-
-#### R2. `runtime: "nodejs"` dans la config middleware
-
-**`middleware.ts:37`** — `export const config = { runtime: "nodejs" }` n'est pas supporté pour le middleware Next.js, qui s'exécute toujours en edge runtime. Sur Cloudflare Workers, cette option sera soit ignorée soit provoquera une erreur au build. À supprimer.
-
-#### R3. Typo dans le path de rate-limit
-
-**`lib/auth/index.ts`** — La règle est `"/forget-password"` mais l'endpoint Better Auth est `"/forgot-password"`. Cette typo rend le rate-limiting sur la réinitialisation de mot de passe **inopérant**.
-
-### Suggestions (non bloquants)
-
-#### R4. Optimisation performance middleware
-
-Le middleware instancie `betterAuth(...)` et appelle `getSession()` pour chaque requête matchée. Pour les routes protégées sans cookie, un fast-path éviterait ce coût :
-
-```ts
-if (isProtectedPath && !request.cookies.has("better-auth.session_token")) {
-  return NextResponse.redirect(new URL("/auth/sign-in", request.url));
-}
-// Seulement alors: const auth = await initAuth(); ...
-```
-
-#### R5. Turnstile / captcha toujours absent
-
-Le rate-limiting est en place mais aucun captcha n'a été réintégré. Les bots sophistiqués peuvent contourner le rate-limiting seul. À traiter dans un PR séparé.
-
-#### R6. `requireGuest()` est du dead code
-
-`requireGuest()` est défini dans `guards.ts` mais n'est appelé nulle part. Le middleware couvre ce cas, donc c'est de la défense en double — acceptable mais à noter.
+Suggestions aussi implémentées :
+- ~~Fast-path cookie dans middleware~~ → implémenté (skip `initAuth()`/`getSession()` quand pas de cookie)
+- ~~Turnstile absent~~ → plugin `captcha` serveur + config `cloudflare-turnstile` côté `AuthUIProvider`
+- ~~`requireGuest()` dead code~~ → utilisé dans `auth/layout.tsx`
 
 ---
 
-## Statut
+## Troisième revue — État final (`b7e7c5b`)
 
-**3 points bloquants (R1, R2, R3)** à corriger avant merge. R1 et R2 cassent le middleware. R3 rend le rate-limit forgot-password inefficace.
+### Verdict : ✅ Prête à merger
+
+Aucun blocker. Le middleware est correct et performant (fast-path + validation serveur). La sécurité est en place (rate-limiting, Turnstile, validation session). Les types sont propres.
+
+### Note
+
+Le seul point ouvert reste la **validation visuelle** du rendu `better-auth-ui` avec le design system NETEREKA (point 8). Les variables CSS shadcn/ui sont configurées dans `globals.css`, donc les couleurs primaires devraient s'appliquer automatiquement — à confirmer visuellement en dev.
