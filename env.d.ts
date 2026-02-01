@@ -13,4 +13,7 @@ interface CloudflareEnv {
   APPLE_CLIENT_ID: string;
   APPLE_CLIENT_SECRET: string;
   SITE_URL: string;
+
+  // Turnstile
+  TURNSTILE_SECRET_KEY: string;
 }

@@ -17,6 +17,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       social={{
         providers: ["google", "facebook", "apple"],
       }}
+      captcha={{
+        provider: "cloudflare-turnstile",
+        siteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!,
+      }}
       Link={Link}
     >
       {children}

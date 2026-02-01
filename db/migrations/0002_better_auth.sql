@@ -1,5 +1,8 @@
 -- Better Auth migration
--- Creates Better Auth tables alongside existing 'users' table
+-- Creates Better Auth tables alongside existing 'users' table.
+-- The 'users' table is intentionally kept (not dropped) because it has
+-- foreign key references from orders, addresses, and reviews tables.
+-- Better Auth operates on the new 'user' table exclusively.
 
 CREATE TABLE IF NOT EXISTS "user" (
   id TEXT PRIMARY KEY,

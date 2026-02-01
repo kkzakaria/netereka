@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { captcha } from "better-auth/plugins";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export async function initAuth() {
@@ -60,6 +61,12 @@ export async function initAuth() {
         maxAge: 5 * 60,
       },
     },
+    plugins: [
+      captcha({
+        provider: "cloudflare-turnstile",
+        secretKey: cfEnv.TURNSTILE_SECRET_KEY,
+      }),
+    ],
     trustedOrigins: [
       "https://appleid.apple.com",
     ],
