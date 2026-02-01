@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { SocialLoginButtons } from "@/components/storefront/auth/social-login-buttons";
+import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha";
 import { authClient } from "@/lib/auth/client";
 
 const errorMessages: Record<string, string> = {
@@ -23,6 +24,7 @@ export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,6 +37,9 @@ export default function SignInPage() {
         email,
         password,
         callbackURL: "/",
+        fetchOptions: captchaToken
+          ? { headers: { "x-captcha-response": captchaToken } }
+          : undefined,
       });
 
       if (error) {
@@ -95,6 +100,8 @@ export default function SignInPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
+
+        <TurnstileCaptcha onVerify={setCaptchaToken} />
 
         {error && (
           <p className="text-sm text-destructive">{error}</p>

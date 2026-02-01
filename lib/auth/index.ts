@@ -1,17 +1,23 @@
 import { betterAuth } from "better-auth";
 import { captcha } from "better-auth/plugins";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { Kysely } from "kysely";
+import { D1Dialect } from "kysely-d1";
 
 export async function initAuth() {
   const { env } = await getCloudflareContext();
   const cfEnv = env as CloudflareEnv;
 
+  const db = new Kysely({
+    dialect: new D1Dialect({ database: cfEnv.DB }),
+  });
+
   return betterAuth({
     baseURL: cfEnv.SITE_URL,
     secret: cfEnv.BETTER_AUTH_SECRET,
     database: {
+      db,
       type: "sqlite",
-      db: cfEnv.DB,
     },
     emailAndPassword: {
       enabled: true,
