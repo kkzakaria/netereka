@@ -1,95 +1,68 @@
 # Revue de sécurité — Authentication System (feat/auth)
 
-Date: 2026-02-01
+## Revue initiale — 2026-02-01
 
-## CRITIQUE
-
-### 1. OAuth: Pas de paramètre `state` (CSRF)
-**Fichier:** `lib/auth/oauth.ts`
-
-Les URLs OAuth (Google, Facebook, Apple) ne contiennent aucun paramètre `state`. Un attaquant peut forger une requête de callback et lier son propre compte OAuth au profil d'une victime.
-
-**Correction:** Générer un `state` aléatoire, le stocker en cookie `httpOnly`, et le valider dans le callback.
-
-### 2. OAuth callback: Pas de validation du paramètre `code`
-**Fichier:** `app/api/auth/oauth/[provider]/callback/route.ts`
-
-Le `code` est pris directement depuis `url.searchParams` sans validation. Sans `state`, on ne peut pas confirmer que ce callback provient d'une requête initiée par l'utilisateur.
-
-### 3. Apple Sign-In: Décodage JWT sans vérification de signature
-**Fichier:** `lib/auth/oauth.ts` — `getAppleUser()`
-
-Le `id_token` d'Apple est décodé avec un simple `atob()` sans vérifier la signature JWT. Un attaquant pourrait forger un `id_token` arbitraire et usurper n'importe quel email.
-
-**Correction:** Utiliser `jwtVerify` de `jose` avec les clés publiques Apple (JWKS).
-
-### 4. Turnstile désactivé silencieusement en dev
-**Fichier:** `lib/auth/turnstile.ts:5`
-
-`if (!secret) return true;` signifie que si `TURNSTILE_SECRET_KEY` n'est pas configuré en production (erreur de déploiement), la protection anti-bot est entièrement désactivée sans alerte.
-
-**Correction:** En production, lancer une erreur si le secret manque. Le fallback `return true` ne devrait exister qu'en `NODE_ENV === 'development'`.
+12 issues identifiées. Voir historique git pour le détail.
 
 ---
 
-## IMPORTANT
+## Revue des corrections — 2026-02-01
 
-### 5. Pas de rate limiting
-Aucune protection contre le brute-force sur le login. Un attaquant peut tester des millions de mots de passe. Turnstile atténue le problème mais ne le résout pas (bypass possible).
+Commit: `d0db008 fix(auth): address 12 security review findings`
 
-**Correction:** Implémenter un rate limiter par IP + email (Cloudflare KV ou Rate Limiting API).
+### Statut des 12 issues originales
 
-### 6. Politique de mot de passe trop faible
-**Fichier:** `lib/validations/auth.ts`
+| # | Issue | Statut | Notes |
+|---|-------|--------|-------|
+| 1 | OAuth sans `state` (CSRF) | ✅ Corrigé | Cookie httpOnly + TTL 10min + validation dans callback |
+| 2 | Callback sans validation | ✅ Corrigé | State vérifié + check `!profile.email` |
+| 3 | Apple JWT non vérifié | ✅ Corrigé | `jwtVerify` + JWKS Apple + validation issuer/audience |
+| 4 | Turnstile bypass silencieux | ✅ Corrigé | `throw Error` en production, fallback dev seulement |
+| 5 | Pas de rate limiting | ✅ Corrigé | KV-based, 5 tentatives / 15 min, reset on success |
+| 6 | Mot de passe faible | ✅ Corrigé | Regex majuscule + chiffre + caractère spécial |
+| 7 | Middleware cookie-only | ✅ Corrigé | `jwtVerify` dans le middleware |
+| 8 | Sessions non révocables | ✅ Corrigé | Session ID en KV, vérifié dans `getSession()`, supprimé au logout |
+| 9 | Forgot password stub | ✅ Corrigé | Server action + Turnstile + rate limiting + anti-énumération |
+| 10 | Pas de vérification email | ⚠️ Partiel | `is_verified` toujours pas vérifié au login. Un utilisateur non vérifié peut se connecter. |
+| 11 | Injection de colonnes | ✅ Corrigé | Whitelist `UPDATABLE_COLUMNS` avec `Set.has()` |
+| 12 | Turnstile test key | ✅ Corrigé | Fallback à chaîne vide, hidden input sans clé |
 
-Le seul critère est `min(8)`. Pas d'exigence de complexité (majuscule, chiffre, caractère spécial). Des mots de passe comme `aaaaaaaa` sont acceptés.
+### Nouveaux points identifiés
 
-### 7. Middleware vérifie seulement l'existence du cookie, pas sa validité
-**Fichier:** `middleware.ts`
-
-`request.cookies.has(SESSION_COOKIE)` vérifie simplement si le cookie existe. Un cookie expiré ou invalide passera la vérification du middleware.
-
-**Correction:** Vérifier le JWT dans le middleware (attention aux limites d'Edge Runtime).
-
-### 8. Session non révocable
+#### N1. `revokeAllSessions` inopérante (Important)
 **Fichier:** `lib/auth/session.ts`
 
-Les sessions sont des JWT stateless. Si un compte est compromis, il n'y a aucun moyen d'invalider les sessions existantes avant leur expiration (7 jours).
+`revokeAllSessions()` stocke un timestamp `revoked_before:{userId}` dans KV, mais `getSession()` ne consulte jamais ce timestamp. La fonction n'a aucun effet.
 
-**Correction:** Stocker les sessions dans KV avec un TTL, permettant la révocation.
+**Correction:** Ajouter dans `getSession()` une vérification du timestamp de révocation par rapport au `iat` du JWT.
 
----
+#### N2. Race condition dans le rate limiter (Mineur)
+**Fichier:** `lib/auth/rate-limit.ts`
 
-## MINEUR
+`checkRateLimit` et `recordAttempt` font deux opérations KV séparées (GET puis PUT). Sous charge, plusieurs requêtes concurrentes peuvent passer avant l'incrémentation. Acceptable pour un e-commerce, mais à noter.
 
-### 9. `forgot-password` est un stub client-side
-**Fichier:** `components/storefront/auth/forgot-password-form.tsx`
+#### N3. `process.env.JWT_SECRET` en Edge Runtime (Important)
+**Fichier:** `middleware.ts`
 
-Le formulaire fait un `setSubmitted(true)` côté client sans appeler le serveur. Aucun email n'est envoyé. Trompeur pour l'utilisateur.
+Le middleware lit `process.env.JWT_SECRET`. Si la variable n'est pas disponible dans l'Edge Runtime Cloudflare (doit être déclarée dans wrangler vars), `hasValidSession` retourne toujours `false` et tous les utilisateurs authentifiés sont redirigés vers le login silencieusement.
 
-### 10. Pas d'email de vérification à l'inscription
-**Fichier:** `actions/auth.ts` — `register()`
+**Correction:** Logger un warning ou utiliser `getCloudflareContext()` si disponible en middleware.
 
-L'utilisateur est connecté immédiatement après inscription sans vérification d'email. `is_verified` reste à `0` mais n'est jamais vérifié ensuite.
+#### N4. Apple OAuth: `response_mode: "form_post"` vs handler GET (Bloquant)
+**Fichier:** `lib/auth/oauth.ts` + `app/api/auth/oauth/[provider]/callback/route.ts`
 
-### 11. `updateUser` vulnérable à l'injection de colonnes
-**Fichier:** `lib/db/users.ts` — `updateUser()`
+Apple envoie le callback en POST (`response_mode: "form_post"`), mais le handler est un `export async function GET()`. Le `state` et le `code` arrivent dans le body POST, pas en query params. Apple Sign-In ne fonctionnera pas.
 
-Les noms de colonnes sont construits dynamiquement depuis les clés de l'objet `data`. Le typage TypeScript protège au compile-time, mais pas au runtime.
-
-### 12. Turnstile fallback site key exposé
-**Fichier:** `components/shared/turnstile.tsx`
-
-Le test key `1x00000000000000000000AA` est hardcodé. Si `NEXT_PUBLIC_TURNSTILE_SITE_KEY` n'est pas configuré en production, Turnstile fonctionnera en mode test (accepte tout).
+**Correction:** Ajouter un handler POST dans le callback route, ou changer `response_mode` en `"query"` (moins sécurisé).
 
 ---
 
-## Résumé
+### Résumé v2
 
 | Criticité | # | Problème |
 |-----------|---|----------|
-| Critique  | 1-4 | OAuth sans `state`, Apple JWT non vérifié, Turnstile bypass |
-| Important | 5-8 | Pas de rate limiting, mots de passe faibles, sessions non révocables |
-| Mineur    | 9-12 | Stubs non fonctionnels, vérification email manquante |
+| Bloquant  | N4 | Apple callback POST vs handler GET |
+| Important | 10, N1, N3 | Email non vérifié, `revokeAllSessions` inopérante, JWT_SECRET en Edge |
+| Mineur    | N2 | Race condition rate limiter |
 
-**Recommandation:** Les points 1, 3 et 4 devraient bloquer le merge. Les flux OAuth sont exploitables en l'état.
+**Recommandation:** Le point N4 empêche Apple Sign-In de fonctionner. Les points 10, N1 et N3 devraient être corrigés avant le merge.
