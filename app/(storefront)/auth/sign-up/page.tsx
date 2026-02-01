@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { SocialLoginButtons } from "@/components/storefront/auth/social-login-buttons";
+import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha";
 import { authClient } from "@/lib/auth/client";
 
 const errorMessages: Record<string, string> = {
@@ -19,6 +20,8 @@ const errorMessages: Record<string, string> = {
   TOO_MANY_REQUESTS: "Trop de tentatives. Réessayez plus tard.",
 };
 
+const PHONE_PATTERN = "^\\+225\\s?\\d{2}\\s?\\d{2}\\s?\\d{2}\\s?\\d{2}\\s?\\d{2}$";
+
 export default function SignUpPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -26,6 +29,7 @@ export default function SignUpPage() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -40,22 +44,28 @@ export default function SignUpPage() {
 
     setLoading(true);
 
-    const { error } = await authClient.signUp.email({
-      email,
-      password,
-      name,
-      phone,
-      callbackURL: "/",
-    });
+    try {
+      const { error } = await authClient.signUp.email({
+        email,
+        password,
+        name,
+        phone,
+        callbackURL: "/",
+        fetchOptions: captchaToken
+          ? { headers: { "x-captcha-token": captchaToken } }
+          : undefined,
+      });
 
-    if (error) {
-      setError(
-        errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
-      );
+      if (error) {
+        setError(
+          errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
+        );
+      } else {
+        router.push("/");
+        router.refresh();
+      }
+    } finally {
       setLoading(false);
-    } else {
-      router.push("/");
-      router.refresh();
     }
   };
 
@@ -104,6 +114,8 @@ export default function SignUpPage() {
             id="phone"
             type="tel"
             placeholder="+225 07 00 00 00 00"
+            pattern={PHONE_PATTERN}
+            title="Format : +225 XX XX XX XX XX"
             className="h-9"
             required
             value={phone}
@@ -134,6 +146,8 @@ export default function SignUpPage() {
             onChange={(e) => setConfirmPassword(e.target.value)}
           />
         </div>
+
+        <TurnstileCaptcha onVerify={setCaptchaToken} />
 
         {error && (
           <p className="text-sm text-destructive">{error}</p>

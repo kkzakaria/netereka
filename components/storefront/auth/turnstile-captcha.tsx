@@ -37,7 +37,8 @@ export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
 
   useEffect(() => {
     renderWidget();
-  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

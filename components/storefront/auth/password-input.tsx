@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ViewIcon, ViewOffSlashIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -16,7 +17,7 @@ export function PasswordInput(props: PasswordInputProps) {
 
   return (
     <div className="relative">
-      <Input {...props} type={visible ? "text" : "password"} className={`pr-10 h-9 ${props.className ?? ""}`} />
+      <Input {...props} type={visible ? "text" : "password"} className={cn("pr-10 h-9", props.className)} />
       <Button
         type="button"
         variant="ghost"

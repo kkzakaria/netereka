@@ -30,20 +30,23 @@ export default function SignInPage() {
     setError("");
     setLoading(true);
 
-    const { error } = await authClient.signIn.email({
-      email,
-      password,
-      callbackURL: "/",
-    });
+    try {
+      const { error } = await authClient.signIn.email({
+        email,
+        password,
+        callbackURL: "/",
+      });
 
-    if (error) {
-      setError(
-        errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
-      );
+      if (error) {
+        setError(
+          errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
+        );
+      } else {
+        router.push("/");
+        router.refresh();
+      }
+    } finally {
       setLoading(false);
-    } else {
-      router.push("/");
-      router.refresh();
     }
   };
 

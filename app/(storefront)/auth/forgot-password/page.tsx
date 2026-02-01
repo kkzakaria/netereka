@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
+import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha";
 import { authClient } from "@/lib/auth/client";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -19,16 +21,21 @@ export default function ForgotPasswordPage() {
     setError("");
     setLoading(true);
 
-    const { error } = await authClient.requestPasswordReset({
-      email,
-      redirectTo: "/auth/reset-password",
-    });
+    try {
+      const { error } = await authClient.requestPasswordReset({
+        email,
+        redirectTo: "/auth/reset-password",
+        fetchOptions: captchaToken
+          ? { headers: { "x-captcha-token": captchaToken } }
+          : undefined,
+      });
 
-    if (error) {
-      setError(error.message ?? "Une erreur est survenue.");
-      setLoading(false);
-    } else {
-      setSent(true);
+      if (error) {
+        setError(error.message ?? "Une erreur est survenue.");
+      } else {
+        setSent(true);
+      }
+    } finally {
       setLoading(false);
     }
   };
@@ -66,6 +73,8 @@ export default function ForgotPasswordPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
+
+          <TurnstileCaptcha onVerify={setCaptchaToken} />
 
           {error && (
             <p className="text-sm text-destructive">{error}</p>
