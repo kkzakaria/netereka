@@ -52,7 +52,7 @@ export default function SignUpPage() {
         phone,
         callbackURL: "/",
         fetchOptions: captchaToken
-          ? { headers: { "x-captcha-token": captchaToken } }
+          ? { headers: { "x-captcha-response": captchaToken } }
           : undefined,
       });
 

@@ -23,14 +23,18 @@ declare global {
 export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const onVerifyRef = useRef(onVerify);
+  const onErrorRef = useRef(onError);
+  onVerifyRef.current = onVerify;
+  onErrorRef.current = onError;
 
   const renderWidget = () => {
     if (!containerRef.current || !window.turnstile || widgetIdRef.current)
       return;
     widgetIdRef.current = window.turnstile.render(containerRef.current, {
       sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!,
-      callback: onVerify,
-      "error-callback": onError,
+      callback: (token: string) => onVerifyRef.current(token),
+      "error-callback": () => onErrorRef.current?.(),
       theme: "auto",
     });
   };
