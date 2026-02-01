@@ -1,0 +1,29 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+const PROTECTED_PATHS = ["/account", "/checkout"];
+const AUTH_PATHS = ["/auth/login", "/auth/register", "/auth/forgot-password"];
+const SESSION_COOKIE = "netereka_session";
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const hasSession = request.cookies.has(SESSION_COOKIE);
+
+  // Redirect authenticated users away from auth pages
+  if (AUTH_PATHS.some((p) => pathname.startsWith(p)) && hasSession) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // Redirect unauthenticated users to login for protected routes
+  if (PROTECTED_PATHS.some((p) => pathname.startsWith(p)) && !hasSession) {
+    const loginUrl = new URL("/auth/login", request.url);
+    loginUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/account/:path*", "/checkout/:path*", "/auth/:path*"],
+};

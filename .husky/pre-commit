@@ -1,0 +1,32 @@
+#!/bin/sh
+
+echo "🔍 Vérification des types TypeScript..."
+npx tsc --noEmit
+TSC_EXIT=$?
+
+echo ""
+echo "🔍 Vérification du linting ESLint..."
+npm run lint
+LINT_EXIT=$?
+
+if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ]; then
+  echo ""
+  echo "❌ =============================================="
+  echo "❌  COMMIT BLOQUÉ"
+  echo "❌ =============================================="
+  echo ""
+  if [ $TSC_EXIT -ne 0 ]; then
+    echo "  → Des erreurs TypeScript ont été détectées."
+  fi
+  if [ $LINT_EXIT -ne 0 ]; then
+    echo "  → Des erreurs ESLint ont été détectées."
+  fi
+  echo ""
+  echo "  Corrigez ces erreurs avant de commit."
+  echo "  NE PAS utiliser --no-verify pour bypasser."
+  echo ""
+  exit 1
+fi
+
+echo ""
+echo "✅ Types et lint OK — commit autorisé."
