@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { SITE_NAME, SITE_DESCRIPTION } from "@/lib/utils/constants";
+import { Providers } from "@/components/providers";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="fr" className={inter.variable}>
       <body className="antialiased">
-        <NuqsAdapter>{children}</NuqsAdapter>
+        <NuqsAdapter>
+          <Providers>{children}</Providers>
+        </NuqsAdapter>
       </body>
     </html>
   );

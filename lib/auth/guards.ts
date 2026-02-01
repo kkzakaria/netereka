@@ -1,32 +1,32 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth/session";
-import { getUserSafe, type SafeUser } from "@/lib/db/users";
+import { headers } from "next/headers";
+import { initAuth } from "@/lib/auth";
 
-export async function requireAuth(): Promise<SafeUser> {
-  const session = await getSession();
-  if (!session) redirect("/auth/login");
+export async function requireAuth() {
+  const auth = await initAuth();
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
 
-  const user = await getUserSafe(session.userId);
-  if (!user) redirect("/auth/login");
-
-  return user;
+  if (!session) redirect("/auth/sign-in");
+  return session;
 }
 
-export async function requireAdmin(): Promise<SafeUser> {
-  const user = await requireAuth();
-  if (user.role !== "admin" && user.role !== "super_admin") {
+export async function requireAdmin() {
+  const session = await requireAuth();
+  if (
+    (session.user as Record<string, unknown>).role !== "admin" &&
+    (session.user as Record<string, unknown>).role !== "super_admin"
+  ) {
     redirect("/");
   }
-  return user;
+  return session;
 }
 
-export async function requireGuest(): Promise<void> {
-  const session = await getSession();
-  if (session) redirect("/");
-}
-
-export async function getOptionalUser(): Promise<SafeUser | null> {
-  const session = await getSession();
-  if (!session) return null;
-  return getUserSafe(session.userId);
+export async function getOptionalSession() {
+  const auth = await initAuth();
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  return session;
 }

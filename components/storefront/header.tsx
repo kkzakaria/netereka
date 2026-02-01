@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { SITE_NAME } from "@/lib/utils/constants";
-import { getOptionalUser } from "@/lib/auth/guards";
+import { getOptionalSession } from "@/lib/auth/guards";
 import { HeaderUserMenu } from "@/components/storefront/header-user-menu";
 
 export async function Header() {
-  const user = await getOptionalUser();
+  const session = await getOptionalSession();
 
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -13,7 +13,7 @@ export async function Header() {
           {SITE_NAME}
         </Link>
         <nav className="flex items-center gap-4">
-          <HeaderUserMenu user={user} />
+          <HeaderUserMenu user={session?.user ?? null} />
         </nav>
       </div>
     </header>
