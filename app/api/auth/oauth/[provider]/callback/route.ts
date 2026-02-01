@@ -8,19 +8,7 @@ import {
   validateOAuthState,
 } from "@/lib/auth/oauth";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ provider: string }> }
-) {
-  const { provider } = await params;
-  const url = new URL(request.url);
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-
-  if (!code) {
-    return NextResponse.redirect(new URL("/auth/login?error=no_code", request.url));
-  }
-
+async function handleCallback(request: Request, provider: string, code: string, state: string | null) {
   // Validate OAuth state to prevent CSRF
   const validState = await validateOAuthState(state);
   if (!validState) {
@@ -99,4 +87,38 @@ export async function GET(
       new URL("/auth/login?error=oauth_failed", request.url)
     );
   }
+}
+
+// Google and Facebook use GET callbacks
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ provider: string }> }
+) {
+  const { provider } = await params;
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+
+  if (!code) {
+    return NextResponse.redirect(new URL("/auth/login?error=no_code", request.url));
+  }
+
+  return handleCallback(request, provider, code, state);
+}
+
+// Apple uses POST callback (response_mode: "form_post")
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ provider: string }> }
+) {
+  const { provider } = await params;
+  const formData = await request.formData();
+  const code = formData.get("code") as string | null;
+  const state = formData.get("state") as string | null;
+
+  if (!code) {
+    return NextResponse.redirect(new URL("/auth/login?error=no_code", request.url));
+  }
+
+  return handleCallback(request, provider, code, state);
 }

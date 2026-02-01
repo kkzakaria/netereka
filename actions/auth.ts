@@ -59,6 +59,10 @@ export async function login(
     return { error: "Email ou mot de passe incorrect" };
   }
 
+  if (!user.is_verified) {
+    return { error: "Veuillez vérifier votre email avant de vous connecter." };
+  }
+
   // Reset rate limit on successful login
   await resetRateLimit("login", rateLimitKey);
 
@@ -109,6 +113,8 @@ export async function register(
     first_name: result.data.firstName,
     last_name: result.data.lastName,
     phone: result.data.phone || null,
+    // TODO: set to 0 and send verification email when notification system is ready
+    is_verified: 1,
   });
 
   await createSession(userId);

@@ -55,6 +55,17 @@ export async function getSession(): Promise<{ userId: string; sessionId: string 
     const stored = await kv.get(`session:${sessionId}`);
     if (!stored) return null;
 
+    // Check bulk revocation timestamp
+    const revokedBefore = await kv.get(`revoked_before:${userId}`);
+    if (revokedBefore) {
+      const revokedAt = new Date(revokedBefore).getTime() / 1000;
+      const issuedAt = payload.iat as number;
+      if (issuedAt < revokedAt) {
+        await kv.delete(`session:${sessionId}`);
+        return null;
+      }
+    }
+
     return { userId, sessionId };
   } catch {
     return null;

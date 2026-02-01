@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const PROTECTED_PATHS = ["/account", "/checkout"];
 const AUTH_PATHS = ["/auth/login", "/auth/register", "/auth/forgot-password"];
@@ -11,10 +12,20 @@ async function hasValidSession(request: NextRequest): Promise<boolean> {
   if (!token) return false;
 
   try {
-    // JWT_SECRET must be available via env. In Edge Runtime on Cloudflare,
-    // we read it from process.env (set via wrangler vars).
-    const secret = process.env.JWT_SECRET;
-    if (!secret) return false;
+    // Try Cloudflare context first, fall back to process.env
+    let secret: string | undefined;
+    try {
+      const { env } = await getCloudflareContext();
+      secret = (env as CloudflareEnv).JWT_SECRET;
+    } catch {
+      secret = process.env.JWT_SECRET;
+    }
+
+    if (!secret) {
+      console.warn("JWT_SECRET not available in middleware — session validation skipped");
+      return false;
+    }
+
     await jwtVerify(token, new TextEncoder().encode(secret));
     return true;
   } catch {
