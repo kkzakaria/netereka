@@ -25,7 +25,7 @@
   "r2_buckets": [
     {
       "binding": "R2",
-      "bucket_name": "netereka-storage"
+      "bucket_name": "netereka"
     }
   ]
 }
