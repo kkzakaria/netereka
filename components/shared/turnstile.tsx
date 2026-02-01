@@ -21,15 +21,15 @@ declare global {
   }
 }
 
-const SITE_KEY =
-  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
-  "1x00000000000000000000AA"; // test key fallback
+const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
 export function Turnstile({ className }: { className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // No site key configured — skip rendering (dev without .env)
+    if (!SITE_KEY) return;
     const container = containerRef.current;
     if (!container) return;
 
@@ -88,6 +88,10 @@ export function Turnstile({ className }: { className?: string }) {
       }
     };
   }, []);
+
+  if (!SITE_KEY) {
+    return <input type="hidden" name="cf-turnstile-response" value="" />;
+  }
 
   return (
     <div className={className} ref={containerRef}>

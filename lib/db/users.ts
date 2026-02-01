@@ -62,6 +62,15 @@ export async function createUser(data: {
   return id;
 }
 
+const UPDATABLE_COLUMNS = new Set([
+  "first_name",
+  "last_name",
+  "phone",
+  "avatar_url",
+  "password_hash",
+  "is_verified",
+]);
+
 export async function updateUser(
   id: string,
   data: Partial<Pick<User, "first_name" | "last_name" | "phone" | "avatar_url" | "password_hash" | "is_verified">>
@@ -70,7 +79,7 @@ export async function updateUser(
   const values: unknown[] = [];
 
   for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
+    if (value !== undefined && UPDATABLE_COLUMNS.has(key)) {
       fields.push(`${key} = ?`);
       values.push(value);
     }

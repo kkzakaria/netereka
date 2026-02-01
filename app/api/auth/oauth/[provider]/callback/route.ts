@@ -5,6 +5,7 @@ import {
   getGoogleUser,
   getFacebookUser,
   getAppleUser,
+  validateOAuthState,
 } from "@/lib/auth/oauth";
 
 export async function GET(
@@ -14,9 +15,16 @@ export async function GET(
   const { provider } = await params;
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
 
   if (!code) {
     return NextResponse.redirect(new URL("/auth/login?error=no_code", request.url));
+  }
+
+  // Validate OAuth state to prevent CSRF
+  const validState = await validateOAuthState(state);
+  if (!validState) {
+    return NextResponse.redirect(new URL("/auth/login?error=invalid_state", request.url));
   }
 
   try {
@@ -59,6 +67,12 @@ export async function GET(
       }
       default:
         return NextResponse.redirect(new URL("/auth/login", request.url));
+    }
+
+    if (!profile.email) {
+      return NextResponse.redirect(
+        new URL("/auth/login?error=no_email", request.url)
+      );
     }
 
     // Find or create user

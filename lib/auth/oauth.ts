@@ -1,4 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { nanoid } from "nanoid";
+import { cookies } from "next/headers";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 type OAuthEnv = CloudflareEnv & {
   GOOGLE_CLIENT_ID: string;
@@ -21,10 +24,36 @@ function callbackUrl(provider: string, siteUrl: string): string {
   return `${siteUrl}/api/auth/oauth/${provider}/callback`;
 }
 
+// --- OAuth State (CSRF protection) ---
+
+const OAUTH_STATE_COOKIE = "oauth_state";
+
+export async function generateOAuthState(): Promise<string> {
+  const state = nanoid(32);
+  const cookieStore = await cookies();
+  cookieStore.set(OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 600, // 10 minutes
+    path: "/",
+  });
+  return state;
+}
+
+export async function validateOAuthState(state: string | null): Promise<boolean> {
+  if (!state) return false;
+  const cookieStore = await cookies();
+  const stored = cookieStore.get(OAUTH_STATE_COOKIE)?.value;
+  cookieStore.delete(OAUTH_STATE_COOKIE);
+  return !!stored && stored === state;
+}
+
 // --- Google ---
 
 export async function getGoogleAuthUrl(): Promise<string> {
   const env = await getEnv();
+  const state = await generateOAuthState();
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
     redirect_uri: callbackUrl("google", env.SITE_URL),
@@ -32,6 +61,7 @@ export async function getGoogleAuthUrl(): Promise<string> {
     scope: "openid email profile",
     access_type: "offline",
     prompt: "select_account",
+    state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
@@ -49,11 +79,13 @@ export async function getGoogleUser(code: string) {
       grant_type: "authorization_code",
     }),
   });
+  if (!tokenRes.ok) throw new Error("Google token exchange failed");
   const tokens = (await tokenRes.json()) as { access_token: string };
 
   const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
+  if (!userRes.ok) throw new Error("Google userinfo fetch failed");
   return userRes.json() as Promise<{
     id: string;
     email: string;
@@ -67,11 +99,13 @@ export async function getGoogleUser(code: string) {
 
 export async function getFacebookAuthUrl(): Promise<string> {
   const env = await getEnv();
+  const state = await generateOAuthState();
   const params = new URLSearchParams({
     client_id: env.FACEBOOK_APP_ID,
     redirect_uri: callbackUrl("facebook", env.SITE_URL),
     scope: "email,public_profile",
     response_type: "code",
+    state,
   });
   return `https://www.facebook.com/v19.0/dialog/oauth?${params}`;
 }
@@ -86,11 +120,13 @@ export async function getFacebookUser(code: string) {
       redirect_uri: callbackUrl("facebook", env.SITE_URL),
     })}`
   );
+  if (!tokenRes.ok) throw new Error("Facebook token exchange failed");
   const tokens = (await tokenRes.json()) as { access_token: string };
 
   const userRes = await fetch(
     `https://graph.facebook.com/me?fields=id,email,first_name,last_name,picture.type(large)&access_token=${tokens.access_token}`
   );
+  if (!userRes.ok) throw new Error("Facebook user fetch failed");
   return userRes.json() as Promise<{
     id: string;
     email: string;
@@ -102,14 +138,20 @@ export async function getFacebookUser(code: string) {
 
 // --- Apple ---
 
+const APPLE_JWKS = createRemoteJWKSet(
+  new URL("https://appleid.apple.com/auth/keys")
+);
+
 export async function getAppleAuthUrl(): Promise<string> {
   const env = await getEnv();
+  const state = await generateOAuthState();
   const params = new URLSearchParams({
     client_id: env.APPLE_CLIENT_ID,
     redirect_uri: callbackUrl("apple", env.SITE_URL),
     response_type: "code",
     scope: "name email",
     response_mode: "form_post",
+    state,
   });
   return `https://appleid.apple.com/auth/authorize?${params}`;
 }
@@ -144,18 +186,18 @@ export async function getAppleUser(code: string) {
       grant_type: "authorization_code",
     }),
   });
+  if (!tokenRes.ok) throw new Error("Apple token exchange failed");
   const tokens = (await tokenRes.json()) as { id_token: string };
 
-  // Decode the id_token (JWT) to get user info
-  const [, payloadB64] = tokens.id_token.split(".");
-  const payload = JSON.parse(atob(payloadB64)) as {
-    sub: string;
-    email: string;
-  };
+  // Verify the id_token signature using Apple's JWKS
+  const { payload } = await jwtVerify(tokens.id_token, APPLE_JWKS, {
+    issuer: "https://appleid.apple.com",
+    audience: env.APPLE_CLIENT_ID,
+  });
 
   return {
-    id: payload.sub,
-    email: payload.email,
+    id: payload.sub as string,
+    email: payload.email as string,
     first_name: "",
     last_name: "",
   };
