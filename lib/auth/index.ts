@@ -1,15 +1,11 @@
 import { betterAuth } from "better-auth";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
-let authInstance: ReturnType<typeof betterAuth> | null = null;
-
 export async function initAuth() {
-  if (authInstance) return authInstance;
-
   const { env } = await getCloudflareContext();
   const cfEnv = env as CloudflareEnv;
 
-  authInstance = betterAuth({
+  return betterAuth({
     baseURL: cfEnv.SITE_URL,
     secret: cfEnv.BETTER_AUTH_SECRET,
     database: {
@@ -48,17 +44,27 @@ export async function initAuth() {
         },
       },
     },
+    rateLimit: {
+      window: 60,
+      max: 30,
+      customRules: {
+        "/sign-in/email": { window: 60, max: 5 },
+        "/sign-up/email": { window: 60, max: 5 },
+        "/forget-password": { window: 60, max: 3 },
+      },
+    },
     session: {
-      expiresIn: 7 * 24 * 60 * 60, // 7 days
+      expiresIn: 7 * 24 * 60 * 60,
       cookieCache: {
         enabled: true,
-        maxAge: 5 * 60, // 5 minutes
+        maxAge: 5 * 60,
       },
     },
     trustedOrigins: [
       "https://appleid.apple.com",
     ],
   });
-
-  return authInstance;
 }
+
+export type Auth = Awaited<ReturnType<typeof initAuth>>;
+export type Session = Auth["$Infer"]["Session"];
