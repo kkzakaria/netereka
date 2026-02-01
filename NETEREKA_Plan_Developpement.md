@@ -86,7 +86,7 @@ npm run deploy     # Déploie sur Cloudflare
 - [x] Créer migrations initiales
 - [x] Seed data de test (catégories, quelques produits)
 - [x] Helper fonctions DB (queries réutilisables)
-- [ ] Tester connexion D1 en local et remote
+- [x] Tester connexion D1 en local (via Kysely + D1Dialect)
 
 #### Livrables
 - [x] Fichier `schema.sql` complet
@@ -104,26 +104,28 @@ npm run db:seed     # Données de test insérées
 ### Jour 4-5 : Authentification (2-3 fév)
 
 #### Tâches
-- [ ] Système auth email/password (inscription, connexion)
-- [ ] Hash bcrypt pour mots de passe
-- [ ] Sessions JWT (cookies HttpOnly)
-- [ ] OAuth Google
-- [ ] OAuth Facebook
-- [ ] OAuth Apple
-- [ ] Middleware protection routes
-- [ ] Pages : `/auth/login`, `/auth/register`, `/auth/forgot-password`
-- [ ] Composants : formulaires, validation Zod
+- [x] Système auth email/password (inscription, connexion)
+- [x] Hash bcrypt pour mots de passe (Better Auth)
+- [x] Sessions cookies HttpOnly (Better Auth sessions, 7 jours)
+- [ ] OAuth Google (config prête, clés manquantes)
+- [ ] OAuth Facebook (config prête, clés manquantes)
+- [ ] OAuth Apple (config prête, clés manquantes)
+- [x] Middleware protection routes
+- [x] Pages : `/auth/sign-in`, `/auth/sign-up`, `/auth/forgot-password`, `/auth/reset-password`
+- [ ] Composants : formulaires, validation Zod (state local pour l'instant)
+- [x] CAPTCHA Cloudflare Turnstile (sign-up, sign-in, forgot-password)
+- [x] Adaptateur D1 via Kysely + kysely-d1
 
 #### Livrables
-- [ ] Auth complète fonctionnelle
-- [ ] Sessions persistantes
-- [ ] OAuth 3 providers
+- [x] Auth email/password fonctionnelle
+- [x] Sessions persistantes
+- [ ] OAuth 3 providers (clés à configurer)
 
 #### Validation
-- [ ] Peut créer un compte email
-- [ ] Peut se connecter avec Google/Facebook/Apple
-- [ ] Session persiste après refresh
-- [ ] Routes protégées inaccessibles sans auth
+- [x] Peut créer un compte email
+- [ ] Peut se connecter avec Google/Facebook/Apple (clés manquantes)
+- [x] Session persiste après refresh
+- [x] Routes protégées inaccessibles sans auth
 
 ---
 
@@ -157,7 +159,8 @@ npm run db:seed     # Données de test insérées
 | Critère | Status |
 |---------|--------|
 | Projet déployé sur Cloudflare | ⬜ |
-| Auth email + 3 OAuth fonctionnels | ⬜ |
+| Auth email fonctionnelle | ✅ |
+| Auth OAuth 3 providers | ⬜ (clés à configurer) |
 | Catalogue produits affiché | ⬜ |
 | Navigation complète | ⬜ |
 
@@ -580,7 +583,7 @@ Tests, contenu, optimisation, mise en production
 ### Vélocité
 | Semaine | Tâches prévues | Tâches complétées | % |
 |---------|----------------|-------------------|---|
-| S1 | 25 | 14 | 56% |
+| S1 | 25 | 21 | 84% |
 | S2 | 22 | - | - |
 | S3 | 24 | - | - |
 | S4 | 18 | - | - |
