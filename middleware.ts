@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { initAuth } from "@/lib/auth";
-import { headers } from "next/headers";
 
 const PROTECTED_PATHS = ["/account", "/checkout"];
 const AUTH_PATHS = ["/auth/"];
+const SESSION_COOKIE = "better-auth.session_token";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -13,9 +13,23 @@ export async function middleware(request: NextRequest) {
 
   if (!isAuthPath && !isProtectedPath) return NextResponse.next();
 
+  // Fast path: no cookie = no session, skip getSession call
+  const hasCookie = request.cookies.has(SESSION_COOKIE);
+
+  if (isProtectedPath && !hasCookie) {
+    const signInUrl = new URL("/auth/sign-in", request.url);
+    signInUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(signInUrl);
+  }
+
+  if (isAuthPath && !hasCookie) {
+    return NextResponse.next();
+  }
+
+  // Cookie exists — validate session server-side
   const auth = await initAuth();
   const session = await auth.api.getSession({
-    headers: await headers(),
+    headers: request.headers,
   });
 
   // Redirect authenticated users away from all auth pages
@@ -23,7 +37,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Redirect unauthenticated users to sign-in for protected routes
+  // Cookie exists but session invalid — redirect to sign-in
   if (isProtectedPath && !session) {
     const signInUrl = new URL("/auth/sign-in", request.url);
     signInUrl.searchParams.set("redirect", pathname);
@@ -34,6 +48,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  runtime: "nodejs",
   matcher: ["/account/:path*", "/checkout/:path*", "/auth/:path*"],
 };
