@@ -1,52 +1,47 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { initAuth } from "@/lib/auth";
 
 const PROTECTED_PATHS = ["/account", "/checkout"];
-const AUTH_PATHS = ["/auth/login", "/auth/register", "/auth/forgot-password"];
-const SESSION_COOKIE = "netereka_session";
-
-async function hasValidSession(request: NextRequest): Promise<boolean> {
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (!token) return false;
-
-  try {
-    // Try Cloudflare context first, fall back to process.env
-    let secret: string | undefined;
-    try {
-      const { env } = await getCloudflareContext();
-      secret = (env as CloudflareEnv).JWT_SECRET;
-    } catch {
-      secret = process.env.JWT_SECRET;
-    }
-
-    if (!secret) {
-      console.warn("JWT_SECRET not available in middleware — session validation skipped");
-      return false;
-    }
-
-    await jwtVerify(token, new TextEncoder().encode(secret));
-    return true;
-  } catch {
-    return false;
-  }
-}
+const AUTH_PATHS = ["/auth/"];
+const SESSION_COOKIE = "better-auth.session_token";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const valid = await hasValidSession(request);
+  const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
+  const isProtectedPath = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
 
-  // Redirect authenticated users away from auth pages
-  if (AUTH_PATHS.some((p) => pathname.startsWith(p)) && valid) {
+  if (!isAuthPath && !isProtectedPath) return NextResponse.next();
+
+  // Fast path: no cookie = no session, skip getSession call
+  const hasCookie = request.cookies.has(SESSION_COOKIE);
+
+  if (isProtectedPath && !hasCookie) {
+    const signInUrl = new URL("/auth/sign-in", request.url);
+    signInUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(signInUrl);
+  }
+
+  if (isAuthPath && !hasCookie) {
+    return NextResponse.next();
+  }
+
+  // Cookie exists — validate session server-side
+  const auth = await initAuth();
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  // Redirect authenticated users away from all auth pages
+  if (isAuthPath && session) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Redirect unauthenticated users to login for protected routes
-  if (PROTECTED_PATHS.some((p) => pathname.startsWith(p)) && !valid) {
-    const loginUrl = new URL("/auth/login", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+  // Cookie exists but session invalid — redirect to sign-in
+  if (isProtectedPath && !session) {
+    const signInUrl = new URL("/auth/sign-in", request.url);
+    signInUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(signInUrl);
   }
 
   return NextResponse.next();

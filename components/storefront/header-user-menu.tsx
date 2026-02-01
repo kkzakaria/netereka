@@ -2,14 +2,23 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { logout } from "@/actions/auth";
-import type { SafeUser } from "@/lib/db/users";
+import { authClient } from "@/lib/auth/client";
+import { useRouter } from "next/navigation";
 
-export function HeaderUserMenu({ user }: { user: SafeUser | null }) {
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  image?: string | null;
+} | null;
+
+export function HeaderUserMenu({ user }: { user: User }) {
+  const router = useRouter();
+
   if (!user) {
     return (
       <Button variant="default" size="default" asChild>
-        <Link href="/auth/login">Connexion</Link>
+        <Link href="/auth/sign-in">Connexion</Link>
       </Button>
     );
   }
@@ -20,13 +29,18 @@ export function HeaderUserMenu({ user }: { user: SafeUser | null }) {
         href="/account"
         className="text-xs font-medium hover:text-foreground text-muted-foreground"
       >
-        {user.first_name}
+        {user.name}
       </Link>
-      <form action={logout}>
-        <Button variant="ghost" size="default" type="submit">
-          Déconnexion
-        </Button>
-      </form>
+      <Button
+        variant="ghost"
+        size="default"
+        onClick={async () => {
+          await authClient.signOut();
+          router.refresh();
+        }}
+      >
+        Déconnexion
+      </Button>
     </div>
   );
 }
