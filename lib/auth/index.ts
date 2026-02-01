@@ -34,7 +34,7 @@ export async function initAuth() {
       additionalFields: {
         phone: {
           type: "string",
-          required: false,
+          required: true,
           input: true,
         },
         role: {
