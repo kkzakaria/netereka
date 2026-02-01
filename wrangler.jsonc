@@ -11,12 +11,14 @@
     {
       "binding": "DB",
       "database_name": "netereka-db",
+      // Replace with actual database_id from `npx wrangler d1 create netereka-db`
       "database_id": "LOCAL_DB_ID"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "KV",
+      // Replace with actual id from `npx wrangler kv namespace create KV`
       "id": "LOCAL_KV_ID"
     }
   ],

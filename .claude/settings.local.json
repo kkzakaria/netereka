@@ -1,11 +1,26 @@
 {
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(tree:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(test:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git -C /media/zakkoff/CODES/netereka status -s)",
+      "Bash(git -C /media/zakkoff/CODES/netereka log --oneline -3)",
+      "Bash(git -C /media/zakkoff/CODES/netereka diff NETEREKA_Plan_Developpement.md)",
+      "Bash(gh pr view:*)",
+      "Bash(git fetch:*)"
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "shadcn"
-  ],
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:raw.githubusercontent.com)"
-    ]
-  }
+  ]
 }

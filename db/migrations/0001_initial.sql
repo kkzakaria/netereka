@@ -1,6 +1,8 @@
 -- NETEREKA E-commerce Database Schema
 -- All prices in XOF (integer, no decimals)
 
+PRAGMA foreign_keys = ON;
+
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
@@ -14,6 +16,15 @@ CREATE TABLE IF NOT EXISTS users (
   is_verified INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS delivery_zones (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  commune TEXT NOT NULL,
+  fee INTEGER NOT NULL,
+  estimated_hours INTEGER NOT NULL DEFAULT 24,
+  is_active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS addresses (
@@ -94,15 +105,6 @@ CREATE TABLE IF NOT EXISTS product_attributes (
   product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   value TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS delivery_zones (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  commune TEXT NOT NULL,
-  fee INTEGER NOT NULL,
-  estimated_hours INTEGER NOT NULL DEFAULT 24,
-  is_active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS promo_codes (
