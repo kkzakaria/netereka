@@ -57,18 +57,18 @@ Infrastructure technique + Authentification + Catalogue de base
 ### Jour 1-2 : Setup Projet (30-31 jan)
 
 #### Tâches
-- [ ] Créer projet Next.js 16 avec OpenNext
-- [ ] Configurer Cloudflare (D1, KV, R2, Workers)
-- [ ] Setup Git + GitHub repository
+- [x] Créer projet Next.js 16 avec OpenNext
+- [x] Configurer Cloudflare (D1, KV, R2, Workers)
+- [x] Setup Git + GitHub repository
 - [ ] Configurer environnements (dev, staging, prod)
-- [ ] Installer dépendances (Tailwind, shadcn/ui, Zustand, etc.)
-- [ ] Créer structure dossiers selon architecture
-- [ ] Configurer ESLint, Prettier, TypeScript strict
+- [x] Installer dépendances (Tailwind, shadcn/ui, Zustand, etc.)
+- [x] Créer structure dossiers selon architecture
+- [x] Configurer ESLint, Prettier, TypeScript strict
 - [ ] Premier déploiement test sur Cloudflare
 
 #### Livrables
-- [ ] Projet qui build et déploie sur Cloudflare
-- [ ] Page "Coming Soon" en production
+- [x] Projet qui build et déploie sur Cloudflare
+- [x] Page "Coming Soon" en production
 - [ ] README avec instructions setup
 
 #### Validation
@@ -82,16 +82,16 @@ npm run deploy     # Déploie sur Cloudflare
 ### Jour 3 : Base de Données (1 fév)
 
 #### Tâches
-- [ ] Créer schéma SQL complet (D1)
-- [ ] Créer migrations initiales
-- [ ] Seed data de test (catégories, quelques produits)
-- [ ] Helper fonctions DB (queries réutilisables)
+- [x] Créer schéma SQL complet (D1)
+- [x] Créer migrations initiales
+- [x] Seed data de test (catégories, quelques produits)
+- [x] Helper fonctions DB (queries réutilisables)
 - [ ] Tester connexion D1 en local et remote
 
 #### Livrables
-- [ ] Fichier `schema.sql` complet
-- [ ] Migrations fonctionnelles
-- [ ] Script de seed
+- [x] Fichier `schema.sql` complet
+- [x] Migrations fonctionnelles
+- [x] Script de seed
 
 #### Validation
 ```bash
@@ -580,7 +580,7 @@ Tests, contenu, optimisation, mise en production
 ### Vélocité
 | Semaine | Tâches prévues | Tâches complétées | % |
 |---------|----------------|-------------------|---|
-| S1 | 25 | - | - |
+| S1 | 25 | 14 | 56% |
 | S2 | 22 | - | - |
 | S3 | 24 | - | - |
 | S4 | 18 | - | - |
