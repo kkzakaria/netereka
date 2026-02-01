@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -8,13 +9,15 @@ import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { SITE_NAME } from "@/lib/utils/constants";
 import { formatPrice } from "@/lib/utils/format";
 
+const getProductCached = cache(getProductBySlug);
+
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const product = await getProductCached(slug);
   if (!product) return {};
   return {
     title: `${product.name} | ${SITE_NAME}`,
@@ -26,7 +29,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const product = await getProductCached(slug);
   if (!product) notFound();
 
   const related = await getRelatedProducts(
@@ -80,6 +83,7 @@ export default async function ProductPage({ params }: Props) {
               <p className="text-2xl font-bold">
                 {formatPrice(product.base_price)}
               </p>
+              {/* TODO: activer quand le système de panier sera implémenté */}
               <button
                 disabled
                 className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground opacity-50"

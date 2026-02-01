@@ -230,6 +230,8 @@ async function main() {
   lines.push("-- DO NOT EDIT MANUALLY - regenerate with: npx tsx scripts/import-catalogue.ts");
   lines.push("");
 
+  lines.push("BEGIN TRANSACTION;");
+  lines.push("");
   // Delete existing data (reverse dependency order)
   lines.push("DELETE FROM product_images;");
   lines.push("DELETE FROM product_variants;");
@@ -320,6 +322,9 @@ async function main() {
     lines.push("");
   }
 
+  lines.push("COMMIT;");
+  lines.push("");
+
   // Write SQL
   fs.writeFileSync(OUTPUT_SQL, lines.join("\n"), "utf-8");
   console.log(`Generated ${OUTPUT_SQL}`);
@@ -333,7 +338,10 @@ async function main() {
     if (!imgInfo?.downloaded) continue;
     const r2Path = `products/${slugify(group.category)}/${imgInfo.filename}`;
     const localPath = path.join("scripts/images", imgInfo.filename);
-    uploadLines.push(`npx wrangler r2 object put --remote netereka/${r2Path} --file=${localPath} --content-type=image/webp`);
+    const ext = path.extname(imgInfo.filename).toLowerCase();
+    const mimeTypes: Record<string, string> = { ".webp": "image/webp", ".avif": "image/avif", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png" };
+    const contentType = mimeTypes[ext] || "image/webp";
+    uploadLines.push(`npx wrangler r2 object put --remote netereka/${r2Path} --file=${localPath} --content-type=${contentType}`);
   }
   fs.writeFileSync(uploadScript, uploadLines.join("\n"), "utf-8");
   console.log(`Generated ${uploadScript}`);

@@ -30,6 +30,7 @@ export interface Product {
   image_url?: string | null;
   category_name?: string | null;
   category_slug?: string | null;
+  variant_count?: number;
 }
 
 export interface ProductVariant {

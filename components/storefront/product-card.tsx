@@ -5,7 +5,7 @@ import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
 
 export function ProductCard({ product }: { product: Product }) {
-  const hasVariants = product.compare_price && product.compare_price > product.base_price;
+  const hasVariants = (product.variant_count ?? 0) > 1;
 
   return (
     <Link

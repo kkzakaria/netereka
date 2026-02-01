@@ -6,7 +6,7 @@ import { getImageUrl } from "@/lib/utils/images";
 
 export function HeroBanner({ product }: { product: Product }) {
   return (
-    <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#183C78] to-[#0f2548] text-white">
+    <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-hero-bg to-hero-bg-dark text-white">
       <div className="mx-auto grid max-w-7xl items-center gap-6 px-6 py-10 sm:grid-cols-2 sm:py-16">
         <div className="space-y-4">
           {product.brand && (
@@ -22,7 +22,7 @@ export function HeroBanner({ product }: { product: Product }) {
           </p>
           <Link
             href={`/p/${product.slug}`}
-            className="inline-flex items-center rounded-full bg-[#00FF9C] px-6 py-3 text-sm font-semibold text-[#183C78] transition-opacity hover:opacity-90"
+            className="inline-flex items-center rounded-full bg-hero-accent px-6 py-3 text-sm font-semibold text-hero-bg transition-opacity hover:opacity-90"
           >
             Découvrir
           </Link>

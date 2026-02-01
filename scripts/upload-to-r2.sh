@@ -128,8 +128,8 @@ npx wrangler r2 object put --remote netereka/products/accessoires/airpods-4-anc.
 npx wrangler r2 object put --remote netereka/products/accessoires/airtag-pack-of-1.webp --file=scripts/images/airtag-pack-of-1.webp --content-type=image/webp
 npx wrangler r2 object put --remote netereka/products/accessoires/airtag-pack-of-4.webp --file=scripts/images/airtag-pack-of-4.webp --content-type=image/webp
 npx wrangler r2 object put --remote netereka/products/accessoires/apple-tv-4k-128gb-2025.webp --file=scripts/images/apple-tv-4k-128gb-2025.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/jeux/console-sony-ps5-slim-ea-fc-26.avif --file=scripts/images/console-sony-ps5-slim-ea-fc-26.avif --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/jeux/ea-sports-fc-26.avif --file=scripts/images/ea-sports-fc-26.avif --content-type=image/webp
+npx wrangler r2 object put --remote netereka/products/jeux/console-sony-ps5-slim-ea-fc-26.avif --file=scripts/images/console-sony-ps5-slim-ea-fc-26.avif --content-type=image/avif
+npx wrangler r2 object put --remote netereka/products/jeux/ea-sports-fc-26.avif --file=scripts/images/ea-sports-fc-26.avif --content-type=image/avif
 npx wrangler r2 object put --remote netereka/products/jeux/battlefield-6-pc.webp --file=scripts/images/battlefield-6-pc.webp --content-type=image/webp
 npx wrangler r2 object put --remote netereka/products/televiseurs/ecran-lenovo-27-incurve-gaming.webp --file=scripts/images/ecran-lenovo-27-incurve-gaming.webp --content-type=image/webp
 npx wrangler r2 object put --remote netereka/products/televiseurs/ecran-lenovo-34-incurve-gaming.webp --file=scripts/images/ecran-lenovo-34-incurve-gaming.webp --content-type=image/webp

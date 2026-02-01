@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getCategoryBySlug } from "@/lib/db/categories";
@@ -9,6 +10,8 @@ import { ProductGrid } from "@/components/storefront/product-grid";
 import { LoadMoreButton } from "./load-more-button";
 import { SITE_NAME } from "@/lib/utils/constants";
 
+const getCategoryCached = cache(getCategoryBySlug);
+
 interface Props {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ page?: string }>;
@@ -16,7 +19,7 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const category = await getCategoryBySlug(slug);
+  const category = await getCategoryCached(slug);
   if (!category) return {};
   return {
     title: `${category.name} | ${SITE_NAME}`,
@@ -27,10 +30,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const { page } = await searchParams;
-  const category = await getCategoryBySlug(slug);
+  const category = await getCategoryCached(slug);
   if (!category) notFound();
 
-  const currentPage = Math.max(1, parseInt(page ?? "1", 10));
+  const currentPage = Math.max(1, parseInt(page ?? "1", 10) || 1);
   const limit = 20;
   const offset = (currentPage - 1) * limit;
 

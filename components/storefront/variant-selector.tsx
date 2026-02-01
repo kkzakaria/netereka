@@ -21,13 +21,19 @@ export function VariantSelector({
 }) {
   const [selectedId, setSelectedId] = useState(variants[0]?.id ?? "");
 
+  // Parse all attributes once and memoize
+  const parsedMap = useMemo(
+    () => new Map(variants.map((v) => [v.id, parseAttributes(v)])),
+    [variants]
+  );
+
   const { colors, storages, selectedVariant } = useMemo(() => {
     const colorSet = new Set<string>();
     const storageSet = new Set<string>();
     let selected: ProductVariant | undefined;
 
     for (const v of variants) {
-      const attrs = parseAttributes(v);
+      const attrs = parsedMap.get(v.id)!;
       if (attrs.color) colorSet.add(attrs.color);
       if (attrs.storage) storageSet.add(attrs.storage);
       if (v.id === selectedId) selected = v;
@@ -38,13 +44,13 @@ export function VariantSelector({
       storages: [...storageSet],
       selectedVariant: selected ?? variants[0],
     };
-  }, [variants, selectedId]);
+  }, [variants, selectedId, parsedMap]);
 
-  const selectedAttrs = selectedVariant ? parseAttributes(selectedVariant) : {};
+  const selectedAttrs = parsedMap.get(selectedVariant?.id ?? "") ?? {};
 
   function selectByAttrs(color?: string, storage?: string) {
     const target = variants.find((v) => {
-      const a = parseAttributes(v);
+      const a = parsedMap.get(v.id)!;
       const colorMatch = !color || a.color === color;
       const storageMatch = !storage || a.storage === storage;
       return colorMatch && storageMatch;
@@ -106,6 +112,7 @@ export function VariantSelector({
         </div>
       )}
 
+      {/* TODO: activer quand le système de panier sera implémenté */}
       <button
         disabled
         className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground opacity-50"
