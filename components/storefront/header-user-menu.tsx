@@ -1,9 +1,27 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth/client";
 import { useRouter } from "next/navigation";
+import {
+  UserIcon,
+  ShoppingBag01Icon,
+  Location01Icon,
+  FavouriteIcon,
+  StarIcon,
+  Logout01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 type User = {
   id: string;
@@ -11,6 +29,41 @@ type User = {
   email: string;
   image?: string | null;
 } | null;
+
+function UserAvatar({ user }: { user: NonNullable<User> }) {
+  const initials = user.name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  if (user.image) {
+    return (
+      <Image
+        src={user.image}
+        alt={user.name}
+        width={32}
+        height={32}
+        className="size-8 rounded-full object-cover"
+      />
+    );
+  }
+
+  return (
+    <span className="flex size-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+      {initials}
+    </span>
+  );
+}
+
+const menuItems = [
+  { href: "/account", label: "Mon profil", icon: UserIcon },
+  { href: "/account/orders", label: "Mes commandes", icon: ShoppingBag01Icon },
+  { href: "/account/addresses", label: "Mes adresses", icon: Location01Icon },
+  { href: "/account/wishlist", label: "Mes favoris", icon: FavouriteIcon },
+  { href: "/account/reviews", label: "Mes avis", icon: StarIcon },
+];
 
 export function HeaderUserMenu({ user }: { user: User }) {
   const router = useRouter();
@@ -24,23 +77,41 @@ export function HeaderUserMenu({ user }: { user: User }) {
   }
 
   return (
-    <div className="flex items-center gap-3">
-      <Link
-        href="/account"
-        className="text-xs font-medium hover:text-foreground text-muted-foreground"
-      >
-        {user.name}
-      </Link>
-      <Button
-        variant="ghost"
-        size="default"
-        onClick={async () => {
-          await authClient.signOut();
-          router.refresh();
-        }}
-      >
-        Déconnexion
-      </Button>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Menu utilisateur"
+        >
+          <UserAvatar user={user} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel className="font-normal">
+          <p className="text-sm font-medium">{user.name}</p>
+          <p className="text-xs text-muted-foreground">{user.email}</p>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {menuItems.map((item) => (
+          <DropdownMenuItem key={item.href} asChild>
+            <Link href={item.href}>
+              <HugeiconsIcon icon={item.icon} size={16} />
+              {item.label}
+            </Link>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={async () => {
+            await authClient.signOut();
+            router.refresh();
+          }}
+        >
+          <HugeiconsIcon icon={Logout01Icon} size={16} />
+          Déconnexion
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
