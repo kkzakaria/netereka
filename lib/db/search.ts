@@ -76,6 +76,22 @@ export async function countSearchResults(opts: SearchOptions): Promise<number> {
   return result?.count ?? 0;
 }
 
+export async function getBrandsInCategory(categoryId: string): Promise<string[]> {
+  const rows = await query<{ brand: string }>(
+    "SELECT DISTINCT brand FROM products WHERE is_active = 1 AND brand IS NOT NULL AND category_id = ? ORDER BY brand",
+    [categoryId]
+  );
+  return rows.map((r) => r.brand);
+}
+
+export async function getPriceRangeInCategory(categoryId: string): Promise<PriceRange> {
+  const result = await queryFirst<{ min_price: number; max_price: number }>(
+    "SELECT MIN(base_price) as min_price, MAX(base_price) as max_price FROM products WHERE is_active = 1 AND category_id = ?",
+    [categoryId]
+  );
+  return { min: result?.min_price ?? 0, max: result?.max_price ?? 0 };
+}
+
 export async function getBrandsInUse(): Promise<string[]> {
   const rows = await query<{ brand: string }>(
     "SELECT DISTINCT brand FROM products WHERE is_active = 1 AND brand IS NOT NULL ORDER BY brand"

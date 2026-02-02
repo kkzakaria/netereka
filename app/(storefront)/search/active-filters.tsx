@@ -5,7 +5,7 @@ import { formatPrice } from "@/lib/utils/format";
 import { useFilterData } from "./filter-context";
 
 export function ActiveFilters() {
-  const { categories } = useFilterData();
+  const { categories, basePath } = useFilterData();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -30,7 +30,7 @@ export function ActiveFilters() {
       params.delete(key);
     }
     params.delete("page");
-    router.push(`/search?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   };
 
   const clearAll = () => {
@@ -39,7 +39,7 @@ export function ActiveFilters() {
     const sort = searchParams.get("sort");
     if (q) params.set("q", q);
     if (sort) params.set("sort", sort);
-    router.push(`/search?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   };
 
   const categoryName = activeCategory

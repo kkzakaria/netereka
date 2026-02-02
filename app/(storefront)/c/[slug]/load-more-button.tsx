@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export function LoadMoreButton({
   slug,
@@ -10,13 +10,20 @@ export function LoadMoreButton({
   nextPage: number;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const handleClick = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(nextPage));
+    router.push(`/c/${slug}?${params.toString()}`);
+  };
 
   return (
     <button
-      onClick={() => router.push(`/c/${slug}?page=${nextPage}`)}
-      className="rounded-xl border px-6 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
+      onClick={handleClick}
+      className="rounded-xl border px-6 py-2.5 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
     >
-      Page suivante
+      Charger plus
     </button>
   );
 }

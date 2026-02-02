@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { useFilterData } from "./filter-context";
 import {
   Select,
   SelectContent,
@@ -17,6 +18,7 @@ const SORT_OPTIONS = [
 ] as const;
 
 export function SearchSort() {
+  const { basePath } = useFilterData();
   const router = useRouter();
   const searchParams = useSearchParams();
   const current = searchParams.get("sort") ?? "relevance";
@@ -29,7 +31,7 @@ export function SearchSort() {
       params.set("sort", value);
     }
     params.delete("page");
-    router.push(`/search?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   };
 
   return (
