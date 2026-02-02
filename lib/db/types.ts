@@ -163,3 +163,42 @@ export interface PromoCode {
   is_active: number;
   created_at: string;
 }
+
+export interface WishlistItem {
+  id: string;
+  product_id: string;
+  created_at: string;
+  // Joined from products
+  name: string;
+  slug: string;
+  base_price: number;
+  compare_price: number | null;
+  brand: string | null;
+  stock_quantity: number;
+  is_active: number;
+  image_url: string | null;
+  category_name: string | null;
+}
+
+export interface Review {
+  id: string;
+  product_id: string;
+  user_id: string;
+  rating: number;
+  comment: string | null;
+  is_verified_purchase: number;
+  created_at: string;
+  // Joined fields
+  user_name?: string;
+  product_name?: string;
+  product_slug?: string;
+  product_image_url?: string | null;
+}
+
+export type OrderStatus =
+  | "pending"
+  | "confirmed"
+  | "preparing"
+  | "shipping"
+  | "delivered"
+  | "cancelled";

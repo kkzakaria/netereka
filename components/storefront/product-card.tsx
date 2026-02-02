@@ -3,8 +3,15 @@ import Image from "next/image";
 import type { Product } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
+import { WishlistButton } from "@/components/storefront/wishlist-button";
 
-export function ProductCard({ product }: { product: Product }) {
+interface Props {
+  product: Product;
+  isWishlisted?: boolean;
+  showWishlist?: boolean;
+}
+
+export function ProductCard({ product, isWishlisted = false, showWishlist = false }: Props) {
   const hasVariants = (product.variant_count ?? 0) > 1;
 
   return (
@@ -20,6 +27,13 @@ export function ProductCard({ product }: { product: Product }) {
           className="object-contain p-4 transition-transform group-hover:scale-105"
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
         />
+        {showWishlist && (
+          <WishlistButton
+            productId={product.id}
+            isWishlisted={isWishlisted}
+            className="absolute right-2 top-2 z-10"
+          />
+        )}
         {product.category_name ? (
           <span className="absolute left-2 top-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
             {product.category_name}
