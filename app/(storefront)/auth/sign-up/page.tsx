@@ -31,8 +31,8 @@ const signUpSchema = z
     phone: z
       .string()
       .regex(
-        /^\+225\s?\d{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?\d{2}$/,
-        "Format : +225 XX XX XX XX XX"
+        /^\+225\s?\d{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?\d{2}$|^\+225\d{10}$/,
+        "Format : +225 07 00 00 00 00 ou +2250700000000"
       ),
     password: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères."),
     confirmPassword: z.string(),

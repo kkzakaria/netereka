@@ -14,7 +14,7 @@ export function HorizontalSection({
   if (products.length === 0) return null;
 
   return (
-    <section className="[content-visibility:auto] [contain-intrinsic-size:auto_300px]">
+    <section className="[content-visibility:auto] [contain-intrinsic-size:auto_400px]">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-bold sm:text-xl">{title}</h2>
         {href ? (
