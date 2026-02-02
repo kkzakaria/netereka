@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS orders_new (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-INSERT INTO orders_new SELECT * FROM orders;
+INSERT INTO orders_new (id, user_id, order_number, status, subtotal, delivery_fee, discount_amount, total, promo_code_id, delivery_address, delivery_commune, delivery_phone, delivery_instructions, estimated_delivery, delivered_at, cancelled_at, cancellation_reason, created_at, updated_at)
+SELECT id, user_id, order_number, status, subtotal, delivery_fee, discount_amount, total, promo_code_id, delivery_address, delivery_commune, delivery_phone, delivery_instructions, estimated_delivery, delivered_at, cancelled_at, cancellation_reason, created_at, updated_at FROM orders;
 DROP TABLE orders;
 ALTER TABLE orders_new RENAME TO orders;
 
@@ -48,7 +49,8 @@ CREATE TABLE IF NOT EXISTS order_items_new (
   total_price INTEGER NOT NULL
 );
 
-INSERT INTO order_items_new SELECT * FROM order_items;
+INSERT INTO order_items_new (id, order_id, product_id, variant_id, product_name, variant_name, quantity, unit_price, total_price)
+SELECT id, order_id, product_id, variant_id, product_name, variant_name, quantity, unit_price, total_price FROM order_items;
 DROP TABLE order_items;
 ALTER TABLE order_items_new RENAME TO order_items;
 
@@ -65,7 +67,8 @@ CREATE TABLE IF NOT EXISTS reviews_new (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-INSERT INTO reviews_new SELECT * FROM reviews;
+INSERT INTO reviews_new (id, product_id, user_id, rating, comment, is_verified_purchase, created_at)
+SELECT id, product_id, user_id, rating, comment, is_verified_purchase, created_at FROM reviews;
 DROP TABLE reviews;
 ALTER TABLE reviews_new RENAME TO reviews;
 
@@ -88,7 +91,8 @@ CREATE TABLE IF NOT EXISTS addresses_new (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-INSERT INTO addresses_new SELECT * FROM addresses;
+INSERT INTO addresses_new (id, user_id, label, full_name, phone, street, commune, city, zone_id, instructions, is_default, created_at)
+SELECT id, user_id, label, full_name, phone, street, commune, city, zone_id, instructions, is_default, created_at FROM addresses;
 DROP TABLE addresses;
 ALTER TABLE addresses_new RENAME TO addresses;
 
