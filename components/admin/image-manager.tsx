@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import Image from "next/image";
+import { getImageUrl } from "@/lib/utils/images";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,7 +57,7 @@ export function ImageManager({
               data-pending={isPending || undefined}
             >
               <Image
-                src={img.url}
+                src={getImageUrl(img.url)}
                 alt={img.alt || ""}
                 width={200}
                 height={200}

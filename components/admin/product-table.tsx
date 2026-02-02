@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { getImageUrl } from "@/lib/utils/images";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import {
@@ -106,7 +107,7 @@ export function ProductTable({ products }: { products: ProductRow[] }) {
               <TableCell>
                 {product.image_url ? (
                   <Image
-                    src={product.image_url}
+                    src={getImageUrl(product.image_url)}
                     alt={product.name}
                     width={40}
                     height={40}
