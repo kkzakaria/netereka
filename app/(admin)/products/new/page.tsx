@@ -8,7 +8,7 @@ export default async function NewProductPage() {
   return (
     <div>
       <AdminHeader title="Nouveau produit" />
-      <ProductForm categories={categories} />
+      <ProductForm categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
     </div>
   );
 }

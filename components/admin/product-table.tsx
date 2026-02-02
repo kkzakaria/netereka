@@ -26,19 +26,33 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import type { Product } from "@/lib/db/types";
 import {
   deleteProduct,
   toggleProductActive,
   toggleProductFeatured,
 } from "@/actions/admin/products";
 
+interface ProductRow {
+  id: string;
+  name: string;
+  brand: string | null;
+  sku: string | null;
+  category_name?: string | null;
+  base_price: number;
+  stock_quantity: number;
+  is_active: number;
+  is_featured: number;
+  image_url?: string | null;
+}
+
+const imagePlaceholder = <div className="h-10 w-10 rounded bg-muted" />;
+
 function formatPrice(price: number) {
   return new Intl.NumberFormat("fr-CI", { style: "decimal" }).format(price) +
     " FCFA";
 }
 
-export function ProductTable({ products }: { products: Product[] }) {
+export function ProductTable({ products }: { products: ProductRow[] }) {
   const [isPending, startTransition] = useTransition();
 
   function handleToggleActive(id: string) {
@@ -103,7 +117,7 @@ export function ProductTable({ products }: { products: Product[] }) {
                     className="rounded object-cover"
                   />
                 ) : (
-                  <div className="h-10 w-10 rounded bg-muted" />
+                  imagePlaceholder
                 )}
               </TableCell>
               <TableCell>

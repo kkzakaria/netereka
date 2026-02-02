@@ -34,7 +34,7 @@ export default async function EditProductPage({ params }: Props) {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="info">
-          <ProductForm product={product} categories={categories} />
+          <ProductForm product={product} categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
         </TabsContent>
         <TabsContent value="variants">
           <VariantList productId={product.id} variants={product.variants} />

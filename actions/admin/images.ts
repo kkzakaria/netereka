@@ -99,12 +99,9 @@ export async function setPrimaryImage(
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  await execute(
-    "UPDATE product_images SET is_primary = 0 WHERE product_id = ?",
-    [productId]
-  );
-  await execute("UPDATE product_images SET is_primary = 1 WHERE id = ?", [
-    imageId,
+  await Promise.all([
+    execute("UPDATE product_images SET is_primary = 0 WHERE product_id = ?", [productId]),
+    execute("UPDATE product_images SET is_primary = 1 WHERE id = ?", [imageId]),
   ]);
 
   revalidatePath(`/products/${productId}/edit`);
@@ -117,12 +114,14 @@ export async function reorderImages(
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  for (let i = 0; i < imageIds.length; i++) {
-    await execute(
-      "UPDATE product_images SET sort_order = ? WHERE id = ? AND product_id = ?",
-      [i, imageIds[i], productId]
-    );
-  }
+  await Promise.all(
+    imageIds.map((imageId, i) =>
+      execute(
+        "UPDATE product_images SET sort_order = ? WHERE id = ? AND product_id = ?",
+        [i, imageId, productId]
+      )
+    )
+  );
 
   revalidatePath(`/products/${productId}/edit`);
   return { success: true };

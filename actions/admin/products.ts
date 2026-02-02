@@ -147,8 +147,10 @@ export async function updateProduct(
 export async function deleteProduct(id: string): Promise<ActionResult> {
   await requireAdmin();
 
-  await execute("DELETE FROM product_images WHERE product_id = ?", [id]);
-  await execute("DELETE FROM product_variants WHERE product_id = ?", [id]);
+  await Promise.all([
+    execute("DELETE FROM product_images WHERE product_id = ?", [id]),
+    execute("DELETE FROM product_variants WHERE product_id = ?", [id]),
+  ]);
   await execute("DELETE FROM products WHERE id = ?", [id]);
 
   revalidatePath("/products");

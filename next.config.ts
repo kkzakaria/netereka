@@ -4,6 +4,9 @@ import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
+  experimental: {
+    optimizePackageImports: ["@hugeicons/core-free-icons"],
+  },
   images: {
     remotePatterns: [
       {

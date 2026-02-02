@@ -10,12 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Product, Category } from "@/lib/db/types";
+import type { Product } from "@/lib/db/types";
 import { createProduct, updateProduct } from "@/actions/admin/products";
 
 interface ProductFormProps {
   product?: Product | null;
-  categories: Category[];
+  categories: { id: string; name: string }[];
 }
 
 export function ProductForm({ product, categories }: ProductFormProps) {

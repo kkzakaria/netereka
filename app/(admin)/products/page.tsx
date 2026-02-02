@@ -78,7 +78,18 @@ export default async function ProductsPage({ searchParams }: Props) {
         </Button>
       </div>
 
-      <ProductTable products={products} />
+      <ProductTable products={products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        brand: p.brand,
+        sku: p.sku,
+        category_name: p.category_name,
+        base_price: p.base_price,
+        stock_quantity: p.stock_quantity,
+        is_active: p.is_active,
+        is_featured: p.is_featured,
+        image_url: p.image_url,
+      }))} />
 
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
