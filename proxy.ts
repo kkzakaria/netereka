@@ -6,7 +6,7 @@ const PROTECTED_PATHS = ["/account", "/checkout"];
 const AUTH_PATHS = ["/auth/"];
 const SESSION_COOKIE = "better-auth.session_token";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const isProtectedPath = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
