@@ -7,7 +7,7 @@ import { formatPrice } from "@/lib/utils/format";
 import { useFilterData } from "./filter-context";
 
 export function SearchFilters() {
-  const { categories, brands, priceRange } = useFilterData();
+  const { categories, brands, priceRange, basePath, hideCategory } = useFilterData();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -38,9 +38,9 @@ export function SearchFilters() {
           params.set(key, value);
         }
       }
-      router.push(`/search?${params.toString()}`);
+      router.push(`${basePath}?${params.toString()}`);
     },
-    [router, searchParams]
+    [router, searchParams, basePath]
   );
 
   const handleCategoryChange = (slug: string) => {
@@ -70,7 +70,7 @@ export function SearchFilters() {
     const params = new URLSearchParams();
     const q = searchParams.get("q");
     if (q) params.set("q", q);
-    router.push(`/search?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   };
 
   const hasFilters = activeCategory || activeBrands.length > 0 || activeMinPrice || activeMaxPrice;
@@ -78,26 +78,28 @@ export function SearchFilters() {
   return (
     <div className="space-y-6">
       {/* Categories */}
-      <fieldset>
-        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Catégorie
-        </legend>
-        <div className="space-y-1">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => handleCategoryChange(cat.slug)}
-              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none ${
-                cat.slug === activeCategory
-                  ? "bg-primary/10 font-medium text-primary"
-                  : "text-foreground hover:bg-muted"
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
-        </div>
-      </fieldset>
+      {!hideCategory && (
+        <fieldset>
+          <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Catégorie
+          </legend>
+          <div className="space-y-1">
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => handleCategoryChange(cat.slug)}
+                className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none ${
+                  cat.slug === activeCategory
+                    ? "bg-primary/10 font-medium text-primary"
+                    : "text-foreground hover:bg-muted"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       {/* Brands */}
       {brands.length > 0 && (

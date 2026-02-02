@@ -7,16 +7,19 @@ interface FilterData {
   categories: Category[];
   brands: string[];
   priceRange: PriceRange;
+  basePath: string;
+  hideCategory?: boolean;
 }
 
 const FilterContext = createContext<FilterData | null>(null);
 
 export function FilterProvider({
   children,
+  basePath = "/search",
   ...data
-}: FilterData & { children: React.ReactNode }) {
+}: Omit<FilterData, "basePath"> & { basePath?: string; children: React.ReactNode }) {
   return (
-    <FilterContext value={data}>
+    <FilterContext value={{ ...data, basePath }}>
       {children}
     </FilterContext>
   );
