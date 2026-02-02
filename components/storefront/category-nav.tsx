@@ -43,7 +43,7 @@ export function CategoryNav({ categories }: { categories: Category[] }) {
       <div
         ref={scrollRef}
         {...dragProps}
-        className="flex cursor-grab gap-3 overflow-x-auto scrollbar-none active:cursor-grabbing"
+        className="flex cursor-grab select-none gap-3 overflow-x-auto scrollbar-none active:cursor-grabbing"
       >
         {categories.map((cat) => {
           const icon = CATEGORY_ICONS[cat.slug];

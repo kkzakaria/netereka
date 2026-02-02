@@ -64,6 +64,7 @@ export function useHorizontalScroll() {
       scrollRef.current?.releasePointerCapture(e.pointerId);
     }
     isDragging.current = false;
+    dragState.current.hasMoved = false;
   }, []);
 
   const onClickCapture = useCallback((e: React.MouseEvent) => {

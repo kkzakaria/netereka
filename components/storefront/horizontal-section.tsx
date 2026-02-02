@@ -42,7 +42,7 @@ export function HorizontalSection({
         <div
           ref={scrollRef}
           {...dragProps}
-          className="flex cursor-grab gap-3 overflow-x-auto pb-2 scrollbar-none active:cursor-grabbing sm:gap-4"
+          className="flex cursor-grab select-none gap-3 overflow-x-auto pb-2 scrollbar-none active:cursor-grabbing sm:gap-4"
         >
           {products.map((product) => (
             <div key={product.id} className="w-[160px] shrink-0 sm:w-[200px]">

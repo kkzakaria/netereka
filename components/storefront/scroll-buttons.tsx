@@ -21,7 +21,7 @@ export function ScrollButtons({
         <button
           type="button"
           onClick={() => onScroll("left")}
-          className="absolute -left-2 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-background/90 p-2 shadow-md ring-1 ring-border backdrop-blur-sm opacity-0 transition-opacity group-hover:opacity-100 hover:bg-background sm:block"
+          className="absolute -left-2 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-background/90 p-2 shadow-md ring-1 ring-border backdrop-blur-sm pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 hover:bg-background sm:block"
           aria-label="Défiler à gauche"
         >
           {chevronLeft}
@@ -31,7 +31,7 @@ export function ScrollButtons({
         <button
           type="button"
           onClick={() => onScroll("right")}
-          className="absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-background/90 p-2 shadow-md ring-1 ring-border backdrop-blur-sm opacity-0 transition-opacity group-hover:opacity-100 hover:bg-background sm:block"
+          className="absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-background/90 p-2 shadow-md ring-1 ring-border backdrop-blur-sm pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 hover:bg-background sm:block"
           aria-label="Défiler à droite"
         >
           {chevronRight}
