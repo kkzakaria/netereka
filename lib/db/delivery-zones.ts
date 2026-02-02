@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { query, queryFirst } from "@/lib/db";
 import type { DeliveryZone } from "@/lib/db/types";
 
 export async function getActiveDeliveryZones(): Promise<DeliveryZone[]> {
@@ -8,9 +8,8 @@ export async function getActiveDeliveryZones(): Promise<DeliveryZone[]> {
 }
 
 export async function getDeliveryZoneByCommune(commune: string): Promise<DeliveryZone | null> {
-  const zones = await query<DeliveryZone>(
+  return queryFirst<DeliveryZone>(
     "SELECT * FROM delivery_zones WHERE commune = ? AND is_active = 1 LIMIT 1",
     [commune]
   );
-  return zones[0] ?? null;
 }

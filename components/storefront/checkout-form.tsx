@@ -142,10 +142,11 @@ export function CheckoutForm({
     setServerError(null);
     startTransition(async () => {
       const result = await createOrder(data);
-      if (!result.success) {
+      if (result.success && result.orderNumber) {
+        router.push(`/checkout/success?order=${result.orderNumber}`);
+      } else {
         setServerError(result.error ?? "Une erreur est survenue");
       }
-      // On success, createOrder calls redirect() internally
     });
   }
 

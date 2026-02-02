@@ -1,13 +1,10 @@
-"use client";
-
-import { useEffect } from "react";
 import Link from "next/link";
-import { useCartStore } from "@/stores/cart-store";
 import { formatPrice, formatDateTime } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ClearCartEffect } from "@/components/storefront/clear-cart-effect";
 import type { Order, OrderItem } from "@/lib/db/types";
 
 interface OrderConfirmationProps {
@@ -16,12 +13,10 @@ interface OrderConfirmationProps {
 }
 
 export function OrderConfirmation({ order, items }: OrderConfirmationProps) {
-  useEffect(() => {
-    useCartStore.getState().clear();
-  }, []);
-
   return (
     <div className="space-y-6 text-center">
+      <ClearCartEffect />
+
       {/* Success header */}
       <div className="space-y-3">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl">

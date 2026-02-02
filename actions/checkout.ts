@@ -1,15 +1,14 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth/guards";
-import { checkoutSchema, type CheckoutInput } from "@/lib/validations/checkout";
-import { queryFirst } from "@/lib/db";
+import { checkoutSchema, type CheckoutInput, type CheckoutOutput } from "@/lib/validations/checkout";
+import { query, queryFirst } from "@/lib/db";
 import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
 import { getAddressById, createAddress } from "@/lib/db/addresses";
 import { createOrderWithItems, generateOrderNumber } from "@/lib/db/orders";
 import type { Product, ProductVariant, PromoCode } from "@/lib/db/types";
 
-// ---------- promo code validation ----------
+// ---------- internal promo validation (no auth check) ----------
 
 interface PromoResult {
   valid: boolean;
@@ -19,14 +18,16 @@ interface PromoResult {
   error: string | null;
 }
 
-export async function validatePromoCode(
+function invalidPromo(error: string): PromoResult {
+  return { valid: false, discount: 0, promoCodeId: null, label: null, error };
+}
+
+async function resolvePromoCode(
   code: string,
   subtotal: number
 ): Promise<PromoResult> {
-  await requireAuth();
-
   if (!code.trim()) {
-    return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Veuillez saisir un code promo" };
+    return invalidPromo("Veuillez saisir un code promo");
   }
 
   const promo = await queryFirst<PromoCode>(
@@ -34,34 +35,31 @@ export async function validatePromoCode(
     [code.trim().toUpperCase()]
   );
 
-  if (!promo) {
-    return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Code promo invalide" };
-  }
+  if (!promo) return invalidPromo("Code promo invalide");
 
   const now = Date.now();
   if (promo.starts_at && now < new Date(promo.starts_at).getTime()) {
-    return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Ce code promo n'est pas encore actif" };
+    return invalidPromo("Ce code promo n'est pas encore actif");
   }
   if (promo.expires_at && now > new Date(promo.expires_at).getTime()) {
-    return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Ce code promo a expire" };
+    return invalidPromo("Ce code promo a expire");
   }
   if (promo.max_uses && promo.used_count >= promo.max_uses) {
-    return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Ce code promo a atteint sa limite d'utilisation" };
+    return invalidPromo("Ce code promo a atteint sa limite d'utilisation");
   }
   if (promo.min_order_amount && subtotal < promo.min_order_amount) {
-    return {
-      valid: false,
-      discount: 0,
-      promoCodeId: null,
-      label: null,
-      error: `Montant minimum de commande: ${promo.min_order_amount} FCFA`,
-    };
+    return invalidPromo(
+      `Montant minimum de commande: ${promo.min_order_amount} FCFA`
+    );
   }
 
-  const discount =
+  const rawDiscount =
     promo.discount_type === "percentage"
       ? Math.round((subtotal * promo.discount_value) / 100)
       : promo.discount_value;
+
+  // Cap discount at subtotal to prevent negative totals
+  const discount = Math.min(rawDiscount, subtotal);
 
   const label =
     promo.discount_type === "percentage"
@@ -71,10 +69,21 @@ export async function validatePromoCode(
   return { valid: true, discount, promoCodeId: promo.id, label, error: null };
 }
 
+// ---------- public server action for promo validation ----------
+
+export async function validatePromoCode(
+  code: string,
+  subtotal: number
+): Promise<PromoResult> {
+  await requireAuth();
+  return resolvePromoCode(code, subtotal);
+}
+
 // ---------- main order creation ----------
 
 interface CreateOrderResult {
   success: boolean;
+  orderNumber?: string;
   error?: string;
   fieldErrors?: Record<string, string[]>;
 }
@@ -92,13 +101,14 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
     };
   }
-  const data = parsed.data;
+  const data: CheckoutOutput = parsed.data;
 
   // 2. Resolve address
   let addressStreet: string;
   let addressFullName: string;
   let addressPhone: string;
   let addressCommune = data.commune;
+  let addressCity = "Abidjan";
 
   if (data.savedAddressId) {
     const saved = await getAddressById(data.savedAddressId, userId);
@@ -109,6 +119,7 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     addressFullName = saved.full_name;
     addressPhone = saved.phone;
     addressCommune = saved.commune;
+    addressCity = saved.city;
   } else {
     addressStreet = data.street!;
     addressFullName = data.fullName!;
@@ -121,7 +132,28 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     return { success: false, error: "Zone de livraison non disponible pour cette commune" };
   }
 
-  // 4. Validate each cart item against DB
+  // 4. Batch-fetch all products + variants to avoid N+1 queries
+  const productIds = data.items.map((i) => i.productId);
+  const variantIds = data.items.map((i) => i.variantId).filter(Boolean) as string[];
+
+  const placeholdersP = productIds.map(() => "?").join(",");
+  const products = await query<Product>(
+    `SELECT * FROM products WHERE id IN (${placeholdersP}) AND is_active = 1`,
+    productIds
+  );
+  const productMap = new Map(products.map((p) => [p.id, p]));
+
+  const variantMap = new Map<string, ProductVariant>();
+  if (variantIds.length > 0) {
+    const placeholdersV = variantIds.map(() => "?").join(",");
+    const variants = await query<ProductVariant>(
+      `SELECT * FROM product_variants WHERE id IN (${placeholdersV}) AND is_active = 1`,
+      variantIds
+    );
+    for (const v of variants) variantMap.set(v.id, v);
+  }
+
+  // 5. Validate each cart item
   const validatedItems: Array<{
     productId: string;
     variantId: string | null;
@@ -132,20 +164,14 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   }> = [];
 
   for (const cartItem of data.items) {
-    const product = await queryFirst<Product>(
-      "SELECT * FROM products WHERE id = ? AND is_active = 1",
-      [cartItem.productId]
-    );
+    const product = productMap.get(cartItem.productId);
     if (!product) {
-      return { success: false, error: `Produit introuvable ou indisponible` };
+      return { success: false, error: "Produit introuvable ou indisponible" };
     }
 
     if (cartItem.variantId) {
-      const variant = await queryFirst<ProductVariant>(
-        "SELECT * FROM product_variants WHERE id = ? AND product_id = ? AND is_active = 1",
-        [cartItem.variantId, cartItem.productId]
-      );
-      if (!variant) {
+      const variant = variantMap.get(cartItem.variantId);
+      if (!variant || variant.product_id !== cartItem.productId) {
         return { success: false, error: `Variante introuvable pour ${product.name}` };
       }
       if (variant.stock_quantity < cartItem.quantity) {
@@ -180,19 +206,19 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     }
   }
 
-  // 5. Calculate totals
+  // 6. Calculate totals
   const subtotal = validatedItems.reduce(
     (sum, item) => sum + item.unitPrice * item.quantity,
     0
   );
   const deliveryFee = zone.fee;
 
-  // 6. Validate promo code if provided
+  // 7. Validate promo code if provided (internal call, no double auth)
   let discountAmount = 0;
   let promoCodeId: string | null = null;
 
   if (data.promoCode) {
-    const promoResult = await validatePromoCode(data.promoCode, subtotal);
+    const promoResult = await resolvePromoCode(data.promoCode, subtotal);
     if (!promoResult.valid) {
       return { success: false, error: promoResult.error ?? "Code promo invalide" };
     }
@@ -200,9 +226,9 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     promoCodeId = promoResult.promoCodeId;
   }
 
-  const total = subtotal + deliveryFee - discountAmount;
+  const total = Math.max(0, subtotal + deliveryFee - discountAmount);
 
-  // 7. Optionally save new address
+  // 8. Optionally save new address
   if (!data.savedAddressId && data.saveAddress) {
     await createAddress({
       userId,
@@ -216,14 +242,14 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     });
   }
 
-  // 8. Estimated delivery
+  // 9. Estimated delivery
   const estimatedDate = new Date();
   estimatedDate.setHours(estimatedDate.getHours() + zone.estimated_hours);
   const estimatedDelivery = estimatedDate.toISOString();
 
-  // 9. Create order atomically
-  const orderNumber = await generateOrderNumber();
-  const deliveryAddressFormatted = `${addressFullName}, ${addressStreet}, ${addressCommune}, Abidjan`;
+  // 10. Create order atomically
+  const orderNumber = generateOrderNumber();
+  const deliveryAddressFormatted = `${addressFullName}, ${addressStreet}, ${addressCommune}, ${addressCity}`;
 
   try {
     await createOrderWithItems(
@@ -257,5 +283,5 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     return { success: false, error: message };
   }
 
-  redirect(`/checkout/success?order=${orderNumber}`);
+  return { success: true, orderNumber };
 }

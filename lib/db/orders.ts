@@ -3,20 +3,13 @@ import { getDB } from "@/lib/cloudflare/context";
 import { nanoid } from "nanoid";
 import type { Order, OrderItem } from "@/lib/db/types";
 
-export async function generateOrderNumber(): Promise<string> {
+export function generateOrderNumber(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  for (let attempt = 0; attempt < 5; attempt++) {
-    let result = "ORD-";
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const existing = await queryFirst<{ id: string }>(
-      "SELECT id FROM orders WHERE order_number = ? LIMIT 1",
-      [result]
-    );
-    if (!existing) return result;
+  let result = "ORD-";
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  throw new Error("Impossible de generer un numero de commande unique");
+  return result;
 }
 
 interface CreateOrderData {
@@ -52,8 +45,32 @@ export async function createOrderWithItems(
   const orderId = nanoid();
 
   const statements: D1PreparedStatement[] = [];
+  const stockUpdateIndices: number[] = [];
 
-  // Insert order
+  // 1. Stock decrements FIRST — if these fail, no order row is orphaned
+  for (const item of items) {
+    if (item.variantId) {
+      stockUpdateIndices.push(statements.length);
+      statements.push(
+        db
+          .prepare(
+            "UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
+          )
+          .bind(item.quantity, item.variantId, item.quantity)
+      );
+    } else {
+      stockUpdateIndices.push(statements.length);
+      statements.push(
+        db
+          .prepare(
+            "UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
+          )
+          .bind(item.quantity, item.productId, item.quantity)
+      );
+    }
+  }
+
+  // 2. Insert order
   statements.push(
     db
       .prepare(
@@ -77,7 +94,7 @@ export async function createOrderWithItems(
       )
   );
 
-  // Insert order items + decrement stock
+  // 3. Insert order items
   for (const item of items) {
     const itemId = nanoid();
     statements.push(
@@ -98,28 +115,9 @@ export async function createOrderWithItems(
           item.totalPrice
         )
     );
-
-    // Decrement stock on variant or product (guard against negative)
-    if (item.variantId) {
-      statements.push(
-        db
-          .prepare(
-            "UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
-          )
-          .bind(item.quantity, item.variantId, item.quantity)
-      );
-    } else {
-      statements.push(
-        db
-          .prepare(
-            "UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
-          )
-          .bind(item.quantity, item.productId, item.quantity)
-      );
-    }
   }
 
-  // Increment promo code used_count
+  // 4. Increment promo code used_count
   if (orderData.promoCodeId) {
     statements.push(
       db
@@ -132,12 +130,40 @@ export async function createOrderWithItems(
 
   const results = await db.batch(statements);
 
-  // Verify stock decrements succeeded (statements after order insert + item inserts)
-  // Layout: 1 order insert + N * (1 item insert + 1 stock update) + optional promo update
-  for (let i = 0; i < items.length; i++) {
-    const stockUpdateIndex = 1 + i * 2 + 1; // offset past order insert, then pairs of (insert, update)
-    const stockResult = results[stockUpdateIndex];
-    if (stockResult.meta.changes === 0) {
+  // 5. Verify all stock decrements succeeded
+  for (let i = 0; i < stockUpdateIndices.length; i++) {
+    const result = results[stockUpdateIndices[i]];
+    if (result.meta.changes === 0) {
+      // Stock was insufficient — delete the orphaned order + items
+      await db.batch([
+        db.prepare("DELETE FROM order_items WHERE order_id = ?").bind(orderId),
+        db.prepare("DELETE FROM orders WHERE id = ?").bind(orderId),
+        // Restore stock for items that DID succeed (before this one)
+        ...items.slice(0, i).map((prev) => {
+          if (prev.variantId) {
+            return db
+              .prepare(
+                "UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?"
+              )
+              .bind(prev.quantity, prev.variantId);
+          }
+          return db
+            .prepare(
+              "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?"
+            )
+            .bind(prev.quantity, prev.productId);
+        }),
+        // Restore promo used_count if it was incremented
+        ...(orderData.promoCodeId
+          ? [
+              db
+                .prepare(
+                  "UPDATE promo_codes SET used_count = used_count - 1 WHERE id = ?"
+                )
+                .bind(orderData.promoCodeId),
+            ]
+          : []),
+      ]);
       throw new Error(
         `Stock insuffisant pour ${items[i].productName} (mise a jour concurrente)`
       );

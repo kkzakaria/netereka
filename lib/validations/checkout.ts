@@ -13,7 +13,7 @@ export const checkoutSchema = z
     fullName: z.string().min(2).max(100).optional(),
     phone: z
       .string()
-      .regex(/^\+?[0-9]{8,15}$/, "Numero de telephone invalide")
+      .regex(/^(\+225)?[0-9]{10}$/, "Numero ivoirien invalide (10 chiffres, optionnel +225)")
       .optional(),
     street: z.string().min(3).max(200).optional(),
     commune: z.string().min(1, "La commune est requise"),
