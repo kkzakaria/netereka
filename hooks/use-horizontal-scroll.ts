@@ -29,47 +29,47 @@ export function useHorizontalScroll() {
     };
   }, [updateScrollState]);
 
-  const scroll = (direction: "left" | "right") => {
+  const scroll = useCallback((direction: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollBy({
       left: direction === "left" ? -el.clientWidth * 0.75 : el.clientWidth * 0.75,
       behavior: "smooth",
     });
-  };
+  }, []);
 
-  const onPointerDown = (e: React.PointerEvent) => {
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
     const el = scrollRef.current;
     if (!el) return;
     isDragging.current = true;
     dragState.current = { startX: e.clientX, scrollLeft: el.scrollLeft, hasMoved: false };
     el.setPointerCapture(e.pointerId);
-  };
+  }, []);
 
-  const onPointerMove = (e: React.PointerEvent) => {
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!isDragging.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const dx = e.clientX - dragState.current.startX;
     if (Math.abs(dx) > 3) dragState.current.hasMoved = true;
     el.scrollLeft = dragState.current.scrollLeft - dx;
-  };
+  }, []);
 
-  const onPointerUp = (e: React.PointerEvent) => {
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
     isDragging.current = false;
     scrollRef.current?.releasePointerCapture(e.pointerId);
-  };
+  }, []);
 
-  const onClickCapture = (e: React.MouseEvent) => {
+  const onClickCapture = useCallback((e: React.MouseEvent) => {
     if (dragState.current.hasMoved) {
       e.preventDefault();
       e.stopPropagation();
     }
-  };
+  }, []);
 
-  const onDragStart = (e: React.DragEvent) => {
+  const onDragStart = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-  };
+  }, []);
 
   return {
     scrollRef,
