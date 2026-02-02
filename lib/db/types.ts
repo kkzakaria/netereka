@@ -125,6 +125,30 @@ export interface OrderItem {
   total_price: number;
 }
 
+export interface SearchOptions {
+  query?: string;
+  category?: string; // category slug
+  brands?: string[]; // brand names
+  minPrice?: number;
+  maxPrice?: number;
+  sort?: "relevance" | "price_asc" | "price_desc" | "newest";
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchSuggestion {
+  slug: string;
+  name: string;
+  brand: string | null;
+  base_price: number;
+  image_url: string | null;
+}
+
+export interface PriceRange {
+  min: number;
+  max: number;
+}
+
 export interface PromoCode {
   id: string;
   code: string;
