@@ -1,10 +1,10 @@
 import Link from "next/link";
-import type { Order } from "@/lib/db/types";
+import type { Order, OrderStatus } from "@/lib/db/types";
 import { Badge } from "@/components/ui/badge";
 import { formatPrice } from "@/lib/utils/format";
 import { formatDate } from "@/lib/utils/format";
 
-const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+const statusConfig: Record<OrderStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: "En attente", variant: "outline" },
   confirmed: { label: "Confirmée", variant: "secondary" },
   preparing: { label: "En préparation", variant: "secondary" },
@@ -14,7 +14,7 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
 };
 
 export function OrderCard({ order }: { order: Order }) {
-  const status = statusConfig[order.status] ?? { label: order.status, variant: "outline" as const };
+  const status = statusConfig[order.status as OrderStatus] ?? { label: order.status, variant: "outline" as const };
 
   return (
     <Link

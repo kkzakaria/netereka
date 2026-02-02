@@ -107,9 +107,12 @@ export async function deleteAddress(id: string, userId: string): Promise<boolean
 }
 
 export async function setDefaultAddress(id: string, userId: string): Promise<boolean> {
+  // Verify target exists before modifying anything
+  const target = await getAddressById(id, userId);
+  if (!target) return false;
+
   const db = await getDB();
-  // Unset all defaults, then set the target
-  const results = await db.batch([
+  await db.batch([
     db
       .prepare("UPDATE addresses SET is_default = 0 WHERE user_id = ?")
       .bind(userId),
@@ -117,7 +120,5 @@ export async function setDefaultAddress(id: string, userId: string): Promise<boo
       .prepare("UPDATE addresses SET is_default = 1 WHERE id = ? AND user_id = ?")
       .bind(id, userId),
   ]);
-  // If the target didn't exist, restore the previous default
-  if (results[1].meta.changes === 0) return false;
   return true;
 }

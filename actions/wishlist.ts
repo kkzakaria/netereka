@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth/guards";
 import { atomicToggleWishlist } from "@/lib/db/wishlist";
+import { queryFirst } from "@/lib/db";
 import { z } from "zod";
 
 const productIdSchema = z.string().min(1).max(50);
@@ -13,6 +14,15 @@ export async function toggleWishlist(productId: string): Promise<{ success: bool
 
   const parsed = productIdSchema.safeParse(productId);
   if (!parsed.success) {
+    return { success: false, added: false };
+  }
+
+  // Verify product exists
+  const product = await queryFirst<{ id: string }>(
+    "SELECT id FROM products WHERE id = ?",
+    [parsed.data]
+  );
+  if (!product) {
     return { success: false, added: false };
   }
 

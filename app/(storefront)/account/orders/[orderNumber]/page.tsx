@@ -24,7 +24,7 @@ export default async function OrderDetailPage({ params }: Props) {
   if (!result) notFound();
 
   const { order, items } = result;
-  const status = statusConfig[order.status] ?? { label: order.status, variant: "outline" as const };
+  const status = statusConfig[order.status as import("@/lib/db/types").OrderStatus] ?? { label: order.status, variant: "outline" as const };
 
   return (
     <div className="space-y-6">

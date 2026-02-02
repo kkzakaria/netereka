@@ -44,19 +44,18 @@ export async function isInWishlist(userId: string, productId: string): Promise<b
 
 export async function atomicToggleWishlist(userId: string, productId: string): Promise<boolean> {
   const db = await getDB();
-  // Try to delete first — if it existed, we removed it
-  const del = await db
-    .prepare("DELETE FROM wishlist WHERE user_id = ? AND product_id = ?")
-    .bind(userId, productId)
-    .run();
-  if (del.meta.changes > 0) return false; // was removed
-
-  // Didn't exist, insert (INSERT OR IGNORE handles any remaining race)
   const id = nanoid();
-  await db
-    .prepare("INSERT OR IGNORE INTO wishlist (id, user_id, product_id) VALUES (?, ?, ?)")
-    .bind(id, userId, productId)
-    .run();
+  // Batch: delete then insert — both run atomically in a single round-trip
+  const [delResult] = await db.batch([
+    db.prepare("DELETE FROM wishlist WHERE user_id = ? AND product_id = ?").bind(userId, productId),
+    db.prepare("INSERT OR IGNORE INTO wishlist (id, user_id, product_id) VALUES (?, ?, ?)").bind(id, userId, productId),
+  ]);
+  if (delResult.meta.changes > 0) {
+    // It existed and was deleted; the INSERT created a new row — remove it
+    await db.prepare("DELETE FROM wishlist WHERE id = ?").bind(id).run();
+    return false; // was removed
+  }
+  // Didn't exist before, INSERT added it
   return true; // was added
 }
 
