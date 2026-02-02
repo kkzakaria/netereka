@@ -12,6 +12,7 @@
     "lint": "eslint",
     "db:migrate": "npx wrangler d1 execute netereka-db --local --file=db/migrations/0001_initial.sql",
     "db:seed": "npx wrangler d1 execute netereka-db --local --file=db/seeds/seed.sql",
+    "db:seed-catalogue": "npx wrangler d1 execute netereka-db --local --file=db/seeds/catalogue.sql",
     "prepare": "husky"
   },
   "dependencies": {
@@ -49,6 +50,7 @@
     "shadcn": "^3.8.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "wrangler": "^4.61.1"
+    "wrangler": "^4.61.1",
+    "xlsx": "^0.18.5"
   }
 }
