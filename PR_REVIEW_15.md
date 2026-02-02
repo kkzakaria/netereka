@@ -27,14 +27,12 @@
 | NEW-3 | `statusConfig` typé `Record<string, ...>` | ✅ Corrigé — typé `Record<OrderStatus, ...>` |
 | NEW-4 | Pas de vérification d'existence produit | ✅ Corrigé — `SELECT id FROM products` avant le toggle |
 
-### Remarque mineure (non bloquante)
+### Remarque v3 (résolue en v4)
 
-**`atomicToggleWishlist` — 3 queries au lieu de 2 en cas de suppression** (`lib/db/wishlist.ts`)
-
-Le batch exécute DELETE + INSERT ensemble. Si l'item existait, le DELETE le supprime et l'INSERT le recrée immédiatement, puis un 3ème DELETE nettoie la ligne recréée. Fonctionnellement correct, mais fait un round-trip DB supplémentaire. Une approche alternative serait de ne faire que le DELETE en premier, vérifier `changes`, et INSERT seulement si nécessaire (hors batch). Ceci est une optimisation mineure, pas un bug.
+~~`atomicToggleWishlist` faisait 3 queries en cas de suppression.~~ Corrigé : DELETE conditionnel → INSERT seulement si nécessaire. 2 queries max, `INSERT OR IGNORE` pour les races.
 
 ---
 
-## Verdict final
+## Verdict final (v4)
 
-**20/20 problèmes corrigés. La PR est prête à merger.** Aucun problème bloquant restant. L'architecture est propre, les server actions sont protégées, la validation est en place, et les edge cases sont gérés.
+**Tous les problèmes sont corrigés. La PR est prête à merger.** Aucun problème bloquant. Architecture propre, server actions protégées, validation en place, edge cases gérés.
