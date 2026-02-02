@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -10,8 +14,22 @@ import { Separator } from "@/components/ui/separator";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { SocialLoginButtons } from "@/components/storefront/auth/social-login-buttons";
-import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha";
 import { authClient } from "@/lib/auth/client";
+
+const TurnstileCaptcha = dynamic(
+  () =>
+    import("@/components/storefront/auth/turnstile-captcha").then(
+      (m) => m.TurnstileCaptcha
+    ),
+  { ssr: false }
+);
+
+const signInSchema = z.object({
+  email: z.string().email("Adresse email invalide."),
+  password: z.string().min(1, "Le mot de passe est requis."),
+});
+
+type SignInValues = z.infer<typeof signInSchema>;
 
 const errorMessages: Record<string, string> = {
   INVALID_EMAIL_OR_PASSWORD: "Email ou mot de passe incorrect.",
@@ -21,37 +39,36 @@ const errorMessages: Record<string, string> = {
 
 export default function SignInPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [serverError, setServerError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignInValues>({
+    resolver: zodResolver(signInSchema),
+  });
 
-    try {
-      const { error } = await authClient.signIn.email({
-        email,
-        password,
-        callbackURL: "/",
-        fetchOptions: captchaToken
-          ? { headers: { "x-captcha-response": captchaToken } }
-          : undefined,
-      });
+  const onSubmit = async (data: SignInValues) => {
+    setServerError("");
 
-      if (error) {
-        setError(
-          errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
-        );
-      } else {
-        router.push("/");
-        router.refresh();
-      }
-    } finally {
-      setLoading(false);
+    const { error } = await authClient.signIn.email({
+      email: data.email,
+      password: data.password,
+      callbackURL: "/",
+      fetchOptions: captchaToken
+        ? { headers: { "x-captcha-response": captchaToken } }
+        : undefined,
+    });
+
+    if (error) {
+      setServerError(
+        errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
+      );
+    } else {
+      router.push("/");
+      router.refresh();
     }
   };
 
@@ -68,7 +85,7 @@ export default function SignInPage() {
         </p>
       }
     >
-      <form onSubmit={handleSubmit} className="grid gap-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
           <Input
@@ -76,10 +93,11 @@ export default function SignInPage() {
             type="email"
             placeholder="vous@exemple.com"
             className="h-9"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            {...register("email")}
           />
+          {errors.email ? (
+            <p className="text-sm text-destructive">{errors.email.message}</p>
+          ) : null}
         </div>
 
         <div className="grid gap-2">
@@ -95,20 +113,21 @@ export default function SignInPage() {
           <PasswordInput
             id="password"
             placeholder="••••••••"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            {...register("password")}
           />
+          {errors.password ? (
+            <p className="text-sm text-destructive">{errors.password.message}</p>
+          ) : null}
         </div>
 
         <TurnstileCaptcha onVerify={setCaptchaToken} />
 
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
+        {serverError ? (
+          <p className="text-sm text-destructive">{serverError}</p>
+        ) : null}
 
-        <Button type="submit" className="h-11 w-full" disabled={loading}>
-          {loading ? "Connexion..." : "Se connecter"}
+        <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
+          {isSubmitting ? "Connexion..." : "Se connecter"}
         </Button>
       </form>
 

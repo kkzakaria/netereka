@@ -14,17 +14,17 @@ export function HorizontalSection({
   if (products.length === 0) return null;
 
   return (
-    <section>
+    <section style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 300px' }}>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-bold sm:text-xl">{title}</h2>
-        {href && (
+        {href ? (
           <Link
             href={href}
             className="text-sm font-medium text-primary hover:underline"
           >
             Voir tout
           </Link>
-        )}
+        ) : null}
       </div>
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none sm:gap-4">
         {products.map((product) => (

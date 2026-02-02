@@ -9,11 +9,11 @@ export function HeroBanner({ product }: { product: Product }) {
     <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-hero-bg to-hero-bg-dark text-white">
       <div className="mx-auto grid max-w-7xl items-center gap-6 px-6 py-10 sm:grid-cols-2 sm:py-16">
         <div className="space-y-4">
-          {product.brand && (
+          {product.brand ? (
             <span className="text-sm font-medium uppercase tracking-widest text-emerald-300">
               {product.brand}
             </span>
-          )}
+          ) : null}
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
             {product.name}
           </h2>
