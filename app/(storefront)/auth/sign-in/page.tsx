@@ -53,22 +53,26 @@ export default function SignInPage() {
   const onSubmit = async (data: SignInValues) => {
     setServerError("");
 
-    const { error } = await authClient.signIn.email({
-      email: data.email,
-      password: data.password,
-      callbackURL: "/",
-      fetchOptions: captchaToken
-        ? { headers: { "x-captcha-response": captchaToken } }
-        : undefined,
-    });
+    try {
+      const { error } = await authClient.signIn.email({
+        email: data.email,
+        password: data.password,
+        callbackURL: "/",
+        fetchOptions: captchaToken
+          ? { headers: { "x-captcha-response": captchaToken } }
+          : undefined,
+      });
 
-    if (error) {
-      setServerError(
-        errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
-      );
-    } else {
-      router.push("/");
-      router.refresh();
+      if (error) {
+        setServerError(
+          errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
+        );
+      } else {
+        router.push("/");
+        router.refresh();
+      }
+    } catch {
+      setServerError("Une erreur réseau est survenue. Réessayez.");
     }
   };
 
