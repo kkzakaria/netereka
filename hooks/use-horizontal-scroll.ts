@@ -43,7 +43,6 @@ export function useHorizontalScroll() {
     if (!el) return;
     isDragging.current = true;
     dragState.current = { startX: e.clientX, scrollLeft: el.scrollLeft, hasMoved: false };
-    el.setPointerCapture(e.pointerId);
   }, []);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
@@ -51,13 +50,20 @@ export function useHorizontalScroll() {
     const el = scrollRef.current;
     if (!el) return;
     const dx = e.clientX - dragState.current.startX;
-    if (Math.abs(dx) > 3) dragState.current.hasMoved = true;
+    if (Math.abs(dx) > 3) {
+      if (!dragState.current.hasMoved) {
+        dragState.current.hasMoved = true;
+        el.setPointerCapture(e.pointerId);
+      }
+    }
     el.scrollLeft = dragState.current.scrollLeft - dx;
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
+    if (dragState.current.hasMoved) {
+      scrollRef.current?.releasePointerCapture(e.pointerId);
+    }
     isDragging.current = false;
-    scrollRef.current?.releasePointerCapture(e.pointerId);
   }, []);
 
   const onClickCapture = useCallback((e: React.MouseEvent) => {
