@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getProductBySlug, getRelatedProducts } from "@/lib/db/products";
 import { ImageGallery } from "@/components/storefront/image-gallery";
 import { VariantSelector } from "@/components/storefront/variant-selector";
+import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { SITE_NAME } from "@/lib/utils/constants";
 import { formatPrice } from "@/lib/utils/format";
@@ -114,22 +115,29 @@ export default async function ProductPage({ params }: Props) {
             <VariantSelector
               variants={product.variants}
               basePrice={product.base_price}
+              product={{
+                id: product.id,
+                name: product.name,
+                slug: product.slug,
+                imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+              }}
             />
           ) : (
             <div className="space-y-4">
               <p className="text-2xl font-bold">
                 {formatPrice(product.base_price)}
               </p>
-              {/* TODO: activer quand le système de panier sera implémenté */}
-              <button
-                disabled
-                className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground opacity-50"
-              >
-                Ajouter au panier
-              </button>
-              <p className="text-center text-xs text-muted-foreground">
-                Bientôt disponible
-              </p>
+              <AddToCartButton
+                item={{
+                  productId: product.id,
+                  variantId: null,
+                  name: product.name,
+                  variantName: null,
+                  price: product.base_price,
+                  imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+                  slug: product.slug,
+                }}
+              />
             </div>
           )}
 

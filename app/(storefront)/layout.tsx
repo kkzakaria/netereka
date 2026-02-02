@@ -1,5 +1,6 @@
 import { Header } from "@/components/storefront/header";
 import { Footer } from "@/components/storefront/footer";
+import { CartDrawer } from "@/components/storefront/cart-drawer";
 
 export default function StorefrontLayout({
   children,
@@ -11,6 +12,7 @@ export default function StorefrontLayout({
       <Header />
       <main className="min-h-[calc(100dvh-8rem)]">{children}</main>
       <Footer />
+      <CartDrawer />
     </>
   );
 }

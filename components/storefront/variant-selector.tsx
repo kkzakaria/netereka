@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import type { ProductVariant, ParsedVariantAttributes } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
+import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 
 function parseAttributes(variant: ProductVariant): ParsedVariantAttributes {
   try {
@@ -12,12 +13,21 @@ function parseAttributes(variant: ProductVariant): ParsedVariantAttributes {
   }
 }
 
+interface ProductInfo {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl: string | null;
+}
+
 export function VariantSelector({
   variants,
   basePrice,
+  product,
 }: {
   variants: ProductVariant[];
   basePrice: number;
+  product: ProductInfo;
 }) {
   const [selectedId, setSelectedId] = useState(variants[0]?.id ?? "");
 
@@ -112,16 +122,17 @@ export function VariantSelector({
         </div>
       ) : null}
 
-      {/* TODO: activer quand le système de panier sera implémenté */}
-      <button
-        disabled
-        className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground opacity-50"
-      >
-        Ajouter au panier
-      </button>
-      <p className="text-center text-xs text-muted-foreground">
-        Bientôt disponible
-      </p>
+      <AddToCartButton
+        item={{
+          productId: product.id,
+          variantId: selectedVariant?.id ?? null,
+          name: product.name,
+          variantName: selectedVariant?.name ?? null,
+          price,
+          imageUrl: product.imageUrl,
+          slug: product.slug,
+        }}
+      />
     </div>
   );
 }
