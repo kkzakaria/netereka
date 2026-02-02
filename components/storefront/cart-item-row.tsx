@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Delete } from "@hugeicons/core-free-icons";
@@ -19,9 +20,11 @@ export function CartItemRow({ item }: { item: CartItem }) {
         className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-muted"
       >
         {item.imageUrl ? (
-          <img
+          <Image
             src={item.imageUrl}
             alt={item.name}
+            width={80}
+            height={80}
             className="h-full w-full object-cover"
           />
         ) : (

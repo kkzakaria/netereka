@@ -72,7 +72,7 @@ export const useCartStore = create<CartState>()(
       closeDrawer: () => set({ drawerOpen: false }),
     }),
     {
-      name: "netereka-cart",
+      name: "netereka-cart:v1",
       partialize: (state) => ({ items: state.items }),
     }
   )
