@@ -1,6 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import type { Product } from "@/lib/db/types";
 import { ProductCard } from "@/components/storefront/product-card";
+import { useHorizontalScroll } from "@/hooks/use-horizontal-scroll";
+import { ScrollButtons } from "@/components/storefront/scroll-buttons";
 
 export function HorizontalSection({
   title,
@@ -11,10 +15,13 @@ export function HorizontalSection({
   href?: string;
   products: Product[];
 }) {
+  const { scrollRef, canScrollLeft, canScrollRight, scroll, dragProps } =
+    useHorizontalScroll();
+
   if (products.length === 0) return null;
 
   return (
-    <section className="[content-visibility:auto] [contain-intrinsic-size:auto_400px]">
+    <section>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-bold sm:text-xl">{title}</h2>
         {href ? (
@@ -26,12 +33,23 @@ export function HorizontalSection({
           </Link>
         ) : null}
       </div>
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none sm:gap-4">
-        {products.map((product) => (
-          <div key={product.id} className="w-[160px] shrink-0 sm:w-[200px]">
-            <ProductCard product={product} />
-          </div>
-        ))}
+      <div className="group relative">
+        <ScrollButtons
+          canScrollLeft={canScrollLeft}
+          canScrollRight={canScrollRight}
+          onScroll={scroll}
+        />
+        <div
+          ref={scrollRef}
+          {...dragProps}
+          className="flex cursor-grab gap-3 overflow-x-auto pb-2 scrollbar-none active:cursor-grabbing sm:gap-4"
+        >
+          {products.map((product) => (
+            <div key={product.id} className="w-[160px] shrink-0 sm:w-[200px]">
+              <ProductCard product={product} />
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
