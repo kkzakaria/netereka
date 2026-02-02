@@ -58,3 +58,60 @@ export async function createAddress(data: {
 
   return id;
 }
+
+export async function updateAddress(
+  id: string,
+  userId: string,
+  data: {
+    label: string;
+    fullName: string;
+    phone: string;
+    street: string;
+    commune: string;
+    zoneId: string | null;
+    instructions: string | null;
+  }
+): Promise<boolean> {
+  const db = await getDB();
+  const result = await db
+    .prepare(
+      `UPDATE addresses SET label = ?, full_name = ?, phone = ?, street = ?, commune = ?, zone_id = ?, instructions = ?
+       WHERE id = ? AND user_id = ?`
+    )
+    .bind(
+      data.label,
+      data.fullName,
+      data.phone,
+      data.street,
+      data.commune,
+      data.zoneId,
+      data.instructions,
+      id,
+      userId
+    )
+    .run();
+  return result.meta.changes > 0;
+}
+
+export async function deleteAddress(id: string, userId: string): Promise<boolean> {
+  const db = await getDB();
+  const result = await db
+    .prepare("DELETE FROM addresses WHERE id = ? AND user_id = ?")
+    .bind(id, userId)
+    .run();
+  return result.meta.changes > 0;
+}
+
+export async function setDefaultAddress(id: string, userId: string): Promise<boolean> {
+  const db = await getDB();
+  // Unset all defaults, then set the target
+  await db.batch([
+    db
+      .prepare("UPDATE addresses SET is_default = 0 WHERE user_id = ?")
+      .bind(userId),
+    db
+      .prepare("UPDATE addresses SET is_default = 1 WHERE id = ? AND user_id = ?")
+      .bind(id, userId),
+  ]);
+  return true;
+}

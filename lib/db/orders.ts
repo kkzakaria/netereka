@@ -2,6 +2,7 @@ import { queryFirst, query } from "@/lib/db";
 import { getDB } from "@/lib/cloudflare/context";
 import { nanoid } from "nanoid";
 import type { Order, OrderItem } from "@/lib/db/types";
+export type { Order, OrderItem };
 
 export function generateOrderNumber(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -188,4 +189,57 @@ export async function getOrderItems(orderId: string): Promise<OrderItem[]> {
     "SELECT * FROM order_items WHERE order_id = ?",
     [orderId]
   );
+}
+
+export async function getUserOrders(
+  userId: string,
+  opts: { limit?: number; offset?: number; status?: string } = {}
+): Promise<{ orders: Order[]; total: number }> {
+  const { limit = 10, offset = 0, status } = opts;
+
+  const where = status
+    ? "WHERE user_id = ? AND status = ?"
+    : "WHERE user_id = ?";
+  const params = status ? [userId, status] : [userId];
+
+  const countRow = await queryFirst<{ total: number }>(
+    `SELECT COUNT(*) as total FROM orders ${where}`,
+    params
+  );
+
+  const orders = await query<Order>(
+    `SELECT * FROM orders ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    [...params, limit, offset]
+  );
+
+  return { orders, total: countRow?.total ?? 0 };
+}
+
+export async function getOrderDetail(
+  orderNumber: string,
+  userId: string
+): Promise<{ order: Order; items: OrderItem[] } | null> {
+  const order = await getOrderByNumber(orderNumber, userId);
+  if (!order) return null;
+  const items = await getOrderItems(order.id);
+  return { order, items };
+}
+
+export async function cancelOrder(
+  orderNumber: string,
+  userId: string,
+  reason: string
+): Promise<boolean> {
+  const order = await getOrderByNumber(orderNumber, userId);
+  if (!order || order.status !== "pending") return false;
+
+  const db = await getDB();
+  await db
+    .prepare(
+      `UPDATE orders SET status = 'cancelled', cancelled_at = datetime('now'), cancellation_reason = ?, updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status = 'pending'`
+    )
+    .bind(reason, order.id, userId)
+    .run();
+  return true;
 }
