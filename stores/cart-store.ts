@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CartItem } from "@/lib/types/cart";
@@ -74,6 +75,15 @@ export const useCartStore = create<CartState>()(
     }
   )
 );
+
+export function useCartHydrated() {
+  const [hydrated, setHydrated] = useState(() => useCartStore.persist.hasHydrated());
+  useEffect(() => {
+    const unsub = useCartStore.persist.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, []);
+  return hydrated;
+}
 
 export function useCartItemCount() {
   return useCartStore((s) => s.items.reduce((sum, i) => sum + i.quantity, 0));

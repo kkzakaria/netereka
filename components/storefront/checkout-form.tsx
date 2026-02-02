@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
-import { useCartStore, useCartSubtotal } from "@/stores/cart-store";
+import { useCartStore, useCartSubtotal, useCartHydrated } from "@/stores/cart-store";
 import { checkoutSchema, type CheckoutInput } from "@/lib/validations/checkout";
 import { createOrder, validatePromoCode } from "@/actions/checkout";
 import { formatPrice } from "@/lib/utils/format";
@@ -33,6 +33,7 @@ export function CheckoutForm({
   userPhone,
 }: CheckoutFormProps) {
   const router = useRouter();
+  const hydrated = useCartHydrated();
   const items = useCartStore((s) => s.items);
   const subtotal = useCartSubtotal();
   const [isPending, startTransition] = useTransition();
@@ -94,12 +95,12 @@ export function CheckoutForm({
   const discount = promoResult?.valid ? promoResult.discount : 0;
   const total = subtotal + deliveryFee - discount;
 
-  // Redirect to cart if empty
+  // Redirect to cart if empty (wait for Zustand hydration from localStorage)
   useEffect(() => {
-    if (items.length === 0) {
+    if (hydrated && items.length === 0) {
       router.replace("/cart");
     }
-  }, [items.length, router]);
+  }, [hydrated, items.length, router]);
 
   // Sync items to form
   useEffect(() => {
@@ -150,7 +151,7 @@ export function CheckoutForm({
     });
   }
 
-  if (items.length === 0) return null;
+  if (!hydrated || items.length === 0) return null;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
