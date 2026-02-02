@@ -32,7 +32,9 @@ export default function CartPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Panier ({items.length})</h1>
         <button
-          onClick={clear}
+          onClick={() => {
+            if (window.confirm("Vider le panier ?")) clear();
+          }}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           Vider le panier

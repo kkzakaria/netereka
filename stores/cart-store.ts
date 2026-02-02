@@ -5,6 +5,8 @@ import { persist } from "zustand/middleware";
 import type { CartItem } from "@/lib/types/cart";
 import { cartItemKey } from "@/lib/types/cart";
 
+const MAX_QUANTITY = 10;
+
 interface CartState {
   items: CartItem[];
   drawerOpen: boolean;
@@ -30,39 +32,34 @@ export const useCartStore = create<CartState>()(
             return {
               items: state.items.map((i) =>
                 cartItemKey(i) === key
-                  ? { ...i, quantity: i.quantity + quantity }
+                  ? { ...i, quantity: Math.min(i.quantity + quantity, MAX_QUANTITY) }
                   : i
               ),
               drawerOpen: true,
             };
           }
           return {
-            items: [...state.items, { ...item, quantity }],
+            items: [...state.items, { ...item, quantity: Math.min(quantity, MAX_QUANTITY) }],
             drawerOpen: true,
           };
         }),
 
       remove: (productId, variantId) =>
-        set((state) => ({
-          items: state.items.filter(
-            (i) => cartItemKey(i) !== `${productId}:${variantId ?? "default"}`
-          ),
-        })),
+        set((state) => {
+          const key = cartItemKey({ productId, variantId });
+          return { items: state.items.filter((i) => cartItemKey(i) !== key) };
+        }),
 
       updateQuantity: (productId, variantId, quantity) =>
         set((state) => {
+          const key = cartItemKey({ productId, variantId });
           if (quantity <= 0) {
-            return {
-              items: state.items.filter(
-                (i) => cartItemKey(i) !== `${productId}:${variantId ?? "default"}`
-              ),
-            };
+            return { items: state.items.filter((i) => cartItemKey(i) !== key) };
           }
+          const clamped = Math.min(quantity, MAX_QUANTITY);
           return {
             items: state.items.map((i) =>
-              cartItemKey(i) === `${productId}:${variantId ?? "default"}`
-                ? { ...i, quantity }
-                : i
+              cartItemKey(i) === key ? { ...i, quantity: clamped } : i
             ),
           };
         }),
