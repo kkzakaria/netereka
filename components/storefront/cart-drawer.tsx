@@ -16,12 +16,8 @@ export function CartDrawer() {
 
   // Lock body scroll when open
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = "";
-      };
-    }
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
   }, [open]);
 
   // Close on Escape
