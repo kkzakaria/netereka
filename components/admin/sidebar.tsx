@@ -15,7 +15,10 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardSquare01Icon },
   { href: "/products", label: "Produits", icon: Package02Icon },
   { href: "/categories", label: "Catégories", icon: FolderLibraryIcon },
-  { href: "#", label: "Commandes", icon: ShoppingBag01Icon, disabled: true },
+];
+
+const disabledItems = [
+  { label: "Commandes", icon: ShoppingBag01Icon },
 ];
 
 export function Sidebar() {
@@ -34,14 +37,12 @@ export function Sidebar() {
         return (
           <Link
             key={item.href}
-            href={item.disabled ? "#" : item.href}
-            aria-disabled={item.disabled}
+            href={item.href}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               isActive
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground hover:bg-sidebar-accent/50",
-              item.disabled && "pointer-events-none opacity-40"
+                : "text-sidebar-foreground hover:bg-sidebar-accent/50"
             )}
           >
             <HugeiconsIcon icon={item.icon} size={20} />
@@ -49,6 +50,16 @@ export function Sidebar() {
           </Link>
         );
       })}
+      {disabledItems.map((item) => (
+        <span
+          key={item.label}
+          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium opacity-40"
+          aria-disabled="true"
+        >
+          <HugeiconsIcon icon={item.icon} size={20} />
+          {item.label}
+        </span>
+      ))}
     </nav>
   );
 }

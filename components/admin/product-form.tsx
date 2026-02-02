@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,8 @@ export function ProductForm({ product, categories }: ProductFormProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const isEdit = !!product;
+  const isActiveRef = useRef<HTMLInputElement>(null);
+  const isFeaturedRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -131,36 +133,32 @@ export function ProductForm({ product, categories }: ProductFormProps) {
                 </Select>
               </div>
               <div className="flex items-center justify-between">
-                <Label htmlFor="is_active">Actif</Label>
+                <Label>Actif</Label>
                 <input
                   type="hidden"
                   name="is_active"
-                  id="is_active_hidden"
+                  ref={isActiveRef}
                   defaultValue={product?.is_active ?? 1}
                 />
                 <Switch
-                  id="is_active"
                   defaultChecked={product ? product.is_active === 1 : true}
                   onCheckedChange={(checked) => {
-                    const el = document.getElementById("is_active_hidden") as HTMLInputElement;
-                    el.value = checked ? "1" : "0";
+                    if (isActiveRef.current) isActiveRef.current.value = checked ? "1" : "0";
                   }}
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label htmlFor="is_featured">Vedette</Label>
+                <Label>Vedette</Label>
                 <input
                   type="hidden"
                   name="is_featured"
-                  id="is_featured_hidden"
+                  ref={isFeaturedRef}
                   defaultValue={product?.is_featured ?? 0}
                 />
                 <Switch
-                  id="is_featured"
                   defaultChecked={product?.is_featured === 1}
                   onCheckedChange={(checked) => {
-                    const el = document.getElementById("is_featured_hidden") as HTMLInputElement;
-                    el.value = checked ? "1" : "0";
+                    if (isFeaturedRef.current) isFeaturedRef.current.value = checked ? "1" : "0";
                   }}
                 />
               </div>

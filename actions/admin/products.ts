@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
-import { execute, queryFirst } from "@/lib/db";
+import { execute, query, queryFirst } from "@/lib/db";
+import { slugify, type ActionResult } from "@/lib/utils";
+import { deleteFromR2 } from "@/lib/storage/images";
+
+const idSchema = z.string().min(1, "ID requis");
 
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
@@ -20,21 +24,6 @@ const productSchema = z.object({
   is_active: z.coerce.number().min(0).max(1).default(1),
   is_featured: z.coerce.number().min(0).max(1).default(0),
 });
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-interface ActionResult {
-  success: boolean;
-  error?: string;
-  id?: string;
-}
 
 export async function createProduct(formData: FormData): Promise<ActionResult> {
   await requireAdmin();
@@ -53,13 +42,13 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
   const data = parsed.data;
   const id = nanoid();
 
-  // Ensure unique slug
+  // Ensure unique slug — return error like categories for consistency
   const existing = await queryFirst<{ id: string }>(
     "SELECT id FROM products WHERE slug = ?",
     [data.slug]
   );
   if (existing) {
-    data.slug = `${data.slug}-${nanoid(6)}`;
+    return { success: false, error: `Un produit avec le slug "${data.slug}" existe déjà` };
   }
 
   await execute(
@@ -73,7 +62,7 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
       data.description || null,
       data.short_description || null,
       data.base_price,
-      data.compare_price || null,
+      data.compare_price ?? null,
       data.sku || null,
       data.brand || null,
       data.is_active,
@@ -93,6 +82,9 @@ export async function updateProduct(
 ): Promise<ActionResult> {
   await requireAdmin();
 
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
   const raw = Object.fromEntries(formData);
   if (!raw.slug || (raw.slug as string).trim() === "") {
     raw.slug = slugify(raw.name as string);
@@ -106,13 +98,13 @@ export async function updateProduct(
 
   const data = parsed.data;
 
-  // Ensure unique slug (excluding self)
+  // Ensure unique slug (excluding self) — return error for consistency
   const existing = await queryFirst<{ id: string }>(
     "SELECT id FROM products WHERE slug = ? AND id != ?",
     [data.slug, id]
   );
   if (existing) {
-    data.slug = `${data.slug}-${nanoid(6)}`;
+    return { success: false, error: `Un produit avec le slug "${data.slug}" existe déjà` };
   }
 
   await execute(
@@ -128,7 +120,7 @@ export async function updateProduct(
       data.description || null,
       data.short_description || null,
       data.base_price,
-      data.compare_price || null,
+      data.compare_price ?? null,
       data.sku || null,
       data.brand || null,
       data.is_active,
@@ -147,6 +139,23 @@ export async function updateProduct(
 export async function deleteProduct(id: string): Promise<ActionResult> {
   await requireAdmin();
 
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
+  // Fetch images to clean up R2 before DB delete
+  const images = await query<{ url: string }>(
+    "SELECT url FROM product_images WHERE product_id = ?",
+    [id]
+  );
+
+  // Delete R2 files (best-effort, don't block on failure)
+  await Promise.allSettled(
+    images.map((img) => {
+      const key = img.url.replace(/^\/images\//, "");
+      return deleteFromR2(key);
+    })
+  );
+
   await Promise.all([
     execute("DELETE FROM product_images WHERE product_id = ?", [id]),
     execute("DELETE FROM product_variants WHERE product_id = ?", [id]),
@@ -160,6 +169,10 @@ export async function deleteProduct(id: string): Promise<ActionResult> {
 
 export async function toggleProductActive(id: string): Promise<ActionResult> {
   await requireAdmin();
+
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
   await execute(
     "UPDATE products SET is_active = 1 - is_active, updated_at = datetime('now') WHERE id = ?",
     [id]
@@ -170,6 +183,10 @@ export async function toggleProductActive(id: string): Promise<ActionResult> {
 
 export async function toggleProductFeatured(id: string): Promise<ActionResult> {
   await requireAdmin();
+
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
   await execute(
     "UPDATE products SET is_featured = 1 - is_featured, updated_at = datetime('now') WHERE id = ?",
     [id]

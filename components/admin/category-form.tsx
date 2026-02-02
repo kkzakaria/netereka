@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useRef, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ export function CategoryForm({
 }: CategoryFormProps) {
   const [isPending, startTransition] = useTransition();
   const isEdit = !!category;
+  const isActiveRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -91,19 +92,17 @@ export function CategoryForm({
             />
           </div>
           <div className="flex items-center justify-between">
-            <Label htmlFor="c-active">Active</Label>
+            <Label>Active</Label>
             <input
               type="hidden"
               name="is_active"
-              id="c_is_active_hidden"
+              ref={isActiveRef}
               defaultValue={category?.is_active ?? 1}
             />
             <Switch
-              id="c-active"
               defaultChecked={category ? category.is_active === 1 : true}
               onCheckedChange={(checked) => {
-                const el = document.getElementById("c_is_active_hidden") as HTMLInputElement;
-                el.value = checked ? "1" : "0";
+                if (isActiveRef.current) isActiveRef.current.value = checked ? "1" : "0";
               }}
             />
           </div>

@@ -2,22 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
+import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
-import { execute, query } from "@/lib/db";
+import { execute, query, queryFirst } from "@/lib/db";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
+import type { ActionResult } from "@/lib/utils";
 
-interface ActionResult {
-  success: boolean;
-  error?: string;
-  id?: string;
-  url?: string;
-}
+const idSchema = z.string().min(1, "ID requis");
 
 export async function uploadProductImage(
   productId: string,
   formData: FormData
 ): Promise<ActionResult> {
   await requireAdmin();
+
+  const idResult = idSchema.safeParse(productId);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
 
   const file = formData.get("file") as File | null;
   if (!file || file.size === 0) {
@@ -62,31 +62,43 @@ export async function deleteProductImage(
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  const image = await query<{ url: string; is_primary: number }>(
-    "SELECT url, is_primary FROM product_images WHERE id = ?",
-    [imageId]
+  const iidResult = idSchema.safeParse(imageId);
+  const pidResult = idSchema.safeParse(productId);
+  if (!iidResult.success || !pidResult.success) {
+    return { success: false, error: "ID invalide" };
+  }
+
+  // Verify ownership: image must belong to this product
+  const image = await queryFirst<{ url: string; is_primary: number }>(
+    "SELECT url, is_primary FROM product_images WHERE id = ? AND product_id = ?",
+    [imageId, productId]
   );
 
-  if (image.length > 0) {
-    const key = image[0].url.replace(/^\/images\//, "");
-    try {
-      await deleteFromR2(key);
-    } catch {
-      // R2 delete may fail in dev, continue anyway
-    }
+  if (!image) {
+    return { success: false, error: "Image introuvable" };
+  }
 
-    await execute("DELETE FROM product_images WHERE id = ?", [imageId]);
+  const key = image.url.replace(/^\/images\//, "");
+  try {
+    await deleteFromR2(key);
+  } catch {
+    // R2 delete may fail in dev, continue anyway
+  }
 
-    // If deleted image was primary, make the first remaining image primary
-    if (image[0].is_primary) {
-      await execute(
-        `UPDATE product_images SET is_primary = 1
-         WHERE product_id = ? AND id = (
-           SELECT id FROM product_images WHERE product_id = ? ORDER BY sort_order ASC LIMIT 1
-         )`,
-        [productId, productId]
-      );
-    }
+  await execute("DELETE FROM product_images WHERE id = ? AND product_id = ?", [
+    imageId,
+    productId,
+  ]);
+
+  // If deleted image was primary, make the first remaining image primary
+  if (image.is_primary) {
+    await execute(
+      `UPDATE product_images SET is_primary = 1
+       WHERE product_id = ? AND id = (
+         SELECT id FROM product_images WHERE product_id = ? ORDER BY sort_order ASC LIMIT 1
+       )`,
+      [productId, productId]
+    );
   }
 
   revalidatePath(`/products/${productId}/edit`);
@@ -99,9 +111,29 @@ export async function setPrimaryImage(
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  await Promise.all([
-    execute("UPDATE product_images SET is_primary = 0 WHERE product_id = ?", [productId]),
-    execute("UPDATE product_images SET is_primary = 1 WHERE id = ?", [imageId]),
+  const iidResult = idSchema.safeParse(imageId);
+  const pidResult = idSchema.safeParse(productId);
+  if (!iidResult.success || !pidResult.success) {
+    return { success: false, error: "ID invalide" };
+  }
+
+  // Verify ownership: image must belong to this product
+  const image = await queryFirst<{ id: string }>(
+    "SELECT id FROM product_images WHERE id = ? AND product_id = ?",
+    [imageId, productId]
+  );
+  if (!image) {
+    return { success: false, error: "Image introuvable pour ce produit" };
+  }
+
+  // Must be sequential: reset all first, then set the new primary
+  await execute(
+    "UPDATE product_images SET is_primary = 0 WHERE product_id = ?",
+    [productId]
+  );
+  await execute("UPDATE product_images SET is_primary = 1 WHERE id = ? AND product_id = ?", [
+    imageId,
+    productId,
   ]);
 
   revalidatePath(`/products/${productId}/edit`);
@@ -114,14 +146,18 @@ export async function reorderImages(
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  await Promise.all(
-    imageIds.map((imageId, i) =>
-      execute(
-        "UPDATE product_images SET sort_order = ? WHERE id = ? AND product_id = ?",
-        [i, imageId, productId]
-      )
-    )
+  const pidResult = idSchema.safeParse(productId);
+  if (!pidResult.success) return { success: false, error: "ID produit invalide" };
+
+  // Use D1 batch for atomicity
+  const { getDB } = await import("@/lib/cloudflare/context");
+  const db = await getDB();
+  const statements = imageIds.map((imageId, i) =>
+    db
+      .prepare("UPDATE product_images SET sort_order = ? WHERE id = ? AND product_id = ?")
+      .bind(i, imageId, productId)
   );
+  await db.batch(statements);
 
   revalidatePath(`/products/${productId}/edit`);
   return { success: true };

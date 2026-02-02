@@ -23,13 +23,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { formatPrice } from "@/lib/utils";
 import type { ProductVariant } from "@/lib/db/types";
 import { deleteVariant } from "@/actions/admin/variants";
 import { VariantForm } from "./variant-form";
-
-function formatPrice(price: number) {
-  return new Intl.NumberFormat("fr-CI", { style: "decimal" }).format(price) + " FCFA";
-}
 
 export function VariantList({
   productId,

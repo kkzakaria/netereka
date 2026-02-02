@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { formatPrice } from "@/lib/utils";
 import {
   deleteProduct,
   toggleProductActive,
@@ -46,11 +47,6 @@ interface ProductRow {
 }
 
 const imagePlaceholder = <div className="h-10 w-10 rounded bg-muted" />;
-
-function formatPrice(price: number) {
-  return new Intl.NumberFormat("fr-CI", { style: "decimal" }).format(price) +
-    " FCFA";
-}
 
 export function ProductTable({ products }: { products: ProductRow[] }) {
   const [isPending, startTransition] = useTransition();
@@ -127,11 +123,11 @@ export function ProductTable({ products }: { products: ProductRow[] }) {
                 >
                   {product.name}
                 </Link>
-                {product.brand && (
+                {product.brand ? (
                   <span className="ml-2 text-xs text-muted-foreground">
                     {product.brand}
                   </span>
-                )}
+                ) : null}
               </TableCell>
               <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
                 {product.sku || "—"}

@@ -5,6 +5,9 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { execute, queryFirst } from "@/lib/db";
+import { slugify, type ActionResult } from "@/lib/utils";
+
+const idSchema = z.string().min(1, "ID requis");
 
 const categorySchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
@@ -13,21 +16,6 @@ const categorySchema = z.object({
   sort_order: z.coerce.number().int().min(0).default(0),
   is_active: z.coerce.number().min(0).max(1).default(1),
 });
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-interface ActionResult {
-  success: boolean;
-  error?: string;
-  id?: string;
-}
 
 export async function createCategory(formData: FormData): Promise<ActionResult> {
   await requireAdmin();
@@ -71,6 +59,9 @@ export async function updateCategory(
 ): Promise<ActionResult> {
   await requireAdmin();
 
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID catégorie invalide" };
+
   const raw = Object.fromEntries(formData);
   if (!raw.slug || (raw.slug as string).trim() === "") {
     raw.slug = slugify(raw.name as string);
@@ -104,6 +95,9 @@ export async function updateCategory(
 
 export async function deleteCategory(id: string): Promise<ActionResult> {
   await requireAdmin();
+
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID catégorie invalide" };
 
   const hasProducts = await queryFirst<{ count: number }>(
     "SELECT COUNT(*) as count FROM products WHERE category_id = ?",

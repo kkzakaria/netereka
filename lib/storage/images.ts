@@ -5,6 +5,9 @@ export async function uploadToR2(
   key: string
 ): Promise<string> {
   const r2 = await getR2();
+  if (!r2) {
+    throw new Error("R2 bucket non disponible. Vérifiez la configuration Cloudflare.");
+  }
   const buffer = await file.arrayBuffer();
   await r2.put(key, buffer, {
     httpMetadata: { contentType: file.type },
@@ -14,5 +17,8 @@ export async function uploadToR2(
 
 export async function deleteFromR2(key: string): Promise<void> {
   const r2 = await getR2();
+  if (!r2) {
+    throw new Error("R2 bucket non disponible. Vérifiez la configuration Cloudflare.");
+  }
   await r2.delete(key);
 }

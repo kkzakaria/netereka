@@ -15,11 +15,17 @@ export interface AdminProductFilters {
   offset?: number;
 }
 
-export async function getAdminProducts(
-  opts: AdminProductFilters = {}
-): Promise<Product[]> {
-  const limit = opts.limit ?? 20;
-  const offset = opts.offset ?? 0;
+export interface AdminProduct extends Product {
+  image_url: string | null;
+  variant_count: number;
+  category_name: string | null;
+  category_slug: string | null;
+}
+
+function buildFilterClause(opts: AdminProductFilters): {
+  where: string;
+  params: unknown[];
+} {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -39,6 +45,15 @@ export async function getAdminProducts(
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return { where, params };
+}
+
+export async function getAdminProducts(
+  opts: AdminProductFilters = {}
+): Promise<AdminProduct[]> {
+  const limit = opts.limit ?? 20;
+  const offset = opts.offset ?? 0;
+  const { where, params } = buildFilterClause(opts);
 
   let orderBy = "p.created_at DESC";
   switch (opts.sort) {
@@ -56,9 +71,7 @@ export async function getAdminProducts(
       break;
   }
 
-  params.push(limit, offset);
-
-  return query<Product>(
+  return query<AdminProduct>(
     `SELECT p.*,
        (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id AND pi.is_primary = 1 LIMIT 1) as image_url,
        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) as variant_count,
@@ -68,32 +81,14 @@ export async function getAdminProducts(
      ${where}
      ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
-    params
+    [...params, limit, offset]
   );
 }
 
 export async function getAdminProductCount(
   opts: AdminProductFilters = {}
 ): Promise<number> {
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-
-  if (opts.search) {
-    conditions.push("(p.name LIKE ? OR p.sku LIKE ? OR p.brand LIKE ?)");
-    const term = `%${opts.search}%`;
-    params.push(term, term, term);
-  }
-  if (opts.categoryId) {
-    conditions.push("p.category_id = ?");
-    params.push(opts.categoryId);
-  }
-  if (opts.status === "active") {
-    conditions.push("p.is_active = 1");
-  } else if (opts.status === "inactive") {
-    conditions.push("p.is_active = 0");
-  }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const { where, params } = buildFilterClause(opts);
 
   const result = await queryFirst<{ count: number }>(
     `SELECT COUNT(*) as count FROM products p ${where}`,

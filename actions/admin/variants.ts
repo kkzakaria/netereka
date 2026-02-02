@@ -5,6 +5,9 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { execute } from "@/lib/db";
+import type { ActionResult } from "@/lib/utils";
+
+const idSchema = z.string().min(1, "ID requis");
 
 const variantSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
@@ -17,17 +20,14 @@ const variantSchema = z.object({
   sort_order: z.coerce.number().int().min(0).default(0),
 });
 
-interface ActionResult {
-  success: boolean;
-  error?: string;
-  id?: string;
-}
-
 export async function createVariant(
   productId: string,
   formData: FormData
 ): Promise<ActionResult> {
   await requireAdmin();
+
+  const idResult = idSchema.safeParse(productId);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
 
   const parsed = variantSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -47,7 +47,7 @@ export async function createVariant(
       data.name,
       data.sku || null,
       data.price,
-      data.compare_price || null,
+      data.compare_price ?? null,
       data.stock_quantity,
       data.attributes,
       data.is_active,
@@ -66,6 +66,12 @@ export async function updateVariant(
 ): Promise<ActionResult> {
   await requireAdmin();
 
+  const vidResult = idSchema.safeParse(variantId);
+  const pidResult = idSchema.safeParse(productId);
+  if (!vidResult.success || !pidResult.success) {
+    return { success: false, error: "ID invalide" };
+  }
+
   const parsed = variantSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
@@ -78,17 +84,18 @@ export async function updateVariant(
     `UPDATE product_variants SET
        name = ?, sku = ?, price = ?, compare_price = ?, stock_quantity = ?,
        attributes = ?, is_active = ?, sort_order = ?
-     WHERE id = ?`,
+     WHERE id = ? AND product_id = ?`,
     [
       data.name,
       data.sku || null,
       data.price,
-      data.compare_price || null,
+      data.compare_price ?? null,
       data.stock_quantity,
       data.attributes,
       data.is_active,
       data.sort_order,
       variantId,
+      productId,
     ]
   );
 
@@ -101,7 +108,17 @@ export async function deleteVariant(
   productId: string
 ): Promise<ActionResult> {
   await requireAdmin();
-  await execute("DELETE FROM product_variants WHERE id = ?", [variantId]);
+
+  const vidResult = idSchema.safeParse(variantId);
+  const pidResult = idSchema.safeParse(productId);
+  if (!vidResult.success || !pidResult.success) {
+    return { success: false, error: "ID invalide" };
+  }
+
+  await execute("DELETE FROM product_variants WHERE id = ? AND product_id = ?", [
+    variantId,
+    productId,
+  ]);
   revalidatePath(`/products/${productId}/edit`);
   return { success: true };
 }
