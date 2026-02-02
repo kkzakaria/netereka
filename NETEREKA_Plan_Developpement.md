@@ -132,25 +132,25 @@ npm run db:seed     # Données de test insérées
 ### Jour 6-7 : Catalogue Produits (4-5 fév)
 
 #### Tâches
-- [ ] Import catalogue Excel → D1
-- [ ] Script de transformation données
-- [ ] API : liste produits, détail, par catégorie
-- [ ] Page Homepage avec sections scroll horizontal
-- [ ] Page catégorie avec grille produits
-- [ ] Page détail produit
-- [ ] Composants : ProductCard, ProductGrid, Header, Footer
-- [ ] Navigation par catégories
-- [ ] Images placeholder (en attendant vraies images)
+- [x] Import catalogue Excel → D1 (147 produits, 9 catégories, 617 variantes)
+- [x] Script de transformation données (`scripts/import-catalogue.ts`)
+- [x] API : liste produits, détail, par catégorie (`lib/db/products.ts`, `lib/db/categories.ts`)
+- [x] Page Homepage avec sections scroll horizontal (hero, meilleures ventes, nouveautés, par catégorie)
+- [x] Page catégorie avec grille produits (`/c/[slug]` + pagination)
+- [x] Page détail produit (`/p/[slug]` + galerie images + sélecteur variantes)
+- [x] Composants : ProductCard, ProductGrid, Header (search/cart icons), CategoryNav, HeroBanner, TrustBadges
+- [x] Navigation par catégories (pills horizontales avec icônes)
+- [x] Images produits uploadées vers R2 avec noms SEO-friendly
 
 #### Livrables
-- [ ] Homepage fonctionnelle
-- [ ] Navigation catégories
-- [ ] Fiches produits
+- [x] Homepage fonctionnelle
+- [x] Navigation catégories
+- [x] Fiches produits
 
 #### Validation
-- [ ] Homepage affiche produits dynamiquement
-- [ ] Clic sur produit → page détail
-- [ ] Navigation catégories fonctionne
+- [x] Homepage affiche produits dynamiquement
+- [x] Clic sur produit → page détail
+- [x] Navigation catégories fonctionne
 
 ---
 
@@ -161,8 +161,8 @@ npm run db:seed     # Données de test insérées
 | Projet déployé sur Cloudflare | ⬜ |
 | Auth email fonctionnelle | ✅ |
 | Auth OAuth 3 providers | ⬜ (clés à configurer) |
-| Catalogue produits affiché | ⬜ |
-| Navigation complète | ⬜ |
+| Catalogue produits affiché | ✅ |
+| Navigation complète | ✅ |
 
 ---
 
@@ -174,24 +174,24 @@ Panier + Checkout + Gestion commandes
 ### Jour 8-9 : Panier (6-7 fév)
 
 #### Tâches
-- [ ] Store Zustand pour panier (état local)
-- [ ] Sync panier avec KV (persistance serveur)
-- [ ] Merge panier anonyme → authentifié
-- [ ] Actions : ajouter, modifier quantité, supprimer
-- [ ] Drawer panier (slide from right)
-- [ ] Page `/cart` complète
-- [ ] Calcul sous-total, frais livraison
-- [ ] Sélection variantes sur page produit
+- [x] Store Zustand pour panier (état local, persistance localStorage versionnée)
+- [ ] Sync panier avec KV (persistance serveur) → reporté à l'intégration auth
+- [ ] Merge panier anonyme → authentifié → reporté à l'intégration auth
+- [x] Actions : ajouter, modifier quantité (max 10), supprimer
+- [x] Drawer panier (slide from right, Escape, body scroll lock)
+- [x] Page `/cart` complète (récapitulatif, vider avec confirmation)
+- [x] Calcul sous-total (frais livraison → calculés au checkout)
+- [x] Sélection variantes sur page produit (variantes = lignes séparées)
 
 #### Livrables
-- [ ] Panier fonctionnel
-- [ ] Persistance cross-session
-- [ ] UI drawer + page
+- [x] Panier fonctionnel
+- [x] Persistance cross-session (localStorage)
+- [x] UI drawer + page
 
 #### Validation
-- [ ] Ajouter produit → badge panier update
-- [ ] Fermer navigateur → panier conservé
-- [ ] Variantes sélectionnables
+- [x] Ajouter produit → badge panier update
+- [x] Fermer navigateur → panier conservé
+- [x] Variantes sélectionnables
 
 ---
 
@@ -266,7 +266,7 @@ Panier + Checkout + Gestion commandes
 
 | Critère | Status |
 |---------|--------|
-| Panier persistant fonctionnel | ⬜ |
+| Panier persistant fonctionnel | ✅ |
 | Checkout complet | ⬜ |
 | Commandes créées en DB | ⬜ |
 | Recherche + filtres | ⬜ |
@@ -583,7 +583,7 @@ Tests, contenu, optimisation, mise en production
 ### Vélocité
 | Semaine | Tâches prévues | Tâches complétées | % |
 |---------|----------------|-------------------|---|
-| S1 | 25 | 21 | 84% |
+| S1 | 25 | 25 | 100% |
 | S2 | 22 | - | - |
 | S3 | 24 | - | - |
 | S4 | 18 | - | - |
