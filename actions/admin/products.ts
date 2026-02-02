@@ -156,11 +156,13 @@ export async function deleteProduct(id: string): Promise<ActionResult> {
     })
   );
 
-  await Promise.all([
-    execute("DELETE FROM product_images WHERE product_id = ?", [id]),
-    execute("DELETE FROM product_variants WHERE product_id = ?", [id]),
+  const { getDB } = await import("@/lib/cloudflare/context");
+  const db = await getDB();
+  await db.batch([
+    db.prepare("DELETE FROM product_images WHERE product_id = ?").bind(id),
+    db.prepare("DELETE FROM product_variants WHERE product_id = ?").bind(id),
+    db.prepare("DELETE FROM products WHERE id = ?").bind(id),
   ]);
-  await execute("DELETE FROM products WHERE id = ?", [id]);
 
   revalidatePath("/products");
   revalidatePath("/dashboard");
