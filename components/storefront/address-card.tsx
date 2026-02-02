@@ -1,9 +1,20 @@
 "use client";
 
-import { useTransition } from "react";
+import { useTransition, useState } from "react";
 import type { Address } from "@/lib/db/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { deleteAddressAction, setDefaultAddressAction } from "@/actions/addresses";
 import { toast } from "sonner";
 
@@ -14,13 +25,17 @@ interface Props {
 
 export function AddressCard({ address, onEdit }: Props) {
   const [pending, startTransition] = useTransition();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   function handleDelete() {
-    if (!confirm("Supprimer cette adresse ?")) return;
     startTransition(async () => {
       const result = await deleteAddressAction(address.id);
-      if (result.success) toast.success("Adresse supprimée");
-      else toast.error(result.error ?? "Erreur");
+      if (result.success) {
+        toast.success("Adresse supprimée");
+        setDeleteOpen(false);
+      } else {
+        toast.error(result.error ?? "Erreur");
+      }
     });
   }
 
@@ -58,9 +73,27 @@ export function AddressCard({ address, onEdit }: Props) {
             Par défaut
           </Button>
         )}
-        <Button variant="ghost" size="xs" onClick={handleDelete} disabled={pending} className="text-destructive">
-          Supprimer
-        </Button>
+        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="xs" disabled={pending} className="text-destructive">
+              Supprimer
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent size="sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer cette adresse ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                L&apos;adresse &quot;{address.label}&quot; sera définitivement supprimée.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel size="sm">Annuler</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" size="sm" onClick={handleDelete} disabled={pending}>
+                {pending ? "Suppression..." : "Supprimer"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
