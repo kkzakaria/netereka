@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Search, ShoppingBag } from "@hugeicons/core-free-icons";
+import { Search } from "@hugeicons/core-free-icons";
 import { SITE_NAME } from "@/lib/utils/constants";
 import { getOptionalSession } from "@/lib/auth/guards";
 import { HeaderUserMenu } from "@/components/storefront/header-user-menu";
+import { CartIcon } from "@/components/storefront/cart-icon";
 
 export async function Header() {
   const session = await getOptionalSession();
@@ -22,13 +23,7 @@ export async function Header() {
           >
             <HugeiconsIcon icon={Search} size={20} />
           </Link>
-          <Link
-            href="/cart"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Panier"
-          >
-            <HugeiconsIcon icon={ShoppingBag} size={20} />
-          </Link>
+          <CartIcon />
           <HeaderUserMenu user={session?.user ?? null} />
         </nav>
       </div>
