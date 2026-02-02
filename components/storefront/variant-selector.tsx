@@ -66,7 +66,7 @@ export function VariantSelector({
         <p className="text-2xl font-bold">{formatPrice(price)}</p>
       </div>
 
-      {colors.length > 1 && (
+      {colors.length > 1 ? (
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">
             Couleur : <span className="text-foreground">{selectedAttrs.color}</span>
@@ -87,9 +87,9 @@ export function VariantSelector({
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {storages.length > 1 && (
+      {storages.length > 1 ? (
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">
             Stockage : <span className="text-foreground">{selectedAttrs.storage}</span>
@@ -110,7 +110,7 @@ export function VariantSelector({
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* TODO: activer quand le système de panier sera implémenté */}
       <button

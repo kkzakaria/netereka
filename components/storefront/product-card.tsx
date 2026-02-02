@@ -20,25 +20,25 @@ export function ProductCard({ product }: { product: Product }) {
           className="object-contain p-4 transition-transform group-hover:scale-105"
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
         />
-        {product.category_name && (
+        {product.category_name ? (
           <span className="absolute left-2 top-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
             {product.category_name}
           </span>
-        )}
+        ) : null}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
-        {product.brand && (
+        {product.brand ? (
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             {product.brand}
           </span>
-        )}
+        ) : null}
         <h3 className="line-clamp-2 text-sm font-medium leading-tight">
           {product.name}
         </h3>
         <div className="mt-auto pt-2">
-          {hasVariants && (
+          {hasVariants ? (
             <span className="text-[10px] text-muted-foreground">À partir de</span>
-          )}
+          ) : null}
           <p className="text-sm font-bold text-foreground">
             {formatPrice(product.base_price)}
           </p>

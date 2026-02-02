@@ -1,4 +1,4 @@
-import { cache } from "react";
+import { Suspense, cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -27,16 +27,53 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+async function RelatedProducts({
+  productId,
+  categoryId,
+  categorySlug,
+}: {
+  productId: string;
+  categoryId: string;
+  categorySlug?: string | null;
+}) {
+  const related = await getRelatedProducts(productId, categoryId, 8);
+  if (related.length === 0) return null;
+
+  return (
+    <div className="mt-12">
+      <HorizontalSection
+        title="Produits similaires"
+        href={categorySlug ? `/c/${categorySlug}` : undefined}
+        products={related}
+      />
+    </div>
+  );
+}
+
+function RelatedProductsSkeleton() {
+  return (
+    <div className="mt-12 space-y-4">
+      <div className="h-6 w-48 animate-pulse rounded bg-muted" />
+      <div className="flex gap-3 overflow-hidden sm:gap-4">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="w-[160px] shrink-0 sm:w-[200px]"
+          >
+            <div className="aspect-square animate-pulse rounded-xl bg-muted" />
+            <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="mt-1 h-4 w-1/2 animate-pulse rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
   const product = await getProductCached(slug);
   if (!product) notFound();
-
-  const related = await getRelatedProducts(
-    product.id,
-    product.category_id,
-    8
-  );
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
@@ -46,7 +83,7 @@ export default async function ProductPage({ params }: Props) {
           Accueil
         </Link>
         <span className="mx-1.5">/</span>
-        {product.category_slug && (
+        {product.category_slug ? (
           <>
             <Link
               href={`/c/${product.category_slug}`}
@@ -56,7 +93,7 @@ export default async function ProductPage({ params }: Props) {
             </Link>
             <span className="mx-1.5">/</span>
           </>
-        )}
+        ) : null}
         <span className="text-foreground">{product.name}</span>
       </nav>
 
@@ -66,11 +103,11 @@ export default async function ProductPage({ params }: Props) {
 
         {/* Product info */}
         <div className="space-y-4">
-          {product.brand && (
+          {product.brand ? (
             <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
               {product.brand}
             </span>
-          )}
+          ) : null}
           <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
 
           {product.variants.length > 0 ? (
@@ -96,27 +133,25 @@ export default async function ProductPage({ params }: Props) {
             </div>
           )}
 
-          {product.description && (
+          {product.description ? (
             <div className="border-t pt-4">
               <h3 className="mb-2 text-sm font-semibold">Description</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {product.description}
               </p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
       {/* Related */}
-      {related.length > 0 && (
-        <div className="mt-12">
-          <HorizontalSection
-            title="Produits similaires"
-            href={product.category_slug ? `/c/${product.category_slug}` : undefined}
-            products={related}
-          />
-        </div>
-      )}
+      <Suspense fallback={<RelatedProductsSkeleton />}>
+        <RelatedProducts
+          productId={product.id}
+          categoryId={product.category_id}
+          categorySlug={product.category_slug}
+        />
+      </Suspense>
     </div>
   );
 }
