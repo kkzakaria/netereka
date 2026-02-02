@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +26,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
 import { formatPrice } from "@/lib/utils";
 import {
   deleteProduct,
@@ -96,9 +104,8 @@ export function ProductTable({ products }: { products: ProductRow[] }) {
             <TableHead className="hidden sm:table-cell">Catégorie</TableHead>
             <TableHead>Prix</TableHead>
             <TableHead className="hidden md:table-cell">Stock</TableHead>
-            <TableHead className="w-16">Actif</TableHead>
-            <TableHead className="w-16 hidden sm:table-cell">Vedette</TableHead>
-            <TableHead className="w-24">Actions</TableHead>
+            <TableHead className="hidden sm:table-cell">Statut</TableHead>
+            <TableHead className="w-10"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -150,49 +157,68 @@ export function ProductTable({ products }: { products: ProductRow[] }) {
                   {product.stock_quantity}
                 </Badge>
               </TableCell>
-              <TableCell>
-                <Switch
-                  checked={product.is_active === 1}
-                  onCheckedChange={() => handleToggleActive(product.id)}
-                />
-              </TableCell>
               <TableCell className="hidden sm:table-cell">
-                <Switch
-                  checked={product.is_featured === 1}
-                  onCheckedChange={() => handleToggleFeatured(product.id)}
-                />
+                <div className="flex gap-1">
+                  {product.is_active === 1 ? (
+                    <Badge variant="default">Actif</Badge>
+                  ) : (
+                    <Badge variant="secondary">Inactif</Badge>
+                  )}
+                  {product.is_featured === 1 ? (
+                    <Badge variant="outline">Vedette</Badge>
+                  ) : null}
+                </div>
               </TableCell>
               <TableCell>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="xs" asChild>
-                    <Link href={`/products/${product.id}/edit`}>Modifier</Link>
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="xs" className="text-destructive">
-                        Suppr.
+                <AlertDialog>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon-xs">
+                        <HugeiconsIcon icon={MoreVerticalIcon} size={16} />
+                        <span className="sr-only">Actions</span>
                       </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Supprimer ce produit ?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Cette action supprimera définitivement &quot;{product.name}&quot;
-                          ainsi que ses variantes et images.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Annuler</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => handleDelete(product.id)}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link href={`/products/${product.id}/edit`}>Modifier</Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleToggleActive(product.id)}
+                      >
+                        {product.is_active === 1 ? "Désactiver" : "Activer"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleToggleFeatured(product.id)}
+                      >
+                        {product.is_featured === 1 ? "Retirer vedette" : "Mettre en vedette"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <AlertDialogTrigger asChild>
+                        <DropdownMenuItem className="text-destructive">
                           Supprimer
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
+                        </DropdownMenuItem>
+                      </AlertDialogTrigger>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Supprimer ce produit ?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Cette action supprimera définitivement &quot;{product.name}&quot;
+                        ainsi que ses variantes et images.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Annuler</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleDelete(product.id)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Supprimer
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </TableCell>
             </TableRow>
           ))}

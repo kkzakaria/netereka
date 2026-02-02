@@ -23,6 +23,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
 import type { CategoryWithCount } from "@/lib/db/admin/categories";
 import { deleteCategory } from "@/actions/admin/categories";
 import { CategoryForm } from "./category-form";
@@ -59,7 +68,7 @@ export function CategoryTable({
               <TableHead>Produits</TableHead>
               <TableHead>Ordre</TableHead>
               <TableHead>Statut</TableHead>
-              <TableHead className="w-28">Actions</TableHead>
+              <TableHead className="w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -86,47 +95,48 @@ export function CategoryTable({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => setEditCategory(cat)}
-                      >
-                        Modifier
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="text-destructive"
-                          >
-                            Suppr.
+                    <AlertDialog>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon-xs">
+                            <HugeiconsIcon icon={MoreVerticalIcon} size={16} />
+                            <span className="sr-only">Actions</span>
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>
-                              Supprimer cette catégorie ?
-                            </AlertDialogTitle>
-                            <AlertDialogDescription>
-                              La catégorie &quot;{cat.name}&quot; sera supprimée.
-                              {cat.product_count > 0 &&
-                                ` Elle contient ${cat.product_count} produit(s) — la suppression sera bloquée.`}
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Annuler</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => handleDelete(cat.id)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setEditCategory(cat)}>
+                            Modifier
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <AlertDialogTrigger asChild>
+                            <DropdownMenuItem className="text-destructive">
                               Supprimer
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
+                            </DropdownMenuItem>
+                          </AlertDialogTrigger>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Supprimer cette catégorie ?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            La catégorie &quot;{cat.name}&quot; sera supprimée.
+                            {cat.product_count > 0 &&
+                              ` Elle contient ${cat.product_count} produit(s) — la suppression sera bloquée.`}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Annuler</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(cat.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Supprimer
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))
