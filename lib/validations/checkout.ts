@@ -13,8 +13,13 @@ export const checkoutSchema = z
     fullName: z.string().min(2).max(100).optional(),
     phone: z
       .string()
-      .transform((v) => v.replace(/[\s\-]/g, ""))
-      .pipe(z.string().regex(/^(\+225)?[0-9]{10}$/, "Numero ivoirien invalide (10 chiffres, optionnel +225)"))
+      .transform((v) => {
+        const cleaned = v.replace(/[\s\-]/g, "");
+        return cleaned === "" ? undefined : cleaned;
+      })
+      .pipe(
+        z.string().regex(/^(\+225)?[0-9]{10}$/, "Numero ivoirien invalide (10 chiffres, optionnel +225)").optional()
+      )
       .optional(),
     street: z.string().min(3).max(200).optional(),
     commune: z.string().min(1, "La commune est requise"),
