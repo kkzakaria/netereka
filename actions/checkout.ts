@@ -5,24 +5,9 @@ import { requireAuth } from "@/lib/auth/guards";
 import { checkoutSchema, type CheckoutInput } from "@/lib/validations/checkout";
 import { queryFirst } from "@/lib/db";
 import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
-import { getActiveDeliveryZones } from "@/lib/db/delivery-zones";
-import { getAddressById, getUserAddresses, createAddress } from "@/lib/db/addresses";
-import {
-  createOrderWithItems,
-  generateOrderNumber,
-} from "@/lib/db/orders";
-import type { Product, ProductVariant, PromoCode, Address, DeliveryZone } from "@/lib/db/types";
-
-// ---------- thin wrappers for client consumption ----------
-
-export async function getDeliveryZones(): Promise<DeliveryZone[]> {
-  return getActiveDeliveryZones();
-}
-
-export async function getUserSavedAddresses(): Promise<Address[]> {
-  const session = await requireAuth();
-  return getUserAddresses(session.user.id);
-}
+import { getAddressById, createAddress } from "@/lib/db/addresses";
+import { createOrderWithItems, generateOrderNumber } from "@/lib/db/orders";
+import type { Product, ProductVariant, PromoCode } from "@/lib/db/types";
 
 // ---------- promo code validation ----------
 
@@ -38,6 +23,8 @@ export async function validatePromoCode(
   code: string,
   subtotal: number
 ): Promise<PromoResult> {
+  await requireAuth();
+
   if (!code.trim()) {
     return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Veuillez saisir un code promo" };
   }
@@ -51,11 +38,11 @@ export async function validatePromoCode(
     return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Code promo invalide" };
   }
 
-  const now = new Date().toISOString();
-  if (promo.starts_at && now < promo.starts_at) {
+  const now = Date.now();
+  if (promo.starts_at && now < new Date(promo.starts_at).getTime()) {
     return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Ce code promo n'est pas encore actif" };
   }
-  if (promo.expires_at && now > promo.expires_at) {
+  if (promo.expires_at && now > new Date(promo.expires_at).getTime()) {
     return { valid: false, discount: 0, promoCodeId: null, label: null, error: "Ce code promo a expire" };
   }
   if (promo.max_uses && promo.used_count >= promo.max_uses) {
@@ -235,34 +222,40 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   const estimatedDelivery = estimatedDate.toISOString();
 
   // 9. Create order atomically
-  const orderNumber = generateOrderNumber();
+  const orderNumber = await generateOrderNumber();
   const deliveryAddressFormatted = `${addressFullName}, ${addressStreet}, ${addressCommune}, Abidjan`;
 
-  await createOrderWithItems(
-    {
-      userId,
-      orderNumber,
-      subtotal,
-      deliveryFee,
-      discountAmount,
-      total,
-      promoCodeId,
-      deliveryAddress: deliveryAddressFormatted,
-      deliveryCommune: addressCommune,
-      deliveryPhone: addressPhone,
-      deliveryInstructions: data.instructions ?? null,
-      estimatedDelivery,
-    },
-    validatedItems.map((item) => ({
-      productId: item.productId,
-      variantId: item.variantId,
-      productName: item.productName,
-      variantName: item.variantName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      totalPrice: item.unitPrice * item.quantity,
-    }))
-  );
+  try {
+    await createOrderWithItems(
+      {
+        userId,
+        orderNumber,
+        subtotal,
+        deliveryFee,
+        discountAmount,
+        total,
+        promoCodeId,
+        deliveryAddress: deliveryAddressFormatted,
+        deliveryCommune: addressCommune,
+        deliveryPhone: addressPhone,
+        deliveryInstructions: data.instructions ?? null,
+        estimatedDelivery,
+      },
+      validatedItems.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId,
+        productName: item.productName,
+        variantName: item.variantName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.unitPrice * item.quantity,
+      }))
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Erreur lors de la creation de la commande";
+    return { success: false, error: message };
+  }
 
   redirect(`/checkout/success?order=${orderNumber}`);
 }

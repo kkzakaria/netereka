@@ -7,12 +7,19 @@ export const metadata = {
   title: "Passer la commande | NETEREKA",
 };
 
+interface SessionUser {
+  id: string;
+  name: string;
+  phone?: string;
+}
+
 export default async function CheckoutPage() {
   const session = await requireAuth();
+  const user = session.user as SessionUser;
 
   const [zones, addresses] = await Promise.all([
     getActiveDeliveryZones(),
-    getUserAddresses(session.user.id),
+    getUserAddresses(user.id),
   ]);
 
   return (
@@ -21,8 +28,8 @@ export default async function CheckoutPage() {
       <CheckoutForm
         zones={zones}
         savedAddresses={addresses}
-        userName={session.user.name}
-        userPhone={(session.user as Record<string, unknown>).phone as string | undefined}
+        userName={user.name}
+        userPhone={user.phone}
       />
     </div>
   );

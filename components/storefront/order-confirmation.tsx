@@ -3,8 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useCartStore } from "@/stores/cart-store";
-import { formatPrice } from "@/lib/utils/format";
-import { formatDateTime } from "@/lib/utils/format";
+import { formatPrice, formatDateTime } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

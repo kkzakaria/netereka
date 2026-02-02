@@ -3,13 +3,20 @@ import { getDB } from "@/lib/cloudflare/context";
 import { nanoid } from "nanoid";
 import type { Order, OrderItem } from "@/lib/db/types";
 
-export function generateOrderNumber(): string {
+export async function generateOrderNumber(): Promise<string> {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let result = "ORD-";
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let result = "ORD-";
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const existing = await queryFirst<{ id: string }>(
+      "SELECT id FROM orders WHERE order_number = ? LIMIT 1",
+      [result]
+    );
+    if (!existing) return result;
   }
-  return result;
+  throw new Error("Impossible de generer un numero de commande unique");
 }
 
 interface CreateOrderData {
@@ -92,22 +99,22 @@ export async function createOrderWithItems(
         )
     );
 
-    // Decrement stock on variant or product
+    // Decrement stock on variant or product (guard against negative)
     if (item.variantId) {
       statements.push(
         db
           .prepare(
-            "UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?"
+            "UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
           )
-          .bind(item.quantity, item.variantId)
+          .bind(item.quantity, item.variantId, item.quantity)
       );
     } else {
       statements.push(
         db
           .prepare(
-            "UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?"
+            "UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
           )
-          .bind(item.quantity, item.productId)
+          .bind(item.quantity, item.productId, item.quantity)
       );
     }
   }
@@ -123,7 +130,19 @@ export async function createOrderWithItems(
     );
   }
 
-  await db.batch(statements);
+  const results = await db.batch(statements);
+
+  // Verify stock decrements succeeded (statements after order insert + item inserts)
+  // Layout: 1 order insert + N * (1 item insert + 1 stock update) + optional promo update
+  for (let i = 0; i < items.length; i++) {
+    const stockUpdateIndex = 1 + i * 2 + 1; // offset past order insert, then pairs of (insert, update)
+    const stockResult = results[stockUpdateIndex];
+    if (stockResult.meta.changes === 0) {
+      throw new Error(
+        `Stock insuffisant pour ${items[i].productName} (mise a jour concurrente)`
+      );
+    }
+  }
 
   return { orderId, orderNumber: orderData.orderNumber };
 }

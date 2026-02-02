@@ -1,8 +1,8 @@
 "use client";
 
-import { useTransition, useState, useEffect } from "react";
+import { useTransition, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import { useCartStore, useCartSubtotal } from "@/stores/cart-store";
@@ -46,7 +46,7 @@ export function CheckoutForm({
     label: string | null;
     error: string | null;
   } | null>(null);
-  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoLoading, startPromoTransition] = useTransition();
 
   // Address mode
   const [addressMode, setAddressMode] = useState<"saved" | "new">(
@@ -65,7 +65,7 @@ export function CheckoutForm({
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<CheckoutInput>({
     resolver: zodResolver(checkoutSchema),
@@ -87,8 +87,8 @@ export function CheckoutForm({
     },
   });
 
-  const commune = watch("commune");
-  const saveAddress = watch("saveAddress");
+  const commune = useWatch({ control, name: "commune" });
+  const saveAddress = useWatch({ control, name: "saveAddress" });
   const selectedZone = zones.find((z) => z.commune === commune);
   const deliveryFee = selectedZone?.fee ?? 0;
   const discount = promoResult?.valid ? promoResult.discount : 0;
@@ -109,7 +109,8 @@ export function CheckoutForm({
         productId: i.productId,
         variantId: i.variantId,
         quantity: i.quantity,
-      }))
+      })),
+      { shouldDirty: false }
     );
   }, [items, setValue]);
 
@@ -124,10 +125,9 @@ export function CheckoutForm({
     }
   }, [addressMode, selectedAddressId, savedAddresses, setValue]);
 
-  async function handlePromoApply() {
+  const handlePromoApply = useCallback(() => {
     if (!promoInput.trim()) return;
-    setPromoLoading(true);
-    try {
+    startPromoTransition(async () => {
       const result = await validatePromoCode(promoInput.trim(), subtotal);
       setPromoResult(result);
       if (result.valid) {
@@ -135,10 +135,8 @@ export function CheckoutForm({
       } else {
         setValue("promoCode", "");
       }
-    } finally {
-      setPromoLoading(false);
-    }
-  }
+    });
+  }, [promoInput, subtotal, setValue]);
 
   function onSubmit(data: CheckoutInput) {
     setServerError(null);
