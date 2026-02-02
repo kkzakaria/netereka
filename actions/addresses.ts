@@ -11,12 +11,7 @@ import {
   getAddressById,
 } from "@/lib/db/addresses";
 import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
-
-interface ActionResult {
-  success: boolean;
-  error?: string;
-  fieldErrors?: Record<string, string[]>;
-}
+import type { ActionResult } from "@/lib/types/actions";
 
 export async function createAddressAction(input: AddressInput): Promise<ActionResult> {
   const session = await requireAuth();
@@ -39,6 +34,7 @@ export async function createAddressAction(input: AddressInput): Promise<ActionRe
     phone: parsed.data.phone,
     street: parsed.data.street,
     commune: parsed.data.commune,
+    city: parsed.data.city,
     zoneId: zone?.id ?? null,
     instructions: parsed.data.instructions ?? null,
   });
@@ -75,6 +71,7 @@ export async function updateAddressAction(
     phone: parsed.data.phone,
     street: parsed.data.street,
     commune: parsed.data.commune,
+    city: parsed.data.city,
     zoneId: zone?.id ?? null,
     instructions: parsed.data.instructions ?? null,
   });
@@ -95,7 +92,10 @@ export async function deleteAddressAction(id: string): Promise<ActionResult> {
 
 export async function setDefaultAddressAction(id: string): Promise<ActionResult> {
   const session = await requireAuth();
-  await setDefaultAddress(id, session.user.id);
+  const updated = await setDefaultAddress(id, session.user.id);
+  if (!updated) {
+    return { success: false, error: "Adresse introuvable" };
+  }
   revalidatePath("/account/addresses");
   return { success: true };
 }

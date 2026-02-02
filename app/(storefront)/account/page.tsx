@@ -13,7 +13,7 @@ export default async function AccountPage() {
         <ProfileForm
           defaultValues={{
             name: user.name,
-            phone: (user as Record<string, unknown>).phone as string ?? "",
+            phone: String((user as Record<string, unknown>).phone ?? ""),
           }}
           email={user.email}
         />

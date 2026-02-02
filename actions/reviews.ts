@@ -4,12 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth/guards";
 import { reviewSchema, type ReviewInput } from "@/lib/validations/review";
 import { createReview, canUserReview } from "@/lib/db/reviews";
-
-interface ActionResult {
-  success: boolean;
-  error?: string;
-  fieldErrors?: Record<string, string[]>;
-}
+import { queryFirst } from "@/lib/db";
+import type { ActionResult } from "@/lib/types/actions";
 
 export async function submitReview(input: ReviewInput): Promise<ActionResult> {
   const session = await requireAuth();
@@ -40,7 +36,13 @@ export async function submitReview(input: ReviewInput): Promise<ActionResult> {
     isVerifiedPurchase: true,
   });
 
+  // Get product slug for targeted revalidation
+  const product = await queryFirst<{ slug: string }>(
+    "SELECT slug FROM products WHERE id = ?",
+    [parsed.data.productId]
+  );
+
   revalidatePath(`/account/reviews`);
-  revalidatePath(`/p/[slug]`, "page");
+  if (product) revalidatePath(`/p/${product.slug}`);
   return { success: true };
 }

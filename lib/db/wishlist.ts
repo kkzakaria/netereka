@@ -1,4 +1,5 @@
 import { query, queryFirst, execute } from "@/lib/db";
+import { getDB } from "@/lib/cloudflare/context";
 import { nanoid } from "nanoid";
 import type { WishlistItem } from "@/lib/db/types";
 
@@ -39,6 +40,24 @@ export async function isInWishlist(userId: string, productId: string): Promise<b
     [userId, productId]
   );
   return (row?.count ?? 0) > 0;
+}
+
+export async function atomicToggleWishlist(userId: string, productId: string): Promise<boolean> {
+  const db = await getDB();
+  // Try to delete first — if it existed, we removed it
+  const del = await db
+    .prepare("DELETE FROM wishlist WHERE user_id = ? AND product_id = ?")
+    .bind(userId, productId)
+    .run();
+  if (del.meta.changes > 0) return false; // was removed
+
+  // Didn't exist, insert (INSERT OR IGNORE handles any remaining race)
+  const id = nanoid();
+  await db
+    .prepare("INSERT OR IGNORE INTO wishlist (id, user_id, product_id) VALUES (?, ?, ?)")
+    .bind(id, userId, productId)
+    .run();
+  return true; // was added
 }
 
 export async function getUserWishlistProductIds(userId: string): Promise<Set<string>> {

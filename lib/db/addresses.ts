@@ -24,6 +24,7 @@ export async function createAddress(data: {
   phone: string;
   street: string;
   commune: string;
+  city: string;
   zoneId: string | null;
   instructions: string | null;
 }): Promise<string> {
@@ -39,8 +40,8 @@ export async function createAddress(data: {
 
   await db
     .prepare(
-      `INSERT INTO addresses (id, user_id, label, full_name, phone, street, commune, zone_id, instructions, is_default)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO addresses (id, user_id, label, full_name, phone, street, commune, city, zone_id, instructions, is_default)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -50,6 +51,7 @@ export async function createAddress(data: {
       data.phone,
       data.street,
       data.commune,
+      data.city,
       data.zoneId,
       data.instructions,
       isDefault
@@ -68,6 +70,7 @@ export async function updateAddress(
     phone: string;
     street: string;
     commune: string;
+    city: string;
     zoneId: string | null;
     instructions: string | null;
   }
@@ -75,7 +78,7 @@ export async function updateAddress(
   const db = await getDB();
   const result = await db
     .prepare(
-      `UPDATE addresses SET label = ?, full_name = ?, phone = ?, street = ?, commune = ?, zone_id = ?, instructions = ?
+      `UPDATE addresses SET label = ?, full_name = ?, phone = ?, street = ?, commune = ?, city = ?, zone_id = ?, instructions = ?
        WHERE id = ? AND user_id = ?`
     )
     .bind(
@@ -84,6 +87,7 @@ export async function updateAddress(
       data.phone,
       data.street,
       data.commune,
+      data.city,
       data.zoneId,
       data.instructions,
       id,
@@ -105,7 +109,7 @@ export async function deleteAddress(id: string, userId: string): Promise<boolean
 export async function setDefaultAddress(id: string, userId: string): Promise<boolean> {
   const db = await getDB();
   // Unset all defaults, then set the target
-  await db.batch([
+  const results = await db.batch([
     db
       .prepare("UPDATE addresses SET is_default = 0 WHERE user_id = ?")
       .bind(userId),
@@ -113,5 +117,7 @@ export async function setDefaultAddress(id: string, userId: string): Promise<boo
       .prepare("UPDATE addresses SET is_default = 1 WHERE id = ? AND user_id = ?")
       .bind(id, userId),
   ]);
+  // If the target didn't exist, restore the previous default
+  if (results[1].meta.changes === 0) return false;
   return true;
 }

@@ -2,19 +2,25 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth/guards";
-import { addToWishlist, removeFromWishlist, isInWishlist } from "@/lib/db/wishlist";
+import { atomicToggleWishlist } from "@/lib/db/wishlist";
+import { z } from "zod";
+
+const productIdSchema = z.string().min(1).max(50);
 
 export async function toggleWishlist(productId: string): Promise<{ success: boolean; added: boolean }> {
   const session = await requireAuth();
   const userId = session.user.id;
 
-  const exists = await isInWishlist(userId, productId);
-  if (exists) {
-    await removeFromWishlist(userId, productId);
-  } else {
-    await addToWishlist(userId, productId);
+  const parsed = productIdSchema.safeParse(productId);
+  if (!parsed.success) {
+    return { success: false, added: false };
   }
 
-  revalidatePath("/account/wishlist");
-  return { success: true, added: !exists };
+  try {
+    const added = await atomicToggleWishlist(userId, parsed.data);
+    revalidatePath("/account/wishlist");
+    return { success: true, added };
+  } catch {
+    return { success: false, added: false };
+  }
 }

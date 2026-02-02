@@ -12,9 +12,13 @@ interface Props {
   params: Promise<{ orderNumber: string }>;
 }
 
+const ORDER_NUMBER_REGEX = /^ORD-[A-Z0-9]{4,10}$/;
+
 export default async function OrderDetailPage({ params }: Props) {
   const session = await requireAuth();
   const { orderNumber } = await params;
+
+  if (!ORDER_NUMBER_REGEX.test(orderNumber)) notFound();
 
   const result = await getOrderDetail(orderNumber, session.user.id);
   if (!result) notFound();

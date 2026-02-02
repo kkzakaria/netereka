@@ -6,6 +6,7 @@ import { ReviewForm } from "@/components/storefront/review-form";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -40,6 +41,9 @@ export function ReviewableProducts({ products }: { products: ReviewableProduct[]
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Laisser un avis</DialogTitle>
+            <DialogDescription>
+              Partagez votre expérience avec ce produit.
+            </DialogDescription>
           </DialogHeader>
           {selected && (
             <ReviewForm

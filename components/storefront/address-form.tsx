@@ -21,11 +21,12 @@ export function AddressForm({ address, onDone }: Props) {
   const [phone, setPhone] = useState(address?.phone ?? "");
   const [street, setStreet] = useState(address?.street ?? "");
   const [commune, setCommune] = useState(address?.commune ?? "");
+  const [city, setCity] = useState(address?.city ?? "Abidjan");
   const [instructions, setInstructions] = useState(address?.instructions ?? "");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const data = { label, fullName, phone, street, commune, instructions: instructions || undefined };
+    const data = { label, fullName, phone, street, commune, city, instructions: instructions || undefined };
 
     startTransition(async () => {
       const result = address
@@ -59,9 +60,15 @@ export function AddressForm({ address, onDone }: Props) {
         <Label htmlFor="addr-street">Adresse</Label>
         <Input id="addr-street" value={street} onChange={(e) => setStreet(e.target.value)} required minLength={3} />
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="addr-commune">Commune</Label>
-        <Input id="addr-commune" value={commune} onChange={(e) => setCommune(e.target.value)} required />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="addr-commune">Commune</Label>
+          <Input id="addr-commune" value={commune} onChange={(e) => setCommune(e.target.value)} required />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="addr-city">Ville</Label>
+          <Input id="addr-city" value={city} onChange={(e) => setCity(e.target.value)} required />
+        </div>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="addr-instructions">Instructions (optionnel)</Label>

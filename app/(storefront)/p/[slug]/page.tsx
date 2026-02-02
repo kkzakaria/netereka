@@ -90,6 +90,7 @@ async function ProductReviews({ productId }: { productId: string }) {
         <h2 className="text-lg font-semibold">Avis clients</h2>
         <div className="flex items-center gap-1.5">
           <StarRating value={Math.round(stats.average)} readonly />
+          <span className="text-sm font-medium">{stats.average.toFixed(1)}</span>
           <span className="text-sm text-muted-foreground">
             ({stats.count} avis)
           </span>

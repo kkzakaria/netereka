@@ -230,16 +230,13 @@ export async function cancelOrder(
   userId: string,
   reason: string
 ): Promise<boolean> {
-  const order = await getOrderByNumber(orderNumber, userId);
-  if (!order || order.status !== "pending") return false;
-
   const db = await getDB();
-  await db
+  const result = await db
     .prepare(
       `UPDATE orders SET status = 'cancelled', cancelled_at = datetime('now'), cancellation_reason = ?, updated_at = datetime('now')
-       WHERE id = ? AND user_id = ? AND status = 'pending'`
+       WHERE order_number = ? AND user_id = ? AND status = 'pending'`
     )
-    .bind(reason, order.id, userId)
+    .bind(reason, orderNumber, userId)
     .run();
-  return true;
+  return result.meta.changes > 0;
 }

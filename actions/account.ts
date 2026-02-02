@@ -5,12 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth/guards";
 import { initAuth } from "@/lib/auth";
 import { profileSchema, changePasswordSchema, type ProfileInput, type ChangePasswordInput } from "@/lib/validations/account";
-
-interface ActionResult {
-  success: boolean;
-  error?: string;
-  fieldErrors?: Record<string, string[]>;
-}
+import type { ActionResult } from "@/lib/types/actions";
 
 export async function updateProfile(input: ProfileInput): Promise<ActionResult> {
   await requireAuth();

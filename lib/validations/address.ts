@@ -11,6 +11,7 @@ export const addressSchema = z.object({
     ),
   street: z.string().min(3, "Adresse requise").max(200),
   commune: z.string().min(1, "Commune requise"),
+  city: z.string().min(1).max(100).default("Abidjan"),
   instructions: z.string().max(500).optional(),
 });
 

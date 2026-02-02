@@ -3,6 +3,9 @@ import { getUserOrders } from "@/lib/db/orders";
 import { OrderCard } from "@/components/storefront/order-card";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import type { OrderStatus } from "@/lib/db/types";
+
+const VALID_STATUSES: OrderStatus[] = ["pending", "shipping", "delivered", "cancelled"];
 
 const tabs = [
   { key: "", label: "Toutes" },
@@ -12,6 +15,18 @@ const tabs = [
   { key: "cancelled", label: "Annulées" },
 ];
 
+function getPaginationPages(current: number, total: number): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (current > 3) pages.push("...");
+  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+    pages.push(i);
+  }
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
+}
+
 interface Props {
   searchParams: Promise<{ status?: string; page?: string }>;
 }
@@ -19,8 +34,8 @@ interface Props {
 export default async function OrdersPage({ searchParams }: Props) {
   const session = await requireAuth();
   const sp = await searchParams;
-  const status = sp.status ?? "";
-  const page = Math.max(1, parseInt(sp.page ?? "1", 10));
+  const status = VALID_STATUSES.includes(sp.status as OrderStatus) ? (sp.status as OrderStatus) : "";
+  const page = Math.max(1, Number(sp.page) || 1);
   const limit = 10;
 
   const { orders, total } = await getUserOrders(session.user.id, {
@@ -67,21 +82,25 @@ export default async function OrdersPage({ searchParams }: Props) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex justify-center gap-2 pt-4">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Link
-              key={p}
-              href={`/account/orders?${status ? `status=${status}&` : ""}page=${p}`}
-              className={cn(
-                "flex size-8 items-center justify-center rounded-lg text-xs font-medium",
-                p === page
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {p}
-            </Link>
-          ))}
+        <div className="flex justify-center gap-1 pt-4">
+          {getPaginationPages(page, totalPages).map((p, i) =>
+            p === "..." ? (
+              <span key={`ellipsis-${i}`} className="flex size-8 items-center justify-center text-xs text-muted-foreground">…</span>
+            ) : (
+              <Link
+                key={p}
+                href={`/account/orders?${status ? `status=${status}&` : ""}page=${p}`}
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-lg text-xs font-medium",
+                  p === page
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {p}
+              </Link>
+            )
+          )}
         </div>
       )}
     </div>

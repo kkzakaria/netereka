@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { formatPrice } from "@/lib/utils/format";
@@ -31,12 +32,14 @@ export function WishlistGrid({ items }: { items: WishlistClientItem[] }) {
 
 function WishlistCard({ item }: { item: WishlistClientItem }) {
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   function handleRemove(e: React.MouseEvent) {
     e.preventDefault();
     startTransition(async () => {
       await toggleWishlist(item.product_id);
       toast.success("Retiré des favoris");
+      router.refresh();
     });
   }
 

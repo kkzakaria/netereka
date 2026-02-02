@@ -31,8 +31,9 @@ type User = {
 } | null;
 
 function UserAvatar({ user }: { user: NonNullable<User> }) {
-  const initials = user.name
+  const initials = (user.name || "?")
     .split(" ")
+    .filter(Boolean)
     .map((w) => w[0])
     .join("")
     .slice(0, 2)

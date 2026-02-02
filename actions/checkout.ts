@@ -237,6 +237,7 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
       phone: addressPhone,
       street: addressStreet,
       commune: addressCommune,
+      city: "Abidjan",
       zoneId: zone.id,
       instructions: data.instructions ?? null,
     });
