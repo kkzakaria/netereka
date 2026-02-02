@@ -6,6 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Delete } from "@hugeicons/core-free-icons";
 import { useCartStore } from "@/stores/cart-store";
 import { formatPrice } from "@/lib/utils/format";
+import { getImageUrl } from "@/lib/utils/images";
 import type { CartItem } from "@/lib/types/cart";
 
 export function CartItemRow({ item }: { item: CartItem }) {
@@ -21,7 +22,7 @@ export function CartItemRow({ item }: { item: CartItem }) {
       >
         {item.imageUrl ? (
           <Image
-            src={item.imageUrl}
+            src={getImageUrl(item.imageUrl)}
             alt={item.name}
             width={80}
             height={80}
