@@ -245,23 +245,23 @@ Panier + Checkout + Gestion commandes
 ### Jour 13-14 : Recherche & Filtres (11-12 fév)
 
 #### Tâches
-- [ ] Recherche full-text (LIKE ou FTS5)
-- [ ] Page résultats recherche
-- [ ] Filtres : catégorie, marque, prix min/max
-- [ ] Tri : pertinence, prix, nouveauté
-- [ ] UI filtres (bottom sheet mobile)
-- [ ] Pagination "Charger plus"
-- [ ] Autocomplete suggestions
+- [x] Recherche full-text (LIKE ou FTS5)
+- [x] Page résultats recherche
+- [x] Filtres : catégorie, marque, prix min/max
+- [x] Tri : pertinence, prix, nouveauté
+- [x] UI filtres (bottom sheet mobile)
+- [x] Pagination "Charger plus"
+- [x] Autocomplete suggestions
 
 #### Livrables
-- [ ] Recherche fonctionnelle
-- [ ] Filtres combinables
-- [ ] UX mobile optimisée
+- [x] Recherche fonctionnelle
+- [x] Filtres combinables
+- [x] UX mobile optimisée
 
 #### Validation
-- [ ] Recherche "iPhone" → résultats pertinents
-- [ ] Filtres se combinent correctement
-- [ ] Pagination fonctionne
+- [x] Recherche "iPhone" → résultats pertinents
+- [x] Filtres se combinent correctement
+- [x] Pagination fonctionne
 
 ---
 
@@ -272,7 +272,7 @@ Panier + Checkout + Gestion commandes
 | Panier persistant fonctionnel | ✅ |
 | Checkout complet | ✅ |
 | Commandes créées en DB | ✅ |
-| Recherche + filtres | ⬜ |
+| Recherche + filtres | ✅ |
 | Codes promo | ✅ |
 
 ---
@@ -587,7 +587,7 @@ Tests, contenu, optimisation, mise en production
 | Semaine | Tâches prévues | Tâches complétées | % |
 |---------|----------------|-------------------|---|
 | S1 | 25 | 25 | 100% |
-| S2 | 22 | - | - |
+| S2 | 32 | 30 | 94% |
 | S3 | 24 | - | - |
 | S4 | 18 | - | - |
 
