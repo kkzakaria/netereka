@@ -94,7 +94,7 @@ export function ProductTable({ products }: { products: ProductRow[] }) {
   }
 
   return (
-    <div className="rounded-lg border">
+    <div className="rounded-lg border touch-manipulation">
       <Table>
         <TableHeader>
           <TableRow>
@@ -105,7 +105,7 @@ export function ProductTable({ products }: { products: ProductRow[] }) {
             <TableHead>Prix</TableHead>
             <TableHead className="hidden md:table-cell">Stock</TableHead>
             <TableHead className="hidden sm:table-cell">Statut</TableHead>
-            <TableHead className="w-10"></TableHead>
+            <TableHead className="w-14"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -173,8 +173,8 @@ export function ProductTable({ products }: { products: ProductRow[] }) {
                 <AlertDialog>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        <HugeiconsIcon icon={MoreVerticalIcon} size={16} />
+                      <Button variant="ghost" size="icon" className="h-11 w-11">
+                        <HugeiconsIcon icon={MoreVerticalIcon} size={18} />
                         <span className="sr-only">Actions</span>
                       </Button>
                     </DropdownMenuTrigger>
