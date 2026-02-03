@@ -18,12 +18,10 @@ const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 
 export default async function CustomerDetailPage({ params }: Props) {
   // Parallelize auth check and params resolution (async-parallel)
-  const [session, { id }] = await Promise.all([requireAdmin(), params]);
+  const [, { id }] = await Promise.all([requireAdmin(), params]);
   const customer = await getAdminCustomerById(id);
 
   if (!customer) notFound();
-
-  const isSuperAdmin = session.user.role === "super_admin";
 
   return (
     <div>
@@ -54,7 +52,7 @@ export default async function CustomerDetailPage({ params }: Props) {
         </div>
 
         {/* Sidebar */}
-        <CustomerSidebar customer={customer} isSuperAdmin={isSuperAdmin} />
+        <CustomerSidebar customer={customer} />
       </div>
     </div>
   );

@@ -4,39 +4,19 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { formatPrice, formatDateLong } from "@/lib/utils";
-import { ROLE_OPTIONS } from "@/lib/constants/customers";
-import { updateCustomerRole, toggleCustomerActive } from "@/actions/admin/customers";
-import type { AdminCustomerDetail, UserRole } from "@/lib/db/types";
+import { toggleCustomerActive } from "@/actions/admin/customers";
+import type { AdminCustomerDetail } from "@/lib/db/types";
 
 interface CustomerSidebarProps {
   customer: AdminCustomerDetail;
-  isSuperAdmin: boolean;
 }
 
-export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps) {
+export function CustomerSidebar({ customer }: CustomerSidebarProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-
-  async function handleRoleChange(newRole: UserRole) {
-    setError(null);
-    startTransition(async () => {
-      const result = await updateCustomerRole(customer.id, newRole);
-      if (!result.success) {
-        setError(result.error || "Erreur lors du changement de rôle");
-      } else {
-        router.refresh();
-      }
-    });
-  }
 
   async function handleToggleActive() {
     setError(null);
@@ -58,6 +38,14 @@ export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps
           <CardTitle className="text-sm">Statistiques</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Statut</span>
+            {customer.is_active === 1 ? (
+              <Badge variant="outline" className="text-green-600">Actif</Badge>
+            ) : (
+              <Badge variant="destructive">Inactif</Badge>
+            )}
+          </div>
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground">Total commandes</span>
             <span className="font-semibold">{customer.order_count}</span>
@@ -86,36 +74,11 @@ export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps
       {/* Admin Actions */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Actions administrateur</CardTitle>
+          <CardTitle className="text-sm">Actions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
             <p className="text-sm text-destructive">{error}</p>
-          )}
-
-          {/* Role change - only for super_admin */}
-          {isSuperAdmin && (
-            <div>
-              <label className="text-sm text-muted-foreground mb-2 block">
-                Changer le rôle
-              </label>
-              <Select
-                value={customer.role}
-                onValueChange={(value) => handleRoleChange(value as UserRole)}
-                disabled={isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           )}
 
           {/* Toggle active status */}

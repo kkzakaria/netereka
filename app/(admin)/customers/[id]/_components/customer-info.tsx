@@ -4,7 +4,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CheckmarkCircle02Icon, Cancel01Icon, Mail01Icon, SmartPhone01Icon } from "@hugeicons/core-free-icons";
 import { formatDateLong } from "@/lib/utils";
-import { ROLE_LABELS, ROLE_VARIANTS } from "@/lib/constants/customers";
 import type { AdminCustomerDetail } from "@/lib/db/types";
 
 interface CustomerInfoProps {
@@ -41,10 +40,9 @@ export function CustomerInfo({ customer }: CustomerInfoProps) {
             <div>
               <h3 className="text-lg font-semibold truncate">{customer.name}</h3>
               <div className="flex flex-wrap items-center gap-2 mt-1">
-                <Badge variant={ROLE_VARIANTS[customer.role] || "secondary"}>
-                  {ROLE_LABELS[customer.role] || customer.role}
-                </Badge>
-                {customer.is_active === 0 && (
+                {customer.is_active === 1 ? (
+                  <Badge variant="outline" className="text-green-600">Actif</Badge>
+                ) : (
                   <Badge variant="destructive">Inactif</Badge>
                 )}
                 {customer.emailVerified ? (

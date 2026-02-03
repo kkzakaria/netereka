@@ -21,27 +21,25 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon, ViewIcon } from "@hugeicons/core-free-icons";
-import { formatPrice, formatDateShort } from "@/lib/utils";
-import type { AdminCustomer } from "@/lib/db/types";
+import { formatDateShort } from "@/lib/utils";
+import { TEAM_ROLE_LABELS, TEAM_ROLE_VARIANTS } from "@/lib/constants/team";
+import type { TeamMember } from "@/lib/db/types";
 
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+function getInitials(firstName: string, lastName: string): string {
+  return `${firstName[0] || ""}${lastName[0] || ""}`.toUpperCase();
 }
 
 // Hoisted static icons
 const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={16} />;
 const viewIcon = <HugeiconsIcon icon={ViewIcon} size={14} />;
 
-const CustomerRow = memo(function CustomerRow({
-  customer,
+const TeamRow = memo(function TeamRow({
+  member,
 }: {
-  customer: AdminCustomer;
+  member: TeamMember;
 }) {
+  const roleKey = member.role as "admin" | "super_admin";
+
   return (
     <TableRow
       style={{ contentVisibility: "auto", containIntrinsicSize: "0 56px" }}
@@ -49,37 +47,41 @@ const CustomerRow = memo(function CustomerRow({
     >
       <TableCell>
         <Link
-          href={`/customers/${customer.id}`}
+          href={`/team/${member.id}`}
           className="flex items-center gap-3 hover:underline"
         >
           <Avatar className="h-8 w-8">
-            {customer.image && <AvatarImage src={customer.image} alt={customer.name} />}
+            {member.avatar_url && <AvatarImage src={member.avatar_url} alt={`${member.first_name} ${member.last_name}`} />}
             <AvatarFallback className="text-xs">
-              {getInitials(customer.name)}
+              {getInitials(member.first_name, member.last_name)}
             </AvatarFallback>
           </Avatar>
-          <span className="font-medium">{customer.name}</span>
+          <span className="font-medium">
+            {member.first_name} {member.last_name}
+          </span>
         </Link>
       </TableCell>
-      <TableCell className="text-muted-foreground">{customer.email}</TableCell>
+      <TableCell className="text-muted-foreground">{member.email}</TableCell>
       <TableCell className="hidden md:table-cell text-muted-foreground">
-        {customer.phone || "—"}
+        {member.phone || "—"}
+      </TableCell>
+      <TableCell className="hidden lg:table-cell text-muted-foreground">
+        {member.job_title || "—"}
+      </TableCell>
+      <TableCell>
+        <Badge variant={TEAM_ROLE_VARIANTS[roleKey] || "secondary"}>
+          {TEAM_ROLE_LABELS[roleKey] || member.role}
+        </Badge>
+      </TableCell>
+      <TableCell className="hidden lg:table-cell text-muted-foreground">
+        {formatDateShort(member.created_at)}
       </TableCell>
       <TableCell className="text-center">
-        {customer.is_active === 1 ? (
+        {member.is_active === 1 ? (
           <Badge variant="outline" className="text-green-600">Actif</Badge>
         ) : (
           <Badge variant="destructive">Inactif</Badge>
         )}
-      </TableCell>
-      <TableCell className="hidden lg:table-cell text-muted-foreground">
-        {formatDateShort(customer.createdAt)}
-      </TableCell>
-      <TableCell className="hidden sm:table-cell text-center">
-        <Badge variant="outline">{customer.order_count}</Badge>
-      </TableCell>
-      <TableCell className="hidden sm:table-cell font-mono">
-        {formatPrice(customer.total_spent)}
       </TableCell>
       <TableCell>
         <DropdownMenu>
@@ -91,9 +93,9 @@ const CustomerRow = memo(function CustomerRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link href={`/customers/${customer.id}`} className="gap-2">
+              <Link href={`/team/${member.id}`} className="gap-2">
                 {viewIcon}
-                Voir détails
+                Voir profil
               </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -103,15 +105,15 @@ const CustomerRow = memo(function CustomerRow({
   );
 });
 
-export const CustomerTable = memo(function CustomerTable({
-  customers,
+export const TeamTable = memo(function TeamTable({
+  members,
 }: {
-  customers: AdminCustomer[];
+  members: TeamMember[];
 }) {
-  if (customers.length === 0) {
+  if (members.length === 0) {
     return (
       <div className="rounded-lg border p-8 text-center text-muted-foreground">
-        Aucun client trouvé
+        Aucun membre trouvé
       </div>
     );
   }
@@ -121,19 +123,19 @@ export const CustomerTable = memo(function CustomerTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Client</TableHead>
+            <TableHead>Membre</TableHead>
             <TableHead>Email</TableHead>
             <TableHead className="hidden md:table-cell">Téléphone</TableHead>
+            <TableHead className="hidden lg:table-cell">Poste</TableHead>
+            <TableHead>Rôle</TableHead>
+            <TableHead className="hidden lg:table-cell">Ajouté le</TableHead>
             <TableHead className="text-center">Statut</TableHead>
-            <TableHead className="hidden lg:table-cell">Membre depuis</TableHead>
-            <TableHead className="hidden sm:table-cell text-center">Commandes</TableHead>
-            <TableHead className="hidden sm:table-cell">Total dépensé</TableHead>
             <TableHead className="w-10"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {customers.map((customer) => (
-            <CustomerRow key={customer.id} customer={customer} />
+          {members.map((member) => (
+            <TeamRow key={member.id} member={member} />
           ))}
         </TableBody>
       </Table>

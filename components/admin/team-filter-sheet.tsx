@@ -6,16 +6,21 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, FilterIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
-interface CustomerFilterSheetProps {
+interface TeamFilterSheetProps {
   className?: string;
 }
 
 interface FilterState {
   search: string;
+  role: string;
   status: string;
-  dateFrom: string;
-  dateTo: string;
 }
+
+const ROLE_OPTIONS = [
+  { value: "all", label: "Tous" },
+  { value: "admin", label: "Admin" },
+  { value: "super_admin", label: "Super Admin" },
+];
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Tous" },
@@ -26,13 +31,12 @@ const STATUS_OPTIONS = [
 function getFiltersFromParams(params: URLSearchParams): FilterState {
   return {
     search: params.get("search") ?? "",
+    role: params.get("role") ?? "all",
     status: params.get("status") ?? "all",
-    dateFrom: params.get("dateFrom") ?? "",
-    dateTo: params.get("dateTo") ?? "",
   };
 }
 
-export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
+export function TeamFilterSheet({ className }: TeamFilterSheetProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -52,9 +56,8 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
 
   const activeFilterCount =
     (filters.search ? 1 : 0) +
-    (filters.status !== "all" ? 1 : 0) +
-    (filters.dateFrom ? 1 : 0) +
-    (filters.dateTo ? 1 : 0);
+    (filters.role !== "all" ? 1 : 0) +
+    (filters.status !== "all" ? 1 : 0);
 
   useEffect(() => {
     document.body.classList.toggle("overflow-hidden", open);
@@ -75,19 +78,17 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
   function handleApply() {
     const params = new URLSearchParams();
     if (filters.search) params.set("search", filters.search);
+    if (filters.role && filters.role !== "all") params.set("role", filters.role);
     if (filters.status && filters.status !== "all") params.set("status", filters.status);
-    if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
-    if (filters.dateTo) params.set("dateTo", filters.dateTo);
-    router.push(`/customers?${params.toString()}`);
+    router.push(`/team?${params.toString()}`);
     setOpen(false);
   }
 
   function handleClear() {
     setFilters({
       search: "",
+      role: "all",
       status: "all",
-      dateFrom: "",
-      dateTo: "",
     });
   }
 
@@ -128,7 +129,7 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
       <div
         role="dialog"
         aria-modal={open}
-        aria-label="Filtres des clients"
+        aria-label="Filtres de l'équipe"
         className={cn(
           "fixed inset-x-0 bottom-0 z-[61] flex max-h-[85vh] flex-col rounded-t-2xl bg-background shadow-xl transition-transform duration-300 ease-out pb-safe",
           open ? "translate-y-0" : "translate-y-full"
@@ -162,9 +163,30 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
                 type="text"
                 value={filters.search}
                 onChange={(e) => updateFilter("search", e.target.value)}
-                placeholder="Nom, email, tél..."
+                placeholder="Nom, email..."
                 className="h-12 w-full rounded-lg border bg-background pl-10 pr-4 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
               />
+            </div>
+          </div>
+
+          {/* Role */}
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium">Rôle</label>
+            <div className="flex flex-wrap gap-2">
+              {ROLE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => updateFilter("role", opt.value)}
+                  className={cn(
+                    "flex h-10 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors",
+                    filters.role === opt.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -186,37 +208,6 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
                   {opt.label}
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* Date range */}
-          <div className="mb-6">
-            <label className="mb-2 block text-sm font-medium">
-              Date d&apos;inscription
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">
-                  Du
-                </label>
-                <input
-                  type="date"
-                  value={filters.dateFrom}
-                  onChange={(e) => updateFilter("dateFrom", e.target.value)}
-                  className="h-12 w-full rounded-lg border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">
-                  Au
-                </label>
-                <input
-                  type="date"
-                  value={filters.dateTo}
-                  onChange={(e) => updateFilter("dateTo", e.target.value)}
-                  className="h-12 w-full rounded-lg border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
-                />
-              </div>
             </div>
           </div>
         </div>

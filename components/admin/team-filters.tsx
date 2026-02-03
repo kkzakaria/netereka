@@ -14,9 +14,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { useInstantFilters } from "@/hooks/use-instant-filters";
 
-interface CustomerFiltersProps {
+interface TeamFiltersProps {
   className?: string;
 }
+
+const ROLE_OPTIONS = [
+  { value: "all", label: "Tous" },
+  { value: "admin", label: "Admin" },
+  { value: "super_admin", label: "Super Admin" },
+];
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Tous" },
@@ -24,7 +30,7 @@ const STATUS_OPTIONS = [
   { value: "inactive", label: "Inactifs" },
 ];
 
-export function CustomerFilters({ className }: CustomerFiltersProps) {
+export function TeamFilters({ className }: TeamFiltersProps) {
   const {
     isPending,
     updateFilters,
@@ -33,13 +39,12 @@ export function CustomerFilters({ className }: CustomerFiltersProps) {
     searchValue,
     handleSearchChange,
     clearSearch,
-  } = useInstantFilters({ basePath: "/customers" });
+  } = useInstantFilters({ basePath: "/team" });
 
   const hasActiveFilters =
     searchValue ||
-    getFilter("status") ||
-    getFilter("dateFrom") ||
-    getFilter("dateTo");
+    getFilter("role") ||
+    getFilter("status");
 
   return (
     <div className={className} data-pending={isPending || undefined}>
@@ -57,7 +62,7 @@ export function CustomerFilters({ className }: CustomerFiltersProps) {
             />
             <Input
               id="search"
-              placeholder="Nom, email, tél..."
+              placeholder="Nom, email..."
               value={searchValue}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="w-full pl-9 pr-9 sm:w-48"
@@ -73,6 +78,26 @@ export function CustomerFilters({ className }: CustomerFiltersProps) {
               </button>
             )}
           </div>
+        </div>
+
+        {/* Role filter */}
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Rôle</Label>
+          <Select
+            value={getFilter("role") || "all"}
+            onValueChange={(value) => updateFilters({ role: value })}
+          >
+            <SelectTrigger className="min-w-36">
+              <SelectValue placeholder="Tous" />
+            </SelectTrigger>
+            <SelectContent>
+              {ROLE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Status filter */}
@@ -93,34 +118,6 @@ export function CustomerFilters({ className }: CustomerFiltersProps) {
               ))}
             </SelectContent>
           </Select>
-        </div>
-
-        {/* Date from */}
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="dateFrom" className="text-xs text-muted-foreground">
-            Inscrit depuis
-          </Label>
-          <Input
-            id="dateFrom"
-            type="date"
-            value={getFilter("dateFrom")}
-            onChange={(e) => updateFilters({ dateFrom: e.target.value })}
-            className="min-w-36"
-          />
-        </div>
-
-        {/* Date to */}
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="dateTo" className="text-xs text-muted-foreground">
-            Jusqu&apos;au
-          </Label>
-          <Input
-            id="dateTo"
-            type="date"
-            value={getFilter("dateTo")}
-            onChange={(e) => updateFilters({ dateTo: e.target.value })}
-            className="min-w-36"
-          />
         </div>
 
         {/* Clear all filters button */}

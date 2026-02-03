@@ -259,3 +259,42 @@ export interface AdminCustomerDetail extends AdminCustomer {
   addresses: Address[];
   recent_orders: AdminOrder[];
 }
+
+// Team Management Types (for admins and super_admins)
+export interface TeamMember {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string | null;
+  avatar_url: string | null;
+  role: UserRole;
+  job_title: string | null;
+  permissions: string | null;
+  is_active: number;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMemberDetail extends TeamMember {
+  // Stats
+  orders_handled: number;
+  last_activity: string | null;
+}
+
+// Customer profile (from customers table)
+export interface Customer {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string | null;
+  avatar_url: string | null;
+  loyalty_points: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}

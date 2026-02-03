@@ -3,6 +3,13 @@
 -- Password for all test users: Test123!
 -- ==============================================
 
+-- Super Admin user
+INSERT OR IGNORE INTO "user" (id, name, email, emailVerified, phone, role, createdAt, updatedAt) VALUES
+  ('user_superadmin_test', 'Super Admin', 'superadmin@netereka.test', 1, '+225 07 00 00 00 00', 'super_admin', datetime('now'), datetime('now'));
+
+INSERT OR IGNORE INTO "account" (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES
+  ('acc_superadmin_test', 'user_superadmin_test', 'credential', 'user_superadmin_test', '1b36de10dce816b4372079c0fca95684:1ecdfbe2b0885c427ab4b6ce2c716da65b58dcae0a59b1e79cd100c754ebcb905f38168d5952f7b3cb53f8131e2d8ab8bccae7973a4cf108f0abbbd0667d986b', datetime('now'), datetime('now'));
+
 -- Admin user
 INSERT OR IGNORE INTO "user" (id, name, email, emailVerified, phone, role, createdAt, updatedAt) VALUES
   ('user_admin_test', 'Admin Test', 'admin@netereka.test', 1, '+225 07 00 00 00 01', 'admin', datetime('now'), datetime('now'));
@@ -16,6 +23,21 @@ INSERT OR IGNORE INTO "user" (id, name, email, emailVerified, phone, role, creat
 
 INSERT OR IGNORE INTO "account" (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES
   ('acc_client_test', 'user_client_test', 'credential', 'user_client_test', '1b36de10dce816b4372079c0fca95684:1ecdfbe2b0885c427ab4b6ce2c716da65b58dcae0a59b1e79cd100c754ebcb905f38168d5952f7b3cb53f8131e2d8ab8bccae7973a4cf108f0abbbd0667d986b', datetime('now'), datetime('now'));
+
+-- ==============================================
+-- Team Members (admins and super_admins profiles)
+-- ==============================================
+
+INSERT OR IGNORE INTO team_members (id, user_id, first_name, last_name, phone, job_title, is_active, created_at, updated_at) VALUES
+  ('team_superadmin', 'user_superadmin_test', 'Super', 'Admin', '+225 07 00 00 00 00', 'Directeur', 1, datetime('now'), datetime('now')),
+  ('team_admin', 'user_admin_test', 'Admin', 'Test', '+225 07 00 00 00 01', 'Gestionnaire de commandes', 1, datetime('now'), datetime('now'));
+
+-- ==============================================
+-- Customers (shop clients profiles)
+-- ==============================================
+
+INSERT OR IGNORE INTO customers (id, user_id, first_name, last_name, phone, loyalty_points, is_active, created_at, updated_at) VALUES
+  ('cust_client_test', 'user_client_test', 'Client', 'Test', '+225 07 00 00 00 02', 0, 1, datetime('now'), datetime('now'));
 
 -- ==============================================
 -- Categories

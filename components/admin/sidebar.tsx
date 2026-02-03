@@ -9,6 +9,7 @@ import {
   FolderLibraryIcon,
   ShoppingBag01Icon,
   UserGroup02Icon,
+  UserMultiple02Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/categories", label: "Catégories", icon: FolderLibraryIcon },
   { href: "/orders", label: "Commandes", icon: ShoppingBag01Icon },
   { href: "/customers", label: "Clients", icon: UserGroup02Icon },
+  { href: "/team", label: "Équipe", icon: UserMultiple02Icon },
 ];
 
 const disabledItems: typeof navItems = [];
