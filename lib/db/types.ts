@@ -238,8 +238,17 @@ export interface AdminOrderDetail extends Order {
   user_phone: string | null;
 }
 
-// Customer Management Types
-export type UserRole = "customer" | "admin" | "super_admin";
+// Import types from permissions
+import type {
+  UserRole as _UserRole,
+  TeamRole as _TeamRole,
+  Permission as _Permission,
+} from "@/lib/permissions";
+
+// Re-export from permissions for convenience
+export type UserRole = _UserRole;
+export type TeamRole = _TeamRole;
+export type Permission = _Permission;
 
 export interface AdminCustomer {
   id: string;
@@ -260,7 +269,7 @@ export interface AdminCustomerDetail extends AdminCustomer {
   recent_orders: AdminOrder[];
 }
 
-// Team Management Types (for admins and super_admins)
+// Team Management Types (for all team roles)
 export interface TeamMember {
   id: string;
   user_id: string;
@@ -269,9 +278,9 @@ export interface TeamMember {
   email: string;
   phone: string | null;
   avatar_url: string | null;
-  role: UserRole;
+  role: TeamRole;
   job_title: string | null;
-  permissions: string | null;
+  permissions: string | null; // JSON array of Permission[]
   is_active: number;
   last_login_at: string | null;
   created_at: string;

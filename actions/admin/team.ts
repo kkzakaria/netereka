@@ -5,12 +5,21 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { execute, queryFirst } from "@/lib/db";
 import type { ActionResult } from "@/lib/utils";
+import {
+  type TeamRole,
+  type Permission,
+  DEFAULT_PERMISSIONS,
+  canManageRole,
+} from "@/lib/permissions";
 
 const idSchema = z.string().min(1, "ID requis");
 
-const teamRoleSchema = z.enum(["admin", "super_admin"], {
-  message: "Rôle invalide",
-});
+const teamRoleSchema = z.enum(
+  ["admin", "super_admin", "delivery", "support", "accountant"],
+  { message: "Rôle invalide" }
+);
+
+const permissionSchema = z.array(z.string());
 
 const createTeamMemberSchema = z.object({
   email: z.string().email("Email invalide"),
@@ -20,6 +29,7 @@ const createTeamMemberSchema = z.object({
   phone: z.string().optional(),
   role: teamRoleSchema,
   jobTitle: z.string().optional(),
+  permissions: permissionSchema.optional(),
 });
 
 const updateTeamMemberSchema = z.object({
@@ -50,7 +60,7 @@ export async function createTeamMember(
     };
   }
 
-  const { email, password, firstName, lastName, phone, role, jobTitle } = parsed.data;
+  const { email, password, firstName, lastName, phone, role, jobTitle, permissions } = parsed.data;
 
   // Check if email already exists
   const existingUser = await queryFirst<{ id: string }>(
@@ -73,6 +83,12 @@ export async function createTeamMember(
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashedPassword = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
+  // Determine permissions: use provided or defaults
+  const finalPermissions =
+    permissions && permissions.length > 0
+      ? permissions
+      : DEFAULT_PERMISSIONS[role as TeamRole] || [];
+
   // Create user in better-auth table
   await execute(
     `INSERT INTO "user" (id, email, name, role, createdAt, updatedAt)
@@ -87,11 +103,19 @@ export async function createTeamMember(
     [crypto.randomUUID(), userId, userId, hashedPassword]
   );
 
-  // Create team member profile
+  // Create team member profile with permissions
   await execute(
-    `INSERT INTO team_members (id, user_id, first_name, last_name, phone, job_title, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
-    [teamMemberId, userId, firstName, lastName, phone ?? null, jobTitle ?? null]
+    `INSERT INTO team_members (id, user_id, first_name, last_name, phone, job_title, permissions, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
+    [
+      teamMemberId,
+      userId,
+      firstName,
+      lastName,
+      phone ?? null,
+      jobTitle ?? null,
+      JSON.stringify(finalPermissions),
+    ]
   );
 
   revalidatePath("/team");
@@ -152,15 +176,23 @@ export async function updateTeamMember(
 
 export async function updateTeamMemberRole(
   memberId: string,
-  newRole: "admin" | "super_admin"
+  newRole: TeamRole,
+  newPermissions?: Permission[]
 ): Promise<ActionResult> {
   const session = await requireAdmin();
+  const currentRole = session.user.role as TeamRole;
 
-  // Only super_admin can change roles
-  if (session.user.role !== "super_admin") {
+  // Validate role
+  const roleResult = teamRoleSchema.safeParse(newRole);
+  if (!roleResult.success) {
+    return { success: false, error: roleResult.error.issues[0].message };
+  }
+
+  // Check permission to manage this role
+  if (!canManageRole(currentRole, newRole)) {
     return {
       success: false,
-      error: "Seuls les super administrateurs peuvent modifier les rôles",
+      error: "Vous n'avez pas la permission de gérer ce rôle",
     };
   }
 
@@ -169,14 +201,12 @@ export async function updateTeamMemberRole(
     return { success: false, error: "ID membre invalide" };
   }
 
-  const roleResult = teamRoleSchema.safeParse(newRole);
-  if (!roleResult.success) {
-    return { success: false, error: roleResult.error.issues[0].message };
-  }
-
-  // Check if member exists
-  const member = await queryFirst<{ id: string; user_id: string }>(
-    "SELECT id, user_id FROM team_members WHERE id = ?",
+  // Check if member exists and get current role
+  const member = await queryFirst<{ id: string; user_id: string; role: string }>(
+    `SELECT tm.id, tm.user_id, u.role
+     FROM team_members tm
+     JOIN "user" u ON u.id = tm.user_id
+     WHERE tm.id = ?`,
     [memberId]
   );
 
@@ -184,17 +214,93 @@ export async function updateTeamMemberRole(
     return { success: false, error: "Membre introuvable" };
   }
 
+  // Check if manager can manage target's current role
+  if (!canManageRole(currentRole, member.role as TeamRole)) {
+    return {
+      success: false,
+      error: "Vous n'avez pas la permission de modifier ce membre",
+    };
+  }
+
   // Prevent self-demotion
-  if (member.user_id === session.user.id && newRole !== "super_admin") {
+  if (member.user_id === session.user.id) {
     return {
       success: false,
       error: "Vous ne pouvez pas modifier votre propre rôle",
     };
   }
 
+  // Update role in user table
   await execute(
     `UPDATE "user" SET role = ?, updatedAt = datetime('now') WHERE id = ?`,
     [roleResult.data, member.user_id]
+  );
+
+  // Update permissions in team_members table
+  const finalPermissions = newPermissions ?? DEFAULT_PERMISSIONS[newRole] ?? [];
+  await execute(
+    `UPDATE team_members SET permissions = ?, updated_at = datetime('now') WHERE id = ?`,
+    [JSON.stringify(finalPermissions), memberId]
+  );
+
+  revalidatePath("/team");
+  revalidatePath(`/team/${memberId}`);
+
+  return { success: true };
+}
+
+export async function updateTeamMemberPermissions(
+  memberId: string,
+  permissions: Permission[]
+): Promise<ActionResult> {
+  const session = await requireAdmin();
+  const currentRole = session.user.role as TeamRole;
+
+  // Only super_admin and admin can update permissions
+  if (!canManageRole(currentRole, "admin")) {
+    return {
+      success: false,
+      error: "Vous n'avez pas la permission de modifier les permissions",
+    };
+  }
+
+  const idResult = idSchema.safeParse(memberId);
+  if (!idResult.success) {
+    return { success: false, error: "ID membre invalide" };
+  }
+
+  // Check if member exists and get their role
+  const member = await queryFirst<{ id: string; user_id: string; role: string }>(
+    `SELECT tm.id, tm.user_id, u.role
+     FROM team_members tm
+     JOIN "user" u ON u.id = tm.user_id
+     WHERE tm.id = ?`,
+    [memberId]
+  );
+
+  if (!member) {
+    return { success: false, error: "Membre introuvable" };
+  }
+
+  // Can't modify permissions of someone you can't manage
+  if (!canManageRole(currentRole, member.role as TeamRole)) {
+    return {
+      success: false,
+      error: "Vous n'avez pas la permission de modifier ce membre",
+    };
+  }
+
+  // Prevent modifying own permissions
+  if (member.user_id === session.user.id) {
+    return {
+      success: false,
+      error: "Vous ne pouvez pas modifier vos propres permissions",
+    };
+  }
+
+  await execute(
+    `UPDATE team_members SET permissions = ?, updated_at = datetime('now') WHERE id = ?`,
+    [JSON.stringify(permissions), memberId]
   );
 
   revalidatePath("/team");
@@ -207,20 +313,32 @@ export async function toggleTeamMemberActive(
   memberId: string
 ): Promise<ActionResult> {
   const session = await requireAdmin();
+  const currentRole = session.user.role as TeamRole;
 
   const idResult = idSchema.safeParse(memberId);
   if (!idResult.success) {
     return { success: false, error: "ID membre invalide" };
   }
 
-  // Check if member exists and get current status
-  const member = await queryFirst<{ id: string; user_id: string; is_active: number }>(
-    "SELECT id, user_id, is_active FROM team_members WHERE id = ?",
+  // Check if member exists and get current status and role
+  const member = await queryFirst<{ id: string; user_id: string; is_active: number; role: string }>(
+    `SELECT tm.id, tm.user_id, tm.is_active, u.role
+     FROM team_members tm
+     JOIN "user" u ON u.id = tm.user_id
+     WHERE tm.id = ?`,
     [memberId]
   );
 
   if (!member) {
     return { success: false, error: "Membre introuvable" };
+  }
+
+  // Check if manager can manage this member's role
+  if (!canManageRole(currentRole, member.role as TeamRole)) {
+    return {
+      success: false,
+      error: "Vous n'avez pas la permission de modifier ce membre",
+    };
   }
 
   // Prevent self-deactivation
@@ -246,9 +364,10 @@ export async function toggleTeamMemberActive(
 
 export async function deleteTeamMember(memberId: string): Promise<ActionResult> {
   const session = await requireAdmin();
+  const currentRole = session.user.role as TeamRole;
 
   // Only super_admin can delete team members
-  if (session.user.role !== "super_admin") {
+  if (currentRole !== "super_admin") {
     return {
       success: false,
       error: "Seuls les super administrateurs peuvent supprimer des membres",
@@ -260,14 +379,25 @@ export async function deleteTeamMember(memberId: string): Promise<ActionResult> 
     return { success: false, error: "ID membre invalide" };
   }
 
-  // Check if member exists
-  const member = await queryFirst<{ id: string; user_id: string }>(
-    "SELECT id, user_id FROM team_members WHERE id = ?",
+  // Check if member exists and get their role
+  const member = await queryFirst<{ id: string; user_id: string; role: string }>(
+    `SELECT tm.id, tm.user_id, u.role
+     FROM team_members tm
+     JOIN "user" u ON u.id = tm.user_id
+     WHERE tm.id = ?`,
     [memberId]
   );
 
   if (!member) {
     return { success: false, error: "Membre introuvable" };
+  }
+
+  // Check if can manage this role
+  if (!canManageRole(currentRole, member.role as TeamRole)) {
+    return {
+      success: false,
+      error: "Vous n'avez pas la permission de supprimer ce membre",
+    };
   }
 
   // Prevent self-deletion

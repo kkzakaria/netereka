@@ -6,7 +6,7 @@ import { TeamClientWrapper } from "./_components/team-client-wrapper";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "@/components/admin/sidebar";
-import { getTeamMembers, getTeamMemberCount } from "@/lib/db/admin/team";
+import { getTeamMembers, getTeamMemberCount, type TeamFilters } from "@/lib/db/admin/team";
 import { requireAdmin } from "@/lib/auth/guards";
 
 interface Props {
@@ -32,7 +32,7 @@ export default async function TeamPage({ searchParams }: Props) {
   // First get count to validate page bounds
   const totalCount = await getTeamMemberCount({
     search: params.search,
-    role: params.role as "admin" | "super_admin" | "all" | undefined,
+    role: params.role as TeamFilters["role"],
     isActive,
   });
 
@@ -49,9 +49,9 @@ export default async function TeamPage({ searchParams }: Props) {
   }
 
   const page = Math.min(requestedPage, totalPages);
-  const filters = {
+  const filters: TeamFilters = {
     search: params.search,
-    role: params.role as "admin" | "super_admin" | "all" | undefined,
+    role: params.role as TeamFilters["role"],
     isActive,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,

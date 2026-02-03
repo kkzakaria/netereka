@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ActionSheet, type ActionSheetItem } from "./action-sheet";
 import { formatDateShort } from "@/lib/utils";
-import { TEAM_ROLE_LABELS, TEAM_ROLE_VARIANTS } from "@/lib/constants/team";
+import { TEAM_ROLE_LABELS, TEAM_ROLE_VARIANTS, type TeamRole } from "@/lib/constants/team";
 import type { TeamMember } from "@/lib/db/types";
 
 // Hoisted static icon
@@ -26,7 +26,7 @@ function getInitials(firstName: string, lastName: string): string {
 export function TeamCardMobile({ member }: TeamCardMobileProps) {
   const router = useRouter();
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
-  const roleKey = member.role as "admin" | "super_admin";
+  const roleKey = member.role as TeamRole;
 
   const handleViewProfile = useCallback(() => {
     router.push(`/team/${member.id}`);

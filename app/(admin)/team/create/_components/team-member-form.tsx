@@ -25,7 +25,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createTeamMember } from "@/actions/admin/team";
-import { TEAM_ROLE_OPTIONS, JOB_TITLE_OPTIONS } from "@/lib/constants/team";
+import { JOB_TITLE_OPTIONS } from "@/lib/constants/team";
+import {
+  TEAM_ROLE_OPTIONS,
+  type TeamRole,
+} from "@/lib/permissions";
 
 const formSchema = z.object({
   email: z.string().email("Email invalide"),
@@ -33,7 +37,7 @@ const formSchema = z.object({
   firstName: z.string().min(1, "Prénom requis"),
   lastName: z.string().min(1, "Nom requis"),
   phone: z.string().optional(),
-  role: z.enum(["admin", "super_admin"]),
+  role: z.enum(["admin", "super_admin", "delivery", "support", "accountant"]),
   jobTitle: z.string().optional(),
 });
 
@@ -172,9 +176,7 @@ export function TeamMemberForm() {
             <Label>Rôle</Label>
             <Select
               value={selectedRole}
-              onValueChange={(value: "admin" | "super_admin") =>
-                setValue("role", value)
-              }
+              onValueChange={(value: TeamRole) => setValue("role", value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Sélectionner un rôle" />
@@ -182,7 +184,12 @@ export function TeamMemberForm() {
               <SelectContent>
                 {TEAM_ROLE_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                    <div className="flex flex-col gap-0.5">
+                      <span>{option.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {option.description}
+                      </span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>

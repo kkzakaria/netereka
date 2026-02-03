@@ -1,9 +1,9 @@
 import { query, queryFirst } from "@/lib/db";
-import type { TeamMember, TeamMemberDetail } from "@/lib/db/types";
+import type { TeamMember, TeamMemberDetail, TeamRole } from "@/lib/db/types";
 
 export interface TeamFilters {
   search?: string;
-  role?: "admin" | "super_admin" | "all";
+  role?: TeamRole | "all";
   isActive?: boolean;
   sort?: "newest" | "oldest" | "name_asc" | "name_desc";
   limit?: number;
@@ -25,8 +25,8 @@ function buildFilterClause(opts: TeamFilters): {
     params.push(term, term, term);
   }
 
-  // Filter to team members only (admin and super_admin)
-  conditions.push("u.role IN ('admin', 'super_admin')");
+  // Filter to team members only (all team roles)
+  conditions.push("u.role IN ('super_admin', 'admin', 'delivery', 'support', 'accountant')");
 
   if (opts.role && opts.role !== "all") {
     conditions.push("u.role = ?");

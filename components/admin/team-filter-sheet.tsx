@@ -18,8 +18,11 @@ interface FilterState {
 
 const ROLE_OPTIONS = [
   { value: "all", label: "Tous" },
-  { value: "admin", label: "Admin" },
   { value: "super_admin", label: "Super Admin" },
+  { value: "admin", label: "Admin" },
+  { value: "delivery", label: "Livreur" },
+  { value: "support", label: "Service Client" },
+  { value: "accountant", label: "Comptable" },
 ];
 
 const STATUS_OPTIONS = [

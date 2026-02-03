@@ -22,7 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon, ViewIcon } from "@hugeicons/core-free-icons";
 import { formatDateShort } from "@/lib/utils";
-import { TEAM_ROLE_LABELS, TEAM_ROLE_VARIANTS } from "@/lib/constants/team";
+import { TEAM_ROLE_LABELS, TEAM_ROLE_VARIANTS, type TeamRole } from "@/lib/constants/team";
 import type { TeamMember } from "@/lib/db/types";
 
 function getInitials(firstName: string, lastName: string): string {
@@ -38,7 +38,7 @@ const TeamRow = memo(function TeamRow({
 }: {
   member: TeamMember;
 }) {
-  const roleKey = member.role as "admin" | "super_admin";
+  const roleKey = member.role as TeamRole;
 
   return (
     <TableRow

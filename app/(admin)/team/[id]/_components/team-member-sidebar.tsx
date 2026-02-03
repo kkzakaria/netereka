@@ -38,7 +38,11 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { formatDateLong } from "@/lib/utils";
-import { TEAM_ROLE_LABELS, TEAM_ROLE_OPTIONS } from "@/lib/constants/team";
+import {
+  TEAM_ROLE_LABELS,
+  TEAM_ROLE_OPTIONS,
+  type TeamRole,
+} from "@/lib/permissions";
 import {
   updateTeamMemberRole,
   toggleTeamMemberActive,
@@ -68,7 +72,7 @@ export function TeamMemberSidebar({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function handleRoleChange(newRole: "admin" | "super_admin") {
+  function handleRoleChange(newRole: TeamRole) {
     setError(null);
     startTransition(async () => {
       const result = await updateTeamMemberRole(member.id, newRole);
@@ -100,7 +104,7 @@ export function TeamMemberSidebar({
     });
   }
 
-  const roleKey = member.role as "admin" | "super_admin";
+  const roleKey = member.role as TeamRole;
 
   return (
     <div className="space-y-4">
