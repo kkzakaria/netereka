@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -10,6 +10,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ActionSheet, type ActionSheetItem } from "./action-sheet";
 import { formatPrice } from "@/lib/utils";
 import type { AdminCustomer } from "@/lib/db/types";
+
+// Hoisted static icon (rendering-hoist-jsx)
+const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={20} />;
 
 interface CustomerCardMobileProps {
   customer: AdminCustomer;
@@ -48,15 +51,16 @@ export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
   const router = useRouter();
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
 
-  const actions: ActionSheetItem[] = [
-    {
-      label: "Voir détails",
-      icon: ViewIcon,
-      onClick: () => {
-        router.push(`/customers/${customer.id}`);
-      },
-    },
-  ];
+  // Stable callback to avoid recreating on each render (rerender-memo-with-default-value)
+  const handleViewDetails = useCallback(() => {
+    router.push(`/customers/${customer.id}`);
+  }, [router, customer.id]);
+
+  // Memoize actions array (rerender-memo-with-default-value)
+  const actions = useMemo<ActionSheetItem[]>(
+    () => [{ label: "Voir détails", icon: ViewIcon, onClick: handleViewDetails }],
+    [handleViewDetails]
+  );
 
   return (
     <>
@@ -129,7 +133,7 @@ export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
           aria-label="Plus d'options"
         >
-          <HugeiconsIcon icon={MoreVerticalIcon} size={20} />
+          {moreIcon}
         </button>
       </Link>
 

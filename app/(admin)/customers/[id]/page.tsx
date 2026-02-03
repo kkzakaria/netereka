@@ -17,8 +17,8 @@ interface Props {
 const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 
 export default async function CustomerDetailPage({ params }: Props) {
-  const session = await requireAdmin();
-  const { id } = await params;
+  // Parallelize auth check and params resolution (async-parallel)
+  const [session, { id }] = await Promise.all([requireAdmin(), params]);
   const customer = await getAdminCustomerById(id);
 
   if (!customer) notFound();
