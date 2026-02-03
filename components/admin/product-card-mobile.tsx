@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
@@ -39,6 +40,7 @@ interface ProductCardMobileProps {
 }
 
 export function ProductCardMobile({ product }: ProductCardMobileProps) {
+  const router = useRouter();
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -72,7 +74,7 @@ export function ProductCardMobile({ product }: ProductCardMobileProps) {
       label: "Modifier",
       icon: Edit02Icon,
       onClick: () => {
-        window.location.href = `/products/${product.id}/edit`;
+        router.push(`/products/${product.id}/edit`);
       },
     },
     {

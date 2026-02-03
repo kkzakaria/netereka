@@ -20,13 +20,19 @@ interface ActionSheetProps {
   items: ActionSheetItem[];
 }
 
-function ActionSheetContent({
+export function ActionSheet({
   open,
   onOpenChange,
   title,
   items,
 }: ActionSheetProps) {
   const [confirmIndex, setConfirmIndex] = useState<number | null>(null);
+
+  // Wrapper to reset confirmation state when closing
+  function handleClose() {
+    setConfirmIndex(null);
+    onOpenChange(false);
+  }
 
   useEffect(() => {
     document.body.classList.toggle("overflow-hidden", open);
@@ -35,13 +41,15 @@ function ActionSheetContent({
     };
   }, [open]);
 
+  // Keyboard handler - always register cleanup to prevent memory leak
   useEffect(() => {
-    if (!open) return;
     function onKey(e: KeyboardEvent) {
+      if (!open) return;
       if (e.key === "Escape") {
         if (confirmIndex !== null) {
           setConfirmIndex(null);
         } else {
+          setConfirmIndex(null);
           onOpenChange(false);
         }
       }
@@ -56,7 +64,7 @@ function ActionSheetContent({
       return;
     }
     item.onClick();
-    onOpenChange(false);
+    handleClose();
   }
 
   return (
@@ -67,7 +75,7 @@ function ActionSheetContent({
           "fixed inset-0 z-[60] bg-black/40 transition-opacity duration-300",
           open ? "opacity-100" : "pointer-events-none opacity-0"
         )}
-        onClick={() => onOpenChange(false)}
+        onClick={handleClose}
         aria-hidden="true"
       />
 
@@ -85,7 +93,7 @@ function ActionSheetContent({
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="text-base font-semibold">{title || "Actions"}</h2>
           <button
-            onClick={() => onOpenChange(false)}
+            onClick={handleClose}
             className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
             aria-label="Fermer"
           >
@@ -123,7 +131,7 @@ function ActionSheetContent({
         {/* Cancel button */}
         <div className="border-t p-2">
           <button
-            onClick={() => onOpenChange(false)}
+            onClick={handleClose}
             className="flex h-[52px] w-full items-center justify-center rounded-xl bg-muted text-sm font-medium hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
           >
             Annuler
@@ -131,28 +139,6 @@ function ActionSheetContent({
         </div>
       </div>
     </>
-  );
-}
-
-// Wrapper component that uses key to reset state when closing
-export function ActionSheet(props: ActionSheetProps) {
-  // Use a counter that increments each time we close, to force remount of content
-  const [resetKey, setResetKey] = useState(0);
-
-  const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen) {
-      // Increment key to reset internal state on close
-      setResetKey((k) => k + 1);
-    }
-    props.onOpenChange(newOpen);
-  };
-
-  return (
-    <ActionSheetContent
-      key={resetKey}
-      {...props}
-      onOpenChange={handleOpenChange}
-    />
   );
 }
 
