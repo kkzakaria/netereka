@@ -21,6 +21,14 @@ export function OrderStatusTimeline({ status }: { status: string }) {
     );
   }
 
+  if (status === "returned") {
+    return (
+      <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-center text-sm text-destructive">
+        Commande retournée
+      </div>
+    );
+  }
+
   const currentIdx = stepIndex[status] ?? 0;
 
   return (

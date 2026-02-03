@@ -109,6 +109,15 @@ export interface Order {
   delivered_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
+  // Admin-specific fields
+  internal_notes: string | null;
+  delivery_person_id: string | null;
+  delivery_person_name: string | null;
+  confirmed_at: string | null;
+  preparing_at: string | null;
+  shipping_at: string | null;
+  returned_at: string | null;
+  return_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -201,4 +210,30 @@ export type OrderStatus =
   | "preparing"
   | "shipping"
   | "delivered"
-  | "cancelled";
+  | "cancelled"
+  | "returned";
+
+export interface OrderStatusHistory {
+  id: string;
+  order_id: string;
+  from_status: string | null;
+  to_status: string;
+  changed_by: string;
+  note: string | null;
+  created_at: string;
+}
+
+export interface AdminOrder extends Order {
+  item_count: number;
+  user_email: string;
+  user_name: string;
+  user_phone: string | null;
+}
+
+export interface AdminOrderDetail extends Order {
+  items: OrderItem[];
+  status_history: OrderStatusHistory[];
+  user_email: string;
+  user_name: string;
+  user_phone: string | null;
+}
