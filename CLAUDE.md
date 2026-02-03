@@ -13,70 +13,96 @@ NETEREKA Electronic is an e-commerce platform for electronics targeting the Ivor
 - **Styling:** Tailwind CSS 4 with CSS variables (oklch color space) in `app/globals.css`
 - **UI Components:** shadcn/ui (Radix-based), using `class-variance-authority` for variants
 - **Icons:** HugeIcons (`@hugeicons/react`, `@hugeicons/core-free-icons`)
-- **State Management:** Zustand (planned)
-- **Forms:** React Hook Form + Zod (planned)
-- **Backend Services:** Cloudflare D1 (SQLite), KV (cache/sessions/cart), R2 (images/files), Queues (email/WhatsApp)
+- **State Management:** Zustand with persist middleware (`stores/cart-store.ts`)
+- **Forms:** React Hook Form + Zod
+- **Auth:** better-auth with Cloudflare Turnstile captcha
+- **Backend Services:** Cloudflare D1 (SQLite), KV, R2 (images)
 
 ## Commands
 
 ```bash
-npm run dev       # Start dev server (localhost:3000, Turbopack)
-npm run build     # Production build
-npm run start     # Start production server
-npm run lint      # ESLint
+npm run dev             # Start dev server (localhost:3000, Turbopack)
+npm run build           # Production build
+npm run build:worker    # Build for Cloudflare Workers
+npm run preview         # Preview with wrangler
+npm run deploy          # Build and deploy to Cloudflare
+npm run lint            # ESLint
+
+# Database (local D1)
+npm run db:migrate      # Run migrations
+npm run db:seed         # Seed initial data
+npm run db:seed-catalogue  # Seed product catalogue
 ```
 
 No test framework is configured yet.
 
 ## Architecture
 
-### Route Groups (planned structure from architecture doc)
+### Route Groups
 
-- `app/(storefront)/` — Public-facing store routes (home, products, categories, cart, checkout, auth, account)
-- `app/(admin)/` — Protected admin routes (dashboard, products CRUD, orders, customers, promo-codes, reports)
-- `app/api/` — API routes (auth callbacks, webhooks, cron jobs). Server Actions preferred over API routes.
+- `app/(storefront)/` — Public store: home, products (`/p/[slug]`), categories (`/c/[slug]`), cart, checkout, auth, account
+- `app/(admin)/` — Protected admin: dashboard, products CRUD, categories, orders management
+- `app/api/auth/[...all]/` — better-auth API routes
 
-### Key Directories (planned)
+### Key Directories
 
-- `actions/` — Server Actions organized by domain (products, cart, orders, auth, admin/)
+- `actions/` — Server Actions organized by domain (`checkout.ts`, `reviews.ts`, `admin/orders.ts`, etc.)
+- `lib/db/` — D1 query helpers with `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()`
+- `lib/db/types.ts` — TypeScript interfaces for all DB entities (Product, Order, Category, etc.)
+- `lib/auth/guards.ts` — Auth guards: `requireAuth()`, `requireAdmin()`, `requireGuest()`, `getOptionalSession()`
+- `lib/cloudflare/context.ts` — `getDB()`, `getKV()`, `getR2()` helpers via `getCloudflareContext()`
+- `lib/validations/` — Zod schemas for forms (checkout, account, address, review)
+- `stores/` — Zustand stores (cart persisted to localStorage)
 - `components/ui/` — shadcn/ui base components
-- `components/storefront/` — Store-specific components (header, footer, product-card, cart-drawer)
-- `components/admin/` — Admin-specific components (sidebar, data-table, stats)
-- `components/shared/` — Shared components (loading, error-boundary)
-- `lib/db/` — D1 database query helpers
-- `lib/auth/` — Authentication helpers (session, OAuth, password)
-- `lib/storage/` — R2 storage helpers
-- `lib/notifications/` — Email (Resend/Brevo) and WhatsApp integration
-- `lib/cloudflare/` — Cloudflare bindings and context helpers
-- `lib/utils.ts` — `cn()` utility for class merging (clsx + tailwind-merge)
+- `components/storefront/` — Store components (header, product-card, checkout-form)
+- `components/admin/` — Admin components (sidebar, data-tables, order management)
+
+### Server Actions Pattern
+
+Server Actions use `"use server"` directive and follow this pattern:
+```typescript
+export async function myAction(input: Input): Promise<ActionResult> {
+  const session = await requireAuth(); // or requireAdmin()
+  const parsed = mySchema.safeParse(input);
+  if (!parsed.success) return { success: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  // ... business logic
+  return { success: true };
+}
+```
+
+`ActionResult` interface: `{ success: boolean; error?: string; fieldErrors?: Record<string, string[]> }`
+
+### Cloudflare Bindings
+
+Access via `getCloudflareContext()` from `@opennextjs/cloudflare`:
+- `env.DB` — D1 database
+- `env.KV` — KV namespace
+- `env.R2` — R2 bucket for images
+
+Environment types defined in `env.d.ts` as `CloudflareEnv` interface.
 
 ### Component Patterns
 
-- Components use `data-slot` attributes for styling/selection (e.g., `data-slot="button"`)
-- Button variants defined via CVA with sizes: `xs`, `sm`, `default`, `lg`, `icon`, `icon-xs`, `icon-sm`, `icon-lg`
-- Composite component pattern for complex components (Card → CardHeader, CardTitle, CardContent, etc.)
-- Use `"use client"` directive only when needed (interactivity, hooks)
+- `data-slot` attributes for styling/selection (e.g., `data-slot="button"`)
+- CVA button variants with sizes: `xs`, `sm`, `default`, `lg`, `icon`, `icon-xs`, `icon-sm`, `icon-lg`
+- Composite components (Card → CardHeader, CardTitle, CardContent)
+- `"use client"` only when needed (interactivity, hooks)
 
 ### Design System
 
 - **Primary colors:** Navy Blue (#183C78) + Mint Green (#00FF9C)
-- **Design philosophy:** Premium and clean, inspired by Apple/Google Store, mobile-first
-- **Accessibility:** Min 44px touch targets, high contrast, WCAG compliance
+- **Accessibility:** Min 44px touch targets, mobile-first
 - CSS variables use oklch color space with light/dark theme support
-- Reference `NETEREKA_Design_System.md` for full specifications
 
-### Cloudflare Platform
+### Database
 
-- **D1** — SQLite database for all relational data (products, orders, users). Prices stored as integers (XOF, no decimals).
-- **KV** — Session cache, cart persistence, site configuration
-- **R2** — Product images, PDF invoices, CSV exports
-- **Queues** — Async processing for email and WhatsApp notifications
+D1 SQLite with raw SQL queries. Prices stored as integers (XOF, no decimals). Migrations in `db/migrations/`, seeds in `db/seeds/`.
 
 ## Reference Documents
 
-- `NETEREKA_Architecture_Ecommerce_Cloudflare.md` — Full technical architecture, DB schema, API endpoints, security
-- `NETEREKA_Design_System.md` — Colors, typography, spacing, component specs, Tailwind implementation
-- `NETEREKA_Plan_Developpement.md` — 4-week development timeline and milestones
+- `NETEREKA_Architecture_Ecommerce_Cloudflare.md` — Full technical architecture and DB schema
+- `NETEREKA_Design_System.md` — Colors, typography, spacing, component specs
+- `NETEREKA_Plan_Developpement.md` — 4-week development timeline with task tracking and checklists
 - `NETEREKA_Homepage_Concept.jsx` — Homepage component prototype
 
 ## MCP Servers

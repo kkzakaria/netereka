@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AdminHeader } from "@/components/admin/admin-header";
 import { Button } from "@/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
@@ -24,14 +23,25 @@ export default async function OrderDetailPage({ params }: Props) {
 
   return (
     <div>
-      <div className="mb-6 flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
+      <header className="mb-6 flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          asChild
+          className="h-11 w-11 shrink-0"
+          aria-label="Retour à la liste des commandes"
+        >
           <Link href="/orders">
             {backIcon}
           </Link>
         </Button>
-        <AdminHeader title={`Commande ${order.order_number}`} />
-      </div>
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-bold sm:text-2xl">
+            {order.order_number}
+          </h1>
+          <p className="text-sm text-muted-foreground">Détails de la commande</p>
+        </div>
+      </header>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content - Synchronous since order data is already fetched */}

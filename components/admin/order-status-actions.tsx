@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +21,7 @@ import {
 import {
   ORDER_STATUS_TRANSITIONS,
   ORDER_STATUS_ACTION_LABELS,
+  ORDER_STATUS_LABELS,
 } from "@/lib/constants/orders";
 import type { OrderStatus } from "@/lib/db/types";
 
@@ -37,6 +38,8 @@ export function OrderStatusActions({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogAction, setDialogAction] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [statusAnnouncement, setStatusAnnouncement] = useState("");
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const allowed = ORDER_STATUS_TRANSITIONS[currentStatus as OrderStatus] || [];
 
@@ -48,10 +51,19 @@ export function OrderStatusActions({
     );
   }
 
-  function openDialog(action: string) {
+  function openDialog(action: string, buttonElement: HTMLButtonElement) {
+    triggerRef.current = buttonElement;
     setDialogAction(action);
     setNote("");
     setDialogOpen(true);
+  }
+
+  function handleDialogClose(open: boolean) {
+    setDialogOpen(open);
+    // Return focus to trigger button when dialog closes
+    if (!open && triggerRef.current) {
+      setTimeout(() => triggerRef.current?.focus(), 0);
+    }
   }
 
   function handleAction() {
@@ -69,6 +81,8 @@ export function OrderStatusActions({
       }
 
       if (result.success) {
+        const newStatusLabel = ORDER_STATUS_LABELS[dialogAction as OrderStatus] || dialogAction;
+        setStatusAnnouncement(`Statut mis à jour vers ${newStatusLabel}`);
         toast.success("Statut mis à jour");
         setDialogOpen(false);
       } else {
@@ -82,6 +96,11 @@ export function OrderStatusActions({
 
   return (
     <>
+      {/* Screen reader announcement for status updates */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {statusAnnouncement}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {allowed.map((status) => (
           <Button
@@ -92,7 +111,7 @@ export function OrderStatusActions({
                 : "default"
             }
             size="sm"
-            onClick={() => openDialog(status)}
+            onClick={(e) => openDialog(status, e.currentTarget)}
             disabled={isPending}
             className={
               status === "cancelled" || status === "returned"
@@ -105,7 +124,7 @@ export function OrderStatusActions({
         ))}
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={handleDialogClose}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -138,7 +157,7 @@ export function OrderStatusActions({
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setDialogOpen(false)}
+              onClick={() => handleDialogClose(false)}
               disabled={isPending}
             >
               Annuler

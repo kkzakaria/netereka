@@ -18,6 +18,18 @@ export function formatPrice(price: number): string {
   return new Intl.NumberFormat("fr-CI", { style: "decimal" }).format(price) + " FCFA";
 }
 
+// Date formatting options for order lists (shared across components)
+const orderDateFormatOptions: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+
+export function formatOrderDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("fr-FR", orderDateFormatOptions);
+}
+
 export interface ActionResult {
   success: boolean;
   error?: string;

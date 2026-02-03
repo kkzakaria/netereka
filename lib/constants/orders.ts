@@ -1,4 +1,27 @@
+import {
+  Time02Icon,
+  CheckmarkCircle02Icon,
+  Package02Icon,
+  DeliveryTruck01Icon,
+  CheckmarkSquare02Icon,
+  Cancel01Icon,
+  ArrowTurnBackwardIcon,
+} from "@hugeicons/core-free-icons";
 import type { OrderStatus } from "@/lib/db/types";
+
+/**
+ * Icons for each order status.
+ * Provides visual differentiation beyond color alone (accessibility).
+ */
+export const ORDER_STATUS_ICONS = {
+  pending: Time02Icon,
+  confirmed: CheckmarkCircle02Icon,
+  preparing: Package02Icon,
+  shipping: DeliveryTruck01Icon,
+  delivered: CheckmarkSquare02Icon,
+  cancelled: Cancel01Icon,
+  returned: ArrowTurnBackwardIcon,
+} as const;
 
 /**
  * Valid status transitions for orders.
@@ -70,6 +93,33 @@ export const ORDER_STATUS_CONFIG: Record<
   cancelled: { label: ORDER_STATUS_LABELS.cancelled, variant: ORDER_STATUS_BADGE_VARIANTS.cancelled },
   returned: { label: ORDER_STATUS_LABELS.returned, variant: ORDER_STATUS_BADGE_VARIANTS.returned },
 };
+
+/**
+ * All valid order status values.
+ */
+export const ORDER_STATUSES: OrderStatus[] = [
+  "pending",
+  "confirmed",
+  "preparing",
+  "shipping",
+  "delivered",
+  "cancelled",
+  "returned",
+];
+
+/**
+ * Type guard to check if a string is a valid OrderStatus.
+ */
+export function isOrderStatus(value: string): value is OrderStatus {
+  return ORDER_STATUSES.includes(value as OrderStatus);
+}
+
+/**
+ * Safely get OrderStatus from a string, with fallback to "pending".
+ */
+export function getOrderStatus(value: string): OrderStatus {
+  return isOrderStatus(value) ? value : "pending";
+}
 
 /**
  * Check if a status transition is valid.

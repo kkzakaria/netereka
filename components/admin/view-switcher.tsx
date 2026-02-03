@@ -10,11 +10,15 @@ const modes: { value: ViewMode; icon: typeof GridIcon; label: string }[] = [
   { value: "table", icon: Menu01Icon, label: "Vue tableau" },
 ];
 
-export function ViewSwitcher() {
+interface ViewSwitcherProps {
+  className?: string;
+}
+
+export function ViewSwitcher({ className }: ViewSwitcherProps) {
   const { mode, setMode, effectiveMode } = useViewMode();
 
   return (
-    <div className="inline-flex h-9 items-center gap-0.5 rounded-lg border bg-muted/50 p-0.5">
+    <div className={cn("inline-flex h-9 items-center gap-0.5 rounded-lg border bg-muted/50 p-0.5", className)}>
       {modes.map(({ value, icon, label }) => {
         const isActive =
           mode === value || (mode === "auto" && effectiveMode === value);

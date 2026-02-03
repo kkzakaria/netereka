@@ -102,7 +102,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
           Statut
         </Label>
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger id="status-select" className="w-36">
+          <SelectTrigger id="status-select" className="min-w-36 flex-1">
             <SelectValue placeholder="Tous" />
           </SelectTrigger>
           <SelectContent>
@@ -120,7 +120,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
           Commune
         </Label>
         <Select value={commune} onValueChange={setCommune}>
-          <SelectTrigger id="commune-select" className="w-40">
+          <SelectTrigger id="commune-select" className="min-w-40 flex-1">
             <SelectValue placeholder="Toutes" />
           </SelectTrigger>
           <SelectContent>
@@ -143,7 +143,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
           name="dateFrom"
           type="date"
           defaultValue={searchParams.get("dateFrom") ?? ""}
-          className="w-36"
+          className="min-w-36"
         />
       </div>
 
@@ -156,7 +156,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
           name="dateTo"
           type="date"
           defaultValue={searchParams.get("dateTo") ?? ""}
-          className="w-36"
+          className="min-w-36"
         />
       </div>
 

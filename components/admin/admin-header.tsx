@@ -5,10 +5,16 @@ import { Menu01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./sidebar";
+import { cn } from "@/lib/utils";
 
-export function AdminHeader({ title }: { title: string }) {
+interface AdminHeaderProps {
+  title: string;
+  className?: string;
+}
+
+export function AdminHeader({ title, className }: AdminHeaderProps) {
   return (
-    <header className="mb-6 flex items-center gap-4">
+    <header className={cn("mb-6 flex items-center gap-4", className)}>
       <Sheet>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon" className="lg:hidden">
