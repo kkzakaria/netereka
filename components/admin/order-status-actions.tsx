@@ -18,25 +18,11 @@ import {
   cancelOrderAdmin,
   processReturn,
 } from "@/actions/admin/orders";
-
-const validTransitions: Record<string, string[]> = {
-  pending: ["confirmed", "cancelled"],
-  confirmed: ["preparing", "cancelled"],
-  preparing: ["shipping", "cancelled"],
-  shipping: ["delivered", "returned"],
-  delivered: ["returned"],
-  cancelled: [],
-  returned: [],
-};
-
-const statusLabels: Record<string, string> = {
-  confirmed: "Confirmer",
-  preparing: "Mettre en préparation",
-  shipping: "Mettre en livraison",
-  delivered: "Marquer livrée",
-  cancelled: "Annuler",
-  returned: "Traiter retour",
-};
+import {
+  ORDER_STATUS_TRANSITIONS,
+  ORDER_STATUS_ACTION_LABELS,
+} from "@/lib/constants/orders";
+import type { OrderStatus } from "@/lib/db/types";
 
 interface OrderStatusActionsProps {
   orderId: string;
@@ -52,7 +38,7 @@ export function OrderStatusActions({
   const [dialogAction, setDialogAction] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
-  const allowed = validTransitions[currentStatus] || [];
+  const allowed = ORDER_STATUS_TRANSITIONS[currentStatus as OrderStatus] || [];
 
   if (allowed.length === 0) {
     return (
@@ -114,7 +100,7 @@ export function OrderStatusActions({
                 : ""
             }
           >
-            {statusLabels[status] || status}
+            {ORDER_STATUS_ACTION_LABELS[status] || status}
           </Button>
         ))}
       </div>
@@ -123,7 +109,7 @@ export function OrderStatusActions({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {dialogAction && statusLabels[dialogAction]}
+              {dialogAction && ORDER_STATUS_ACTION_LABELS[dialogAction]}
             </DialogTitle>
             <DialogDescription>
               {isDestructiveAction

@@ -21,17 +21,8 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
 import { formatPrice } from "@/lib/utils";
-import type { AdminOrder } from "@/lib/db/types";
-
-const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "En attente", variant: "secondary" },
-  confirmed: { label: "Confirmée", variant: "outline" },
-  preparing: { label: "Préparation", variant: "outline" },
-  shipping: { label: "Livraison", variant: "default" },
-  delivered: { label: "Livrée", variant: "default" },
-  cancelled: { label: "Annulée", variant: "destructive" },
-  returned: { label: "Retournée", variant: "destructive" },
-};
+import { ORDER_STATUS_CONFIG } from "@/lib/constants/orders";
+import type { AdminOrder, OrderStatus } from "@/lib/db/types";
 
 // Hoisted date formatter options (rendering-hoist-jsx)
 const dateFormatOptions: Intl.DateTimeFormatOptions = {
@@ -50,7 +41,7 @@ const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={16} />;
 
 // Memoized row component for better performance (rerender-memo)
 const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
-  const status = statusConfig[order.status] || statusConfig.pending;
+  const status = ORDER_STATUS_CONFIG[order.status as OrderStatus] || ORDER_STATUS_CONFIG.pending;
   return (
     <TableRow
       // content-visibility for rendering performance (rendering-content-visibility)

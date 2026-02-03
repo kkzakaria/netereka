@@ -9,21 +9,33 @@ import { getDB } from "@/lib/cloudflare/context";
 import { refundOrderStock } from "@/lib/db/orders";
 import { getAdminOrders, type AdminOrderFilters } from "@/lib/db/admin/orders";
 import { ordersToCSV } from "@/lib/csv/orders";
+import {
+  ORDER_STATUS_TRANSITIONS,
+  ORDER_STATUS_LABELS,
+  getStatusTimestampField,
+} from "@/lib/constants/orders";
 import type { ActionResult } from "@/lib/utils";
-import type { Order } from "@/lib/db/types";
+import type { Order, OrderStatus } from "@/lib/db/types";
 
+// Validation schemas
 const idSchema = z.string().min(1, "ID requis");
 
-// Status transition rules
-const validTransitions: Record<string, string[]> = {
-  pending: ["confirmed", "cancelled"],
-  confirmed: ["preparing", "cancelled"],
-  preparing: ["shipping", "cancelled"],
-  shipping: ["delivered", "returned"],
-  delivered: ["returned"],
-  cancelled: [],
-  returned: [],
-};
+const reasonSchema = z
+  .string()
+  .min(1, "La raison est requise")
+  .max(1000, "La raison ne peut pas dépasser 1000 caractères")
+  .trim();
+
+const noteSchema = z
+  .string()
+  .max(2000, "La note ne peut pas dépasser 2000 caractères")
+  .trim()
+  .optional();
+
+const notesSchema = z
+  .string()
+  .max(5000, "Les notes ne peuvent pas dépasser 5000 caractères")
+  .trim();
 
 async function addStatusHistory(
   orderId: string,
@@ -52,59 +64,46 @@ export async function updateOrderStatus(
   const idResult = idSchema.safeParse(orderId);
   if (!idResult.success) return { success: false, error: "ID commande invalide" };
 
+  const noteResult = noteSchema.safeParse(note);
+  if (!noteResult.success) {
+    return { success: false, error: noteResult.error.issues[0].message };
+  }
+
   const order = await queryFirst<Order>("SELECT * FROM orders WHERE id = ?", [
     orderId,
   ]);
   if (!order) return { success: false, error: "Commande introuvable" };
 
-  const currentStatus = order.status;
-  const allowed = validTransitions[currentStatus] || [];
+  const currentStatus = order.status as OrderStatus;
+  const allowed = ORDER_STATUS_TRANSITIONS[currentStatus] || [];
 
-  if (!allowed.includes(newStatus)) {
+  if (!allowed.includes(newStatus as OrderStatus)) {
     return {
       success: false,
-      error: `Transition de "${currentStatus}" vers "${newStatus}" non autorisée`,
+      error: `Transition de "${ORDER_STATUS_LABELS[currentStatus]}" vers "${ORDER_STATUS_LABELS[newStatus as OrderStatus] || newStatus}" non autorisée`,
     };
   }
 
   const db = await getDB();
-  const statements: D1PreparedStatement[] = [];
 
-  // Determine timestamp field to update
-  const timestampField =
-    newStatus === "confirmed"
-      ? "confirmed_at"
-      : newStatus === "preparing"
-        ? "preparing_at"
-        : newStatus === "shipping"
-          ? "shipping_at"
-          : newStatus === "delivered"
-            ? "delivered_at"
-            : newStatus === "returned"
-              ? "returned_at"
-              : newStatus === "cancelled"
-                ? "cancelled_at"
-                : null;
+  // Get timestamp field for the new status
+  const timestampField = getStatusTimestampField(newStatus as OrderStatus);
 
   if (timestampField) {
-    statements.push(
-      db
-        .prepare(
-          `UPDATE orders SET status = ?, ${timestampField} = datetime('now'), updated_at = datetime('now') WHERE id = ?`
-        )
-        .bind(newStatus, orderId)
-    );
+    await db
+      .prepare(
+        `UPDATE orders SET status = ?, ${timestampField} = datetime('now'), updated_at = datetime('now') WHERE id = ?`
+      )
+      .bind(newStatus, orderId)
+      .run();
   } else {
-    statements.push(
-      db
-        .prepare(
-          "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?"
-        )
-        .bind(newStatus, orderId)
-    );
+    await db
+      .prepare(
+        "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?"
+      )
+      .bind(newStatus, orderId)
+      .run();
   }
-
-  await db.batch(statements);
 
   // Add history entry
   await addStatusHistory(
@@ -112,14 +111,12 @@ export async function updateOrderStatus(
     currentStatus,
     newStatus,
     session.user.email,
-    note
+    noteResult.data
   );
 
-  // Refund stock if cancelled or returned (except for delivered orders that are cancelled - they shouldn't exist)
-  if (
-    newStatus === "cancelled" ||
-    (newStatus === "returned" && currentStatus !== "delivered")
-  ) {
+  // Refund stock for cancellations and returns
+  // Note: Returns ALWAYS refund stock, even for delivered orders (items returned to warehouse)
+  if (newStatus === "cancelled" || newStatus === "returned") {
     await refundOrderStock(orderId);
   }
 
@@ -138,9 +135,14 @@ export async function updateInternalNotes(
   const idResult = idSchema.safeParse(orderId);
   if (!idResult.success) return { success: false, error: "ID commande invalide" };
 
+  const notesResult = notesSchema.safeParse(notes);
+  if (!notesResult.success) {
+    return { success: false, error: notesResult.error.issues[0].message };
+  }
+
   await execute(
     "UPDATE orders SET internal_notes = ?, updated_at = datetime('now') WHERE id = ?",
-    [notes || null, orderId]
+    [notesResult.data || null, orderId]
   );
 
   revalidatePath(`/orders/${orderId}`);
@@ -178,16 +180,23 @@ export async function cancelOrderAdmin(
   const idResult = idSchema.safeParse(orderId);
   if (!idResult.success) return { success: false, error: "ID commande invalide" };
 
+  const reasonResult = reasonSchema.safeParse(reason);
+  if (!reasonResult.success) {
+    return { success: false, error: reasonResult.error.issues[0].message };
+  }
+
   const order = await queryFirst<Order>("SELECT * FROM orders WHERE id = ?", [
     orderId,
   ]);
   if (!order) return { success: false, error: "Commande introuvable" };
 
-  const allowed = validTransitions[order.status] || [];
+  const currentStatus = order.status as OrderStatus;
+  const allowed = ORDER_STATUS_TRANSITIONS[currentStatus] || [];
+
   if (!allowed.includes("cancelled")) {
     return {
       success: false,
-      error: `Impossible d'annuler une commande avec le statut "${order.status}"`,
+      error: `Impossible d'annuler une commande avec le statut "${ORDER_STATUS_LABELS[currentStatus]}"`,
     };
   }
 
@@ -198,15 +207,15 @@ export async function cancelOrderAdmin(
        cancellation_reason = ?,
        updated_at = datetime('now')
      WHERE id = ?`,
-    [reason, orderId]
+    [reasonResult.data, orderId]
   );
 
   await addStatusHistory(
     orderId,
-    order.status,
+    currentStatus,
     "cancelled",
     session.user.email,
-    reason
+    reasonResult.data
   );
 
   if (refundStock) {
@@ -228,16 +237,23 @@ export async function processReturn(
   const idResult = idSchema.safeParse(orderId);
   if (!idResult.success) return { success: false, error: "ID commande invalide" };
 
+  const reasonResult = reasonSchema.safeParse(reason);
+  if (!reasonResult.success) {
+    return { success: false, error: reasonResult.error.issues[0].message };
+  }
+
   const order = await queryFirst<Order>("SELECT * FROM orders WHERE id = ?", [
     orderId,
   ]);
   if (!order) return { success: false, error: "Commande introuvable" };
 
-  const allowed = validTransitions[order.status] || [];
+  const currentStatus = order.status as OrderStatus;
+  const allowed = ORDER_STATUS_TRANSITIONS[currentStatus] || [];
+
   if (!allowed.includes("returned")) {
     return {
       success: false,
-      error: `Impossible de retourner une commande avec le statut "${order.status}"`,
+      error: `Impossible de retourner une commande avec le statut "${ORDER_STATUS_LABELS[currentStatus]}"`,
     };
   }
 
@@ -248,18 +264,18 @@ export async function processReturn(
        return_reason = ?,
        updated_at = datetime('now')
      WHERE id = ?`,
-    [reason, orderId]
+    [reasonResult.data, orderId]
   );
 
   await addStatusHistory(
     orderId,
-    order.status,
+    currentStatus,
     "returned",
     session.user.email,
-    reason
+    reasonResult.data
   );
 
-  // Refund stock for returns
+  // Returns ALWAYS refund stock (items returned to warehouse)
   await refundOrderStock(orderId);
 
   revalidatePath("/orders");
@@ -268,15 +284,18 @@ export async function processReturn(
   return { success: true };
 }
 
+// Maximum number of orders to export at once
+const MAX_EXPORT_LIMIT = 10000;
+
 export async function exportOrdersCSV(
   filters: AdminOrderFilters
-): Promise<{ success: boolean; csv?: string; error?: string }> {
+): Promise<{ success: boolean; csv?: string; error?: string; warning?: string }> {
   await requireAdmin();
 
   // Fetch all orders matching filters (no pagination for export)
   const orders = await getAdminOrders({
     ...filters,
-    limit: 10000,
+    limit: MAX_EXPORT_LIMIT,
     offset: 0,
   });
 
@@ -285,5 +304,12 @@ export async function exportOrdersCSV(
   }
 
   const csv = ordersToCSV(orders);
-  return { success: true, csv };
+
+  // Warn if we hit the limit
+  const warning =
+    orders.length >= MAX_EXPORT_LIMIT
+      ? `Export limité à ${MAX_EXPORT_LIMIT} commandes. Utilisez des filtres pour réduire la sélection.`
+      : undefined;
+
+  return { success: true, csv, warning };
 }

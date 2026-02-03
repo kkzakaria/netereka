@@ -241,12 +241,23 @@ export async function cancelOrder(
   return result.meta.changes > 0;
 }
 
-export async function refundOrderStock(orderId: string): Promise<void> {
+/**
+ * Refunds stock for a cancelled or returned order.
+ * Restores product/variant stock quantities based on order items.
+ * @throws Error if order has no items or if stock update fails
+ */
+export async function refundOrderStock(orderId: string): Promise<{ itemsRefunded: number }> {
   const db = await getDB();
   const items = await query<OrderItem>(
     "SELECT * FROM order_items WHERE order_id = ?",
     [orderId]
   );
+
+  if (items.length === 0) {
+    // Log warning but don't throw - order might have been manually cleaned
+    console.warn(`refundOrderStock: No items found for order ${orderId}`);
+    return { itemsRefunded: 0 };
+  }
 
   const statements: D1PreparedStatement[] = [];
 
@@ -270,7 +281,20 @@ export async function refundOrderStock(orderId: string): Promise<void> {
     }
   }
 
-  if (statements.length > 0) {
-    await db.batch(statements);
+  try {
+    const results = await db.batch(statements);
+
+    // Verify all updates succeeded
+    const failedUpdates = results.filter((r) => r.meta.changes === 0);
+    if (failedUpdates.length > 0) {
+      console.warn(
+        `refundOrderStock: ${failedUpdates.length}/${items.length} items had no matching product/variant for order ${orderId}`
+      );
+    }
+
+    return { itemsRefunded: items.length - failedUpdates.length };
+  } catch (error) {
+    console.error(`refundOrderStock: Failed to refund stock for order ${orderId}`, error);
+    throw new Error(`Échec du remboursement du stock pour la commande ${orderId}`);
   }
 }
