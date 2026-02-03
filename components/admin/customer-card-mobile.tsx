@@ -8,7 +8,8 @@ import { MoreVerticalIcon, ViewIcon } from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ActionSheet, type ActionSheetItem } from "./action-sheet";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, formatDateShort } from "@/lib/utils";
+import { ROLE_LABELS, ROLE_VARIANTS } from "@/lib/constants/customers";
 import type { AdminCustomer } from "@/lib/db/types";
 
 // Hoisted static icon (rendering-hoist-jsx)
@@ -18,18 +19,6 @@ interface CustomerCardMobileProps {
   customer: AdminCustomer;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  customer: "Client",
-  admin: "Admin",
-  super_admin: "Super Admin",
-};
-
-const ROLE_VARIANTS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  customer: "secondary",
-  admin: "default",
-  super_admin: "destructive",
-};
-
 function getInitials(name: string): string {
   return name
     .split(" ")
@@ -37,14 +26,6 @@ function getInitials(name: string): string {
     .join("")
     .toUpperCase()
     .slice(0, 2);
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
@@ -83,7 +64,7 @@ export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
           <div className="flex items-center justify-between gap-2">
             <span className="truncate font-medium">{customer.name}</span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
-              {formatDate(customer.createdAt)}
+              {formatDateShort(customer.createdAt)}
             </span>
           </div>
 

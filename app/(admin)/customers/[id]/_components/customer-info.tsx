@@ -3,23 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CheckmarkCircle02Icon, Cancel01Icon, Mail01Icon, SmartPhone01Icon } from "@hugeicons/core-free-icons";
+import { formatDateLong } from "@/lib/utils";
+import { ROLE_LABELS, ROLE_VARIANTS } from "@/lib/constants/customers";
 import type { AdminCustomerDetail } from "@/lib/db/types";
 
 interface CustomerInfoProps {
   customer: AdminCustomerDetail;
 }
-
-const ROLE_LABELS: Record<string, string> = {
-  customer: "Client",
-  admin: "Admin",
-  super_admin: "Super Admin",
-};
-
-const ROLE_VARIANTS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  customer: "secondary",
-  admin: "default",
-  super_admin: "destructive",
-};
 
 function getInitials(name: string): string {
   return name
@@ -28,14 +18,6 @@ function getInitials(name: string): string {
     .join("")
     .toUpperCase()
     .slice(0, 2);
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
 }
 
 export function CustomerInfo({ customer }: CustomerInfoProps) {
@@ -93,7 +75,7 @@ export function CustomerInfo({ customer }: CustomerInfoProps) {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Membre depuis le {formatDate(customer.createdAt)}
+              Membre depuis le {formatDateLong(customer.createdAt)}
             </p>
           </div>
         </div>

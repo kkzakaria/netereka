@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, formatDateLong } from "@/lib/utils";
+import { ROLE_OPTIONS } from "@/lib/constants/customers";
 import { updateCustomerRole, toggleCustomerActive } from "@/actions/admin/customers";
 import type { AdminCustomerDetail, UserRole } from "@/lib/db/types";
 
@@ -19,20 +20,6 @@ interface CustomerSidebarProps {
   customer: AdminCustomerDetail;
   isSuperAdmin: boolean;
 }
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
-}
-
-const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
-  { value: "customer", label: "Client" },
-  { value: "admin", label: "Admin" },
-  { value: "super_admin", label: "Super Admin" },
-];
 
 export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps) {
   const router = useRouter();
@@ -83,7 +70,7 @@ export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground">Membre depuis</span>
-            <span className="text-sm">{formatDate(customer.createdAt)}</span>
+            <span className="text-sm">{formatDateLong(customer.createdAt)}</span>
           </div>
           {customer.order_count > 0 && (
             <div className="flex justify-between items-center">

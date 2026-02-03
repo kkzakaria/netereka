@@ -21,20 +21,9 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon, ViewIcon } from "@hugeicons/core-free-icons";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, formatDateShort } from "@/lib/utils";
+import { ROLE_LABELS, ROLE_VARIANTS } from "@/lib/constants/customers";
 import type { AdminCustomer } from "@/lib/db/types";
-
-const ROLE_LABELS: Record<string, string> = {
-  customer: "Client",
-  admin: "Admin",
-  super_admin: "Super Admin",
-};
-
-const ROLE_VARIANTS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  customer: "secondary",
-  admin: "default",
-  super_admin: "destructive",
-};
 
 function getInitials(name: string): string {
   return name
@@ -43,14 +32,6 @@ function getInitials(name: string): string {
     .join("")
     .toUpperCase()
     .slice(0, 2);
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 // Hoisted static icons
@@ -91,7 +72,7 @@ const CustomerRow = memo(function CustomerRow({
         </Badge>
       </TableCell>
       <TableCell className="hidden lg:table-cell text-muted-foreground">
-        {formatDate(customer.createdAt)}
+        {formatDateShort(customer.createdAt)}
       </TableCell>
       <TableCell className="hidden sm:table-cell text-center">
         <Badge variant="outline">{customer.order_count}</Badge>
