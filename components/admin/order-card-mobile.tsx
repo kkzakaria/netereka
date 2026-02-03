@@ -55,8 +55,9 @@ export function OrderCardMobile({ order }: OrderCardMobileProps) {
 
   return (
     <>
-      <div
-        className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/30 touch-manipulation"
+      <Link
+        href={`/orders/${order.id}`}
+        className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/30 active:bg-muted/50 touch-manipulation"
         style={{ contentVisibility: "auto", containIntrinsicSize: "0 100px" }}
       >
         {/* Order icon placeholder */}
@@ -72,12 +73,9 @@ export function OrderCardMobile({ order }: OrderCardMobileProps) {
         <div className="flex flex-1 flex-col gap-1 overflow-hidden">
           {/* Order number + date */}
           <div className="flex items-center justify-between gap-2">
-            <Link
-              href={`/orders/${order.id}`}
-              className="font-mono text-sm font-medium hover:underline"
-            >
+            <span className="font-mono text-sm font-medium">
               {order.order_number}
-            </Link>
+            </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
               {formatDate(order.created_at)}
             </span>
@@ -111,15 +109,19 @@ export function OrderCardMobile({ order }: OrderCardMobileProps) {
           </div>
         </div>
 
-        {/* Action button */}
+        {/* Action button - stops propagation to prevent navigation */}
         <button
-          onClick={() => setActionSheetOpen(true)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setActionSheetOpen(true);
+          }}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
-          aria-label="Actions"
+          aria-label="Plus d'options"
         >
           <HugeiconsIcon icon={MoreVerticalIcon} size={20} />
         </button>
-      </div>
+      </Link>
 
       <ActionSheet
         open={actionSheetOpen}
