@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Search01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -11,11 +11,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { useInstantFilters } from "@/hooks/use-instant-filters";
 import { ORDER_STATUS_LABELS } from "@/lib/constants/orders";
 
 interface OrderFiltersProps {
   communes: string[];
+  className?: string;
 }
 
 // All statuses plus "all" option
@@ -27,153 +29,131 @@ const STATUS_OPTIONS = [
   })),
 ];
 
-export function OrderFilters({ communes }: OrderFiltersProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
+export function OrderFilters({ communes, className }: OrderFiltersProps) {
+  const {
+    isPending,
+    updateFilters,
+    updateFiltersDebounced,
+    clearFilters,
+    getFilter,
+  } = useInstantFilters({ basePath: "/orders" });
 
-  // Controlled state for selects
-  const [status, setStatus] = useState(searchParams.get("status") ?? "all");
-  const [commune, setCommune] = useState(searchParams.get("commune") ?? "all");
-
-  const createQueryString = useCallback(
-    (updates: Record<string, string | null>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      Object.entries(updates).forEach(([key, value]) => {
-        if (value === null || value === "") {
-          params.delete(key);
-        } else {
-          params.set(key, value);
-        }
-      });
-      // Reset page when filters change
-      if (!("page" in updates)) {
-        params.delete("page");
-      }
-      return params.toString();
-    },
-    [searchParams]
-  );
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const updates: Record<string, string | null> = {
-      search: formData.get("search") as string,
-      status: status === "all" ? null : status,
-      commune: commune === "all" ? null : commune,
-      dateFrom: formData.get("dateFrom") as string,
-      dateTo: formData.get("dateTo") as string,
-    };
-
-    startTransition(() => {
-      router.push(`/orders?${createQueryString(updates)}`);
-    });
-  }
-
-  function handleReset() {
-    setStatus("all");
-    setCommune("all");
-    startTransition(() => {
-      router.push("/orders");
-    });
-  }
+  const hasActiveFilters =
+    getFilter("search") ||
+    getFilter("status") ||
+    getFilter("commune") ||
+    getFilter("dateFrom") ||
+    getFilter("dateTo");
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-wrap items-end gap-3"
+    <div
+      className={className}
+      data-pending={isPending || undefined}
     >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="search" className="text-xs text-muted-foreground">
-          Recherche
-        </Label>
-        <Input
-          id="search"
-          name="search"
-          placeholder="N° commande, nom, tél..."
-          defaultValue={searchParams.get("search") ?? ""}
-          className="w-full sm:w-48"
-        />
-      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        {/* Search input with debounce */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="search" className="text-xs text-muted-foreground">
+            Recherche
+          </Label>
+          <div className="relative">
+            <HugeiconsIcon
+              icon={Search01Icon}
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              id="search"
+              placeholder="N° commande, nom, tél..."
+              defaultValue={getFilter("search")}
+              onChange={(e) => updateFiltersDebounced({ search: e.target.value })}
+              className="w-full pl-9 sm:w-48"
+            />
+          </div>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="status-select" className="text-xs text-muted-foreground">
-          Statut
-        </Label>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger id="status-select" className="min-w-36 flex-1">
-            <SelectValue placeholder="Tous" />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+        {/* Status filter - instant */}
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Statut</Label>
+          <Select
+            value={getFilter("status") || "all"}
+            onValueChange={(value) => updateFilters({ status: value })}
+          >
+            <SelectTrigger className="min-w-36">
+              <SelectValue placeholder="Tous" />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="commune-select" className="text-xs text-muted-foreground">
-          Commune
-        </Label>
-        <Select value={commune} onValueChange={setCommune}>
-          <SelectTrigger id="commune-select" className="min-w-40 flex-1">
-            <SelectValue placeholder="Toutes" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toutes</SelectItem>
-            {communes.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+        {/* Commune filter - instant */}
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Commune</Label>
+          <Select
+            value={getFilter("commune") || "all"}
+            onValueChange={(value) => updateFilters({ commune: value })}
+          >
+            <SelectTrigger className="min-w-40">
+              <SelectValue placeholder="Toutes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes</SelectItem>
+              {communes.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="dateFrom" className="text-xs text-muted-foreground">
-          Date début
-        </Label>
-        <Input
-          id="dateFrom"
-          name="dateFrom"
-          type="date"
-          defaultValue={searchParams.get("dateFrom") ?? ""}
-          className="min-w-36"
-        />
-      </div>
+        {/* Date from - instant */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="dateFrom" className="text-xs text-muted-foreground">
+            Date début
+          </Label>
+          <Input
+            id="dateFrom"
+            type="date"
+            defaultValue={getFilter("dateFrom")}
+            onChange={(e) => updateFilters({ dateFrom: e.target.value })}
+            className="min-w-36"
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="dateTo" className="text-xs text-muted-foreground">
-          Date fin
-        </Label>
-        <Input
-          id="dateTo"
-          name="dateTo"
-          type="date"
-          defaultValue={searchParams.get("dateTo") ?? ""}
-          className="min-w-36"
-        />
-      </div>
+        {/* Date to - instant */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="dateTo" className="text-xs text-muted-foreground">
+            Date fin
+          </Label>
+          <Input
+            id="dateTo"
+            type="date"
+            defaultValue={getFilter("dateTo")}
+            onChange={(e) => updateFilters({ dateTo: e.target.value })}
+            className="min-w-36"
+          />
+        </div>
 
-      <div className="flex gap-2">
-        <Button type="submit" variant="secondary" size="sm" disabled={isPending}>
-          Filtrer
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleReset}
-          disabled={isPending}
-        >
-          Réinitialiser
-        </Button>
+        {/* Clear filters button */}
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="gap-1.5 text-muted-foreground"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={14} />
+            Effacer
+          </Button>
+        )}
       </div>
-    </form>
+    </div>
   );
 }

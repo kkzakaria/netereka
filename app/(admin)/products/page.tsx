@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ProductFilters } from "@/components/admin/product-filters";
 import { getAdminProducts, getAdminProductCount } from "@/lib/db/admin/products";
 import { getAllCategories } from "@/lib/db/admin/categories";
 import { ProductsPageClient } from "./products-page-client";
@@ -59,40 +59,12 @@ export default async function ProductsPage({ searchParams }: Props) {
     <div>
       <AdminHeader title="Produits" />
 
-      {/* Desktop filters */}
-      <div className="mb-4 hidden flex-wrap items-center gap-3 lg:flex">
-        <form className="flex flex-1 flex-wrap items-center gap-3">
-          <Input
-            name="search"
-            placeholder="Rechercher..."
-            defaultValue={params.search ?? ""}
-            className="w-64"
-          />
-          <select
-            name="category"
-            defaultValue={params.category ?? ""}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-          >
-            <option value="">Toutes catégories</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </select>
-          <select
-            name="status"
-            defaultValue={params.status ?? "all"}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-          >
-            <option value="all">Tous statuts</option>
-            <option value="active">Actif</option>
-            <option value="inactive">Inactif</option>
-          </select>
-          <Button type="submit" variant="secondary" size="sm">
-            Filtrer
-          </Button>
-        </form>
+      {/* Desktop filters - instant filtering */}
+      <div className="mb-4 hidden items-center justify-between gap-3 lg:flex">
+        <ProductFilters
+          categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+          className="flex-1"
+        />
         <Button asChild>
           <Link href="/products/new">Nouveau produit</Link>
         </Button>
