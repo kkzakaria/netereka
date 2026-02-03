@@ -1,5 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AdminHeader } from "@/components/admin/admin-header";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/button";
 import { ProductForm } from "@/components/admin/product-form";
 import { VariantList } from "@/components/admin/variant-list";
 import { ImageManager } from "@/components/admin/image-manager";
@@ -22,7 +25,23 @@ export default async function EditProductPage({ params }: Props) {
 
   return (
     <div>
-      <AdminHeader title={`Modifier: ${product.name}`} />
+      <header className="mb-6 flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          asChild
+          className="h-11 w-11 shrink-0"
+          aria-label="Retour aux produits"
+        >
+          <Link href="/products">
+            <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />
+          </Link>
+        </Button>
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-bold sm:text-2xl">{product.name}</h1>
+          <p className="text-sm text-muted-foreground">Modifier le produit</p>
+        </div>
+      </header>
       <Tabs defaultValue="info" className="space-y-6">
         <TabsList>
           <TabsTrigger value="info">Informations</TabsTrigger>

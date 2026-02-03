@@ -1,4 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/button";
 import { getAdminOrderById } from "@/lib/db/admin/orders";
 import { formatPrice } from "@/lib/utils";
 import { InvoicePrintButton } from "./print-button";
@@ -50,11 +54,28 @@ export default async function InvoicePage({ params }: Props) {
         }
       `}</style>
 
-      {/* Print Button */}
-      <div className="no-print mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Facture {order.order_number}</h1>
+      {/* Header */}
+      <header className="no-print mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            asChild
+            className="h-11 w-11 shrink-0"
+            aria-label="Retour à la commande"
+          >
+            <Link href={`/orders/${id}`}>
+              <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />
+            </Link>
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold sm:text-2xl">
+              Facture {order.order_number}
+            </h1>
+          </div>
+        </div>
         <InvoicePrintButton />
-      </div>
+      </header>
 
       {/* Invoice Content */}
       <div
