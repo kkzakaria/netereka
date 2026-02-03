@@ -285,23 +285,23 @@ Back-office complet + Notifications + Espace client
 ### Jour 15-16 : Back-office Produits (13-14 fév)
 
 #### Tâches
-- [ ] Layout admin (sidebar, header)
-- [ ] Dashboard KPIs (stats basiques)
-- [ ] Liste produits avec recherche/filtres
-- [ ] CRUD produit complet
-- [ ] Gestion variantes (ajout, modif, suppression)
-- [ ] Upload images vers R2
-- [ ] Gestion catégories
+- [x] Layout admin (sidebar, header)
+- [x] Dashboard KPIs (stats basiques)
+- [x] Liste produits avec recherche/filtres
+- [x] CRUD produit complet
+- [x] Gestion variantes (ajout, modif, suppression)
+- [x] Upload images vers R2
+- [x] Gestion catégories
 - [ ] Import CSV produits (mise à jour en masse)
 
 #### Livrables
-- [ ] Admin produits complet
-- [ ] Upload images fonctionnel
+- [x] Admin produits complet
+- [x] Upload images fonctionnel
 
 #### Validation
-- [ ] Créer un produit avec variantes
-- [ ] Uploader des images
-- [ ] Modifier/supprimer produit
+- [x] Créer un produit avec variantes
+- [x] Uploader des images
+- [x] Modifier/supprimer produit
 
 ---
 
@@ -351,21 +351,21 @@ Back-office complet + Notifications + Espace client
 ### Jour 20-21 : Espace Client (18-19 fév)
 
 #### Tâches
-- [ ] Page profil (modifier infos)
-- [ ] Gestion adresses (CRUD)
-- [ ] Historique commandes
-- [ ] Détail commande + suivi statut
+- [x] Page profil (modifier infos)
+- [x] Gestion adresses (CRUD)
+- [x] Historique commandes
+- [x] Détail commande + suivi statut
 - [ ] Wishlist (liste de souhaits)
 - [ ] Système avis produits
-- [ ] Page réinitialisation mot de passe
+- [x] Page réinitialisation mot de passe
 
 #### Livrables
-- [ ] Espace client complet
+- [x] Espace client complet
 - [ ] Avis produits
 
 #### Validation
-- [ ] Modifier son profil
-- [ ] Voir historique commandes
+- [x] Modifier son profil
+- [x] Voir historique commandes
 - [ ] Laisser un avis
 
 ---
@@ -374,11 +374,11 @@ Back-office complet + Notifications + Espace client
 
 | Critère | Status |
 |---------|--------|
-| Back-office produits | ⬜ |
+| Back-office produits | ✅ |
 | Back-office commandes | ⬜ |
 | Emails transactionnels | ⬜ |
 | WhatsApp notifications | ⬜ |
-| Espace client complet | ⬜ |
+| Espace client complet | ✅ |
 | Avis produits | ⬜ |
 
 ---
@@ -588,7 +588,7 @@ Tests, contenu, optimisation, mise en production
 |---------|----------------|-------------------|---|
 | S1 | 25 | 25 | 100% |
 | S2 | 32 | 30 | 94% |
-| S3 | 24 | - | - |
+| S3 | 24 | 17 | 71% |
 | S4 | 18 | - | - |
 
 ### Blockers Log
