@@ -27,13 +27,15 @@ export function ProductFilters({ categories, className }: ProductFiltersProps) {
   const {
     isPending,
     updateFilters,
-    updateFiltersDebounced,
     clearFilters,
     getFilter,
+    searchValue,
+    handleSearchChange,
+    clearSearch,
   } = useInstantFilters({ basePath: "/products" });
 
   const hasActiveFilters =
-    getFilter("search") || getFilter("category") || getFilter("status");
+    searchValue || getFilter("category") || getFilter("status");
 
   return (
     <div
@@ -41,7 +43,7 @@ export function ProductFilters({ categories, className }: ProductFiltersProps) {
       data-pending={isPending || undefined}
     >
       <div className="flex flex-wrap items-center gap-3">
-        {/* Search input with debounce */}
+        {/* Search input with clear button */}
         <div className="relative">
           <HugeiconsIcon
             icon={Search01Icon}
@@ -50,10 +52,20 @@ export function ProductFilters({ categories, className }: ProductFiltersProps) {
           />
           <Input
             placeholder="Rechercher..."
-            defaultValue={getFilter("search")}
-            onChange={(e) => updateFiltersDebounced({ search: e.target.value })}
-            className="w-full pl-9 sm:w-64"
+            value={searchValue}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="w-full pl-9 pr-9 sm:w-64"
           />
+          {searchValue && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Effacer la recherche"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} size={14} />
+            </button>
+          )}
         </div>
 
         {/* Category filter - instant */}
@@ -89,7 +101,7 @@ export function ProductFilters({ categories, className }: ProductFiltersProps) {
           </SelectContent>
         </Select>
 
-        {/* Clear filters button */}
+        {/* Clear all filters button */}
         {hasActiveFilters && (
           <Button
             variant="ghost"
@@ -98,7 +110,7 @@ export function ProductFilters({ categories, className }: ProductFiltersProps) {
             className="gap-1.5 text-muted-foreground"
           >
             <HugeiconsIcon icon={Cancel01Icon} size={14} />
-            Effacer
+            Tout effacer
           </Button>
         )}
       </div>

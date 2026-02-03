@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useTransition } from "react";
+import { useCallback, useRef, useTransition, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface UseInstantFiltersOptions {
@@ -17,6 +17,15 @@ export function useInstantFilters({ basePath, debounceMs = 300 }: UseInstantFilt
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Controlled search input state - synced with URL
+  const [searchValue, setSearchValue] = useState(searchParams.get("search") ?? "");
+
+  // Sync search value when URL changes externally (browser back/forward, clear button)
+  const urlSearch = searchParams.get("search") ?? "";
+  useEffect(() => {
+    setSearchValue(urlSearch);
+  }, [urlSearch]);
 
   /**
    * Update URL params instantly (for selects, checkboxes)
@@ -78,6 +87,29 @@ export function useInstantFilters({ basePath, debounceMs = 300 }: UseInstantFilt
     [searchParams]
   );
 
+  /**
+   * Handle search input change with debounce
+   */
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearchValue(value);
+      updateFiltersDebounced({ search: value });
+    },
+    [updateFiltersDebounced]
+  );
+
+  /**
+   * Clear search input immediately
+   */
+  const clearSearch = useCallback(() => {
+    setSearchValue("");
+    // Cancel any pending debounced update
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    updateFilters({ search: null });
+  }, [updateFilters]);
+
   return {
     isPending,
     updateFilters,
@@ -85,5 +117,9 @@ export function useInstantFilters({ basePath, debounceMs = 300 }: UseInstantFilt
     clearFilters,
     getFilter,
     searchParams,
+    // Search-specific
+    searchValue,
+    handleSearchChange,
+    clearSearch,
   };
 }

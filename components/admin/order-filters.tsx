@@ -33,13 +33,15 @@ export function OrderFilters({ communes, className }: OrderFiltersProps) {
   const {
     isPending,
     updateFilters,
-    updateFiltersDebounced,
     clearFilters,
     getFilter,
+    searchValue,
+    handleSearchChange,
+    clearSearch,
   } = useInstantFilters({ basePath: "/orders" });
 
   const hasActiveFilters =
-    getFilter("search") ||
+    searchValue ||
     getFilter("status") ||
     getFilter("commune") ||
     getFilter("dateFrom") ||
@@ -51,7 +53,7 @@ export function OrderFilters({ communes, className }: OrderFiltersProps) {
       data-pending={isPending || undefined}
     >
       <div className="flex flex-wrap items-end gap-3">
-        {/* Search input with debounce */}
+        {/* Search input with clear button */}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="search" className="text-xs text-muted-foreground">
             Recherche
@@ -65,10 +67,20 @@ export function OrderFilters({ communes, className }: OrderFiltersProps) {
             <Input
               id="search"
               placeholder="N° commande, nom, tél..."
-              defaultValue={getFilter("search")}
-              onChange={(e) => updateFiltersDebounced({ search: e.target.value })}
-              className="w-full pl-9 sm:w-48"
+              value={searchValue}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="w-full pl-9 pr-9 sm:w-48"
             />
+            {searchValue && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Effacer la recherche"
+              >
+                <HugeiconsIcon icon={Cancel01Icon} size={14} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -121,7 +133,7 @@ export function OrderFilters({ communes, className }: OrderFiltersProps) {
           <Input
             id="dateFrom"
             type="date"
-            defaultValue={getFilter("dateFrom")}
+            value={getFilter("dateFrom")}
             onChange={(e) => updateFilters({ dateFrom: e.target.value })}
             className="min-w-36"
           />
@@ -135,13 +147,13 @@ export function OrderFilters({ communes, className }: OrderFiltersProps) {
           <Input
             id="dateTo"
             type="date"
-            defaultValue={getFilter("dateTo")}
+            value={getFilter("dateTo")}
             onChange={(e) => updateFilters({ dateTo: e.target.value })}
             className="min-w-36"
           />
         </div>
 
-        {/* Clear filters button */}
+        {/* Clear all filters button */}
         {hasActiveFilters && (
           <Button
             variant="ghost"
@@ -150,7 +162,7 @@ export function OrderFilters({ communes, className }: OrderFiltersProps) {
             className="gap-1.5 text-muted-foreground"
           >
             <HugeiconsIcon icon={Cancel01Icon} size={14} />
-            Effacer
+            Tout effacer
           </Button>
         )}
       </div>
