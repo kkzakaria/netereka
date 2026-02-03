@@ -10,6 +10,7 @@ import {
   ShoppingBag01Icon,
   UserGroup02Icon,
   UserMultiple02Icon,
+  UserAccountIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +29,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-1 p-4">
+    <nav className="flex h-full flex-col gap-1 p-4">
       <div className="mb-6 px-3">
         <h2 className="text-lg font-bold tracking-tight">NETEREKA</h2>
         <p className="text-xs text-muted-foreground">Administration</p>
@@ -63,6 +64,22 @@ export function Sidebar() {
           {item.label}
         </span>
       ))}
+
+      {/* Profile link at bottom */}
+      <div className="mt-auto border-t pt-4">
+        <Link
+          href="/profile"
+          className={cn(
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            pathname === "/profile"
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground hover:bg-sidebar-accent/50"
+          )}
+        >
+          <HugeiconsIcon icon={UserAccountIcon} size={20} />
+          Mon profil
+        </Link>
+      </div>
     </nav>
   );
 }
