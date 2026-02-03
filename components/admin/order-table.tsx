@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
 import {
   Table,
@@ -47,7 +48,71 @@ function formatDate(dateStr: string): string {
 // Hoisted static JSX element (rendering-hoist-jsx)
 const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={16} />;
 
-export function OrderTable({ orders }: { orders: AdminOrder[] }) {
+// Memoized row component for better performance (rerender-memo)
+const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
+  const status = statusConfig[order.status] || statusConfig.pending;
+  return (
+    <TableRow
+      // content-visibility for rendering performance (rendering-content-visibility)
+      style={{ contentVisibility: "auto", containIntrinsicSize: "0 48px" }}
+    >
+      <TableCell>
+        <Link
+          href={`/orders/${order.id}`}
+          className="font-mono text-xs font-medium hover:underline"
+        >
+          {order.order_number}
+        </Link>
+      </TableCell>
+      <TableCell className="hidden sm:table-cell text-muted-foreground">
+        {formatDate(order.created_at)}
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-col">
+          <span className="font-medium">{order.user_name}</span>
+          <span className="text-muted-foreground text-[10px]">
+            {order.delivery_phone}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell className="hidden md:table-cell">
+        {order.delivery_commune}
+      </TableCell>
+      <TableCell className="font-mono">
+        {formatPrice(order.total)}
+      </TableCell>
+      <TableCell className="hidden md:table-cell">
+        <Badge variant="secondary">{order.item_count}</Badge>
+      </TableCell>
+      <TableCell>
+        <Badge variant={status.variant}>{status.label}</Badge>
+      </TableCell>
+      <TableCell>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-xs">
+              {moreIcon}
+              <span className="sr-only">Actions</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <Link href={`/orders/${order.id}`}>Voir détails</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={`/orders/${order.id}/invoice`}>
+                Voir facture
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+    </TableRow>
+  );
+});
+
+// Memoized table component to prevent unnecessary re-renders (rerender-memo)
+export const OrderTable = memo(function OrderTable({ orders }: { orders: AdminOrder[] }) {
   if (orders.length === 0) {
     return (
       <div className="rounded-lg border p-8 text-center text-muted-foreground">
@@ -72,66 +137,11 @@ export function OrderTable({ orders }: { orders: AdminOrder[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {orders.map((order) => {
-            const status = statusConfig[order.status] || statusConfig.pending;
-            return (
-              <TableRow key={order.id}>
-                <TableCell>
-                  <Link
-                    href={`/orders/${order.id}`}
-                    className="font-mono text-xs font-medium hover:underline"
-                  >
-                    {order.order_number}
-                  </Link>
-                </TableCell>
-                <TableCell className="hidden sm:table-cell text-muted-foreground">
-                  {formatDate(order.created_at)}
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{order.user_name}</span>
-                    <span className="text-muted-foreground text-[10px]">
-                      {order.delivery_phone}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  {order.delivery_commune}
-                </TableCell>
-                <TableCell className="font-mono">
-                  {formatPrice(order.total)}
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <Badge variant="secondary">{order.item_count}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={status.variant}>{status.label}</Badge>
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        {moreIcon}
-                        <span className="sr-only">Actions</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/orders/${order.id}`}>Voir détails</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href={`/orders/${order.id}/invoice`}>
-                          Voir facture
-                        </Link>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            );
-          })}
+          {orders.map((order) => (
+            <OrderRow key={order.id} order={order} />
+          ))}
         </TableBody>
       </Table>
     </div>
   );
-}
+});
