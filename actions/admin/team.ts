@@ -1,8 +1,10 @@
 "use server";
 
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
+import { initAuth } from "@/lib/auth";
 import { execute, queryFirst } from "@/lib/db";
 import type { ActionResult } from "@/lib/utils";
 import {
@@ -72,55 +74,62 @@ export async function createTeamMember(
     return { success: false, error: "Un compte existe déjà avec cet email" };
   }
 
-  // Generate IDs
-  const userId = crypto.randomUUID();
-  const teamMemberId = crypto.randomUUID();
-
-  // Hash password using Web Crypto API (compatible with Cloudflare Workers)
-  const encoder = new TextEncoder();
-  const passwordData = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", passwordData);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashedPassword = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-
   // Determine permissions: use provided or defaults
   const finalPermissions =
     permissions && permissions.length > 0
       ? permissions
       : DEFAULT_PERMISSIONS[role as TeamRole] || [];
 
-  // Create user in better-auth table
-  await execute(
-    `INSERT INTO "user" (id, email, name, role, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-    [userId, email, `${firstName} ${lastName}`, role]
-  );
+  try {
+    // Use better-auth admin API to create user with properly hashed password
+    const auth = await initAuth();
+    const result = await auth.api.createUser({
+      headers: await headers(),
+      body: {
+        email,
+        password,
+        name: `${firstName} ${lastName}`,
+        // Use "admin" for better-auth role system (all team members are admins in better-auth context)
+        role: "admin",
+        data: { phone: phone ?? null },
+      },
+    });
 
-  // Create account for password auth
-  await execute(
-    `INSERT INTO account (id, userId, accountId, providerId, password, createdAt, updatedAt)
-     VALUES (?, ?, ?, 'credential', ?, datetime('now'), datetime('now'))`,
-    [crypto.randomUUID(), userId, userId, hashedPassword]
-  );
+    if (!result?.user?.id) {
+      return { success: false, error: "Erreur lors de la création de l'utilisateur" };
+    }
 
-  // Create team member profile with permissions
-  await execute(
-    `INSERT INTO team_members (id, user_id, first_name, last_name, phone, job_title, permissions, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
-    [
-      teamMemberId,
-      userId,
-      firstName,
-      lastName,
-      phone ?? null,
-      jobTitle ?? null,
-      JSON.stringify(finalPermissions),
-    ]
-  );
+    const userId = result.user.id;
+    const teamMemberId = crypto.randomUUID();
 
-  revalidatePath("/team");
+    // Update user with our custom role (better-auth created with "admin", we override with our granular role)
+    await execute(
+      `UPDATE "user" SET role = ? WHERE id = ?`,
+      [role, userId]
+    );
 
-  return { success: true, id: teamMemberId };
+    // Create team member profile with permissions
+    await execute(
+      `INSERT INTO team_members (id, user_id, first_name, last_name, phone, job_title, permissions, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
+      [
+        teamMemberId,
+        userId,
+        firstName,
+        lastName,
+        phone ?? null,
+        jobTitle ?? null,
+        JSON.stringify(finalPermissions),
+      ]
+    );
+
+    revalidatePath("/team");
+
+    return { success: true, id: teamMemberId };
+  } catch (error) {
+    console.error("Error creating team member:", error);
+    return { success: false, error: "Erreur lors de la création du membre" };
+  }
 }
 
 export async function updateTeamMember(

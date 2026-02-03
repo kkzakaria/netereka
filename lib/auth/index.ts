@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { captcha } from "better-auth/plugins";
+import { captcha, admin } from "better-auth/plugins";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
@@ -71,6 +71,10 @@ export async function initAuth() {
       captcha({
         provider: "cloudflare-turnstile",
         secretKey: cfEnv.TURNSTILE_SECRET_KEY,
+      }),
+      admin({
+        defaultRole: "customer",
+        adminRoles: ["super_admin", "admin"],
       }),
     ],
     trustedOrigins: [
