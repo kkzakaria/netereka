@@ -144,5 +144,14 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
 }
 

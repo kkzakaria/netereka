@@ -66,20 +66,22 @@ export function ImageManager({
               {img.is_primary === 1 && (
                 <Badge className="absolute top-2 left-2">Principale</Badge>
               )}
-              <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/60 to-transparent opacity-0 transition-opacity group-hover:opacity-100">
-                <div className="flex w-full gap-1 p-2">
+              <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/60 to-transparent opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 touch-manipulation">
+                <div className="flex w-full gap-1.5 p-2">
                   {img.is_primary !== 1 && (
                     <Button
-                      size="xs"
+                      size="sm"
                       variant="secondary"
+                      className="h-9 text-xs"
                       onClick={() => handleSetPrimary(img.id)}
                     >
                       Principale
                     </Button>
                   )}
                   <Button
-                    size="xs"
+                    size="sm"
                     variant="destructive"
+                    className="h-9 text-xs"
                     onClick={() => handleDelete(img.id)}
                   >
                     Supprimer

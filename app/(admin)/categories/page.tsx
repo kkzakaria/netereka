@@ -1,7 +1,7 @@
 import { AdminHeader } from "@/components/admin/admin-header";
-import { CategoryTable } from "@/components/admin/category-table";
 import { CategoryCreateButton } from "./category-create-button";
 import { getAllCategories } from "@/lib/db/admin/categories";
+import { CategoriesPageClient } from "./categories-page-client";
 
 export default async function CategoriesPage() {
   const categories = await getAllCategories();
@@ -9,13 +9,17 @@ export default async function CategoriesPage() {
   return (
     <div>
       <AdminHeader title="Catégories" />
-      <div className="mb-4 flex items-center justify-between">
+
+      {/* Desktop header */}
+      <div className="mb-4 hidden items-center justify-between lg:flex">
         <p className="text-sm text-muted-foreground">
           {categories.length} catégorie(s)
         </p>
         <CategoryCreateButton />
       </div>
-      <CategoryTable categories={categories} />
+
+      {/* Mobile/responsive content */}
+      <CategoriesPageClient categories={categories} />
     </div>
   );
 }

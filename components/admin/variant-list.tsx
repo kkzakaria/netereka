@@ -23,10 +23,21 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
 import { formatPrice } from "@/lib/utils";
 import type { ProductVariant } from "@/lib/db/types";
 import { deleteVariant } from "@/actions/admin/variants";
 import { VariantForm } from "./variant-form";
+import { VariantCardMobile } from "./variant-card-mobile";
+import { useViewMode } from "./view-context";
 
 export function VariantList({
   productId,
@@ -38,6 +49,7 @@ export function VariantList({
   const [editVariant, setEditVariant] = useState<ProductVariant | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const { effectiveMode } = useViewMode();
 
   function handleDelete(variantId: string) {
     startTransition(async () => {
@@ -54,65 +66,82 @@ export function VariantList({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">Variantes ({variants.length})</h3>
-        <Button size="sm" onClick={() => setShowCreate(true)}>
+        <Button size="touch" onClick={() => setShowCreate(true)}>
           Ajouter
         </Button>
       </div>
 
       {variants.length > 0 ? (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nom</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Prix</TableHead>
-                <TableHead>Stock</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {variants.map((v) => (
-                <TableRow key={v.id} data-pending={isPending || undefined}>
-                  <TableCell className="font-medium">{v.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {v.sku || "—"}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    {formatPrice(v.price)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={v.stock_quantity <= 5 ? "destructive" : "secondary"}
-                    >
-                      {v.stock_quantity}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={v.is_active ? "default" : "secondary"}>
-                      {v.is_active ? "Actif" : "Inactif"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => setEditVariant(v)}
+        effectiveMode === "cards" ? (
+          // Mobile card view
+          <div className="flex flex-col gap-3">
+            {variants.map((v) => (
+              <VariantCardMobile
+                key={v.id}
+                variant={v}
+                onEdit={setEditVariant}
+                onDelete={handleDelete}
+                isPending={isPending}
+              />
+            ))}
+          </div>
+        ) : (
+          // Desktop table view
+          <div className="rounded-lg border touch-manipulation">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nom</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Prix</TableHead>
+                  <TableHead>Stock</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead className="w-12"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {variants.map((v) => (
+                  <TableRow key={v.id} data-pending={isPending || undefined}>
+                    <TableCell className="font-medium">{v.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {v.sku || "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm tabular-nums">
+                      {formatPrice(v.price)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={v.stock_quantity <= 5 ? "destructive" : "secondary"}
                       >
-                        Modifier
-                      </Button>
+                        {v.stock_quantity}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={v.is_active ? "default" : "secondary"}>
+                        {v.is_active ? "Actif" : "Inactif"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="text-destructive"
-                          >
-                            Suppr.
-                          </Button>
-                        </AlertDialogTrigger>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-11 w-11">
+                              <HugeiconsIcon icon={MoreVerticalIcon} size={16} />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setEditVariant(v)}>
+                              Modifier
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <AlertDialogTrigger asChild>
+                              <DropdownMenuItem className="text-destructive">
+                                Supprimer
+                              </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <AlertDialogContent>
                           <AlertDialogHeader>
                             <AlertDialogTitle>
@@ -134,13 +163,13 @@ export function VariantList({
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
       ) : (
         <div className="rounded-lg border p-6 text-center text-muted-foreground">
           Aucune variante

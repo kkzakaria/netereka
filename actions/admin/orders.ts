@@ -7,7 +7,11 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { execute, queryFirst } from "@/lib/db";
 import { getDB } from "@/lib/cloudflare/context";
 import { refundOrderStock } from "@/lib/db/orders";
-import { getAdminOrders, type AdminOrderFilters } from "@/lib/db/admin/orders";
+import {
+  getAdminOrders,
+  getAdminOrderCount,
+  type AdminOrderFilters,
+} from "@/lib/db/admin/orders";
 import { ordersToCSV } from "@/lib/csv/orders";
 import {
   ORDER_STATUS_TRANSITIONS,
@@ -160,6 +164,17 @@ export async function assignDeliveryPerson(
   const idResult = idSchema.safeParse(orderId);
   if (!idResult.success) return { success: false, error: "ID commande invalide" };
 
+  // Validate that personId exists in users table if provided
+  if (personId) {
+    const user = await queryFirst<{ id: string }>(
+      "SELECT id FROM users WHERE id = ?",
+      [personId]
+    );
+    if (!user) {
+      return { success: false, error: "Livreur introuvable" };
+    }
+  }
+
   await execute(
     "UPDATE orders SET delivery_person_id = ?, delivery_person_name = ?, updated_at = datetime('now') WHERE id = ?",
     [personId, personName, orderId]
@@ -292,23 +307,26 @@ export async function exportOrdersCSV(
 ): Promise<{ success: boolean; csv?: string; error?: string; warning?: string }> {
   await requireAdmin();
 
-  // Fetch all orders matching filters (no pagination for export)
+  // Get total count to check if we need to warn about truncation
+  const totalCount = await getAdminOrderCount(filters);
+
+  if (totalCount === 0) {
+    return { success: false, error: "Aucune commande à exporter" };
+  }
+
+  // Fetch orders up to the limit
   const orders = await getAdminOrders({
     ...filters,
     limit: MAX_EXPORT_LIMIT,
     offset: 0,
   });
 
-  if (orders.length === 0) {
-    return { success: false, error: "Aucune commande à exporter" };
-  }
-
   const csv = ordersToCSV(orders);
 
-  // Warn if we hit the limit
+  // Warn if total count exceeds the limit
   const warning =
-    orders.length >= MAX_EXPORT_LIMIT
-      ? `Export limité à ${MAX_EXPORT_LIMIT} commandes. Utilisez des filtres pour réduire la sélection.`
+    totalCount > MAX_EXPORT_LIMIT
+      ? `Export limité à ${MAX_EXPORT_LIMIT} commandes sur ${totalCount} trouvées. Utilisez des filtres pour réduire la sélection.`
       : undefined;
 
   return { success: true, csv, warning };
