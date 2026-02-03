@@ -308,23 +308,23 @@ Back-office complet + Notifications + Espace client
 ### Jour 17-18 : Back-office Commandes (15-16 fév)
 
 #### Tâches
-- [ ] Liste commandes avec filtres (statut, date)
-- [ ] Détail commande complet
-- [ ] Workflow statuts (En attente → Confirmée → Préparation → Livraison → Livrée)
-- [ ] Assignation livreur
-- [ ] Notes internes
-- [ ] Gestion retours/annulations
-- [ ] Export commandes CSV
-- [ ] Génération facture PDF
+- [x] Liste commandes avec filtres (statut, date, commune, recherche)
+- [x] Détail commande complet
+- [x] Workflow statuts (En attente → Confirmée → Préparation → Livraison → Livrée)
+- [x] Assignation livreur
+- [x] Notes internes
+- [x] Gestion retours/annulations
+- [x] Export commandes CSV
+- [x] Génération facture (page imprimable HTML)
 
 #### Livrables
-- [ ] Gestion commandes complète
-- [ ] Workflow statuts
+- [x] Gestion commandes complète
+- [x] Workflow statuts
 
 #### Validation
-- [ ] Changer statut commande
-- [ ] Générer facture PDF
-- [ ] Filtrer par statut
+- [x] Changer statut commande
+- [x] Générer facture (impression)
+- [x] Filtrer par statut
 
 ---
 
@@ -375,7 +375,7 @@ Back-office complet + Notifications + Espace client
 | Critère | Status |
 |---------|--------|
 | Back-office produits | ✅ |
-| Back-office commandes | ⬜ |
+| Back-office commandes | ✅ |
 | Emails transactionnels | ⬜ |
 | WhatsApp notifications | ⬜ |
 | Espace client complet | ✅ |
@@ -588,7 +588,7 @@ Tests, contenu, optimisation, mise en production
 |---------|----------------|-------------------|---|
 | S1 | 25 | 25 | 100% |
 | S2 | 32 | 30 | 94% |
-| S3 | 24 | 20 | 83% |
+| S3 | 24 | 22 | 92% |
 | S4 | 18 | - | - |
 
 ### Blockers Log
