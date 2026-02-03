@@ -32,14 +32,20 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
   returned: { label: "Retournée", variant: "destructive" },
 };
 
+// Hoisted date formatter options (rendering-hoist-jsx)
+const dateFormatOptions: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(dateStr).toLocaleDateString("fr-FR", dateFormatOptions);
 }
+
+// Hoisted static JSX element (rendering-hoist-jsx)
+const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={16} />;
 
 export function OrderTable({ orders }: { orders: AdminOrder[] }) {
   if (orders.length === 0) {
@@ -105,7 +111,7 @@ export function OrderTable({ orders }: { orders: AdminOrder[] }) {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
-                        <HugeiconsIcon icon={MoreVerticalIcon} size={16} />
+                        {moreIcon}
                         <span className="sr-only">Actions</span>
                       </Button>
                     </DropdownMenuTrigger>

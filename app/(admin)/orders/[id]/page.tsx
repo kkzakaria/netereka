@@ -18,16 +18,23 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+// Hoisted format options (rendering-hoist-jsx)
+const dateTimeFormatOptions: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "long",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+
 function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(dateStr).toLocaleDateString("fr-FR", dateTimeFormatOptions);
 }
+
+// Hoisted static icons (rendering-hoist-jsx)
+const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
+const printerIcon = <HugeiconsIcon icon={PrinterIcon} size={16} className="mr-2" />;
 
 export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
@@ -43,7 +50,7 @@ export default async function OrderDetailPage({ params }: Props) {
       <div className="mb-6 flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/orders">
-            <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />
+            {backIcon}
           </Link>
         </Button>
         <AdminHeader title={`Commande ${order.order_number}`} />
@@ -290,7 +297,7 @@ export default async function OrderDetailPage({ params }: Props) {
             <CardContent className="space-y-2">
               <Button variant="outline" className="w-full" asChild>
                 <Link href={`/orders/${order.id}/invoice`}>
-                  <HugeiconsIcon icon={PrinterIcon} size={16} className="mr-2" />
+                  {printerIcon}
                   Voir facture
                 </Link>
               </Button>
