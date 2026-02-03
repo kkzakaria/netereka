@@ -15,11 +15,10 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardSquare01Icon },
   { href: "/products", label: "Produits", icon: Package02Icon },
   { href: "/categories", label: "Catégories", icon: FolderLibraryIcon },
+  { href: "/orders", label: "Commandes", icon: ShoppingBag01Icon },
 ];
 
-const disabledItems = [
-  { label: "Commandes", icon: ShoppingBag01Icon },
-];
+const disabledItems: typeof navItems = [];
 
 export function Sidebar() {
   const pathname = usePathname();

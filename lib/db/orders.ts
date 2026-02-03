@@ -240,3 +240,37 @@ export async function cancelOrder(
     .run();
   return result.meta.changes > 0;
 }
+
+export async function refundOrderStock(orderId: string): Promise<void> {
+  const db = await getDB();
+  const items = await query<OrderItem>(
+    "SELECT * FROM order_items WHERE order_id = ?",
+    [orderId]
+  );
+
+  const statements: D1PreparedStatement[] = [];
+
+  for (const item of items) {
+    if (item.variant_id) {
+      statements.push(
+        db
+          .prepare(
+            "UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?"
+          )
+          .bind(item.quantity, item.variant_id)
+      );
+    } else {
+      statements.push(
+        db
+          .prepare(
+            "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?"
+          )
+          .bind(item.quantity, item.product_id)
+      );
+    }
+  }
+
+  if (statements.length > 0) {
+    await db.batch(statements);
+  }
+}
