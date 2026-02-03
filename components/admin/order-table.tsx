@@ -19,7 +19,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
+import { MoreVerticalIcon, ViewIcon, PrinterIcon } from "@hugeicons/core-free-icons";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { formatPrice } from "@/lib/utils";
 import { ORDER_STATUS_CONFIG } from "@/lib/constants/orders";
 import type { AdminOrder, OrderStatus } from "@/lib/db/types";
@@ -39,6 +40,10 @@ function formatDate(dateStr: string): string {
 // Hoisted static JSX element (rendering-hoist-jsx)
 const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={16} />;
 
+// Hoisted icons for dropdown menu (rendering-hoist-jsx)
+const viewIcon = <HugeiconsIcon icon={ViewIcon} size={14} />;
+const printerIcon = <HugeiconsIcon icon={PrinterIcon} size={14} />;
+
 // Memoized row component for better performance (rerender-memo)
 const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
   const status = ORDER_STATUS_CONFIG[order.status as OrderStatus] || ORDER_STATUS_CONFIG.pending;
@@ -46,6 +51,7 @@ const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
     <TableRow
       // content-visibility for rendering performance (rendering-content-visibility)
       style={{ contentVisibility: "auto", containIntrinsicSize: "0 48px" }}
+      className="transition-colors hover:bg-muted/50"
     >
       <TableCell>
         <Link
@@ -76,7 +82,11 @@ const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
         <Badge variant="secondary">{order.item_count}</Badge>
       </TableCell>
       <TableCell>
-        <Badge variant={status.variant}>{status.label}</Badge>
+        <StatusBadge
+          status={order.status as OrderStatus}
+          label={status.label}
+          variant={status.variant}
+        />
       </TableCell>
       <TableCell>
         <DropdownMenu>
@@ -88,10 +98,14 @@ const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link href={`/orders/${order.id}`}>Voir détails</Link>
+              <Link href={`/orders/${order.id}`} className="gap-2">
+                {viewIcon}
+                Voir détails
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href={`/orders/${order.id}/invoice`}>
+              <Link href={`/orders/${order.id}/invoice`} className="gap-2">
+                {printerIcon}
                 Voir facture
               </Link>
             </DropdownMenuItem>

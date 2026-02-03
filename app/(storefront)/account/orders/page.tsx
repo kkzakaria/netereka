@@ -50,22 +50,30 @@ export default async function OrdersPage({ searchParams }: Props) {
     <div className="space-y-4">
       <h2 className="text-base font-semibold">Mes commandes</h2>
 
-      {/* Status filter tabs */}
-      <div className="flex gap-1 overflow-x-auto">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.key}
-            href={`/account/orders${tab.key ? `?status=${tab.key}` : ""}`}
-            className={cn(
-              "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors",
-              status === tab.key
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.label}
-          </Link>
-        ))}
+      {/* Status filter tabs with scroll hint gradient */}
+      <div className="relative">
+        {/* Right fade indicator to hint at scrollable content */}
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-background to-transparent z-10"
+          aria-hidden="true"
+        />
+
+        <div className="flex gap-1.5 overflow-x-auto scrollbar-none touch-manipulation -mx-1 px-1 pb-0.5">
+          {tabs.map((tab) => (
+            <Link
+              key={tab.key}
+              href={`/account/orders${tab.key ? `?status=${tab.key}` : ""}`}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                status === tab.key
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
       </div>
 
       {orders.length === 0 ? (

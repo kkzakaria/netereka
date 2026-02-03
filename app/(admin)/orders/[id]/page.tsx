@@ -25,7 +25,13 @@ export default async function OrderDetailPage({ params }: Props) {
   return (
     <div>
       <div className="mb-6 flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          asChild
+          className="h-11 w-11"
+          aria-label="Retour à la liste des commandes"
+        >
           <Link href="/orders">
             {backIcon}
           </Link>

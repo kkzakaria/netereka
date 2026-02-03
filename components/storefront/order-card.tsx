@@ -10,7 +10,7 @@ export function OrderCard({ order }: { order: Order }) {
   return (
     <Link
       href={`/account/orders/${order.order_number}`}
-      className="block rounded-xl border p-4 transition-colors hover:bg-muted/50"
+      className="block rounded-xl border p-4 transition-colors hover:bg-muted/50 touch-manipulation"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-1">

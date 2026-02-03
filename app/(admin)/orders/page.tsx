@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { AdminHeader } from "@/components/admin/admin-header";
-import { OrderTable } from "@/components/admin/order-table";
-import { OrderFilters } from "@/components/admin/order-filters";
+import { OrdersClientWrapper } from "./_components/orders-client-wrapper";
 import { OrderExportButton } from "@/components/admin/order-export-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,16 +45,13 @@ export default async function OrdersPage({ searchParams }: Props) {
 
   return (
     <div>
-      <AdminHeader title="Commandes" />
-
-      <div className="mb-4 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <OrderFilters communes={communes} />
-          <OrderExportButton />
-        </div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <AdminHeader title="Commandes" className="mb-0" />
+        <OrderExportButton />
       </div>
 
-      <OrderTable orders={orders} />
+      {/* Client wrapper handles responsive filters + data list */}
+      <OrdersClientWrapper orders={orders} communes={communes} />
 
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">

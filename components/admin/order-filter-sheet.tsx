@@ -1,0 +1,264 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cancel01Icon, FilterIcon, Search01Icon } from "@hugeicons/core-free-icons";
+import { cn } from "@/lib/utils";
+import { ORDER_STATUS_LABELS, ORDER_STATUS_ICONS } from "@/lib/constants/orders";
+import type { OrderStatus } from "@/lib/db/types";
+
+interface OrderFilterSheetProps {
+  communes: string[];
+  className?: string;
+}
+
+// All statuses plus "all" option
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "Tous" },
+  ...Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => ({
+    value,
+    label,
+  })),
+];
+
+export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [open, setOpen] = useState(false);
+
+  // Local state for form
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [status, setStatus] = useState(searchParams.get("status") ?? "all");
+  const [commune, setCommune] = useState(searchParams.get("commune") ?? "all");
+  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") ?? "");
+  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") ?? "");
+
+  // Count active filters
+  const activeFilterCount =
+    (search ? 1 : 0) +
+    (status !== "all" ? 1 : 0) +
+    (commune !== "all" ? 1 : 0) +
+    (dateFrom ? 1 : 0) +
+    (dateTo ? 1 : 0);
+
+  useEffect(() => {
+    document.body.classList.toggle("overflow-hidden", open);
+    return () => {
+      document.body.classList.remove("overflow-hidden");
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  function handleApply() {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (status && status !== "all") params.set("status", status);
+    if (commune && commune !== "all") params.set("commune", commune);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    router.push(`/orders?${params.toString()}`);
+    setOpen(false);
+  }
+
+  function handleClear() {
+    setSearch("");
+    setStatus("all");
+    setCommune("all");
+    setDateFrom("");
+    setDateTo("");
+  }
+
+  return (
+    <>
+      {/* Trigger button */}
+      <button
+        onClick={() => setOpen(true)}
+        className={cn(
+          "relative flex h-11 items-center gap-2 rounded-lg border px-4 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none",
+          className
+        )}
+      >
+        <HugeiconsIcon icon={FilterIcon} size={18} aria-hidden="true" />
+        Filtres
+        {activeFilterCount > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+            {activeFilterCount}
+          </span>
+        )}
+      </button>
+
+      {/* Backdrop */}
+      <div
+        className={cn(
+          "fixed inset-0 z-[60] bg-black/40 transition-opacity duration-300",
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        )}
+        onClick={() => setOpen(false)}
+        aria-hidden="true"
+      />
+
+      {/* Sheet */}
+      <div
+        role="dialog"
+        aria-modal={open}
+        aria-label="Filtres des commandes"
+        className={cn(
+          "fixed inset-x-0 bottom-0 z-[61] flex max-h-[85vh] flex-col rounded-t-2xl bg-background shadow-xl transition-transform duration-300 ease-out pb-safe",
+          open ? "translate-y-0" : "translate-y-full"
+        )}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h2 className="text-lg font-semibold">Filtres</h2>
+          <button
+            onClick={() => setOpen(false)}
+            className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+            aria-label="Fermer"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={20} aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 touch-manipulation">
+          {/* Search */}
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium">Recherche</label>
+            <div className="relative">
+              <HugeiconsIcon
+                icon={Search01Icon}
+                size={18}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="N° commande, nom, tél..."
+                className="h-12 w-full rounded-lg border bg-background pl-10 pr-4 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Status */}
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium">Statut</label>
+            <div className="flex flex-wrap gap-2">
+              {STATUS_OPTIONS.map((opt) => {
+                const IconComponent = opt.value !== "all"
+                  ? ORDER_STATUS_ICONS[opt.value as OrderStatus]
+                  : null;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setStatus(opt.value)}
+                    className={cn(
+                      "flex h-10 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors",
+                      status === opt.value
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    )}
+                  >
+                    {IconComponent && (
+                      <HugeiconsIcon icon={IconComponent} size={14} aria-hidden="true" />
+                    )}
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Commune */}
+          {communes.length > 0 && (
+            <div className="mb-6">
+              <label className="mb-2 block text-sm font-medium">Commune</label>
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                <button
+                  onClick={() => setCommune("all")}
+                  className={cn(
+                    "h-10 rounded-lg border px-4 text-sm font-medium transition-colors",
+                    commune === "all"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  )}
+                >
+                  Toutes
+                </button>
+                {communes.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setCommune(c)}
+                    className={cn(
+                      "h-10 rounded-lg border px-4 text-sm font-medium transition-colors",
+                      commune === c
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    )}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Date range */}
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium">Période</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">
+                  Du
+                </label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-12 w-full rounded-lg border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">
+                  Au
+                </label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-12 w-full rounded-lg border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 border-t p-4">
+          <button
+            onClick={handleClear}
+            className="h-12 flex-1 rounded-xl border text-sm font-semibold hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+          >
+            Effacer
+          </button>
+          <button
+            onClick={handleApply}
+            className="h-12 flex-1 rounded-xl bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+          >
+            Appliquer
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}

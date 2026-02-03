@@ -97,9 +97,13 @@ export default async function OrderDetailPage({ params }: Props) {
         )}
       </div>
 
-      {/* Cancel button */}
+      {/* Cancel button - sticky on mobile for visibility */}
       {order.status === "pending" && (
-        <CancelOrderButton orderNumber={order.order_number} />
+        <div className="sticky bottom-4 mt-6 sm:static sm:mt-0">
+          <div className="rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
+            <CancelOrderButton orderNumber={order.order_number} />
+          </div>
+        </div>
       )}
     </div>
   );
