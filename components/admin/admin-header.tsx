@@ -3,7 +3,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Menu01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./sidebar";
 
 export function AdminHeader({ title }: { title: string }) {
@@ -15,7 +15,8 @@ export function AdminHeader({ title }: { title: string }) {
             <HugeiconsIcon icon={Menu01Icon} size={20} />
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-0">
+        <SheetContent side="left" className="w-64 p-0" aria-describedby={undefined}>
+          <SheetTitle className="sr-only">Menu de navigation</SheetTitle>
           <Sidebar />
         </SheetContent>
       </Sheet>
