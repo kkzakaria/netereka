@@ -34,7 +34,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
 
   // Controlled state for selects
   const [status, setStatus] = useState(searchParams.get("status") ?? "all");
-  const [commune, setCommune] = useState(searchParams.get("commune") ?? "");
+  const [commune, setCommune] = useState(searchParams.get("commune") ?? "all");
 
   const createQueryString = useCallback(
     (updates: Record<string, string | null>) => {
@@ -61,7 +61,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
     const updates: Record<string, string | null> = {
       search: formData.get("search") as string,
       status: status === "all" ? null : status,
-      commune: commune || null,
+      commune: commune === "all" ? null : commune,
       dateFrom: formData.get("dateFrom") as string,
       dateTo: formData.get("dateTo") as string,
     };
@@ -73,7 +73,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
 
   function handleReset() {
     setStatus("all");
-    setCommune("");
+    setCommune("all");
     startTransition(() => {
       router.push("/orders");
     });
@@ -124,7 +124,7 @@ export function OrderFilters({ communes }: OrderFiltersProps) {
             <SelectValue placeholder="Toutes" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Toutes</SelectItem>
+            <SelectItem value="all">Toutes</SelectItem>
             {communes.map((c) => (
               <SelectItem key={c} value={c}>
                 {c}
