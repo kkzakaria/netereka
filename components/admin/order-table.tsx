@@ -21,21 +21,9 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon, ViewIcon, PrinterIcon } from "@hugeicons/core-free-icons";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { formatPrice } from "@/lib/utils";
-import { ORDER_STATUS_CONFIG } from "@/lib/constants/orders";
-import type { AdminOrder, OrderStatus } from "@/lib/db/types";
-
-// Hoisted date formatter options (rendering-hoist-jsx)
-const dateFormatOptions: Intl.DateTimeFormatOptions = {
-  day: "2-digit",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-};
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-FR", dateFormatOptions);
-}
+import { formatPrice, formatOrderDate } from "@/lib/utils";
+import { ORDER_STATUS_CONFIG, getOrderStatus } from "@/lib/constants/orders";
+import type { AdminOrder } from "@/lib/db/types";
 
 // Hoisted static JSX element (rendering-hoist-jsx)
 const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={16} />;
@@ -46,7 +34,8 @@ const printerIcon = <HugeiconsIcon icon={PrinterIcon} size={14} />;
 
 // Memoized row component for better performance (rerender-memo)
 const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
-  const status = ORDER_STATUS_CONFIG[order.status as OrderStatus] || ORDER_STATUS_CONFIG.pending;
+  const orderStatus = getOrderStatus(order.status);
+  const statusConfig = ORDER_STATUS_CONFIG[orderStatus];
   return (
     <TableRow
       // content-visibility for rendering performance (rendering-content-visibility)
@@ -62,7 +51,7 @@ const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
         </Link>
       </TableCell>
       <TableCell className="hidden sm:table-cell text-muted-foreground">
-        {formatDate(order.created_at)}
+        {formatOrderDate(order.created_at)}
       </TableCell>
       <TableCell>
         <div className="flex flex-col">
@@ -83,9 +72,9 @@ const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
       </TableCell>
       <TableCell>
         <StatusBadge
-          status={order.status as OrderStatus}
-          label={status.label}
-          variant={status.variant}
+          status={orderStatus}
+          label={statusConfig.label}
+          variant={statusConfig.variant}
         />
       </TableCell>
       <TableCell>

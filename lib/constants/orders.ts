@@ -95,6 +95,33 @@ export const ORDER_STATUS_CONFIG: Record<
 };
 
 /**
+ * All valid order status values.
+ */
+export const ORDER_STATUSES: OrderStatus[] = [
+  "pending",
+  "confirmed",
+  "preparing",
+  "shipping",
+  "delivered",
+  "cancelled",
+  "returned",
+];
+
+/**
+ * Type guard to check if a string is a valid OrderStatus.
+ */
+export function isOrderStatus(value: string): value is OrderStatus {
+  return ORDER_STATUSES.includes(value as OrderStatus);
+}
+
+/**
+ * Safely get OrderStatus from a string, with fallback to "pending".
+ */
+export function getOrderStatus(value: string): OrderStatus {
+  return isOrderStatus(value) ? value : "pending";
+}
+
+/**
  * Check if a status transition is valid.
  */
 export function isValidStatusTransition(

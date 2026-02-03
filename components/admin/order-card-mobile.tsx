@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   MoreVerticalIcon,
@@ -12,43 +13,33 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ActionSheet, type ActionSheetItem } from "./action-sheet";
-import { formatPrice } from "@/lib/utils";
-import { ORDER_STATUS_CONFIG } from "@/lib/constants/orders";
-import type { AdminOrder, OrderStatus } from "@/lib/db/types";
-
-// Hoisted date formatter options (rendering-hoist-jsx)
-const dateFormatOptions: Intl.DateTimeFormatOptions = {
-  day: "2-digit",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-};
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("fr-FR", dateFormatOptions);
-}
+import { formatPrice, formatOrderDate } from "@/lib/utils";
+import { ORDER_STATUS_CONFIG, getOrderStatus } from "@/lib/constants/orders";
+import type { AdminOrder } from "@/lib/db/types";
 
 interface OrderCardMobileProps {
   order: AdminOrder;
 }
 
 export function OrderCardMobile({ order }: OrderCardMobileProps) {
+  const router = useRouter();
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
-  const status = ORDER_STATUS_CONFIG[order.status as OrderStatus] || ORDER_STATUS_CONFIG.pending;
+  const orderStatus = getOrderStatus(order.status);
+  const statusConfig = ORDER_STATUS_CONFIG[orderStatus];
 
   const actions: ActionSheetItem[] = [
     {
       label: "Voir détails",
       icon: ViewIcon,
       onClick: () => {
-        window.location.href = `/orders/${order.id}`;
+        router.push(`/orders/${order.id}`);
       },
     },
     {
       label: "Voir facture",
       icon: PrinterIcon,
       onClick: () => {
-        window.location.href = `/orders/${order.id}/invoice`;
+        router.push(`/orders/${order.id}/invoice`);
       },
     },
   ];
@@ -77,7 +68,7 @@ export function OrderCardMobile({ order }: OrderCardMobileProps) {
               {order.order_number}
             </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
-              {formatDate(order.created_at)}
+              {formatOrderDate(order.created_at)}
             </span>
           </div>
 
@@ -96,9 +87,9 @@ export function OrderCardMobile({ order }: OrderCardMobileProps) {
               {order.item_count} art.
             </Badge>
             <StatusBadge
-              status={order.status as OrderStatus}
-              label={status.label}
-              variant={status.variant}
+              status={orderStatus}
+              label={statusConfig.label}
+              variant={statusConfig.variant}
               className="text-[10px]"
             />
           </div>

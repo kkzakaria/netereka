@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, FilterIcon, Search01Icon } from "@hugeicons/core-free-icons";
@@ -13,6 +13,14 @@ interface OrderFilterSheetProps {
   className?: string;
 }
 
+interface FilterState {
+  search: string;
+  status: string;
+  commune: string;
+  dateFrom: string;
+  dateTo: string;
+}
+
 // All statuses plus "all" option
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "all", label: "Tous" },
@@ -22,25 +30,44 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   })),
 ];
 
+function getFiltersFromParams(params: URLSearchParams): FilterState {
+  return {
+    search: params.get("search") ?? "",
+    status: params.get("status") ?? "all",
+    commune: params.get("commune") ?? "all",
+    dateFrom: params.get("dateFrom") ?? "",
+    dateTo: params.get("dateTo") ?? "",
+  };
+}
+
 export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
 
-  // Local state for form
-  const [search, setSearch] = useState(searchParams.get("search") ?? "");
-  const [status, setStatus] = useState(searchParams.get("status") ?? "all");
-  const [commune, setCommune] = useState(searchParams.get("commune") ?? "all");
-  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") ?? "");
-  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") ?? "");
+  // Derive initial filters from searchParams (memoized to avoid recalculating on every render)
+  const filtersFromUrl = useMemo(
+    () => getFiltersFromParams(searchParams),
+    [searchParams]
+  );
+
+  // Local state for form - keyed by searchParams to auto-sync on URL changes
+  const [filters, setFilters] = useState<FilterState>(filtersFromUrl);
+
+  // Sync local state with searchParams when URL changes externally (e.g., browser back/forward)
+  const urlKey = searchParams.toString();
+  useEffect(() => {
+    setFilters(getFiltersFromParams(searchParams));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlKey]);
 
   // Count active filters
   const activeFilterCount =
-    (search ? 1 : 0) +
-    (status !== "all" ? 1 : 0) +
-    (commune !== "all" ? 1 : 0) +
-    (dateFrom ? 1 : 0) +
-    (dateTo ? 1 : 0);
+    (filters.search ? 1 : 0) +
+    (filters.status !== "all" ? 1 : 0) +
+    (filters.commune !== "all" ? 1 : 0) +
+    (filters.dateFrom ? 1 : 0) +
+    (filters.dateTo ? 1 : 0);
 
   useEffect(() => {
     document.body.classList.toggle("overflow-hidden", open);
@@ -60,21 +87,27 @@ export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps)
 
   function handleApply() {
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (status && status !== "all") params.set("status", status);
-    if (commune && commune !== "all") params.set("commune", commune);
-    if (dateFrom) params.set("dateFrom", dateFrom);
-    if (dateTo) params.set("dateTo", dateTo);
+    if (filters.search) params.set("search", filters.search);
+    if (filters.status && filters.status !== "all") params.set("status", filters.status);
+    if (filters.commune && filters.commune !== "all") params.set("commune", filters.commune);
+    if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+    if (filters.dateTo) params.set("dateTo", filters.dateTo);
     router.push(`/orders?${params.toString()}`);
     setOpen(false);
   }
 
   function handleClear() {
-    setSearch("");
-    setStatus("all");
-    setCommune("all");
-    setDateFrom("");
-    setDateTo("");
+    setFilters({
+      search: "",
+      status: "all",
+      commune: "all",
+      dateFrom: "",
+      dateTo: "",
+    });
+  }
+
+  function updateFilter<K extends keyof FilterState>(key: K, value: FilterState[K]) {
+    setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
   return (
@@ -142,8 +175,8 @@ export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps)
               />
               <input
                 type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={filters.search}
+                onChange={(e) => updateFilter("search", e.target.value)}
                 placeholder="N° commande, nom, tél..."
                 className="h-12 w-full rounded-lg border bg-background pl-10 pr-4 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
               />
@@ -161,10 +194,10 @@ export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps)
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => setStatus(opt.value)}
+                    onClick={() => updateFilter("status", opt.value)}
                     className={cn(
                       "flex h-10 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors",
-                      status === opt.value
+                      filters.status === opt.value
                         ? "border-primary bg-primary text-primary-foreground"
                         : "hover:bg-muted"
                     )}
@@ -185,10 +218,10 @@ export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps)
               <label className="mb-2 block text-sm font-medium">Commune</label>
               <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                 <button
-                  onClick={() => setCommune("all")}
+                  onClick={() => updateFilter("commune", "all")}
                   className={cn(
                     "h-10 rounded-lg border px-4 text-sm font-medium transition-colors",
-                    commune === "all"
+                    filters.commune === "all"
                       ? "border-primary bg-primary text-primary-foreground"
                       : "hover:bg-muted"
                   )}
@@ -198,10 +231,10 @@ export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps)
                 {communes.map((c) => (
                   <button
                     key={c}
-                    onClick={() => setCommune(c)}
+                    onClick={() => updateFilter("commune", c)}
                     className={cn(
                       "h-10 rounded-lg border px-4 text-sm font-medium transition-colors",
-                      commune === c
+                      filters.commune === c
                         ? "border-primary bg-primary text-primary-foreground"
                         : "hover:bg-muted"
                     )}
@@ -223,8 +256,8 @@ export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps)
                 </label>
                 <input
                   type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
+                  value={filters.dateFrom}
+                  onChange={(e) => updateFilter("dateFrom", e.target.value)}
                   className="h-12 w-full rounded-lg border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
                 />
               </div>
@@ -234,8 +267,8 @@ export function OrderFilterSheet({ communes, className }: OrderFilterSheetProps)
                 </label>
                 <input
                   type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
+                  value={filters.dateTo}
+                  onChange={(e) => updateFilter("dateTo", e.target.value)}
                   className="h-12 w-full rounded-lg border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
                 />
               </div>
