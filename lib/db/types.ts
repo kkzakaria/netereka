@@ -237,3 +237,25 @@ export interface AdminOrderDetail extends Order {
   user_name: string;
   user_phone: string | null;
 }
+
+// Customer Management Types
+export type UserRole = "customer" | "admin" | "super_admin";
+
+export interface AdminCustomer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: UserRole;
+  emailVerified: number;
+  image: string | null;
+  is_active: number;
+  createdAt: string;
+  order_count: number;
+  total_spent: number;
+}
+
+export interface AdminCustomerDetail extends AdminCustomer {
+  addresses: Address[];
+  recent_orders: AdminOrder[];
+}
