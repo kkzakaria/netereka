@@ -355,18 +355,18 @@ Back-office complet + Notifications + Espace client
 - [x] Gestion adresses (CRUD)
 - [x] Historique commandes
 - [x] Détail commande + suivi statut
-- [ ] Wishlist (liste de souhaits)
-- [ ] Système avis produits
+- [x] Wishlist (liste de souhaits)
+- [x] Système avis produits
 - [x] Page réinitialisation mot de passe
 
 #### Livrables
 - [x] Espace client complet
-- [ ] Avis produits
+- [x] Avis produits
 
 #### Validation
 - [x] Modifier son profil
 - [x] Voir historique commandes
-- [ ] Laisser un avis
+- [x] Laisser un avis
 
 ---
 
@@ -379,7 +379,7 @@ Back-office complet + Notifications + Espace client
 | Emails transactionnels | ⬜ |
 | WhatsApp notifications | ⬜ |
 | Espace client complet | ✅ |
-| Avis produits | ⬜ |
+| Avis produits | ✅ |
 
 ---
 
@@ -588,7 +588,7 @@ Tests, contenu, optimisation, mise en production
 |---------|----------------|-------------------|---|
 | S1 | 25 | 25 | 100% |
 | S2 | 32 | 30 | 94% |
-| S3 | 24 | 17 | 71% |
+| S3 | 24 | 20 | 83% |
 | S4 | 18 | - | - |
 
 ### Blockers Log
@@ -606,7 +606,7 @@ Tests, contenu, optimisation, mise en production
 - UI admin plus basique
 
 ### Si retard Semaine 3
-- Reporter wishlist à post-lancement
+- ~~Reporter wishlist à post-lancement~~ ✅ Fait
 - Templates emails basiques
 - Dashboard admin simplifié
 
@@ -616,8 +616,8 @@ Tests, contenu, optimisation, mise en production
 - Soft launch (cercle restreint) puis lancement officiel J+3
 
 ### Fonctionnalités sacrifiables (si vraiment nécessaire)
-1. Wishlist → Post-lancement
-2. Avis produits → Post-lancement
+1. ~~Wishlist → Post-lancement~~ ✅ Fait
+2. ~~Avis produits → Post-lancement~~ ✅ Fait
 3. OAuth Facebook/Apple → Post-lancement (garder Google)
 4. Génération PDF facture → Post-lancement
 5. Export CSV commandes → Post-lancement
