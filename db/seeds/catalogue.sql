@@ -1,13 +1,21 @@
 -- NETEREKA Product Catalogue (auto-generated)
 -- DO NOT EDIT MANUALLY - regenerate with: npx tsx scripts/import-catalogue.ts
 
-BEGIN TRANSACTION;
+-- Disable foreign keys to allow clean deletion
+PRAGMA foreign_keys = OFF;
+
+-- Delete dependent data first
+DELETE FROM order_items;
+DELETE FROM orders;
+DELETE FROM reviews;
+DELETE FROM wishlist;
 
 DELETE FROM product_images;
 DELETE FROM product_variants;
-DELETE FROM product_attributes;
 DELETE FROM products;
 DELETE FROM categories;
+
+PRAGMA foreign_keys = ON;
 
 -- Categories
 INSERT INTO categories (id, name, slug, description, sort_order) VALUES ('cat_smartphones', 'Smartphones', 'smartphones', 'Téléphones portables et smartphones', 1);
@@ -1079,4 +1087,3 @@ INSERT INTO products (id, category_id, name, slug, base_price, compare_price, sk
 INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary) VALUES ('img_7UDRMg2mmJ', 'prod_yHHlg97Pem', 'products/projecteurs/xiaomi-smart-projector-l1-pro.webp', 'Xiaomi Smart Projector L1 Pro', 0, 1);
 INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes) VALUES ('var_5gBDflPTEv', 'prod_yHHlg97Pem', 'White - N/A', 'XIAO-UXO3MP-_XXM', 300000, 10, '{"color":"White","storage":"N/A"}');
 
-COMMIT;
