@@ -2,7 +2,6 @@
 -- SQLite requires table recreation to change FK constraints.
 
 PRAGMA foreign_keys = OFF;
-BEGIN;
 
 -- Recreate orders table with correct FK
 CREATE TABLE IF NOT EXISTS orders_new (
@@ -68,7 +67,7 @@ CREATE TABLE IF NOT EXISTS reviews_new (
 );
 
 INSERT INTO reviews_new (id, product_id, user_id, rating, comment, is_verified_purchase, created_at)
-SELECT id, product_id, user_id, rating, comment, is_verified_purchase, created_at FROM reviews;
+SELECT id, product_id, user_id, rating, comment, is_verified, created_at FROM reviews;
 DROP TABLE reviews;
 ALTER TABLE reviews_new RENAME TO reviews;
 
@@ -98,5 +97,4 @@ ALTER TABLE addresses_new RENAME TO addresses;
 
 CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses(user_id);
 
-COMMIT;
 PRAGMA foreign_keys = ON;
