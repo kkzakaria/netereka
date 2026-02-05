@@ -1,13 +1,7 @@
-// Aliased to avoid conflict with `export const dynamic = "force-dynamic"` below
-import nextDynamic from "next/dynamic";
 import { requireAdmin } from "@/lib/auth/guards";
 import { Sidebar } from "@/components/admin/sidebar";
 import { ViewProvider } from "@/components/admin/view-context";
-
-const Toaster = nextDynamic(
-  () => import("@/components/ui/sonner").then((m) => ({ default: m.Toaster })),
-  { ssr: false }
-);
+import { Toaster } from "@/components/ui/sonner";
 
 export const dynamic = "force-dynamic";
 

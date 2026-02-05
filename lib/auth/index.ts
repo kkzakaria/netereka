@@ -3,17 +3,18 @@ import { captcha } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { drizzle } from "drizzle-orm/d1";
+import * as schema from "@/lib/db/schema";
 
 export async function initAuth() {
   const { env } = await getCloudflareContext();
   const cfEnv = env as CloudflareEnv;
 
-  const db = drizzle(cfEnv.DB);
+  const db = drizzle(cfEnv.DB, { schema });
 
   return betterAuth({
     baseURL: cfEnv.SITE_URL,
     secret: cfEnv.BETTER_AUTH_SECRET,
-    database: drizzleAdapter(db, { provider: "sqlite" }),
+    database: drizzleAdapter(db, { provider: "sqlite", schema }),
     emailAndPassword: {
       enabled: true,
     },
