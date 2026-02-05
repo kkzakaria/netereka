@@ -7,6 +7,7 @@ import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
 import { getAddressById, createAddress } from "@/lib/db/addresses";
 import { createOrderWithItems, generateOrderNumber } from "@/lib/db/orders";
 import type { Product, ProductVariant, PromoCode } from "@/lib/db/types";
+import { notifyOrderConfirmation } from "@/lib/notifications";
 
 // ---------- internal promo validation (no auth check) ----------
 
@@ -283,6 +284,26 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
       error instanceof Error ? error.message : "Erreur lors de la creation de la commande";
     return { success: false, error: message };
   }
+
+  // Fire-and-forget: send order confirmation email
+  notifyOrderConfirmation(session.user.email, {
+    customerName: session.user.name || addressFullName,
+    orderNumber,
+    items: validatedItems.map((item) => ({
+      productName: item.productName,
+      variantName: item.variantName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: item.unitPrice * item.quantity,
+    })),
+    subtotal,
+    deliveryFee,
+    discountAmount,
+    total,
+    deliveryAddress: deliveryAddressFormatted,
+    deliveryCommune: addressCommune,
+    estimatedDelivery: estimatedDelivery,
+  }).catch((err) => console.error("[checkout] notification error:", err));
 
   return { success: true, orderNumber };
 }
