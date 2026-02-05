@@ -104,7 +104,24 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   }
   const data: CheckoutOutput = parsed.data;
 
-  // 2. Resolve address
+  // 2. Start products + variants fetch early (independent of address)
+  const productIds = data.items.map((i) => i.productId);
+  const variantIds = data.items.map((i) => i.variantId).filter(Boolean) as string[];
+
+  const placeholdersP = productIds.map(() => "?").join(",");
+  const productsPromise = query<Product>(
+    `SELECT * FROM products WHERE id IN (${placeholdersP}) AND is_active = 1`,
+    productIds
+  );
+  const variantsPromise =
+    variantIds.length > 0
+      ? query<ProductVariant>(
+          `SELECT * FROM product_variants WHERE id IN (${variantIds.map(() => "?").join(",")}) AND is_active = 1`,
+          variantIds
+        )
+      : Promise.resolve([] as ProductVariant[]);
+
+  // 3. Resolve address
   let addressStreet: string;
   let addressFullName: string;
   let addressPhone: string;
@@ -127,34 +144,20 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     addressPhone = data.phone!;
   }
 
-  // 3. Get delivery zone
+  // 4. Get delivery zone
   const zone = await getDeliveryZoneByCommune(addressCommune);
   if (!zone) {
     return { success: false, error: "Zone de livraison non disponible pour cette commune" };
   }
 
-  // 4. Batch-fetch all products + variants to avoid N+1 queries
-  const productIds = data.items.map((i) => i.productId);
-  const variantIds = data.items.map((i) => i.variantId).filter(Boolean) as string[];
-
-  const placeholdersP = productIds.map(() => "?").join(",");
-  const products = await query<Product>(
-    `SELECT * FROM products WHERE id IN (${placeholdersP}) AND is_active = 1`,
-    productIds
-  );
+  // 5. Await products + variants (started in step 2)
+  const [products, variantsRaw] = await Promise.all([productsPromise, variantsPromise]);
   const productMap = new Map(products.map((p) => [p.id, p]));
 
   const variantMap = new Map<string, ProductVariant>();
-  if (variantIds.length > 0) {
-    const placeholdersV = variantIds.map(() => "?").join(",");
-    const variants = await query<ProductVariant>(
-      `SELECT * FROM product_variants WHERE id IN (${placeholdersV}) AND is_active = 1`,
-      variantIds
-    );
-    for (const v of variants) variantMap.set(v.id, v);
-  }
+  for (const v of variantsRaw) variantMap.set(v.id, v);
 
-  // 5. Validate each cart item
+  // 6. Validate each cart item
   const validatedItems: Array<{
     productId: string;
     variantId: string | null;
@@ -207,14 +210,14 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     }
   }
 
-  // 6. Calculate totals
+  // 7. Calculate totals
   const subtotal = validatedItems.reduce(
     (sum, item) => sum + item.unitPrice * item.quantity,
     0
   );
   const deliveryFee = zone.fee;
 
-  // 7. Validate promo code if provided (internal call, no double auth)
+  // 8. Validate promo code if provided (internal call, no double auth)
   let discountAmount = 0;
   let promoCodeId: string | null = null;
 
@@ -229,7 +232,7 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
 
   const total = Math.max(0, subtotal + deliveryFee - discountAmount);
 
-  // 8. Optionally save new address
+  // 9. Optionally save new address
   if (!data.savedAddressId && data.saveAddress) {
     await createAddress({
       userId,
@@ -244,12 +247,12 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     });
   }
 
-  // 9. Estimated delivery
+  // 10. Estimated delivery
   const estimatedDate = new Date();
   estimatedDate.setHours(estimatedDate.getHours() + zone.estimated_hours);
   const estimatedDelivery = estimatedDate.toISOString();
 
-  // 10. Create order atomically
+  // 11. Create order atomically
   const orderNumber = generateOrderNumber();
   const deliveryAddressFormatted = `${addressFullName}, ${addressStreet}, ${addressCommune}, ${addressCity}`;
 

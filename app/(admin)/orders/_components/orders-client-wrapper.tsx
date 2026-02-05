@@ -38,7 +38,7 @@ export function OrdersClientWrapper({
         {/* Data list */}
         <ResponsiveDataList
           data={orders}
-          tableView={<OrderTable orders={orders} />}
+          renderTable={(data) => <OrderTable orders={data} />}
           renderCard={(order) => <OrderCardMobile order={order} />}
           emptyMessage="Aucune commande trouvée"
         />

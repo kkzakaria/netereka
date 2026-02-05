@@ -32,7 +32,7 @@ export function CategoriesPageClient({ categories }: CategoriesPageClientProps) 
       {/* Responsive data list */}
       <ResponsiveDataList
         data={categories}
-        tableView={<CategoryTable categories={categories} />}
+        renderTable={(data) => <CategoryTable categories={data} />}
         renderCard={(category) => (
           <CategoryCardMobile
             category={category}
