@@ -1,8 +1,10 @@
+import type { Metadata } from "next";
 import { requireAuth } from "@/lib/auth/guards";
 import { AccountNav } from "@/components/storefront/account-nav";
 
-export const metadata = {
-  title: "Mon compte | NETEREKA",
+export const metadata: Metadata = {
+  title: "Mon compte",
+  robots: { index: false, follow: false },
 };
 
 export default async function AccountLayout({

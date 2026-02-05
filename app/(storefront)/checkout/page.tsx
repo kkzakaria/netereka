@@ -4,7 +4,8 @@ import { getUserAddresses } from "@/lib/db/addresses";
 import { CheckoutForm } from "@/components/storefront/checkout-form";
 
 export const metadata = {
-  title: "Passer la commande | NETEREKA",
+  title: "Passer la commande",
+  robots: { index: false, follow: false },
 };
 
 interface SessionUser {
