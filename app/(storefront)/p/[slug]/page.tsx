@@ -9,7 +9,9 @@ import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { StarRating } from "@/components/storefront/star-rating";
-import { SITE_NAME } from "@/lib/utils/constants";
+import { JsonLd } from "@/components/seo/json-ld";
+import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
+import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 import { formatPrice, formatDate } from "@/lib/utils/format";
 import { getOptionalSession } from "@/lib/auth/guards";
 import { isInWishlist } from "@/lib/db/wishlist";
@@ -24,12 +26,49 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProductCached(slug);
-  if (!product) return {};
+  if (!product) return { title: "Produit non trouvé" };
+
+  const price = formatPrice(product.base_price);
+  const description =
+    product.short_description ??
+    `Achetez ${product.name} en Côte d'Ivoire. ${price}. Livraison rapide à Abidjan. Paiement à la livraison.`;
+  const images = product.images
+    .filter((img) => img.url)
+    .map((img) => ({
+      url: img.url,
+      width: 800,
+      height: 800,
+      alt: img.alt || product.name,
+    }));
+
   return {
-    title: `${product.name} | ${SITE_NAME}`,
-    description:
-      product.short_description ??
-      `${product.name} - ${formatPrice(product.base_price)}`,
+    title: `${product.name} - ${price}`,
+    description,
+    keywords: [
+      product.name,
+      product.brand,
+      product.brand ? `${product.brand} Côte d'Ivoire` : null,
+      `acheter ${product.name} Abidjan`,
+      product.category_name,
+    ].filter(Boolean) as string[],
+    openGraph: {
+      title: `${product.name} - ${price} | ${SITE_NAME}`,
+      description,
+      url: `${SITE_URL}/p/${slug}`,
+      siteName: SITE_NAME,
+      images,
+      locale: "fr_CI",
+      type: "article",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${product.name} - ${price}`,
+      description: description.slice(0, 200),
+      images: images[0] ? [images[0].url] : undefined,
+    },
+    alternates: {
+      canonical: `/p/${slug}`,
+    },
   };
 }
 
@@ -126,12 +165,82 @@ export default async function ProductPage({ params }: Props) {
   ]);
   if (!product) notFound();
 
-  const wishlisted = session
-    ? await isInWishlist(session.user.id, product.id)
-    : false;
+  const [wishlisted, ratingStats] = await Promise.all([
+    session ? isInWishlist(session.user.id, product.id) : false,
+    getProductRatingStats(product.id),
+  ]);
+
+  const currentYear = new Date().getFullYear();
+  const priceValidUntil = `${currentYear}-12-31`;
+
+  const productSchema: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    image: product.images.filter((img) => img.url).map((img) => img.url),
+    description: product.description ?? product.short_description,
+    ...(product.sku && { sku: product.sku }),
+    ...(product.brand && {
+      brand: { "@type": "Brand", name: product.brand },
+    }),
+    offers: {
+      "@type": "Offer",
+      url: `${SITE_URL}/p/${slug}`,
+      priceCurrency: "XOF",
+      price: product.base_price,
+      priceValidUntil,
+      availability:
+        product.stock_quantity > 0
+          ? "https://schema.org/InStock"
+          : "https://schema.org/OutOfStock",
+      seller: { "@type": "Organization", name: SITE_NAME },
+      shippingDetails: {
+        "@type": "OfferShippingDetails",
+        shippingDestination: {
+          "@type": "DefinedRegion",
+          addressCountry: "CI",
+        },
+        deliveryTime: {
+          "@type": "ShippingDeliveryTime",
+          handlingTime: {
+            "@type": "QuantitativeValue",
+            minValue: 0,
+            maxValue: 1,
+            unitCode: "DAY",
+          },
+          transitTime: {
+            "@type": "QuantitativeValue",
+            minValue: 1,
+            maxValue: 3,
+            unitCode: "DAY",
+          },
+        },
+      },
+    },
+    ...(ratingStats.count > 0 && {
+      aggregateRating: {
+        "@type": "AggregateRating",
+        ratingValue: ratingStats.average.toFixed(1),
+        reviewCount: ratingStats.count,
+        bestRating: 5,
+        worstRating: 1,
+      },
+    }),
+  };
+
+  const breadcrumbItems = [
+    { name: "Accueil", href: "/" },
+    ...(product.category_slug && product.category_name
+      ? [{ name: product.category_name, href: `/c/${product.category_slug}` }]
+      : []),
+    { name: product.name },
+  ];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
+      <JsonLd data={productSchema} />
+      <BreadcrumbSchema items={breadcrumbItems} />
+
       {/* Breadcrumb */}
       <nav className="mb-4 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-foreground">

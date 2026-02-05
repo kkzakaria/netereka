@@ -16,7 +16,8 @@ import { SearchSort } from "@/app/(storefront)/search/search-sort";
 import { ActiveFilters } from "@/app/(storefront)/search/active-filters";
 import { MobileFilterSheet } from "@/app/(storefront)/search/mobile-filter-sheet";
 import { LoadMoreButton } from "./load-more-button";
-import { SITE_NAME } from "@/lib/utils/constants";
+import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
+import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 
 const getCategoryCached = cache(getCategoryBySlug);
 
@@ -31,13 +32,33 @@ interface Props {
   }>;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
+  const { sort } = await searchParams;
   const category = await getCategoryCached(slug);
   if (!category) return {};
+
+  const description =
+    category.description ??
+    `Découvrez notre sélection de ${category.name} en Côte d'Ivoire. Livraison rapide à Abidjan. Paiement à la livraison.`;
+
   return {
-    title: `${category.name} | ${SITE_NAME}`,
-    description: category.description ?? `Découvrez notre sélection de ${category.name}`,
+    title: category.name,
+    description,
+    openGraph: {
+      title: `${category.name} | ${SITE_NAME}`,
+      description,
+      url: `${SITE_URL}/c/${slug}`,
+      siteName: SITE_NAME,
+      locale: "fr_CI",
+      type: "website",
+    },
+    alternates: {
+      canonical: `/c/${slug}`,
+    },
+    ...(sort && {
+      robots: { index: false, follow: true },
+    }),
   };
 }
 
@@ -78,6 +99,13 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       hideCategory
     >
       <div className="mx-auto max-w-7xl px-4 py-6">
+        <BreadcrumbSchema
+          items={[
+            { name: "Accueil", href: "/" },
+            { name: category.name },
+          ]}
+        />
+
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold">{category.name}</h1>

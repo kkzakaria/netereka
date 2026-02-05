@@ -24,10 +24,16 @@ interface Props {
 }
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
-  const { q } = await searchParams;
-  const title = q ? `Résultats pour "${q}"` : "Recherche";
+  const { q, sort } = await searchParams;
+  const title = q ? `Résultats pour "${q}"` : "Tous les produits";
+  const description = q
+    ? `Trouvez "${q}" sur ${SITE_NAME}. Électronique en Côte d'Ivoire avec livraison rapide à Abidjan.`
+    : `Parcourez tout le catalogue ${SITE_NAME}. Smartphones, ordinateurs, consoles et plus en Côte d'Ivoire.`;
   return {
-    title: `${title} | ${SITE_NAME}`,
+    title,
+    description,
+    alternates: { canonical: "/search" },
+    ...(sort && { robots: { index: false, follow: true } }),
   };
 }
 
