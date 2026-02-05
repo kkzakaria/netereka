@@ -7,10 +7,10 @@ import { OrderTable } from "@/components/admin/order-table";
 import { OrderCardMobile } from "@/components/admin/order-card-mobile";
 import { OrderFilters } from "@/components/admin/order-filters";
 import { OrderFilterSheet } from "@/components/admin/order-filter-sheet";
-import type { AdminOrder } from "@/lib/db/types";
+import type { OrderListItem } from "@/lib/db/types";
 
 interface OrdersClientWrapperProps {
-  orders: AdminOrder[];
+  orders: OrderListItem[];
   communes: string[];
 }
 

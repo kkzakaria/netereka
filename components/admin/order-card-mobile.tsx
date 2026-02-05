@@ -15,10 +15,10 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { ActionSheet, type ActionSheetItem } from "./action-sheet";
 import { formatPrice, formatOrderDate } from "@/lib/utils";
 import { ORDER_STATUS_CONFIG, getOrderStatus } from "@/lib/constants/orders";
-import type { AdminOrder } from "@/lib/db/types";
+import type { OrderListItem } from "@/lib/db/types";
 
 interface OrderCardMobileProps {
-  order: AdminOrder;
+  order: OrderListItem;
 }
 
 export function OrderCardMobile({ order }: OrderCardMobileProps) {

@@ -14,10 +14,10 @@ import {
 import { formatPrice, formatDateLong } from "@/lib/utils";
 import { ROLE_OPTIONS } from "@/lib/constants/customers";
 import { updateCustomerRole, toggleCustomerActive } from "@/actions/admin/customers";
-import type { AdminCustomerDetail, UserRole } from "@/lib/db/types";
+import type { CustomerSidebarData, UserRole } from "@/lib/db/types";
 
 interface CustomerSidebarProps {
-  customer: AdminCustomerDetail;
+  customer: CustomerSidebarData;
   isSuperAdmin: boolean;
 }
 

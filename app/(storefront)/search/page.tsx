@@ -3,7 +3,7 @@ import { searchProducts, countSearchResults, getBrandsInUse, getPriceRange } fro
 import { getCategories } from "@/lib/db/categories";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { SITE_NAME } from "@/lib/utils/constants";
-import type { SearchOptions } from "@/lib/db/types";
+import type { SearchOptions, CategoryFilterItem } from "@/lib/db/types";
 import { FilterProvider } from "./filter-context";
 import { SearchFilters } from "./search-filters";
 import { SearchSort } from "./search-sort";
@@ -63,8 +63,12 @@ export default async function SearchPage({ searchParams }: Props) {
 
   const hasMore = (currentPage - 1) * limit + products.length < total;
 
+  const categoryFilterData = categories.map((c) => ({
+    id: c.id, name: c.name, slug: c.slug,
+  } satisfies CategoryFilterItem));
+
   return (
-    <FilterProvider categories={categories} brands={brands} priceRange={priceRange}>
+    <FilterProvider categories={categoryFilterData} brands={brands} priceRange={priceRange}>
       <div className="mx-auto max-w-7xl px-4 py-6">
         {/* Header */}
         <div className="mb-6">
