@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card";
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { authClient } from "@/lib/auth/client";
+import { verifyAdminRole } from "@/actions/admin/auth";
 
 const TurnstileCaptcha = dynamic(
   () =>
@@ -57,7 +58,7 @@ export default function AdminLoginPage() {
     setServerError("");
 
     try {
-      const { data: session, error } = await authClient.signIn.email({
+      const { error } = await authClient.signIn.email({
         email: data.email,
         password: data.password,
         callbackURL: "/dashboard",
@@ -75,14 +76,10 @@ export default function AdminLoginPage() {
         return;
       }
 
-      // Verify the user has admin privileges
-      const role = (session?.user as Record<string, unknown>)?.role as string | undefined;
-      if (role !== "admin" && role !== "super_admin") {
-        setServerError(
-          "Accès refusé. Ce portail est réservé aux administrateurs."
-        );
-        // Sign out the non-admin user
-        await authClient.signOut();
+      // Verify admin role server-side
+      const result = await verifyAdminRole();
+      if (!result.success) {
+        setServerError(result.error ?? "Accès refusé.");
         return;
       }
 

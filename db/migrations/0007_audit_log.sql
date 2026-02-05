@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   target_id TEXT NOT NULL,
   details TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (actor_id) REFERENCES user(id)
+  FOREIGN KEY (actor_id) REFERENCES users(id)
 );
 
 CREATE INDEX idx_audit_log_actor ON audit_log(actor_id);

@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
-import { execute, queryFirst } from "@/lib/db";
-import { createAuditLog } from "@/lib/db/admin/audit-log";
+import { queryFirst, batch } from "@/lib/db";
+import { getDB } from "@/lib/cloudflare/context";
+import { prepareAuditLog } from "@/lib/db/admin/audit-log";
 import type { ActionResult } from "@/lib/utils";
 import type { UserRole } from "@/lib/db/types";
 import { ROLE_LABELS } from "@/lib/constants/customers";
@@ -59,12 +60,14 @@ export async function updateCustomerRole(
 
   const oldRole = user.role as UserRole;
 
-  await execute(
-    "UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?",
-    [roleResult.data, customerId]
-  );
+  const db = await getDB();
+  const updateStmt = db
+    .prepare(
+      "UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?"
+    )
+    .bind(roleResult.data, customerId);
 
-  await createAuditLog({
+  const auditStmt = await prepareAuditLog({
     actorId: session.user.id,
     actorName: session.user.name,
     action: "user.role_changed",
@@ -77,6 +80,8 @@ export async function updateCustomerRole(
       toLabel: ROLE_LABELS[roleResult.data],
     }),
   });
+
+  await batch([updateStmt, auditStmt]);
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);
@@ -107,18 +112,22 @@ export async function toggleCustomerActive(
   const currentActive = user.is_active ?? 1;
   const newActive = currentActive === 1 ? 0 : 1;
 
-  await execute(
-    "UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?",
-    [newActive, customerId]
-  );
+  const db = await getDB();
+  const updateStmt = db
+    .prepare(
+      "UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?"
+    )
+    .bind(newActive, customerId);
 
-  await createAuditLog({
+  const auditStmt = await prepareAuditLog({
     actorId: session.user.id,
     actorName: session.user.name,
     action: newActive === 1 ? "user.activated" : "user.deactivated",
     targetType: "user",
     targetId: customerId,
   });
+
+  await batch([updateStmt, auditStmt]);
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);

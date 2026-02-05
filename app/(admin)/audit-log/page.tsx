@@ -66,6 +66,18 @@ function ActionDescription({
   }
 }
 
+const TARGET_TYPE_PATHS: Record<string, string> = {
+  user: "/customers",
+  product: "/products",
+  order: "/orders",
+  category: "/categories",
+};
+
+function getTargetHref(targetType: string, targetId: string): string {
+  const basePath = TARGET_TYPE_PATHS[targetType] ?? "/customers";
+  return `${basePath}/${targetId}`;
+}
+
 export default async function AuditLogPage({ searchParams }: Props) {
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
@@ -139,12 +151,14 @@ export default async function AuditLogPage({ searchParams }: Props) {
                     />
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
-                    <Link
-                      href={`/customers/${log.target_id}`}
-                      className="text-sm text-primary hover:underline"
-                    >
-                      Voir
-                    </Link>
+                    {log.target_id && (
+                      <Link
+                        href={getTargetHref(log.target_type, log.target_id)}
+                        className="text-sm text-primary hover:underline"
+                      >
+                        Voir
+                      </Link>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
