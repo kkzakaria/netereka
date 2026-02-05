@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireGuest } from "@/lib/auth/guards";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };

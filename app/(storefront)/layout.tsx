@@ -2,6 +2,8 @@ import { Header } from "@/components/storefront/header";
 import { Footer } from "@/components/storefront/footer";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
 
+export const dynamic = "force-dynamic";
+
 export default function StorefrontLayout({
   children,
 }: {

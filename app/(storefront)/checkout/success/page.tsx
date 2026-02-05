@@ -3,6 +3,8 @@ import { requireAuth } from "@/lib/auth/guards";
 import { getOrderByNumber, getOrderItems } from "@/lib/db/orders";
 import { OrderConfirmation } from "@/components/storefront/order-confirmation";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Commande confirmée",
   robots: { index: false, follow: false },

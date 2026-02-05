@@ -3,6 +3,8 @@ import { getActiveDeliveryZones } from "@/lib/db/delivery-zones";
 import { getUserAddresses } from "@/lib/db/addresses";
 import { CheckoutForm } from "@/components/storefront/checkout-form";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Passer la commande",
   robots: { index: false, follow: false },

@@ -3,6 +3,8 @@ import { Sidebar } from "@/components/admin/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { ViewProvider } from "@/components/admin/view-context";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminLayout({
   children,
 }: {

@@ -2,6 +2,8 @@ import type { MetadataRoute } from "next";
 import { query } from "@/lib/db";
 import { SITE_URL } from "@/lib/utils/constants";
 
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticLastModified = new Date("2026-02-01");
 

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { requireAuth } from "@/lib/auth/guards";
 import { AccountNav } from "@/components/storefront/account-nav";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Mon compte",
   robots: { index: false, follow: false },
