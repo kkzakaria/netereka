@@ -58,7 +58,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       siteName: SITE_NAME,
       images,
       locale: "fr_CI",
-      type: "website",
+      type: "article",
     },
     twitter: {
       card: "summary_large_image",
@@ -170,9 +170,8 @@ export default async function ProductPage({ params }: Props) {
     getProductRatingStats(product.id),
   ]);
 
-  const priceValidDate = new Date(product.updated_at);
-  priceValidDate.setDate(priceValidDate.getDate() + 60);
-  const priceValidUntil = priceValidDate.toISOString().split("T")[0];
+  const currentYear = new Date().getFullYear();
+  const priceValidUntil = `${currentYear}-12-31`;
 
   const productSchema: Record<string, unknown> = {
     "@context": "https://schema.org",

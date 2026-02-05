@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 
 export const metadata: Metadata = {
@@ -23,9 +24,9 @@ export default function CGVPage() {
             contractuelles entre {SITE_NAME}, société de commerce électronique basée à
             Abidjan, Côte d&apos;Ivoire, et toute personne physique ou morale effectuant un
             achat sur le site{" "}
-            <a href={SITE_URL} className="text-primary hover:underline">
+            <Link href="/" className="text-primary hover:underline">
               {SITE_URL}
-            </a>
+            </Link>
             .
           </p>
           <p>
@@ -108,9 +109,9 @@ export default function CGVPage() {
           <p>
             Les frais de livraison varient selon la commune de livraison et sont clairement
             affichés lors de la commande. Pour plus de détails, consultez notre{" "}
-            <a href="/livraison" className="text-primary hover:underline">
+            <Link href="/livraison" className="text-primary hover:underline">
               politique de livraison
-            </a>
+            </Link>
             .
           </p>
         </section>
@@ -188,9 +189,9 @@ export default function CGVPage() {
           <p>
             Pour toute question relative à ces conditions générales, vous pouvez nous
             contacter via notre{" "}
-            <a href="/contact" className="text-primary hover:underline">
+            <Link href="/contact" className="text-primary hover:underline">
               page de contact
-            </a>
+            </Link>
             .
           </p>
         </section>

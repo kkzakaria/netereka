@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { SITE_NAME } from "@/lib/utils/constants";
 import { JsonLd } from "@/components/seo/json-ld";
 
@@ -115,12 +116,12 @@ export default function FAQPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Notre équipe est là pour vous aider. Contactez-nous directement.
         </p>
-        <a
+        <Link
           href="/contact"
           className="mt-4 inline-block rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           Nous contacter
-        </a>
+        </Link>
       </div>
     </div>
   );

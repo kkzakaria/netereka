@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { SITE_NAME } from "@/lib/utils/constants";
 
 export const metadata: Metadata = {
@@ -131,9 +132,9 @@ export default function LivraisonPage() {
           <p>
             Pour toute question relative à votre livraison, n&apos;hésitez pas à nous
             contacter via notre{" "}
-            <a href="/contact" className="text-primary hover:underline">
+            <Link href="/contact" className="text-primary hover:underline">
               page de contact
-            </a>{" "}
+            </Link>{" "}
             ou par WhatsApp.
           </p>
         </section>

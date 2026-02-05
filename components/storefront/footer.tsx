@@ -7,7 +7,7 @@ const footerLinks = {
     links: [
       { label: "Tous les produits", href: "/search" },
       { label: "Nouveautés", href: "/search?sort=newest" },
-      { label: "Promotions", href: "/search?sort=price_asc" },
+      { label: "Meilleures ventes", href: "/search?sort=popular" },
     ],
   },
   informations: {

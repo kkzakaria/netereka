@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 import { JsonLd } from "@/components/seo/json-ld";
 
@@ -132,9 +133,9 @@ export default function AProposPage() {
           <p>
             Vous avez des questions ou des suggestions ? N&apos;hésitez pas à nous
             contacter via notre{" "}
-            <a href="/contact" className="text-primary hover:underline">
+            <Link href="/contact" className="text-primary hover:underline">
               page de contact
-            </a>
+            </Link>
             . Nous sommes toujours à l&apos;écoute de nos clients.
           </p>
         </section>
