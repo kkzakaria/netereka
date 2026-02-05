@@ -3,9 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
-import { execute, queryFirst } from "@/lib/db";
+import { queryFirst, batch } from "@/lib/db";
+import { getDB } from "@/lib/cloudflare/context";
+import { prepareAuditLog } from "@/lib/db/admin/audit-log";
 import type { ActionResult } from "@/lib/utils";
 import type { UserRole } from "@/lib/db/types";
+import { ROLE_LABELS } from "@/lib/constants/customers";
 
 const idSchema = z.string().min(1, "ID requis");
 
@@ -29,7 +32,7 @@ export async function updateCustomerRole(
 
   const idResult = idSchema.safeParse(customerId);
   if (!idResult.success) {
-    return { success: false, error: "ID client invalide" };
+    return { success: false, error: "ID utilisateur invalide" };
   }
 
   const roleResult = roleSchema.safeParse(newRole);
@@ -52,13 +55,33 @@ export async function updateCustomerRole(
   );
 
   if (!user) {
-    return { success: false, error: "Client introuvable" };
+    return { success: false, error: "Utilisateur introuvable" };
   }
 
-  await execute(
-    "UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?",
-    [roleResult.data, customerId]
-  );
+  const oldRole = user.role as UserRole;
+
+  const db = await getDB();
+  const updateStmt = db
+    .prepare(
+      "UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?"
+    )
+    .bind(roleResult.data, customerId);
+
+  const auditStmt = await prepareAuditLog({
+    actorId: session.user.id,
+    actorName: session.user.name,
+    action: "user.role_changed",
+    targetType: "user",
+    targetId: customerId,
+    details: JSON.stringify({
+      from: oldRole,
+      to: roleResult.data,
+      fromLabel: ROLE_LABELS[oldRole],
+      toLabel: ROLE_LABELS[roleResult.data],
+    }),
+  });
+
+  await batch([updateStmt, auditStmt]);
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);
@@ -69,11 +92,11 @@ export async function updateCustomerRole(
 export async function toggleCustomerActive(
   customerId: string
 ): Promise<ActionResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   const idResult = idSchema.safeParse(customerId);
   if (!idResult.success) {
-    return { success: false, error: "ID client invalide" };
+    return { success: false, error: "ID utilisateur invalide" };
   }
 
   // Check if user exists and get current status
@@ -83,16 +106,28 @@ export async function toggleCustomerActive(
   );
 
   if (!user) {
-    return { success: false, error: "Client introuvable" };
+    return { success: false, error: "Utilisateur introuvable" };
   }
 
   const currentActive = user.is_active ?? 1;
   const newActive = currentActive === 1 ? 0 : 1;
 
-  await execute(
-    "UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?",
-    [newActive, customerId]
-  );
+  const db = await getDB();
+  const updateStmt = db
+    .prepare(
+      "UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?"
+    )
+    .bind(newActive, customerId);
+
+  const auditStmt = await prepareAuditLog({
+    actorId: session.user.id,
+    actorName: session.user.name,
+    action: newActive === 1 ? "user.activated" : "user.deactivated",
+    targetType: "user",
+    targetId: customerId,
+  });
+
+  await batch([updateStmt, auditStmt]);
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);

@@ -21,8 +21,8 @@ interface CustomerFiltersProps {
 const ROLE_OPTIONS = [
   { value: "all", label: "Tous" },
   { value: "customer", label: "Client" },
-  { value: "admin", label: "Admin" },
-  { value: "super_admin", label: "Super Admin" },
+  { value: "admin", label: "Administrateur" },
+  { value: "super_admin", label: "Super Administrateur" },
 ];
 
 export function CustomerFilters({ className }: CustomerFiltersProps) {

@@ -110,7 +110,7 @@ export const CustomerTable = memo(function CustomerTable({
   if (customers.length === 0) {
     return (
       <div className="rounded-lg border p-8 text-center text-muted-foreground">
-        Aucun client trouvé
+        Aucun utilisateur trouvé
       </div>
     );
   }
@@ -120,7 +120,7 @@ export const CustomerTable = memo(function CustomerTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Client</TableHead>
+            <TableHead>Nom</TableHead>
             <TableHead>Email</TableHead>
             <TableHead className="hidden md:table-cell">Téléphone</TableHead>
             <TableHead>Rôle</TableHead>

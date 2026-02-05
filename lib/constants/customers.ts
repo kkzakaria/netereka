@@ -2,8 +2,8 @@ import type { UserRole } from "@/lib/db/types";
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   customer: "Client",
-  admin: "Admin",
-  super_admin: "Super Admin",
+  admin: "Administrateur",
+  super_admin: "Super Administrateur",
 };
 
 export const ROLE_VARIANTS: Record<
@@ -17,6 +17,11 @@ export const ROLE_VARIANTS: Record<
 
 export const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "customer", label: "Client" },
-  { value: "admin", label: "Admin" },
-  { value: "super_admin", label: "Super Admin" },
+  { value: "admin", label: "Administrateur" },
+  { value: "super_admin", label: "Super Administrateur" },
 ];
+
+/** Returns "client" for customers, "utilisateur" for admins */
+export function getUserTypeLabel(role: UserRole): string {
+  return role === "customer" ? "client" : "utilisateur";
+}
