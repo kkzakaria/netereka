@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CheckmarkCircle02Icon, Cancel01Icon, Mail01Icon, SmartPhone01Icon } from "@hugeicons/core-free-icons";
 import { formatDateLong } from "@/lib/utils";
-import { ROLE_LABELS, ROLE_VARIANTS } from "@/lib/constants/customers";
+import { ROLE_LABELS, ROLE_VARIANTS, getUserTypeLabel } from "@/lib/constants/customers";
 import type { AdminCustomerDetail } from "@/lib/db/types";
 
 interface CustomerInfoProps {
@@ -24,7 +24,9 @@ export function CustomerInfo({ customer }: CustomerInfoProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Informations client</CardTitle>
+        <CardTitle className="text-sm">
+          Informations {getUserTypeLabel(customer.role)}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex items-start gap-4">

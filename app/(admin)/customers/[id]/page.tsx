@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getAdminCustomerById } from "@/lib/db/admin/customers";
+import { getUserTypeLabel } from "@/lib/constants/customers";
 import { CustomerInfo } from "./_components/customer-info";
 import { CustomerAddresses } from "./_components/customer-addresses";
 import { CustomerOrders } from "./_components/customer-orders";
@@ -33,7 +34,7 @@ export default async function CustomerDetailPage({ params }: Props) {
           size="icon"
           asChild
           className="h-11 w-11 shrink-0"
-          aria-label="Retour à la liste des clients"
+          aria-label="Retour à la liste des utilisateurs"
         >
           <Link href="/customers">{backIcon}</Link>
         </Button>
@@ -41,7 +42,9 @@ export default async function CustomerDetailPage({ params }: Props) {
           <h1 className="truncate text-lg font-bold sm:text-2xl">
             {customer.name}
           </h1>
-          <p className="text-sm text-muted-foreground">Détails du client</p>
+          <p className="text-sm text-muted-foreground">
+            Fiche {getUserTypeLabel(customer.role)}
+          </p>
         </div>
       </header>
 
