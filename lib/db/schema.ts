@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex, index, check, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 // =============================================================================
@@ -37,9 +37,7 @@ export const user = sqliteTable("user", {
   role: text("role", { enum: ["customer", "admin", "super_admin"] }).notNull().default("customer"),
   createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
-}, (table) => [
-  index("idx_user_email").on(table.email),
-]);
+});
 
 export const session = sqliteTable("session", {
   id: text("id").primaryKey(),
@@ -52,7 +50,6 @@ export const session = sqliteTable("session", {
   userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
 }, (table) => [
   index("idx_session_userId").on(table.userId),
-  index("idx_session_token").on(table.token),
 ]);
 
 export const account = sqliteTable("account", {
@@ -124,7 +121,7 @@ export const categories = sqliteTable("categories", {
   slug: text("slug").unique().notNull(),
   description: text("description"),
   image_url: text("image_url"),
-  parent_id: text("parent_id").references((): ReturnType<typeof text> => categories.id),
+  parent_id: text("parent_id").references((): AnySQLiteColumn => categories.id),
   sort_order: integer("sort_order").notNull().default(0),
   is_active: integer("is_active").notNull().default(1),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
@@ -225,9 +222,7 @@ export const promoCodes = sqliteTable("promo_codes", {
   expires_at: text("expires_at"),
   is_active: integer("is_active").notNull().default(1),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
-}, (table) => [
-  index("idx_promo_codes_code").on(table.code),
-]);
+});
 
 // =============================================================================
 // Orders
@@ -300,6 +295,7 @@ export const reviews = sqliteTable("reviews", {
 }, (table) => [
   index("idx_reviews_product").on(table.product_id),
   index("idx_reviews_user").on(table.user_id),
+  check("rating_range", sql`${table.rating} BETWEEN 1 AND 5`),
 ]);
 
 // =============================================================================

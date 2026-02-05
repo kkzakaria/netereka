@@ -6,18 +6,16 @@ function getLocalD1Path(): string {
   const d1Dir = path.join(".wrangler", "state", "v3", "d1", "miniflare-D1DatabaseObject");
 
   if (!fs.existsSync(d1Dir)) {
-    console.error(
+    throw new Error(
       "Local D1 directory not found. Run `npx wrangler d1 execute netereka-db --local --command \"SELECT 1\"` first."
     );
-    process.exit(1);
   }
 
   const entries = fs.readdirSync(d1Dir);
   const sqliteFile = entries.find((e) => e.endsWith(".sqlite"));
 
   if (!sqliteFile) {
-    console.error("No SQLite file found in local D1 directory.");
-    process.exit(1);
+    throw new Error("No SQLite file found in local D1 directory.");
   }
 
   return path.join(d1Dir, sqliteFile);
