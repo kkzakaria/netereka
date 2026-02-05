@@ -20,6 +20,7 @@ import {
 } from "@/lib/constants/orders";
 import type { ActionResult } from "@/lib/utils";
 import type { Order, OrderStatus } from "@/lib/db/types";
+import { notifyOrderStatusUpdate } from "@/lib/notifications";
 
 // Validation schemas
 const idSchema = z.string().min(1, "ID requis");
@@ -40,6 +41,32 @@ const notesSchema = z
   .string()
   .max(5000, "Les notes ne peuvent pas dépasser 5000 caractères")
   .trim();
+
+async function getOrderCustomer(
+  userId: string
+): Promise<{ email: string; name: string } | null> {
+  return queryFirst<{ email: string; name: string }>(
+    "SELECT email, name FROM users WHERE id = ?",
+    [userId]
+  );
+}
+
+function sendStatusNotification(
+  order: Order,
+  newStatus: OrderStatus,
+  customer: { email: string; name: string },
+  extra?: { deliveryPersonName?: string | null; reason?: string | null }
+): void {
+  notifyOrderStatusUpdate(customer.email, {
+    customerName: customer.name,
+    orderNumber: order.order_number,
+    newStatus,
+    deliveryPersonName: extra?.deliveryPersonName,
+    reason: extra?.reason,
+  }).catch((err) =>
+    console.error("[admin/orders] notification error:", err)
+  );
+}
 
 async function addStatusHistory(
   orderId: string,
@@ -122,6 +149,15 @@ export async function updateOrderStatus(
   // Note: Returns ALWAYS refund stock, even for delivered orders (items returned to warehouse)
   if (newStatus === "cancelled" || newStatus === "returned") {
     await refundOrderStock(orderId);
+  }
+
+  // Notify customer (fire-and-forget)
+  const customer = await getOrderCustomer(order.user_id);
+  if (customer) {
+    sendStatusNotification(order, newStatus as OrderStatus, customer, {
+      deliveryPersonName: order.delivery_person_name,
+      reason: noteResult.data,
+    });
   }
 
   revalidatePath("/orders");
@@ -237,6 +273,14 @@ export async function cancelOrderAdmin(
     await refundOrderStock(orderId);
   }
 
+  // Notify customer (fire-and-forget)
+  const customer = await getOrderCustomer(order.user_id);
+  if (customer) {
+    sendStatusNotification(order, "cancelled", customer, {
+      reason: reasonResult.data,
+    });
+  }
+
   revalidatePath("/orders");
   revalidatePath(`/orders/${orderId}`);
 
@@ -292,6 +336,14 @@ export async function processReturn(
 
   // Returns ALWAYS refund stock (items returned to warehouse)
   await refundOrderStock(orderId);
+
+  // Notify customer (fire-and-forget)
+  const customer = await getOrderCustomer(order.user_id);
+  if (customer) {
+    sendStatusNotification(order, "returned", customer, {
+      reason: reasonResult.data,
+    });
+  }
 
   revalidatePath("/orders");
   revalidatePath(`/orders/${orderId}`);
