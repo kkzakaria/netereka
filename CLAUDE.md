@@ -16,6 +16,7 @@ NETEREKA Electronic is an e-commerce platform for electronics targeting the Ivor
 - **State Management:** Zustand with persist middleware (`stores/cart-store.ts`)
 - **Forms:** React Hook Form + Zod
 - **Auth:** better-auth with Cloudflare Turnstile captcha
+- **ORM:** Drizzle ORM with `drizzle-kit` for schema management
 - **Backend Services:** Cloudflare D1 (SQLite), KV, R2 (images)
 
 ## Commands
@@ -28,9 +29,11 @@ npm run preview         # Preview with wrangler
 npm run deploy          # Build and deploy to Cloudflare
 npm run lint            # ESLint
 
-# Database (local D1)
-npm run db:migrate      # Run migrations
-npm run db:seed         # Seed initial data
+# Database (Drizzle ORM + local D1)
+npm run db:generate        # Generate SQL migrations from schema changes
+npm run db:studio          # Open Drizzle Studio (visual DB browser)
+npm run db:migrate:legacy  # Run legacy SQL migrations (initial setup)
+npm run db:seed            # Seed initial data
 npm run db:seed-catalogue  # Seed product catalogue
 ```
 
@@ -48,6 +51,8 @@ No test framework is configured yet.
 
 - `actions/` — Server Actions organized by domain (`checkout.ts`, `reviews.ts`, `admin/orders.ts`, etc.)
 - `lib/db/` — D1 query helpers with `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()`
+- `lib/db/drizzle.ts` — Drizzle ORM client via `getDrizzle()` (for new code)
+- `lib/db/schema.ts` — Drizzle schema definitions for all tables
 - `lib/db/types.ts` — TypeScript interfaces for all DB entities (Product, Order, Category, etc.)
 - `lib/auth/guards.ts` — Auth guards: `requireAuth()`, `requireAdmin()`, `requireGuest()`, `getOptionalSession()`
 - `lib/cloudflare/context.ts` — `getDB()`, `getKV()`, `getR2()` helpers via `getCloudflareContext()`
@@ -96,7 +101,13 @@ Environment types defined in `env.d.ts` as `CloudflareEnv` interface.
 
 ### Database
 
-D1 SQLite with raw SQL queries. Prices stored as integers (XOF, no decimals). Migrations in `db/migrations/`, seeds in `db/seeds/`.
+D1 SQLite with Drizzle ORM. Prices stored as integers (XOF, no decimals). Schema defined in `lib/db/schema.ts`, legacy migrations in `db/migrations/`, seeds in `db/seeds/`.
+
+Two DB access patterns coexist (gradual migration in progress):
+- **Raw SQL** (legacy): `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()` in `lib/db/index.ts`
+- **Drizzle ORM** (new code): `getDrizzle()` from `lib/db/drizzle.ts`
+
+Schema changes workflow: edit `lib/db/schema.ts` → run `npm run db:generate` → apply generated SQL via `wrangler d1 execute`.
 
 ## Reference Documents
 
