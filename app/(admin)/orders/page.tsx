@@ -8,6 +8,7 @@ import {
   getAdminOrderCount,
   getDistinctCommunes,
 } from "@/lib/db/admin/orders";
+import type { OrderListItem } from "@/lib/db/types";
 
 interface Props {
   searchParams: Promise<{
@@ -43,6 +44,18 @@ export default async function OrdersPage({ searchParams }: Props) {
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
+  const orderListData: OrderListItem[] = orders.map((o) => ({
+    id: o.id,
+    order_number: o.order_number,
+    created_at: o.created_at,
+    user_name: o.user_name,
+    delivery_phone: o.delivery_phone,
+    delivery_commune: o.delivery_commune,
+    total: o.total,
+    item_count: o.item_count,
+    status: o.status,
+  }));
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -51,7 +64,7 @@ export default async function OrdersPage({ searchParams }: Props) {
       </div>
 
       {/* Client wrapper handles responsive filters + data list */}
-      <OrdersClientWrapper orders={orders} communes={communes} />
+      <OrdersClientWrapper orders={orderListData} communes={communes} />
 
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">

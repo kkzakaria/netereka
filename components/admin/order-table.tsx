@@ -23,7 +23,7 @@ import { MoreVerticalIcon, ViewIcon, PrinterIcon } from "@hugeicons/core-free-ic
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatPrice, formatOrderDate } from "@/lib/utils";
 import { ORDER_STATUS_CONFIG, getOrderStatus } from "@/lib/constants/orders";
-import type { AdminOrder } from "@/lib/db/types";
+import type { OrderListItem } from "@/lib/db/types";
 
 // Hoisted static JSX element (rendering-hoist-jsx)
 const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={16} />;
@@ -33,7 +33,7 @@ const viewIcon = <HugeiconsIcon icon={ViewIcon} size={14} />;
 const printerIcon = <HugeiconsIcon icon={PrinterIcon} size={14} />;
 
 // Memoized row component for better performance (rerender-memo)
-const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
+const OrderRow = memo(function OrderRow({ order }: { order: OrderListItem }) {
   const orderStatus = getOrderStatus(order.status);
   const statusConfig = ORDER_STATUS_CONFIG[orderStatus];
   return (
@@ -106,7 +106,7 @@ const OrderRow = memo(function OrderRow({ order }: { order: AdminOrder }) {
 });
 
 // Memoized table component to prevent unnecessary re-renders (rerender-memo)
-export const OrderTable = memo(function OrderTable({ orders }: { orders: AdminOrder[] }) {
+export const OrderTable = memo(function OrderTable({ orders }: { orders: OrderListItem[] }) {
   if (orders.length === 0) {
     return (
       <div className="rounded-lg border p-8 text-center text-muted-foreground">

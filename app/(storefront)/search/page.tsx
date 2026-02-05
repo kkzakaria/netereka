@@ -64,7 +64,7 @@ export default async function SearchPage({ searchParams }: Props) {
   const hasMore = (currentPage - 1) * limit + products.length < total;
 
   return (
-    <FilterProvider categories={categories} brands={brands} priceRange={priceRange}>
+    <FilterProvider categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))} brands={brands} priceRange={priceRange}>
       <div className="mx-auto max-w-7xl px-4 py-6">
         {/* Header */}
         <div className="mb-6">

@@ -260,6 +260,36 @@ export interface AdminCustomerDetail extends AdminCustomer {
   recent_orders: AdminOrder[];
 }
 
+/** Order data for admin list views (table/cards). */
+export interface OrderListItem {
+  id: string;
+  order_number: string;
+  created_at: string;
+  user_name: string;
+  delivery_phone: string;
+  delivery_commune: string;
+  total: number;
+  item_count: number;
+  status: string;
+}
+
+/** Customer data for admin sidebar actions. */
+export interface CustomerSidebarData {
+  id: string;
+  order_count: number;
+  total_spent: number;
+  createdAt: string;
+  role: UserRole;
+  is_active: number;
+}
+
+/** Category data for filter/picker UIs. */
+export interface CategoryFilterItem {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 // Audit Log Types
 export type AuditAction =
   | "user.role_changed"

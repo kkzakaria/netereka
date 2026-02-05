@@ -10,6 +10,7 @@ import { CustomerInfo } from "./_components/customer-info";
 import { CustomerAddresses } from "./_components/customer-addresses";
 import { CustomerOrders } from "./_components/customer-orders";
 import { CustomerSidebar } from "./_components/customer-sidebar";
+import type { CustomerSidebarData } from "@/lib/db/types";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -57,7 +58,17 @@ export default async function CustomerDetailPage({ params }: Props) {
         </div>
 
         {/* Sidebar */}
-        <CustomerSidebar customer={customer} isSuperAdmin={isSuperAdmin} />
+        <CustomerSidebar
+          customer={{
+            id: customer.id,
+            order_count: customer.order_count,
+            total_spent: customer.total_spent,
+            createdAt: customer.createdAt,
+            role: customer.role,
+            is_active: customer.is_active,
+          } satisfies CustomerSidebarData}
+          isSuperAdmin={isSuperAdmin}
+        />
       </div>
     </div>
   );
