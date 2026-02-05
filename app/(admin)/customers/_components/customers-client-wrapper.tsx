@@ -36,7 +36,7 @@ export function CustomersClientWrapper({
         {/* Data list */}
         <ResponsiveDataList
           data={customers}
-          tableView={<CustomerTable customers={customers} />}
+          renderTable={(data) => <CustomerTable customers={data} />}
           renderCard={(customer) => <CustomerCardMobile customer={customer} />}
           emptyMessage="Aucun client trouvé"
         />

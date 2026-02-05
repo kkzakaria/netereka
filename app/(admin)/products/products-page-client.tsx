@@ -53,7 +53,7 @@ export function ProductsPageClient({
       {/* Responsive data list */}
       <ResponsiveDataList
         data={products}
-        tableView={<ProductTable products={products} />}
+        renderTable={(data) => <ProductTable products={data} />}
         renderCard={(product) => <ProductCardMobile product={product} />}
         emptyMessage="Aucun produit trouvé"
       />

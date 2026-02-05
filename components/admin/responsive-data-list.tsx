@@ -5,7 +5,9 @@ import { useViewMode } from "./view-context";
 
 interface ResponsiveDataListProps<T> {
   data: T[];
-  tableView: ReactNode;
+  /** @deprecated Use renderTable instead to avoid eager rendering of the inactive view */
+  tableView?: ReactNode;
+  renderTable?: (data: T[]) => ReactNode;
   renderCard: (item: T, index: number) => ReactNode;
   emptyMessage?: string;
 }
@@ -13,6 +15,7 @@ interface ResponsiveDataListProps<T> {
 export function ResponsiveDataList<T extends { id: string }>({
   data,
   tableView,
+  renderTable,
   renderCard,
   emptyMessage = "Aucun élément",
 }: ResponsiveDataListProps<T>) {
@@ -27,7 +30,7 @@ export function ResponsiveDataList<T extends { id: string }>({
   }
 
   if (effectiveMode === "table") {
-    return <>{tableView}</>;
+    return <>{renderTable ? renderTable(data) : tableView}</>;
   }
 
   return (
