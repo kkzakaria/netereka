@@ -16,4 +16,8 @@ interface CloudflareEnv {
 
   // Turnstile
   TURNSTILE_SECRET_KEY: string;
+
+  // Email (Resend)
+  RESEND_API_KEY: string;
+  RESEND_FROM_EMAIL?: string; // defaults to "NETEREKA <commandes@netereka.ci>"
 }
