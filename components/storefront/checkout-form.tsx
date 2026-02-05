@@ -152,7 +152,7 @@ export function CheckoutForm({
     });
   }
 
-  if (!hydrated || items.length === 0) {
+  if (!hydrated) {
     return (
       <div className="space-y-6">
         <Card>
@@ -195,6 +195,8 @@ export function CheckoutForm({
       </div>
     );
   }
+
+  if (items.length === 0) return null;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
