@@ -261,34 +261,20 @@ export interface AdminCustomerDetail extends AdminCustomer {
 }
 
 /** Order data for admin list views (table/cards). */
-export interface OrderListItem {
-  id: string;
-  order_number: string;
-  created_at: string;
-  user_name: string;
-  delivery_phone: string;
-  delivery_commune: string;
-  total: number;
-  item_count: number;
-  status: string;
-}
+export type OrderListItem = Pick<
+  AdminOrder,
+  'id' | 'order_number' | 'created_at' | 'user_name' |
+  'delivery_phone' | 'delivery_commune' | 'total' | 'item_count' | 'status'
+>;
 
 /** Customer data for admin sidebar actions. */
-export interface CustomerSidebarData {
-  id: string;
-  order_count: number;
-  total_spent: number;
-  createdAt: string;
-  role: UserRole;
-  is_active: number;
-}
+export type CustomerSidebarData = Pick<
+  AdminCustomerDetail,
+  'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'is_active'
+>;
 
 /** Category data for filter/picker UIs. */
-export interface CategoryFilterItem {
-  id: string;
-  name: string;
-  slug: string;
-}
+export type CategoryFilterItem = Pick<Category, 'id' | 'name' | 'slug'>;
 
 // Audit Log Types
 export type AuditAction =
