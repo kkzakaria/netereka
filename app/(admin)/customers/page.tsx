@@ -59,7 +59,7 @@ export default async function CustomersPage({ searchParams }: Props) {
 
   return (
     <div>
-      <AdminHeader title="Clients" />
+      <AdminHeader title="Utilisateurs" />
 
       {/* Client wrapper handles responsive filters + data list */}
       <CustomersClientWrapper customers={customers} />
@@ -67,7 +67,7 @@ export default async function CustomersPage({ searchParams }: Props) {
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            {totalCount} client(s) — Page {page}/{totalPages}
+            {totalCount} utilisateur(s) — Page {page}/{totalPages}
           </span>
           <div className="flex gap-2">
             {page > 1 && (

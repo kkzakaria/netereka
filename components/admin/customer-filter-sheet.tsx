@@ -20,8 +20,8 @@ interface FilterState {
 const ROLE_OPTIONS = [
   { value: "all", label: "Tous" },
   { value: "customer", label: "Client" },
-  { value: "admin", label: "Admin" },
-  { value: "super_admin", label: "Super Admin" },
+  { value: "admin", label: "Administrateur" },
+  { value: "super_admin", label: "Super Administrateur" },
 ];
 
 function getFiltersFromParams(params: URLSearchParams): FilterState {
@@ -129,7 +129,7 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
       <div
         role="dialog"
         aria-modal={open}
-        aria-label="Filtres des clients"
+        aria-label="Filtres des utilisateurs"
         className={cn(
           "fixed inset-x-0 bottom-0 z-[61] flex max-h-[85vh] flex-col rounded-t-2xl bg-background shadow-xl transition-transform duration-300 ease-out pb-safe",
           open ? "translate-y-0" : "translate-y-full"

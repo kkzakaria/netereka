@@ -259,3 +259,20 @@ export interface AdminCustomerDetail extends AdminCustomer {
   addresses: Address[];
   recent_orders: AdminOrder[];
 }
+
+// Audit Log Types
+export type AuditAction =
+  | "user.role_changed"
+  | "user.activated"
+  | "user.deactivated";
+
+export interface AuditLog {
+  id: string;
+  actor_id: string;
+  actor_name: string;
+  action: AuditAction;
+  target_type: string;
+  target_id: string;
+  details: string | null;
+  created_at: string;
+}
