@@ -16,7 +16,7 @@ import { SearchSort } from "@/app/(storefront)/search/search-sort";
 import { ActiveFilters } from "@/app/(storefront)/search/active-filters";
 import { MobileFilterSheet } from "@/app/(storefront)/search/mobile-filter-sheet";
 import { LoadMoreButton } from "./load-more-button";
-import { SITE_NAME } from "@/lib/utils/constants";
+import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 
 const getCategoryCached = cache(getCategoryBySlug);
 
@@ -35,9 +35,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const category = await getCategoryCached(slug);
   if (!category) return {};
+
+  const description =
+    category.description ?? `Découvrez notre sélection de ${category.name}`;
+
   return {
     title: `${category.name} | ${SITE_NAME}`,
-    description: category.description ?? `Découvrez notre sélection de ${category.name}`,
+    description,
+    alternates: {
+      canonical: `/c/${category.slug}`,
+    },
+    openGraph: {
+      title: `${category.name} | ${SITE_NAME}`,
+      description,
+      url: `${SITE_URL}/c/${category.slug}`,
+      type: "website",
+    },
   };
 }
 

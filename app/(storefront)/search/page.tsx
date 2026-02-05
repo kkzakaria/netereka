@@ -28,6 +28,10 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const title = q ? `Résultats pour "${q}"` : "Recherche";
   return {
     title: `${title} | ${SITE_NAME}`,
+    description: q
+      ? `Trouvez "${q}" parmi notre sélection de produits électroniques en Côte d'Ivoire.`
+      : "Recherchez parmi notre catalogue de produits électroniques.",
+    robots: { index: false, follow: true },
   };
 }
 

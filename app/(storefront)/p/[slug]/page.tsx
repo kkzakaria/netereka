@@ -9,11 +9,13 @@ import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { StarRating } from "@/components/storefront/star-rating";
-import { SITE_NAME } from "@/lib/utils/constants";
+import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 import { formatPrice, formatDate } from "@/lib/utils/format";
 import { getOptionalSession } from "@/lib/auth/guards";
 import { isInWishlist } from "@/lib/db/wishlist";
 import { getProductReviews, getProductRatingStats } from "@/lib/db/reviews";
+import { getImageUrl } from "@/lib/utils/images";
+import { ProductJsonLd, BreadcrumbJsonLd } from "@/lib/seo/json-ld";
 
 const getProductCached = cache(getProductBySlug);
 
@@ -25,11 +27,33 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProductCached(slug);
   if (!product) return {};
+
+  const description =
+    product.short_description ??
+    `${product.name} - ${formatPrice(product.base_price)}`;
+  const imageUrl = product.images[0]
+    ? getImageUrl(product.images[0].url)
+    : undefined;
+
   return {
     title: `${product.name} | ${SITE_NAME}`,
-    description:
-      product.short_description ??
-      `${product.name} - ${formatPrice(product.base_price)}`,
+    description,
+    alternates: {
+      canonical: `/p/${product.slug}`,
+    },
+    openGraph: {
+      title: product.name,
+      description,
+      url: `${SITE_URL}/p/${product.slug}`,
+      type: "website",
+      images: imageUrl ? [{ url: imageUrl, alt: product.name }] : undefined,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: product.name,
+      description,
+      images: imageUrl ? [imageUrl] : undefined,
+    },
   };
 }
 
@@ -126,12 +150,29 @@ export default async function ProductPage({ params }: Props) {
   ]);
   if (!product) notFound();
 
-  const wishlisted = session
-    ? await isInWishlist(session.user.id, product.id)
-    : false;
+  const [wishlisted, reviews, ratingStats] = await Promise.all([
+    session ? isInWishlist(session.user.id, product.id) : false,
+    getProductReviews(product.id, 10),
+    getProductRatingStats(product.id),
+  ]);
+
+  const breadcrumbItems = [
+    { name: "Accueil", url: "/" },
+    ...(product.category_slug && product.category_name
+      ? [{ name: product.category_name, url: `/c/${product.category_slug}` }]
+      : []),
+    { name: product.name },
+  ];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
+      <ProductJsonLd
+        product={product}
+        reviews={reviews}
+        ratingStats={ratingStats}
+      />
+      <BreadcrumbJsonLd items={breadcrumbItems} />
+
       {/* Breadcrumb */}
       <nav className="mb-4 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-foreground">

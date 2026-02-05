@@ -10,6 +10,7 @@ import { CategoryNav } from "@/components/storefront/category-nav";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { TrustBadges } from "@/components/storefront/trust-badges";
+import { OrganizationJsonLd, WebSiteJsonLd } from "@/lib/seo/json-ld";
 
 const HIGHLIGHTED_CATEGORIES = 3;
 
@@ -33,6 +34,13 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
+      <OrganizationJsonLd />
+      <WebSiteJsonLd />
+
+      <h1 className="sr-only">
+        NETEREKA - Boutique électronique en Côte d&apos;Ivoire
+      </h1>
+
       {heroProduct && <HeroBanner product={heroProduct} />}
 
       <CategoryNav categories={categories} />

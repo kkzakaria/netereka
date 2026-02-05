@@ -3,6 +3,7 @@ import { AccountNav } from "@/components/storefront/account-nav";
 
 export const metadata = {
   title: "Mon compte | NETEREKA",
+  robots: { index: false, follow: false },
 };
 
 export default async function AccountLayout({
