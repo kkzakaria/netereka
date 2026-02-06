@@ -17,7 +17,7 @@ export async function Header() {
         <nav className="flex items-center gap-1">
           <SearchAutocomplete />
           <CartIcon />
-          <HeaderUserMenu user={session?.user ?? null} />
+          <HeaderUserMenu user={session?.user ? { id: session.user.id, name: session.user.name, email: session.user.email, image: session.user.image, role: session.user.role } : null} />
         </nav>
       </div>
     </header>
