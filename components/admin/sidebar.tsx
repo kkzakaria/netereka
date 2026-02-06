@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -34,8 +35,14 @@ export function Sidebar() {
     <div className="flex h-full flex-col">
       <nav className="flex flex-col gap-1 p-4">
         <div className="mb-6 px-3">
-          <h2 className="text-lg font-bold tracking-tight">NETEREKA</h2>
-          <p className="text-xs text-muted-foreground">Administration</p>
+          <Image
+            src="/logo.png"
+            alt="NETEREKA"
+            width={120}
+            height={43}
+            className="h-8 w-auto"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">Administration</p>
         </div>
         {navItems.map((item) => {
           const isActive =
