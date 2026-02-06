@@ -17,7 +17,7 @@ export default async function AdminLayout({
     <AdminUserProvider user={session.user}>
     <ViewProvider>
       <div className="flex min-h-dvh">
-        <aside className="hidden w-64 shrink-0 border-r bg-sidebar lg:block">
+        <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 overflow-y-auto border-r bg-sidebar lg:block">
           <Sidebar />
         </aside>
         <main className="flex-1 overflow-x-hidden p-4 sm:p-6">{children}</main>
