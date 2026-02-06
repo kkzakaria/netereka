@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getCategoryBySlug } from "@/lib/db/categories";
 import {
   searchProducts,
@@ -17,6 +18,7 @@ import { ActiveFilters } from "@/app/(storefront)/search/active-filters";
 import { MobileFilterSheet } from "@/app/(storefront)/search/mobile-filter-sheet";
 import { LoadMoreButton } from "./load-more-button";
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
+import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 
 const getCategoryCached = cache(getCategoryBySlug);
@@ -43,7 +45,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     `Découvrez notre sélection de ${category.name} en Côte d'Ivoire. Livraison rapide à Abidjan. Paiement à la livraison.`;
 
   return {
-    title: category.name,
+    title: `${category.name} - Acheter en Côte d'Ivoire`,
     description,
     openGraph: {
       title: `${category.name} | ${SITE_NAME}`,
@@ -105,6 +107,28 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             { name: category.name },
           ]}
         />
+        <JsonLd
+          data={{
+            "@context": "https://schema.org",
+            "@type": "CollectionPage",
+            name: category.name,
+            description:
+              category.description ??
+              `Découvrez notre sélection de ${category.name} en Côte d'Ivoire.`,
+            url: `${SITE_URL}/c/${slug}`,
+            isPartOf: { "@id": `${SITE_URL}/#website` },
+            numberOfItems: total,
+          }}
+        />
+
+        {/* Breadcrumbs */}
+        <nav className="mb-4 text-sm text-muted-foreground">
+          <Link href="/" className="hover:text-foreground">
+            Accueil
+          </Link>
+          <span className="mx-1.5">/</span>
+          <span className="text-foreground">{category.name}</span>
+        </nav>
 
         {/* Header */}
         <div className="mb-6">

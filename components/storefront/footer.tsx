@@ -6,8 +6,6 @@ const footerLinks = {
     title: "Boutique",
     links: [
       { label: "Tous les produits", href: "/search" },
-      { label: "Nouveautés", href: "/search?sort=newest" },
-      { label: "Meilleures ventes", href: "/search?sort=popular" },
     ],
   },
   informations: {

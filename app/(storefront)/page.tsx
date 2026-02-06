@@ -33,6 +33,7 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
+      <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
       {heroProduct && <HeroBanner product={heroProduct} />}
 
       <CategoryNav categories={categories} />
