@@ -4,14 +4,22 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useInstantFilters } from "@/hooks/use-instant-filters";
+import { ADMIN_ROLE_FILTER_OPTIONS } from "@/lib/constants/customers";
 
-interface CustomerFiltersProps {
+interface UserFiltersProps {
   className?: string;
 }
 
-export function CustomerFilters({ className }: CustomerFiltersProps) {
+export function UserFilters({ className }: UserFiltersProps) {
   const {
     isPending,
     updateFilters,
@@ -20,10 +28,11 @@ export function CustomerFilters({ className }: CustomerFiltersProps) {
     searchValue,
     handleSearchChange,
     clearSearch,
-  } = useInstantFilters({ basePath: "/customers" });
+  } = useInstantFilters({ basePath: "/users" });
 
   const hasActiveFilters =
     searchValue ||
+    getFilter("role") ||
     getFilter("dateFrom") ||
     getFilter("dateTo");
 
@@ -59,6 +68,26 @@ export function CustomerFilters({ className }: CustomerFiltersProps) {
               </button>
             )}
           </div>
+        </div>
+
+        {/* Role filter */}
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Rôle</Label>
+          <Select
+            value={getFilter("role") || "all"}
+            onValueChange={(value) => updateFilters({ role: value })}
+          >
+            <SelectTrigger className="min-w-36">
+              <SelectValue placeholder="Tous" />
+            </SelectTrigger>
+            <SelectContent>
+              {ADMIN_ROLE_FILTER_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Date from */}

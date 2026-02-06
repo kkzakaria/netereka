@@ -2,16 +2,17 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { CustomersClientWrapper } from "./_components/customers-client-wrapper";
+import { UsersClientWrapper } from "./_components/users-client-wrapper";
 import { Button } from "@/components/ui/button";
 import {
-  getAdminCustomers,
-  getAdminCustomerCount,
-} from "@/lib/db/admin/customers";
+  getAdminUsers,
+  getAdminUserCount,
+} from "@/lib/db/admin/users";
 
 interface Props {
   searchParams: Promise<{
     search?: string;
+    role?: string;
     dateFrom?: string;
     dateTo?: string;
     page?: string;
@@ -20,60 +21,65 @@ interface Props {
 
 const PAGE_SIZE = 20;
 
-export default async function CustomersPage({ searchParams }: Props) {
+export default async function UsersPage({ searchParams }: Props) {
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
 
-  // First get count to validate page bounds
-  const totalCount = await getAdminCustomerCount({
+  const role: "admin" | "super_admin" | undefined =
+    params.role === "admin" || params.role === "super_admin"
+      ? params.role
+      : undefined;
+
+  const totalCount = await getAdminUserCount({
     search: params.search,
+    role,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
   });
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  // Redirect if page is out of bounds
   if (requestedPage > totalPages && totalPages > 0) {
     const newParams = new URLSearchParams();
     if (params.search) newParams.set("search", params.search);
+    if (params.role) newParams.set("role", params.role);
     if (params.dateFrom) newParams.set("dateFrom", params.dateFrom);
     if (params.dateTo) newParams.set("dateTo", params.dateTo);
     newParams.set("page", String(totalPages));
-    redirect(`/customers?${newParams.toString()}`);
+    redirect(`/users?${newParams.toString()}`);
   }
 
   const page = Math.min(requestedPage, totalPages);
   const filters = {
     search: params.search,
+    role,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   };
 
-  const customers = await getAdminCustomers(filters);
+  const users = await getAdminUsers(filters);
 
   return (
     <div>
       <AdminPageHeader>
-        <AdminHeader title="Clients" />
+        <AdminHeader title="Utilisateurs" />
       </AdminPageHeader>
 
-      {/* Client wrapper handles responsive filters + data list */}
-      <CustomersClientWrapper customers={customers} />
+      <UsersClientWrapper users={users} />
 
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            {totalCount} client(s) — Page {page}/{totalPages}
+            {totalCount} utilisateur(s) — Page {page}/{totalPages}
           </span>
           <div className="flex gap-2">
             {page > 1 && (
               <Button variant="outline" size="sm" asChild>
                 <Link
                   href={{
-                    pathname: "/customers",
+                    pathname: "/users",
                     query: { ...params, page: String(page - 1) },
                   }}
                 >
@@ -85,7 +91,7 @@ export default async function CustomersPage({ searchParams }: Props) {
               <Button variant="outline" size="sm" asChild>
                 <Link
                   href={{
-                    pathname: "/customers",
+                    pathname: "/users",
                     query: { ...params, page: String(page + 1) },
                   }}
                 >

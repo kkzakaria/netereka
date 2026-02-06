@@ -5,13 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, FilterIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
+import { ADMIN_ROLE_FILTER_OPTIONS } from "@/lib/constants/customers";
 
-interface CustomerFilterSheetProps {
+interface UserFilterSheetProps {
   className?: string;
 }
 
 interface FilterState {
   search: string;
+  role: string;
   dateFrom: string;
   dateTo: string;
 }
@@ -19,12 +21,13 @@ interface FilterState {
 function getFiltersFromParams(params: URLSearchParams): FilterState {
   return {
     search: params.get("search") ?? "",
+    role: params.get("role") ?? "all",
     dateFrom: params.get("dateFrom") ?? "",
     dateTo: params.get("dateTo") ?? "",
   };
 }
 
-export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
+export function UserFilterSheet({ className }: UserFilterSheetProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -44,6 +47,7 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
 
   const activeFilterCount =
     (filters.search ? 1 : 0) +
+    (filters.role !== "all" ? 1 : 0) +
     (filters.dateFrom ? 1 : 0) +
     (filters.dateTo ? 1 : 0);
 
@@ -66,15 +70,17 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
   function handleApply() {
     const params = new URLSearchParams();
     if (filters.search) params.set("search", filters.search);
+    if (filters.role && filters.role !== "all") params.set("role", filters.role);
     if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
     if (filters.dateTo) params.set("dateTo", filters.dateTo);
-    router.push(`/customers?${params.toString()}`);
+    router.push(`/users?${params.toString()}`);
     setOpen(false);
   }
 
   function handleClear() {
     setFilters({
       search: "",
+      role: "all",
       dateFrom: "",
       dateTo: "",
     });
@@ -117,7 +123,7 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
       <div
         role="dialog"
         aria-modal={open}
-        aria-label="Filtres des clients"
+        aria-label="Filtres des utilisateurs"
         className={cn(
           "fixed inset-x-0 bottom-0 z-[61] flex max-h-[85vh] flex-col rounded-t-2xl bg-background shadow-xl transition-transform duration-300 ease-out pb-safe",
           open ? "translate-y-0" : "translate-y-full"
@@ -154,6 +160,27 @@ export function CustomerFilterSheet({ className }: CustomerFilterSheetProps) {
                 placeholder="Nom, email, tél..."
                 className="h-12 w-full rounded-lg border bg-background pl-10 pr-4 text-sm focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
               />
+            </div>
+          </div>
+
+          {/* Role */}
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium">Rôle</label>
+            <div className="flex flex-wrap gap-2">
+              {ADMIN_ROLE_FILTER_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => updateFilter("role", opt.value)}
+                  className={cn(
+                    "flex h-10 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors",
+                    filters.role === opt.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
 

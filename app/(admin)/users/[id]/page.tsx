@@ -5,12 +5,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { requireAdmin } from "@/lib/auth/guards";
-import { getAdminCustomerById } from "@/lib/db/admin/customers";
-import { CustomerInfo } from "./_components/customer-info";
-import { CustomerAddresses } from "./_components/customer-addresses";
-import { CustomerOrders } from "./_components/customer-orders";
-import { CustomerSidebar } from "./_components/customer-sidebar";
-import type { CustomerSidebarData } from "@/lib/db/types";
+import { getAdminUserById } from "@/lib/db/admin/users";
+import { UserInfo } from "./_components/user-info";
+import { UserSidebar } from "./_components/user-sidebar";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -18,12 +15,11 @@ interface Props {
 
 const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 
-export default async function CustomerDetailPage({ params }: Props) {
-  // Parallelize auth check and params resolution (async-parallel)
+export default async function UserDetailPage({ params }: Props) {
   const [session, { id }] = await Promise.all([requireAdmin(), params]);
-  const customer = await getAdminCustomerById(id);
+  const user = await getAdminUserById(id);
 
-  if (!customer) notFound();
+  if (!user) notFound();
 
   const isSuperAdmin = session.user.role === "super_admin";
 
@@ -36,16 +32,16 @@ export default async function CustomerDetailPage({ params }: Props) {
             size="icon"
             asChild
             className="h-11 w-11 shrink-0"
-            aria-label="Retour à la liste des clients"
+            aria-label="Retour à la liste des utilisateurs"
           >
-            <Link href="/customers">{backIcon}</Link>
+            <Link href="/users">{backIcon}</Link>
           </Button>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-bold sm:text-2xl">
-              {customer.name}
+              {user.name}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Fiche client
+              Fiche utilisateur
             </p>
           </div>
         </header>
@@ -54,21 +50,12 @@ export default async function CustomerDetailPage({ params }: Props) {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content */}
         <div className="space-y-6 lg:col-span-2">
-          <CustomerInfo customer={customer} />
-          <CustomerAddresses addresses={customer.addresses} />
-          <CustomerOrders orders={customer.recent_orders} />
+          <UserInfo user={user} />
         </div>
 
         {/* Sidebar */}
-        <CustomerSidebar
-          customer={{
-            id: customer.id,
-            order_count: customer.order_count,
-            total_spent: customer.total_spent,
-            createdAt: customer.createdAt,
-            role: customer.role,
-            is_active: customer.is_active,
-          } satisfies CustomerSidebarData}
+        <UserSidebar
+          user={user}
           isSuperAdmin={isSuperAdmin}
         />
       </div>

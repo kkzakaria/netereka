@@ -85,6 +85,8 @@ export async function updateCustomerRole(
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/users");
+  revalidatePath(`/users/${customerId}`);
 
   return { success: true };
 }
@@ -132,6 +134,8 @@ export async function toggleCustomerActive(
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/users");
+  revalidatePath(`/users/${customerId}`);
 
   return { success: true };
 }

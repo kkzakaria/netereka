@@ -8,14 +8,14 @@ import { MoreVerticalIcon, ViewIcon } from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ActionSheet, type ActionSheetItem } from "./action-sheet";
-import { formatPrice, formatDateShort } from "@/lib/utils";
-import type { AdminCustomer } from "@/lib/db/types";
+import { formatDateShort } from "@/lib/utils";
+import { ROLE_LABELS, ROLE_VARIANTS } from "@/lib/constants/customers";
+import type { AdminUser } from "@/lib/db/admin/users";
 
-// Hoisted static icon (rendering-hoist-jsx)
 const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={20} />;
 
-interface CustomerCardMobileProps {
-  customer: AdminCustomer;
+interface UserCardMobileProps {
+  user: AdminUser;
 }
 
 function getInitials(name: string): string {
@@ -27,16 +27,14 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
+export function UserCardMobile({ user }: UserCardMobileProps) {
   const router = useRouter();
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
 
-  // Stable callback to avoid recreating on each render (rerender-memo-with-default-value)
   const handleViewDetails = useCallback(() => {
-    router.push(`/customers/${customer.id}`);
-  }, [router, customer.id]);
+    router.push(`/users/${user.id}`);
+  }, [router, user.id]);
 
-  // Memoize actions array (rerender-memo-with-default-value)
   const actions = useMemo<ActionSheetItem[]>(
     () => [{ label: "Voir détails", icon: ViewIcon, onClick: handleViewDetails }],
     [handleViewDetails]
@@ -45,15 +43,15 @@ export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
   return (
     <>
       <Link
-        href={`/customers/${customer.id}`}
+        href={`/users/${user.id}`}
         className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/30 active:bg-muted/50 touch-manipulation"
-        style={{ contentVisibility: "auto", containIntrinsicSize: "0 100px" }}
+        style={{ contentVisibility: "auto", containIntrinsicSize: "0 88px" }}
       >
         {/* Avatar */}
         <Avatar className="h-16 w-16 shrink-0">
-          {customer.image && <AvatarImage src={customer.image} alt={customer.name} />}
+          {user.image && <AvatarImage src={user.image} alt={user.name} />}
           <AvatarFallback className="text-lg">
-            {getInitials(customer.name)}
+            {getInitials(user.name)}
           </AvatarFallback>
         </Avatar>
 
@@ -61,39 +59,32 @@ export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
         <div className="flex flex-1 flex-col gap-1 overflow-hidden">
           {/* Name + date */}
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate font-medium">{customer.name}</span>
+            <span className="truncate font-medium">{user.name}</span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
-              {formatDateShort(customer.createdAt)}
+              {formatDateShort(user.createdAt)}
             </span>
           </div>
 
           {/* Email */}
           <div className="truncate text-sm text-muted-foreground">
-            {customer.email}
+            {user.email}
           </div>
 
           {/* Phone */}
-          {customer.phone && (
+          {user.phone && (
             <div className="truncate text-xs text-muted-foreground">
-              {customer.phone}
+              {user.phone}
             </div>
           )}
 
-          {/* Badges row */}
+          {/* Role badge */}
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
-            <Badge variant="outline" className="text-[10px]">
-              {customer.order_count} cmd.
+            <Badge
+              variant={ROLE_VARIANTS[user.role] || "secondary"}
+              className="text-[10px]"
+            >
+              {ROLE_LABELS[user.role] || user.role}
             </Badge>
-            {customer.is_active === 0 && (
-              <Badge variant="destructive" className="text-[10px]">
-                Inactif
-              </Badge>
-            )}
-          </div>
-
-          {/* Total spent */}
-          <div className="mt-1 text-sm font-semibold tabular-nums">
-            {formatPrice(customer.total_spent)}
           </div>
         </div>
 
@@ -114,7 +105,7 @@ export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
       <ActionSheet
         open={actionSheetOpen}
         onOpenChange={setActionSheetOpen}
-        title={customer.name}
+        title={user.name}
         items={actions}
       />
     </>
