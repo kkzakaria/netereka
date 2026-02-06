@@ -76,7 +76,7 @@ export async function getAdminUsers(
        u.role,
        u.emailVerified,
        u.image,
-       1 as is_active,
+       1 as is_active, -- TODO: hardcoded until is_active column exists
        u.createdAt
      FROM user u
      ${where}
@@ -101,7 +101,7 @@ export async function getAdminUserCount(
 export async function getAdminUserById(
   id: string
 ): Promise<AdminUser | null> {
-  const user = await queryFirst<AdminUser>(
+  return queryFirst<AdminUser>(
     `SELECT
        u.id,
        u.name,
@@ -110,14 +110,10 @@ export async function getAdminUserById(
        u.role,
        u.emailVerified,
        u.image,
-       1 as is_active,
+       1 as is_active, -- TODO: hardcoded until is_active column exists
        u.createdAt
      FROM user u
-     WHERE u.id = ?`,
+     WHERE u.id = ? AND u.role IN ('admin', 'super_admin')`,
     [id]
   );
-
-  if (!user || user.role === "customer") return null;
-
-  return user;
 }
