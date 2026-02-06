@@ -50,7 +50,7 @@ export function SidebarUserMenu() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link href="/">
+            <Link href="/" target="_blank">
               <HugeiconsIcon icon={ShoppingBag01Icon} size={16} />
               Voir la boutique
             </Link>

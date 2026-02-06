@@ -95,14 +95,12 @@ export function HeaderUserMenu({ user }: { user: User }) {
           <p className="text-xs text-muted-foreground">{user.email}</p>
         </DropdownMenuLabel>
         {(user.role === "admin" || user.role === "super_admin") && (
-          <>
-            <DropdownMenuItem asChild>
-              <Link href="/dashboard">
-                <HugeiconsIcon icon={DashboardSquare01Icon} size={16} />
-                Administration
-              </Link>
-            </DropdownMenuItem>
-          </>
+          <DropdownMenuItem asChild>
+            <Link href="/dashboard" target="_blank">
+              <HugeiconsIcon icon={DashboardSquare01Icon} size={16} />
+              Administration
+            </Link>
+          </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         {menuItems.map((item) => (
