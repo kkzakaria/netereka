@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -94,8 +95,15 @@ export default function AdminLoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-muted/30 p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold tracking-tight">NETEREKA</h1>
-          <p className="text-sm text-muted-foreground">Espace Administration</p>
+          <Image
+            src="/logo.png"
+            alt="NETEREKA"
+            width={180}
+            height={64}
+            className="mx-auto h-14 w-auto"
+            priority
+          />
+          <p className="mt-2 text-sm text-muted-foreground">Espace Administration</p>
         </div>
 
         <Card>

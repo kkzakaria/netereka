@@ -44,13 +44,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: `${product.name} - ${price}`,
     description,
-    keywords: [
-      product.name,
-      product.brand,
-      product.brand ? `${product.brand} Côte d'Ivoire` : null,
-      `acheter ${product.name} Abidjan`,
-      product.category_name,
-    ].filter(Boolean) as string[],
     openGraph: {
       title: `${product.name} - ${price} | ${SITE_NAME}`,
       description,
@@ -58,13 +51,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       siteName: SITE_NAME,
       images,
       locale: "fr_CI",
-      type: "article",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: `${product.name} - ${price}`,
-      description: description.slice(0, 200),
-      images: images[0] ? [images[0].url] : undefined,
+      type: "website",
     },
     alternates: {
       canonical: `/p/${slug}`,
@@ -115,13 +102,17 @@ function RelatedProductsSkeleton() {
   );
 }
 
-async function ProductReviews({ productId }: { productId: string }) {
-  const [reviews, stats] = await Promise.all([
-    getProductReviews(productId, 10),
-    getProductRatingStats(productId),
-  ]);
+async function ProductReviews({
+  productId,
+  ratingStats,
+}: {
+  productId: string;
+  ratingStats: { average: number; count: number };
+}) {
+  if (ratingStats.count === 0) return null;
 
-  if (stats.count === 0) return null;
+  const reviews = await getProductReviews(productId, 10);
+  const stats = ratingStats;
 
   return (
     <div className="mt-12 space-y-4">
@@ -170,8 +161,9 @@ export default async function ProductPage({ params }: Props) {
     getProductRatingStats(product.id),
   ]);
 
-  const currentYear = new Date().getFullYear();
-  const priceValidUntil = `${currentYear}-12-31`;
+  const validUntil = new Date();
+  validUntil.setDate(validUntil.getDate() + 60);
+  const priceValidUntil = validUntil.toISOString().split("T")[0];
 
   const productSchema: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -324,7 +316,7 @@ export default async function ProductPage({ params }: Props) {
 
       {/* Reviews */}
       <Suspense fallback={null}>
-        <ProductReviews productId={product.id} />
+        <ProductReviews productId={product.id} ratingStats={ratingStats} />
       </Suspense>
 
       {/* Related */}

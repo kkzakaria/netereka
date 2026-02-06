@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { SITE_NAME } from "@/lib/utils/constants";
 
 const footerLinks = {
@@ -6,8 +7,6 @@ const footerLinks = {
     title: "Boutique",
     links: [
       { label: "Tous les produits", href: "/search" },
-      { label: "Nouveautés", href: "/search?sort=newest" },
-      { label: "Meilleures ventes", href: "/search?sort=popular" },
     ],
   },
   informations: {
@@ -34,8 +33,14 @@ export function Footer() {
         <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-4">
           {/* Brand */}
           <div>
-            <Link href="/" className="text-lg font-bold">
-              {SITE_NAME}
+            <Link href="/" className="inline-block">
+              <Image
+                src="/logo.png"
+                alt={SITE_NAME}
+                width={120}
+                height={43}
+                className="h-8 w-auto"
+              />
             </Link>
             <p className="mt-2 text-sm text-muted-foreground">
               Votre boutique électronique en Côte d&apos;Ivoire. Smartphones,

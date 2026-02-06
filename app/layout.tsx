@@ -16,17 +16,6 @@ export const metadata: Metadata = {
   },
   description:
     "Achetez smartphones, ordinateurs, consoles et TV en Côte d'Ivoire. Livraison rapide à Abidjan et partout en CI. Paiement à la livraison.",
-  keywords: [
-    "électronique Côte d'Ivoire",
-    "smartphone Abidjan",
-    "ordinateur portable CI",
-    "acheter iPhone Abidjan",
-    "Samsung Galaxy Côte d'Ivoire",
-    "high-tech Abidjan",
-    "console de jeux Côte d'Ivoire",
-    "télévision Abidjan",
-    "NETEREKA",
-  ],
   authors: [{ name: SITE_NAME }],
   creator: SITE_NAME,
   publisher: SITE_NAME,
@@ -39,10 +28,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "fr_CI",
     url: SITE_URL,
-    siteName: `${SITE_NAME} - Électronique Côte d'Ivoire`,
-    title: `${SITE_NAME} - Électronique & High-Tech en Côte d'Ivoire`,
-    description:
-      "Achetez smartphones, ordinateurs, consoles et TV en Côte d'Ivoire. Livraison rapide à Abidjan. Paiement à la livraison.",
+    siteName: SITE_NAME,
     images: [
       {
         url: "/og-image.jpg",
@@ -54,9 +40,6 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: `${SITE_NAME} - Électronique & High-Tech en Côte d'Ivoire`,
-    description:
-      "Achetez smartphones, ordinateurs, consoles et TV en Côte d'Ivoire. Livraison rapide à Abidjan.",
   },
   robots: {
     index: true,
@@ -80,6 +63,7 @@ export const metadata: Metadata = {
 const organizationSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
+  "@id": `${SITE_URL}/#organization`,
   name: SITE_NAME,
   url: SITE_URL,
   logo: `${SITE_URL}/logo.png`,
@@ -100,8 +84,10 @@ const organizationSchema = {
 const websiteSchema = {
   "@context": "https://schema.org",
   "@type": "WebSite",
+  "@id": `${SITE_URL}/#website`,
   name: SITE_NAME,
   url: SITE_URL,
+  publisher: { "@id": `${SITE_URL}/#organization` },
   potentialAction: {
     "@type": "SearchAction",
     target: {

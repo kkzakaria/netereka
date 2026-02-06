@@ -41,7 +41,7 @@ export function ImageGallery({ images }: { images: ProductImage[] }) {
             >
               <Image
                 src={getImageUrl(img.url)}
-                alt={img.alt || ""}
+                alt={img.alt || "Image du produit"}
                 fill
                 className="object-contain p-1"
                 sizes="64px"
