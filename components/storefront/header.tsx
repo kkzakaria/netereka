@@ -8,6 +8,10 @@ import { SearchAutocomplete } from "@/components/storefront/search-autocomplete"
 export async function Header() {
   const session = await getOptionalSession();
 
+  const userForMenu = session?.user
+    ? { id: session.user.id, name: session.user.name, email: session.user.email, image: session.user.image, role: session.user.role }
+    : null;
+
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="relative mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
@@ -17,7 +21,7 @@ export async function Header() {
         <nav className="flex items-center gap-1">
           <SearchAutocomplete />
           <CartIcon />
-          <HeaderUserMenu user={session?.user ?? null} />
+          <HeaderUserMenu user={userForMenu} />
         </nav>
       </div>
     </header>

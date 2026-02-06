@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { OrdersClientWrapper } from "./_components/orders-client-wrapper";
 import { OrderExportButton } from "@/components/admin/order-export-button";
 import { Button } from "@/components/ui/button";
@@ -58,10 +59,12 @@ export default async function OrdersPage({ searchParams }: Props) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <AdminHeader title="Commandes" className="mb-0" />
-        <OrderExportButton />
-      </div>
+      <AdminPageHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <AdminHeader title="Commandes" />
+          <OrderExportButton />
+        </div>
+      </AdminPageHeader>
 
       {/* Client wrapper handles responsive filters + data list */}
       <OrdersClientWrapper orders={orderListData} communes={communes} />

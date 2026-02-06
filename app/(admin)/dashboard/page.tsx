@@ -1,5 +1,6 @@
 import { getDashboardStats } from "@/lib/db/admin/dashboard";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatsCard } from "@/components/admin/stats-card";
 
 export default async function DashboardPage() {
@@ -7,7 +8,9 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <AdminHeader title="Dashboard" />
+      <AdminPageHeader>
+        <AdminHeader title="Dashboard" />
+      </AdminPageHeader>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title="Produits"

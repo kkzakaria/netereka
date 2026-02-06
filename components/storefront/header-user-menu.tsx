@@ -20,6 +20,7 @@ import {
   FavouriteIcon,
   StarIcon,
   Logout01Icon,
+  DashboardSquare01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -28,6 +29,7 @@ type User = {
   name: string;
   email: string;
   image?: string | null;
+  role?: string;
 } | null;
 
 function UserAvatar({ user }: { user: NonNullable<User> }) {
@@ -92,6 +94,14 @@ export function HeaderUserMenu({ user }: { user: User }) {
           <p className="text-sm font-medium">{user.name}</p>
           <p className="text-xs text-muted-foreground">{user.email}</p>
         </DropdownMenuLabel>
+        {(user.role === "admin" || user.role === "super_admin") && (
+          <DropdownMenuItem asChild>
+            <Link href="/dashboard" target="_blank">
+              <HugeiconsIcon icon={DashboardSquare01Icon} size={16} />
+              Administration
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         {menuItems.map((item) => (
           <DropdownMenuItem key={item.href} asChild>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getAdminCustomerById } from "@/lib/db/admin/customers";
 import { getUserTypeLabel } from "@/lib/constants/customers";
@@ -29,25 +30,27 @@ export default async function CustomerDetailPage({ params }: Props) {
 
   return (
     <div>
-      <header className="mb-6 flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          asChild
-          className="h-11 w-11 shrink-0"
-          aria-label="Retour à la liste des utilisateurs"
-        >
-          <Link href="/customers">{backIcon}</Link>
-        </Button>
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold sm:text-2xl">
-            {customer.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Fiche {getUserTypeLabel(customer.role)}
-          </p>
-        </div>
-      </header>
+      <AdminPageHeader>
+        <header className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            asChild
+            className="h-11 w-11 shrink-0"
+            aria-label="Retour à la liste des utilisateurs"
+          >
+            <Link href="/customers">{backIcon}</Link>
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold sm:text-2xl">
+              {customer.name}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Fiche {getUserTypeLabel(customer.role)}
+            </p>
+          </div>
+        </header>
+      </AdminPageHeader>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content */}
