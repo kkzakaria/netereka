@@ -21,6 +21,11 @@ export const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "super_admin", label: "Super Administrateur" },
 ];
 
+export const ADMIN_ROLE_OPTIONS: { value: "admin" | "super_admin"; label: string }[] = [
+  { value: "admin", label: "Administrateur" },
+  { value: "super_admin", label: "Super Administrateur" },
+];
+
 /** Returns "client" for customers, "utilisateur" for admins */
 export function getUserTypeLabel(role: UserRole): string {
   return role === "customer" ? "client" : "utilisateur";

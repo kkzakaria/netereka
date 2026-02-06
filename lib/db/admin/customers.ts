@@ -4,12 +4,10 @@ import type {
   AdminOrder,
   AdminCustomer,
   AdminCustomerDetail,
-  UserRole,
 } from "@/lib/db/types";
 
 export interface AdminCustomerFilters {
   search?: string;
-  role?: string;
   dateFrom?: string;
   dateTo?: string;
   sort?: "newest" | "oldest" | "name_asc" | "name_desc" | "spent_desc";
@@ -21,7 +19,7 @@ function buildFilterClause(opts: AdminCustomerFilters): {
   where: string;
   params: unknown[];
 } {
-  const conditions: string[] = [];
+  const conditions: string[] = ["u.role = 'customer'"];
   const params: unknown[] = [];
 
   if (opts.search) {
@@ -30,11 +28,6 @@ function buildFilterClause(opts: AdminCustomerFilters): {
     );
     const term = `%${opts.search}%`;
     params.push(term, term, term);
-  }
-
-  if (opts.role && opts.role !== "all") {
-    conditions.push("u.role = ?");
-    params.push(opts.role);
   }
 
   if (opts.dateFrom) {
@@ -47,8 +40,7 @@ function buildFilterClause(opts: AdminCustomerFilters): {
     params.push(opts.dateTo + " 23:59:59");
   }
 
-  const where =
-    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
   return { where, params };
 }
 
@@ -147,7 +139,7 @@ export async function getAdminCustomerById(
     [id]
   );
 
-  if (!customer) return null;
+  if (!customer || customer.role !== "customer") return null;
 
   const [addresses, recent_orders] = await Promise.all([
     query<Address>("SELECT * FROM addresses WHERE user_id = ? ORDER BY is_default DESC, created_at DESC", [id]),
@@ -169,9 +161,3 @@ export async function getAdminCustomerById(
   return { ...customer, addresses, recent_orders };
 }
 
-export async function getDistinctRoles(): Promise<UserRole[]> {
-  const rows = await query<{ role: UserRole }>(
-    "SELECT DISTINCT role FROM user ORDER BY role ASC"
-  );
-  return rows.map((r) => r.role);
-}
