@@ -66,7 +66,7 @@ export function SidebarUserMenu() {
             variant="destructive"
             onClick={async () => {
               await authClient.signOut();
-              router.refresh();
+              router.push("/auth/sign-in");
             }}
           >
             <HugeiconsIcon icon={Logout01Icon} size={16} />

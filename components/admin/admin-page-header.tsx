@@ -7,6 +7,8 @@ export function AdminPageHeader({
   children: React.ReactNode;
   className?: string;
 }) {
+  // Negative margins/top mirror <main>'s p-4 sm:p-6 to extend the bg to the edges.
+  // If main padding changes, update these values accordingly.
   return (
     <div
       className={cn(

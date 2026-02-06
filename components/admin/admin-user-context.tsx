@@ -7,7 +7,7 @@ export type AdminUser = {
   name: string;
   email: string;
   image?: string | null;
-  role: string;
+  role: "customer" | "admin" | "super_admin";
 };
 
 const AdminUserContext = createContext<AdminUser | null>(null);
