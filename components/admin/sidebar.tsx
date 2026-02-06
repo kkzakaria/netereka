@@ -12,6 +12,7 @@ import {
   Audit01Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
+import { SidebarUserMenu } from "./sidebar-user-menu";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardSquare01Icon },
@@ -28,41 +29,46 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-1 p-4">
-      <div className="mb-6 px-3">
-        <h2 className="text-lg font-bold tracking-tight">NETEREKA</h2>
-        <p className="text-xs text-muted-foreground">Administration</p>
-      </div>
-      {navItems.map((item) => {
-        const isActive =
-          pathname === item.href ||
-          (item.href !== "/dashboard" && pathname.startsWith(item.href));
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground hover:bg-sidebar-accent/50"
-            )}
+    <div className="flex h-full flex-col">
+      <nav className="flex flex-col gap-1 p-4">
+        <div className="mb-6 px-3">
+          <h2 className="text-lg font-bold tracking-tight">NETEREKA</h2>
+          <p className="text-xs text-muted-foreground">Administration</p>
+        </div>
+        {navItems.map((item) => {
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent/50"
+              )}
+            >
+              <HugeiconsIcon icon={item.icon} size={20} />
+              {item.label}
+            </Link>
+          );
+        })}
+        {disabledItems.map((item) => (
+          <span
+            key={item.label}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium opacity-40"
+            aria-disabled="true"
           >
             <HugeiconsIcon icon={item.icon} size={20} />
             {item.label}
-          </Link>
-        );
-      })}
-      {disabledItems.map((item) => (
-        <span
-          key={item.label}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium opacity-40"
-          aria-disabled="true"
-        >
-          <HugeiconsIcon icon={item.icon} size={20} />
-          {item.label}
-        </span>
-      ))}
-    </nav>
+          </span>
+        ))}
+      </nav>
+      <div className="mt-auto">
+        <SidebarUserMenu />
+      </div>
+    </div>
   );
 }

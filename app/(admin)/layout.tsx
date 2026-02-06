@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth/guards";
 import { Sidebar } from "@/components/admin/sidebar";
 import { ViewProvider } from "@/components/admin/view-context";
+import { AdminUserProvider } from "@/components/admin/admin-user-context";
 import { Toaster } from "@/components/ui/sonner";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +11,10 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   return (
+    <AdminUserProvider user={session.user}>
     <ViewProvider>
       <div className="flex min-h-dvh">
         <aside className="hidden w-64 shrink-0 border-r bg-sidebar lg:block">
@@ -22,5 +24,6 @@ export default async function AdminLayout({
         <Toaster richColors position="top-right" />
       </div>
     </ViewProvider>
+    </AdminUserProvider>
   );
 }
