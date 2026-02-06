@@ -26,7 +26,7 @@ function buildFilterClause(opts: AdminCustomerFilters): {
 
   if (opts.search) {
     conditions.push(
-      "((u.first_name || ' ' || u.last_name) LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)"
+      "(u.name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)"
     );
     const term = `%${opts.search}%`;
     params.push(term, term, term);
@@ -38,12 +38,12 @@ function buildFilterClause(opts: AdminCustomerFilters): {
   }
 
   if (opts.dateFrom) {
-    conditions.push("u.created_at >= ?");
+    conditions.push("u.createdAt >= ?");
     params.push(opts.dateFrom);
   }
 
   if (opts.dateTo) {
-    conditions.push("u.created_at <= ?");
+    conditions.push("u.createdAt <= ?");
     params.push(opts.dateTo + " 23:59:59");
   }
 
@@ -59,10 +59,10 @@ export async function getAdminCustomers(
   const offset = opts.offset ?? 0;
   const { where, params } = buildFilterClause(opts);
 
-  let orderBy = "u.created_at DESC";
+  let orderBy = "u.createdAt DESC";
   switch (opts.sort) {
     case "oldest":
-      orderBy = "u.created_at ASC";
+      orderBy = "u.createdAt ASC";
       break;
     case "name_asc":
       orderBy = "name ASC";
@@ -78,17 +78,17 @@ export async function getAdminCustomers(
   return query<AdminCustomer>(
     `SELECT
        u.id,
-       (u.first_name || ' ' || u.last_name) as name,
+       u.name,
        u.email,
        u.phone,
        u.role,
-       u.email_verified as emailVerified,
+       u.emailVerified,
        u.image,
-       COALESCE(u.is_active, 1) as is_active,
-       u.created_at as createdAt,
+       1 as is_active,
+       u.createdAt,
        COALESCE(stats.order_count, 0) as order_count,
        COALESCE(stats.total_spent, 0) as total_spent
-     FROM users u
+     FROM user u
      LEFT JOIN (
        SELECT
          user_id,
@@ -111,7 +111,7 @@ export async function getAdminCustomerCount(
   const { where, params } = buildFilterClause(opts);
 
   const result = await queryFirst<{ count: number }>(
-    `SELECT COUNT(*) as count FROM users u ${where}`,
+    `SELECT COUNT(*) as count FROM user u ${where}`,
     params
   );
   return result?.count ?? 0;
@@ -123,17 +123,17 @@ export async function getAdminCustomerById(
   const customer = await queryFirst<AdminCustomer>(
     `SELECT
        u.id,
-       (u.first_name || ' ' || u.last_name) as name,
+       u.name,
        u.email,
        u.phone,
        u.role,
-       u.email_verified as emailVerified,
+       u.emailVerified,
        u.image,
-       COALESCE(u.is_active, 1) as is_active,
-       u.created_at as createdAt,
+       1 as is_active,
+       u.createdAt,
        COALESCE(stats.order_count, 0) as order_count,
        COALESCE(stats.total_spent, 0) as total_spent
-     FROM users u
+     FROM user u
      LEFT JOIN (
        SELECT
          user_id,
@@ -155,10 +155,10 @@ export async function getAdminCustomerById(
       `SELECT o.*,
          (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) as item_count,
          u.email as user_email,
-         (u.first_name || ' ' || u.last_name) as user_name,
+         u.name as user_name,
          u.phone as user_phone
        FROM orders o
-       LEFT JOIN users u ON u.id = o.user_id
+       LEFT JOIN user u ON u.id = o.user_id
        WHERE o.user_id = ?
        ORDER BY o.created_at DESC
        LIMIT 10`,
@@ -171,7 +171,7 @@ export async function getAdminCustomerById(
 
 export async function getDistinctRoles(): Promise<UserRole[]> {
   const rows = await query<{ role: UserRole }>(
-    "SELECT DISTINCT role FROM users ORDER BY role ASC"
+    "SELECT DISTINCT role FROM user ORDER BY role ASC"
   );
   return rows.map((r) => r.role);
 }

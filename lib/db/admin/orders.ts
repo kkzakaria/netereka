@@ -27,10 +27,10 @@ function buildFilterClause(opts: AdminOrderFilters): {
 
   if (opts.search) {
     conditions.push(
-      "(o.order_number LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR o.delivery_phone LIKE ?)"
+      "(o.order_number LIKE ? OR u.name LIKE ? OR u.email LIKE ? OR o.delivery_phone LIKE ?)"
     );
     const term = `%${opts.search}%`;
-    params.push(term, term, term, term, term);
+    params.push(term, term, term, term);
   }
 
   if (opts.status && opts.status !== "all") {
@@ -82,10 +82,10 @@ export async function getAdminOrders(
     `SELECT o.*,
        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) as item_count,
        u.email as user_email,
-       (u.first_name || ' ' || u.last_name) as user_name,
+       u.name as user_name,
        u.phone as user_phone
      FROM orders o
-     LEFT JOIN users u ON u.id = o.user_id
+     LEFT JOIN user u ON u.id = o.user_id
      ${where}
      ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
@@ -100,7 +100,7 @@ export async function getAdminOrderCount(
 
   const result = await queryFirst<{ count: number }>(
     `SELECT COUNT(*) as count FROM orders o
-     LEFT JOIN users u ON u.id = o.user_id
+     LEFT JOIN user u ON u.id = o.user_id
      ${where}`,
     params
   );
@@ -115,10 +115,10 @@ export async function getAdminOrderById(
   >(
     `SELECT o.*,
        u.email as user_email,
-       (u.first_name || ' ' || u.last_name) as user_name,
+       u.name as user_name,
        u.phone as user_phone
      FROM orders o
-     LEFT JOIN users u ON u.id = o.user_id
+     LEFT JOIN user u ON u.id = o.user_id
      WHERE o.id = ?`,
     [id]
   );
@@ -156,8 +156,8 @@ export async function getDeliveryPersons(): Promise<
   { id: string; name: string }[]
 > {
   return query<{ id: string; name: string }>(
-    `SELECT id, (first_name || ' ' || last_name) as name
-     FROM users
+    `SELECT id, name
+     FROM user
      WHERE role IN ('admin', 'super_admin')
      ORDER BY name ASC`
   );

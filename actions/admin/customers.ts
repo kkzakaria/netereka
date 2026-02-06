@@ -50,7 +50,7 @@ export async function updateCustomerRole(
 
   // Check if user exists
   const user = await queryFirst<{ id: string; role: string }>(
-    "SELECT id, role FROM users WHERE id = ?",
+    "SELECT id, role FROM user WHERE id = ?",
     [customerId]
   );
 
@@ -63,7 +63,7 @@ export async function updateCustomerRole(
   const db = await getDB();
   const updateStmt = db
     .prepare(
-      "UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?"
+      "UPDATE user SET role = ?, updatedAt = datetime('now') WHERE id = ?"
     )
     .bind(roleResult.data, customerId);
 
@@ -99,9 +99,9 @@ export async function toggleCustomerActive(
     return { success: false, error: "ID utilisateur invalide" };
   }
 
-  // Check if user exists and get current status
-  const user = await queryFirst<{ id: string; is_active: number | null }>(
-    "SELECT id, is_active FROM users WHERE id = ?",
+  // Check if user exists
+  const user = await queryFirst<{ id: string }>(
+    "SELECT id FROM user WHERE id = ?",
     [customerId]
   );
 
@@ -109,15 +109,16 @@ export async function toggleCustomerActive(
     return { success: false, error: "Utilisateur introuvable" };
   }
 
-  const currentActive = user.is_active ?? 1;
-  const newActive = currentActive === 1 ? 0 : 1;
+  // Note: better-auth user table doesn't have is_active column
+  // This is a no-op placeholder until user status management is implemented
+  const newActive = 0;
 
   const db = await getDB();
   const updateStmt = db
     .prepare(
-      "UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?"
+      "UPDATE user SET updatedAt = datetime('now') WHERE id = ?"
     )
-    .bind(newActive, customerId);
+    .bind(customerId);
 
   const auditStmt = await prepareAuditLog({
     actorId: session.user.id,

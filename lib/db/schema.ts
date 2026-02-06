@@ -314,6 +314,24 @@ export const orderStatusHistory = sqliteTable("order_status_history", {
 ]);
 
 // =============================================================================
+// Audit Log
+// =============================================================================
+export const auditLog = sqliteTable("audit_log", {
+  id: text("id").primaryKey(),
+  actor_id: text("actor_id").notNull(),
+  actor_name: text("actor_name").notNull(),
+  action: text("action").notNull(),
+  target_type: text("target_type").notNull(),
+  target_id: text("target_id").notNull(),
+  details: text("details"),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_audit_log_actor").on(table.actor_id),
+  index("idx_audit_log_action").on(table.action),
+  index("idx_audit_log_created").on(table.created_at),
+]);
+
+// =============================================================================
 // Wishlist
 // =============================================================================
 export const wishlist = sqliteTable("wishlist", {

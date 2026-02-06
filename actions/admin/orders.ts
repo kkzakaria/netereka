@@ -46,7 +46,7 @@ async function getOrderCustomer(
   userId: string
 ): Promise<{ email: string; name: string } | null> {
   return queryFirst<{ email: string; name: string }>(
-    "SELECT email, name FROM users WHERE id = ?",
+    "SELECT email, name FROM user WHERE id = ?",
     [userId]
   );
 }
@@ -203,7 +203,7 @@ export async function assignDeliveryPerson(
   // Validate that personId exists in users table if provided
   if (personId) {
     const user = await queryFirst<{ id: string }>(
-      "SELECT id FROM users WHERE id = ?",
+      "SELECT id FROM user WHERE id = ?",
       [personId]
     );
     if (!user) {
