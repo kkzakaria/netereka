@@ -102,13 +102,17 @@ function RelatedProductsSkeleton() {
   );
 }
 
-async function ProductReviews({ productId }: { productId: string }) {
-  const [reviews, stats] = await Promise.all([
-    getProductReviews(productId, 10),
-    getProductRatingStats(productId),
-  ]);
+async function ProductReviews({
+  productId,
+  ratingStats,
+}: {
+  productId: string;
+  ratingStats: { average: number; count: number };
+}) {
+  if (ratingStats.count === 0) return null;
 
-  if (stats.count === 0) return null;
+  const reviews = await getProductReviews(productId, 10);
+  const stats = ratingStats;
 
   return (
     <div className="mt-12 space-y-4">
@@ -312,7 +316,7 @@ export default async function ProductPage({ params }: Props) {
 
       {/* Reviews */}
       <Suspense fallback={null}>
-        <ProductReviews productId={product.id} />
+        <ProductReviews productId={product.id} ratingStats={ratingStats} />
       </Suspense>
 
       {/* Related */}
