@@ -71,7 +71,7 @@ export function ProductCard({ product, isWishlisted = false, showWishlist = fals
 
         {/* Out of stock overlay */}
         {isOutOfStock && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/40">
             <span className="rounded-full bg-foreground/90 px-3 py-1.5 text-xs font-semibold text-background">
               Rupture de stock
             </span>
