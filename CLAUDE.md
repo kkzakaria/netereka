@@ -15,8 +15,12 @@ NETEREKA Electronic is an e-commerce platform for electronics targeting the Ivor
 - **Icons:** HugeIcons (`@hugeicons/react`, `@hugeicons/core-free-icons`)
 - **State Management:** Zustand with persist middleware (`stores/cart-store.ts`)
 - **Forms:** React Hook Form + Zod
-- **Auth:** better-auth with Cloudflare Turnstile captcha
+- **Auth:** better-auth with Cloudflare Turnstile captcha, OAuth (Google, Facebook, Apple)
 - **ORM:** Drizzle ORM with `drizzle-kit` for schema management
+- **URL State:** nuqs (type-safe URL search params)
+- **Notifications:** Resend (transactional email)
+- **Toasts:** Sonner
+- **Theming:** next-themes (light/dark)
 - **Backend Services:** Cloudflare D1 (SQLite), KV, R2 (images)
 
 ## Commands
@@ -43,13 +47,15 @@ No test framework is configured yet.
 
 ### Route Groups
 
-- `app/(storefront)/` — Public store: home, products (`/p/[slug]`), categories (`/c/[slug]`), cart, checkout, auth, account
-- `app/(admin)/` — Protected admin: dashboard, products CRUD, categories, orders management
+- `app/(storefront)/` — Public store: home, products (`/p/[slug]`), categories (`/c/[slug]`), cart, checkout, account, search, contact, static pages (`/a-propos`, `/faq`, `/livraison`, `/conditions-generales`)
+- `app/(admin)/` — Protected admin: dashboard, products CRUD, categories, orders, customers, users, audit-log
+- `app/(admin-auth)/` — Admin login page (separate layout, no admin sidebar)
+- `app/(auth)/` — Customer auth: sign-in, sign-up, forgot-password, reset-password (no header/footer)
 - `app/api/auth/[...all]/` — better-auth API routes
 
 ### Key Directories
 
-- `actions/` — Server Actions organized by domain (`checkout.ts`, `reviews.ts`, `admin/orders.ts`, etc.)
+- `actions/` — Server Actions organized by domain (`checkout.ts`, `reviews.ts`, `search.ts`, `wishlist.ts`, `addresses.ts`, `account.ts`, `admin/*.ts`)
 - `lib/db/` — D1 query helpers with `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()`
 - `lib/db/drizzle.ts` — Drizzle ORM client via `getDrizzle()` (for new code)
 - `lib/db/schema.ts` — Drizzle schema definitions for all tables
@@ -57,10 +63,17 @@ No test framework is configured yet.
 - `lib/auth/guards.ts` — Auth guards: `requireAuth()`, `requireAdmin()`, `requireGuest()`, `getOptionalSession()`
 - `lib/cloudflare/context.ts` — `getDB()`, `getKV()`, `getR2()` helpers via `getCloudflareContext()`
 - `lib/validations/` — Zod schemas for forms (checkout, account, address, review)
+- `lib/notifications/` — Email notifications via Resend with HTML templates
+- `lib/storage/images.ts` — R2 image upload/delete helpers
+- `lib/csv/` — CSV export utilities (orders)
+- `lib/constants/` — Domain constants (audit actions, order statuses, customer statuses)
+- `lib/types/` — Shared types (`actions.ts` for ActionResult, `cart.ts` for cart types)
 - `stores/` — Zustand stores (cart persisted to localStorage)
 - `components/ui/` — shadcn/ui base components
 - `components/storefront/` — Store components (header, product-card, checkout-form)
 - `components/admin/` — Admin components (sidebar, data-tables, order management)
+- `components/seo/` — JSON-LD structured data, breadcrumb schema
+- `components/providers.tsx` — App-level providers (theme, auth, etc.)
 
 ### Server Actions Pattern
 
@@ -108,6 +121,46 @@ Two DB access patterns coexist (gradual migration in progress):
 - **Drizzle ORM** (new code): `getDrizzle()` from `lib/db/drizzle.ts`
 
 Schema changes workflow: edit `lib/db/schema.ts` → run `npm run db:generate` → apply generated SQL via `wrangler d1 execute`.
+
+### Environment Variables
+
+Required env vars defined in `env.d.ts` (`CloudflareEnv` interface):
+- `BETTER_AUTH_SECRET` — Auth session secret
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — Google OAuth
+- `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` — Facebook OAuth
+- `APPLE_CLIENT_ID`, `APPLE_CLIENT_SECRET` — Apple OAuth
+- `SITE_URL` — Public site URL
+- `TURNSTILE_SECRET_KEY` — Cloudflare Turnstile captcha
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (optional) — Transactional email via Resend
+
+Wrangler config: `wrangler.jsonc` (not `.toml`).
+
+## Gotchas
+
+- **Pre-commit hook (Husky):** Runs `tsc --noEmit` + `eslint` before every commit. Fix all type and lint errors before committing — the hook blocks commits on failure.
+- **Local D1 bootstrap:** Before `npm run db:studio` works, you must initialize the local D1 SQLite file first: `npx wrangler d1 execute netereka-db --local --command "SELECT 1"`. Then run the legacy migration and seed scripts.
+- **SEO files:** `app/robots.ts` and `app/sitemap.ts` generate SEO metadata dynamically.
+- **Drizzle remote mode:** To use `drizzle-kit` against remote D1, set `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, and `CLOUDFLARE_D1_TOKEN` env vars.
+
+## Authentication (better-auth)
+
+Server config in `lib/auth/index.ts`, client in `lib/auth/client.ts`, guards in `lib/auth/guards.ts`.
+
+- **DB adapter:** Kysely + D1Dialect (not Drizzle — better-auth uses Kysely internally)
+- **Auth methods:** Email/password + social (Google, Facebook, Apple)
+- **Captcha:** Cloudflare Turnstile plugin on all auth endpoints
+- **Custom user fields:** `phone` (required, user input) and `role` (default `"customer"`, server-only)
+- **Roles:** `"customer"`, `"admin"`, `"super_admin"` — checked in `requireAdmin()`
+- **Session:** 7-day expiry, 5-minute cookie cache
+- **Rate limiting:** 30 req/min general, 5/min for sign-in/sign-up, 3/min for forgot-password
+
+**Auth guards** (use in Server Components and Server Actions):
+- `requireAuth()` — Redirects to `/auth/sign-in` if not authenticated
+- `requireAdmin()` — Requires `admin` or `super_admin` role, redirects to `/`
+- `requireGuest()` — Redirects to `/` if already authenticated
+- `getOptionalSession()` — Returns session or `null`, no redirect
+
+**Client-side:** Import `authClient` from `@/lib/auth/client` (uses `inferAdditionalFields` for typed custom fields).
 
 ## Reference Documents
 
