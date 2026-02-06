@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ShoppingBag01Icon, Logout01Icon } from "@hugeicons/core-free-icons";
+import { UserIcon, ShoppingBag01Icon, Logout01Icon } from "@hugeicons/core-free-icons";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -49,6 +49,12 @@ export function SidebarUserMenu() {
             <p className="text-xs text-muted-foreground">{user.email}</p>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href="/account" target="_blank">
+              <HugeiconsIcon icon={UserIcon} size={16} />
+              Mon profil
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href="/" target="_blank">
               <HugeiconsIcon icon={ShoppingBag01Icon} size={16} />
