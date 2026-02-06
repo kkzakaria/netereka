@@ -12,6 +12,8 @@ import {
   Gamepad,
   Television,
   Projector,
+  Printer,
+  Router,
 } from "@hugeicons/core-free-icons";
 import type { Category } from "@/lib/db/types";
 import { useHorizontalScroll } from "@/hooks/use-horizontal-scroll";
@@ -27,6 +29,8 @@ const CATEGORY_ICONS: Record<string, typeof Smartphone> = {
   jeux: Gamepad,
   televiseurs: Television,
   projecteurs: Projector,
+  imprimantes: Printer,
+  reseau: Router,
 };
 
 export function CategoryNav({ categories }: { categories: Category[] }) {

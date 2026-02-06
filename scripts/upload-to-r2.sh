@@ -1,136 +1,249 @@
 #!/bin/bash
-# Upload images to R2
+# Upload product images to Cloudflare R2 — deduplicated
 # Usage: bash scripts/upload-to-r2.sh
+# Only uploads 212 unique images (12 duplicates skipped)
 
-npx wrangler r2 object put --remote netereka/products/smartphones/google-pixel-10-pro-xl.webp --file=scripts/images/google-pixel-10-pro-xl.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/google-pixel-10-pro-512go.webp --file=scripts/images/google-pixel-10-pro-512go.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/apple-iphone-17-5g.webp --file=scripts/images/apple-iphone-17-5g.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/galaxy-z-fold-7.webp --file=scripts/images/galaxy-z-fold-7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/iphone-16-pro-max.webp --file=scripts/images/iphone-16-pro-max.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/iphone-16-pro.webp --file=scripts/images/iphone-16-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/iphone-16-plus.webp --file=scripts/images/iphone-16-plus.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/iphone-16.webp --file=scripts/images/iphone-16.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/samsung-s25-ultra.webp --file=scripts/images/samsung-s25-ultra.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/samsung-s25.webp --file=scripts/images/samsung-s25.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/samsung-s25.webp --file=scripts/images/samsung-s25.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/samsung-s24-ultra.webp --file=scripts/images/samsung-s24-ultra.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/samsung-s24.webp --file=scripts/images/samsung-s24.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-200.webp --file=scripts/images/honor-200.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-400-lite.webp --file=scripts/images/honor-400-lite.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-400-pro.webp --file=scripts/images/honor-400-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-magic-6-pro.webp --file=scripts/images/honor-magic-6-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-magic-7-pro.webp --file=scripts/images/honor-magic-7-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-magic-v2.webp --file=scripts/images/honor-magic-v2.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-magic-v3.webp --file=scripts/images/honor-magic-v3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-magic-v5-16go-ram-512go.webp --file=scripts/images/honor-magic-v5-16go-ram-512go.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-x7b.webp --file=scripts/images/honor-x7b.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-x7c.webp --file=scripts/images/honor-x7c.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/honor-x9c.webp --file=scripts/images/honor-x9c.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-mate-x3.webp --file=scripts/images/huawei-mate-x3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-mate-x6.webp --file=scripts/images/huawei-mate-x6.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-mate-xt.webp --file=scripts/images/huawei-mate-xt.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-nova-11-pro.webp --file=scripts/images/huawei-nova-11-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-nova-12i.webp --file=scripts/images/huawei-nova-12i.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-nova-12s.webp --file=scripts/images/huawei-nova-12s.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-pura-70.webp --file=scripts/images/huawei-pura-70.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-pura-70-pro.webp --file=scripts/images/huawei-pura-70-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/huawei-pura-70-ultra.webp --file=scripts/images/huawei-pura-70-ultra.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/smartphones/pixel-7.webp --file=scripts/images/pixel-7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/ipad-10th-gen-2022.webp --file=scripts/images/ipad-10th-gen-2022.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/ipad-11th-gen-2025.webp --file=scripts/images/ipad-11th-gen-2025.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/ipad-mini-6-2022.webp --file=scripts/images/ipad-mini-6-2022.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/ipad-mini-7-2024.webp --file=scripts/images/ipad-mini-7-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/ipad-air-6th-m2-2024.webp --file=scripts/images/ipad-air-6th-m2-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/ipad-air-7th-m3-2025.webp --file=scripts/images/ipad-air-7th-m3-2025.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/ipad-pro-m4-2024.webp --file=scripts/images/ipad-pro-m4-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/samsung-tab-a9.webp --file=scripts/images/samsung-tab-a9.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/samsung-tab-s9.webp --file=scripts/images/samsung-tab-s9.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/samsung-tab-s9-fe.webp --file=scripts/images/samsung-tab-s9-fe.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/samsung-tab-s9-fe.webp --file=scripts/images/samsung-tab-s9-fe.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/samsung-tab-s9.webp --file=scripts/images/samsung-tab-s9.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/samsung-tab-s9-ultra.webp --file=scripts/images/samsung-tab-s9-ultra.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/samsung-tab-s10-ultra.webp --file=scripts/images/samsung-tab-s10-ultra.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmi-pad-2-4g.webp --file=scripts/images/redmi-pad-2-4g.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmi-pad-6s-pro.webp --file=scripts/images/redmi-pad-6s-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmi-pad-2.webp --file=scripts/images/redmi-pad-2.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/xiaomi-pad-7.webp --file=scripts/images/xiaomi-pad-7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/xiaomi-pad-7-pro.webp --file=scripts/images/xiaomi-pad-7-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmi-pad-se-8-7.webp --file=scripts/images/redmi-pad-se-8-7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/honor-pad-10.webp --file=scripts/images/honor-pad-10.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/oneplus-pad-3.webp --file=scripts/images/oneplus-pad-3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmagic-nova-gaming.webp --file=scripts/images/redmagic-nova-gaming.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmi-pad-pro-5g.webp --file=scripts/images/redmi-pad-pro-5g.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmi-pad-pro-wifi.webp --file=scripts/images/redmi-pad-pro-wifi.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/tablettes/redmi-pad-se.webp --file=scripts/images/redmi-pad-se.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/apple-watch-series-10.webp --file=scripts/images/apple-watch-series-10.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/apple-watch-ultra-2.webp --file=scripts/images/apple-watch-ultra-2.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/huawei-watch-ultimate.webp --file=scripts/images/huawei-watch-ultimate.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/huawei-watch-5.webp --file=scripts/images/huawei-watch-5.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/huawei-watch-4-pro-space-edition.webp --file=scripts/images/huawei-watch-4-pro-space-edition.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/huawei-watch-gt-5-pro-46mm-multicolore.webp --file=scripts/images/huawei-watch-gt-5-pro-46mm-multicolore.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/huawei-watch-fit-4-pro.webp --file=scripts/images/huawei-watch-fit-4-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/huawei-watch-d2.webp --file=scripts/images/huawei-watch-d2.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/samsung-watch-8.webp --file=scripts/images/samsung-watch-8.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/apple-watch-se.webp --file=scripts/images/apple-watch-se.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/apple-watch-series-9.webp --file=scripts/images/apple-watch-series-9.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/redmi-watch-3-active.webp --file=scripts/images/redmi-watch-3-active.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/redmi-watch-5.webp --file=scripts/images/redmi-watch-5.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/redmi-watch-5-active.webp --file=scripts/images/redmi-watch-5-active.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/redmi-watch-5-lite.webp --file=scripts/images/redmi-watch-5-lite.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/xiaomi-smart-band-8-pro.webp --file=scripts/images/xiaomi-smart-band-8-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/xiaomi-smart-band-9.webp --file=scripts/images/xiaomi-smart-band-9.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/xiaomi-smart-band-9-active.webp --file=scripts/images/xiaomi-smart-band-9-active.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/montres-connectees/xiaomi-smart-band-9-pro.webp --file=scripts/images/xiaomi-smart-band-9-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-pro-m3-max-2023.webp --file=scripts/images/macbook-pro-m3-max-2023.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-pro-m3-2023.webp --file=scripts/images/macbook-pro-m3-2023.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-pro-2023.webp --file=scripts/images/macbook-pro-2023.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-pro-m2-2022.webp --file=scripts/images/macbook-pro-m2-2022.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-air-m4-2025.webp --file=scripts/images/macbook-air-m4-2025.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-air-m3-2023.webp --file=scripts/images/macbook-air-m3-2023.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-air-m2-2024.webp --file=scripts/images/macbook-air-m2-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-air-m1-2021.webp --file=scripts/images/macbook-air-m1-2021.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-pro-m4-2024.webp --file=scripts/images/macbook-pro-m4-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-pro-m4-max-2024.webp --file=scripts/images/macbook-pro-m4-max-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/macbook-pro-m4-pro-2024.webp --file=scripts/images/macbook-pro-m4-pro-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/imac-m3-2024.webp --file=scripts/images/imac-m3-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/imac-m4-2024.webp --file=scripts/images/imac-m4-2024.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/dell-vostro-3520-i7.webp --file=scripts/images/dell-vostro-3520-i7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/bureau-hp-290-g9-i5.webp --file=scripts/images/bureau-hp-290-g9-i5.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/bureau-hp-prodesk-400-g9-i5.webp --file=scripts/images/bureau-hp-prodesk-400-g9-i5.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/lenovo-thinkbook-14-g6-i7.webp --file=scripts/images/lenovo-thinkbook-14-g6-i7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/lenovo-thinkbook-15-g4-i7.webp --file=scripts/images/lenovo-thinkbook-15-g4-i7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/lenovo-thinkpad-e14-g5-i7.webp --file=scripts/images/lenovo-thinkpad-e14-g5-i7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/lenovo-thinkpad-e15-i7.webp --file=scripts/images/lenovo-thinkpad-e15-i7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/lenovo-thinkpad-e16-i7.webp --file=scripts/images/lenovo-thinkpad-e16-i7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/lenovo-yoga-9-16-x360.webp --file=scripts/images/lenovo-yoga-9-16-x360.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/dell-vostro-3030mt-i3.webp --file=scripts/images/dell-vostro-3030mt-i3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/dell-vostro-3030mt-i7.webp --file=scripts/images/dell-vostro-3030mt-i7.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/lenovo-thinkcentre-neo-50t-i3.webp --file=scripts/images/lenovo-thinkcentre-neo-50t-i3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ordinateurs/hp-290-g9-i3.webp --file=scripts/images/hp-290-g9-i3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/freebuds-4-pro.webp --file=scripts/images/freebuds-4-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/freebuds-6.webp --file=scripts/images/freebuds-6.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/freebuds-6i.webp --file=scripts/images/freebuds-6i.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/galaxy-buds-3.webp --file=scripts/images/galaxy-buds-3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/galaxy-buds-3-pro.webp --file=scripts/images/galaxy-buds-3-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/huawei-freearc.webp --file=scripts/images/huawei-freearc.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/huawei-freeclip.webp --file=scripts/images/huawei-freeclip.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/oneplus-buds-pro-3.webp --file=scripts/images/oneplus-buds-pro-3.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/mi-in-ear-headphones-basic.webp --file=scripts/images/mi-in-ear-headphones-basic.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/redmi-buds-6.webp --file=scripts/images/redmi-buds-6.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/redmi-buds-6-active.webp --file=scripts/images/redmi-buds-6-active.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/redmi-buds-6-lite.webp --file=scripts/images/redmi-buds-6-lite.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/redmi-buds-6-play.webp --file=scripts/images/redmi-buds-6-play.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/redmi-buds-6-pro.webp --file=scripts/images/redmi-buds-6-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/xiaomi-buds-5.webp --file=scripts/images/xiaomi-buds-5.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/ecouteurs/xiaomi-buds-5-pro.webp --file=scripts/images/xiaomi-buds-5-pro.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/accessoires/airpods-4.webp --file=scripts/images/airpods-4.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/accessoires/airpods-4-anc.webp --file=scripts/images/airpods-4-anc.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/accessoires/airtag-pack-of-1.webp --file=scripts/images/airtag-pack-of-1.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/accessoires/airtag-pack-of-4.webp --file=scripts/images/airtag-pack-of-4.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/accessoires/apple-tv-4k-128gb-2025.webp --file=scripts/images/apple-tv-4k-128gb-2025.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/jeux/console-sony-ps5-slim-ea-fc-26.avif --file=scripts/images/console-sony-ps5-slim-ea-fc-26.avif --content-type=image/avif
-npx wrangler r2 object put --remote netereka/products/jeux/ea-sports-fc-26.avif --file=scripts/images/ea-sports-fc-26.avif --content-type=image/avif
-npx wrangler r2 object put --remote netereka/products/jeux/battlefield-6-pc.webp --file=scripts/images/battlefield-6-pc.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/televiseurs/ecran-lenovo-27-incurve-gaming.webp --file=scripts/images/ecran-lenovo-27-incurve-gaming.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/televiseurs/ecran-lenovo-34-incurve-gaming.webp --file=scripts/images/ecran-lenovo-34-incurve-gaming.webp --content-type=image/webp
-npx wrangler r2 object put --remote netereka/products/televiseurs/ecran-philips-34-incurve-gaming.webp --file=scripts/images/ecran-philips-34-incurve-gaming.webp --content-type=image/webp
+set -euo pipefail
+
+BUCKET="netereka"
+IMAGES_DIR="/home/superz/netereka/scripts/images"
+UPLOADED=0
+SKIPPED=0
+FAILED=0
+
+echo "=== NETEREKA R2 Image Upload (212 unique images) ==="
+
+upload() {
+  local r2_path="$1"
+  local local_file="$2"
+  local content_type="$3"
+
+  if npx wrangler r2 object put --remote "$BUCKET/$r2_path" --file="$local_file" --content-type="$content_type" > /dev/null 2>&1; then
+    UPLOADED=$((UPLOADED + 1))
+    if [ $((UPLOADED % 20)) -eq 0 ]; then
+      echo "  Progress: $UPLOADED uploaded..."
+    fi
+  else
+    echo "  FAIL: $r2_path"
+    FAILED=$((FAILED + 1))
+  fi
+}
+
+# Generated from unique-uploads.json (212 unique images, 12 duplicates removed)
+upload "products/smartphones/redmi-note-15-pro-plus-5g.webp" "$IMAGES_DIR/redmi-note-15-pro-plus-5g.webp" "image/webp"
+upload "products/smartphones/redmi-note-15.webp" "$IMAGES_DIR/redmi-note-15.webp" "image/webp"
+upload "products/smartphones/redmi-note-15-pro.webp" "$IMAGES_DIR/redmi-note-15-pro.webp" "image/webp"
+upload "products/smartphones/huawei-nova-14i.webp" "$IMAGES_DIR/huawei-nova-14i.webp" "image/webp"
+upload "products/smartphones/samsung-galaxy-a17.avif" "$IMAGES_DIR/samsung-galaxy-a17.avif" "image/avif"
+upload "products/smartphones/honor-magic-8-pro.webp" "$IMAGES_DIR/honor-magic-8-pro.webp" "image/webp"
+upload "products/montres-connectees/huawei-watch-d2.webp" "$IMAGES_DIR/huawei-watch-d2.webp" "image/webp"
+upload "products/ecouteurs/sony-wh-1000xm5-casque-audio-bluetooth-a-reduction-de-bruit-noir.avif" "$IMAGES_DIR/sony-wh-1000xm5-casque-audio-bluetooth-a-reduction-de-bruit-noir.avif" "image/avif"
+upload "products/jeux/console-sony-ps5-slim-edition-standard-plus-ea-sports-fc-26.avif" "$IMAGES_DIR/console-sony-ps5-slim-edition-standard-plus-ea-sports-fc-26.avif" "image/avif"
+upload "products/jeux/nba-2k26-switch-2.avif" "$IMAGES_DIR/nba-2k26-switch-2.avif" "image/avif"
+upload "products/jeux/legendes-pokemon-z-a.avif" "$IMAGES_DIR/legendes-pokemon-z-a.avif" "image/avif"
+upload "products/jeux/the-legend-of-zelda-breath-of-the-wild-switch-2-edition.avif" "$IMAGES_DIR/the-legend-of-zelda-breath-of-the-wild-switch-2-edition.avif" "image/avif"
+upload "products/jeux/ea-sports-fc-26.avif" "$IMAGES_DIR/ea-sports-fc-26.avif" "image/avif"
+upload "products/jeux/battlefield-6-pc-ea-app-key-global.webp" "$IMAGES_DIR/battlefield-6-pc-ea-app-key-global.webp" "image/webp"
+upload "products/montres-connectees/samsung-fit-3-r390.webp" "$IMAGES_DIR/samsung-fit-3-r390.webp" "image/webp"
+upload "products/smartphones/oneplus-15-512go-smartphone-haut-de-gamme-fluide-et-performant.webp" "$IMAGES_DIR/oneplus-15-512go-smartphone-haut-de-gamme-fluide-et-performant.webp" "image/webp"
+upload "products/smartphones/xiaomi-15-ultra-1tb.webp" "$IMAGES_DIR/xiaomi-15-ultra-1tb.webp" "image/webp"
+upload "products/smartphones/honor-magic-v5-16go-ram-512go.webp" "$IMAGES_DIR/honor-magic-v5-16go-ram-512go.webp" "image/webp"
+upload "products/smartphones/google-pixel-10-pro-xl.webp" "$IMAGES_DIR/google-pixel-10-pro-xl.webp" "image/webp"
+upload "products/smartphones/google-pixel-10-pro-512go.webp" "$IMAGES_DIR/google-pixel-10-pro-512go.webp" "image/webp"
+upload "products/smartphones/samsung-z-trifold.webp" "$IMAGES_DIR/samsung-z-trifold.webp" "image/webp"
+upload "products/smartphones/iphone-17-air.webp" "$IMAGES_DIR/iphone-17-air.webp" "image/webp"
+upload "products/smartphones/iphone-17-pro-max.webp" "$IMAGES_DIR/iphone-17-pro-max.webp" "image/webp"
+upload "products/smartphones/apple-iphone-17-5g-smartphone-puissance-design-et-ios-19.webp" "$IMAGES_DIR/apple-iphone-17-5g-smartphone-puissance-design-et-ios-19.webp" "image/webp"
+upload "products/tablettes/redmagic-nova-gaming.webp" "$IMAGES_DIR/redmagic-nova-gaming.webp" "image/webp"
+upload "products/ecouteurs/oneplus-buds-pro-3.webp" "$IMAGES_DIR/oneplus-buds-pro-3.webp" "image/webp"
+upload "products/tablettes/oneplus-pad-3.webp" "$IMAGES_DIR/oneplus-pad-3.webp" "image/webp"
+upload "products/montres-connectees/samsung-watch-8.webp" "$IMAGES_DIR/samsung-watch-8.webp" "image/webp"
+upload "products/ecouteurs/galaxy-buds-3-pro.webp" "$IMAGES_DIR/galaxy-buds-3-pro.webp" "image/webp"
+upload "products/ecouteurs/galaxy-buds-3.webp" "$IMAGES_DIR/galaxy-buds-3.webp" "image/webp"
+upload "products/smartphones/galaxy-z-fold-7.webp" "$IMAGES_DIR/galaxy-z-fold-7.webp" "image/webp"
+upload "products/smartphones/redmagic-10s-pro.webp" "$IMAGES_DIR/redmagic-10s-pro.webp" "image/webp"
+upload "products/smartphones/oneplus-nord-5.webp" "$IMAGES_DIR/oneplus-nord-5.webp" "image/webp"
+upload "products/smartphones/oneplus-nord-ce4-lite.webp" "$IMAGES_DIR/oneplus-nord-ce4-lite.webp" "image/webp"
+upload "products/smartphones/oneplus-13s.webp" "$IMAGES_DIR/oneplus-13s.webp" "image/webp"
+upload "products/smartphones/oneplus-13r.webp" "$IMAGES_DIR/oneplus-13r.webp" "image/webp"
+upload "products/smartphones/oneplus-13.webp" "$IMAGES_DIR/oneplus-13.webp" "image/webp"
+upload "products/smartphones/nothing-phone-3a.webp" "$IMAGES_DIR/nothing-phone-3a.webp" "image/webp"
+upload "products/smartphones/nothing-phone-2a.webp" "$IMAGES_DIR/nothing-phone-2a.webp" "image/webp"
+upload "products/smartphones/nothing-phone-2.webp" "$IMAGES_DIR/nothing-phone-2.webp" "image/webp"
+upload "products/reseau/huawei-wifi-ax3.webp" "$IMAGES_DIR/huawei-wifi-ax3.webp" "image/webp"
+upload "products/reseau/huawei-wifi-be3.webp" "$IMAGES_DIR/huawei-wifi-be3.webp" "image/webp"
+upload "products/reseau/huawei-wifi-mesh-3.webp" "$IMAGES_DIR/huawei-wifi-mesh-3.webp" "image/webp"
+upload "products/montres-connectees/huawei-watch-fit-4-pro.webp" "$IMAGES_DIR/huawei-watch-fit-4-pro.webp" "image/webp"
+upload "products/montres-connectees/huawei-watch-gt-5-pro-46mm-multicolore.webp" "$IMAGES_DIR/huawei-watch-gt-5-pro-46mm-multicolore.webp" "image/webp"
+upload "products/montres-connectees/huawei-watch-4-pro-space-edition.webp" "$IMAGES_DIR/huawei-watch-4-pro-space-edition.webp" "image/webp"
+upload "products/montres-connectees/huawei-watch-5.webp" "$IMAGES_DIR/huawei-watch-5.webp" "image/webp"
+upload "products/montres-connectees/huawei-watch-ultimate.webp" "$IMAGES_DIR/huawei-watch-ultimate.webp" "image/webp"
+upload "products/ecouteurs/huawei-freearc.webp" "$IMAGES_DIR/huawei-freearc.webp" "image/webp"
+upload "products/ecouteurs/huawei-freeclip.webp" "$IMAGES_DIR/huawei-freeclip.webp" "image/webp"
+upload "products/ecouteurs/freebuds-4-pro.webp" "$IMAGES_DIR/freebuds-4-pro.webp" "image/webp"
+upload "products/ecouteurs/freebuds-6i.webp" "$IMAGES_DIR/freebuds-6i.webp" "image/webp"
+upload "products/ecouteurs/freebuds-6.webp" "$IMAGES_DIR/freebuds-6.webp" "image/webp"
+upload "products/smartphones/huawei-mate-xt.webp" "$IMAGES_DIR/huawei-mate-xt.webp" "image/webp"
+upload "products/smartphones/huawei-mate-x6.webp" "$IMAGES_DIR/huawei-mate-x6.webp" "image/webp"
+upload "products/smartphones/huawei-mate-x3.webp" "$IMAGES_DIR/huawei-mate-x3.webp" "image/webp"
+upload "products/smartphones/huawei-pura-70-ultra.webp" "$IMAGES_DIR/huawei-pura-70-ultra.webp" "image/webp"
+upload "products/smartphones/huawei-pura-70-pro.webp" "$IMAGES_DIR/huawei-pura-70-pro.webp" "image/webp"
+upload "products/smartphones/huawei-pura-70.webp" "$IMAGES_DIR/huawei-pura-70.webp" "image/webp"
+upload "products/smartphones/huawei-nova-11-pro.webp" "$IMAGES_DIR/huawei-nova-11-pro.webp" "image/webp"
+upload "products/smartphones/huawei-nova-12i.webp" "$IMAGES_DIR/huawei-nova-12i.webp" "image/webp"
+upload "products/smartphones/huawei-nova-12s.webp" "$IMAGES_DIR/huawei-nova-12s.webp" "image/webp"
+upload "products/smartphones/honor-magic-v3.webp" "$IMAGES_DIR/honor-magic-v3.webp" "image/webp"
+upload "products/smartphones/honor-magic-v2.webp" "$IMAGES_DIR/honor-magic-v2.webp" "image/webp"
+upload "products/smartphones/honor-magic-7-pro.webp" "$IMAGES_DIR/honor-magic-7-pro.webp" "image/webp"
+upload "products/smartphones/honor-magic-6-pro.webp" "$IMAGES_DIR/honor-magic-6-pro.webp" "image/webp"
+upload "products/smartphones/honor-400-pro.webp" "$IMAGES_DIR/honor-400-pro.webp" "image/webp"
+upload "products/tablettes/honor-pad-10.webp" "$IMAGES_DIR/honor-pad-10.webp" "image/webp"
+upload "products/smartphones/honor-200.webp" "$IMAGES_DIR/honor-200.webp" "image/webp"
+upload "products/smartphones/honor-400-lite.webp" "$IMAGES_DIR/honor-400-lite.webp" "image/webp"
+upload "products/smartphones/honor-x9c.webp" "$IMAGES_DIR/honor-x9c.webp" "image/webp"
+upload "products/smartphones/honor-x7c.webp" "$IMAGES_DIR/honor-x7c.webp" "image/webp"
+upload "products/smartphones/honor-x7b.webp" "$IMAGES_DIR/honor-x7b.webp" "image/webp"
+upload "products/imprimantes/imprimante-a-reservoire-epson-l8050-rplce-l805-integre-wi-fi-usb.webp" "$IMAGES_DIR/imprimante-a-reservoire-epson-l8050-rplce-l805-integre-wi-fi-usb.webp" "image/webp"
+upload "products/imprimantes/imprimante-jet-a-reservoir-epson-l850.webp" "$IMAGES_DIR/imprimante-jet-a-reservoir-epson-l850.webp" "image/webp"
+upload "products/imprimantes/impriamnte-jet-a-reservoir-epson-l-18050.webp" "$IMAGES_DIR/impriamnte-jet-a-reservoir-epson-l-18050.webp" "image/webp"
+upload "products/imprimantes/imprimante-canon-pixma-g3430-wifi.webp" "$IMAGES_DIR/imprimante-canon-pixma-g3430-wifi.webp" "image/webp"
+upload "products/ordinateurs/lenovo-thinkbook.webp" "$IMAGES_DIR/lenovo-thinkbook.webp" "image/webp"
+upload "products/ordinateurs/lenovo-thinkbook-14-g6-intel-core-i7-16go-ram-512go-ssd.webp" "$IMAGES_DIR/lenovo-thinkbook-14-g6-intel-core-i7-16go-ram-512go-ssd.webp" "image/webp"
+upload "products/ordinateurs/lenovo-thinkpad-e14-g5-core-i7-16go-raam-512ssd.webp" "$IMAGES_DIR/lenovo-thinkpad-e14-g5-core-i7-16go-raam-512ssd.webp" "image/webp"
+upload "products/ordinateurs/lenovo-thinkpad-e16-intel-core-i7-16-go-ram-ssd-512-go-carte-graphique-2-go-ecran-16-neuf.webp" "$IMAGES_DIR/lenovo-thinkpad-e16-intel-core-i7-16-go-ram-ssd-512-go-carte-graphique-2-go-ecran-16-neuf.webp" "image/webp"
+upload "products/ordinateurs/lenovo-thinkpad-e15-intel-core-i7-16-go-ram-ssd-512-go-carte-graphique-2-go-15-6-neuf.webp" "$IMAGES_DIR/lenovo-thinkpad-e15-intel-core-i7-16-go-ram-ssd-512-go-carte-graphique-2-go-15-6-neuf.webp" "image/webp"
+upload "products/ordinateurs/lenovo-yoga-9-16-x360-tactile-intel-core-ultra-7-16-go-ram-ssd-512-go-ecran-16-neuf.webp" "$IMAGES_DIR/lenovo-yoga-9-16-x360-tactile-intel-core-ultra-7-16-go-ram-ssd-512-go-ecran-16-neuf.webp" "image/webp"
+upload "products/ordinateurs/dell-vostro-3520-intel-core-i7-8-go-ram-ssd-512-go-ecran-15-6-clavier-azerty-francais-neuf.webp" "$IMAGES_DIR/dell-vostro-3520-intel-core-i7-8-go-ram-ssd-512-go-ecran-15-6-clavier-azerty-francais-neuf.webp" "image/webp"
+upload "products/televiseurs/ecran-philips-34-incurve-gaming-ultrawide-display-346p1crh.webp" "$IMAGES_DIR/ecran-philips-34-incurve-gaming-ultrawide-display-346p1crh.webp" "image/webp"
+upload "products/televiseurs/ecran-lenovo-34-incurve-gaming-ultrawide-g34w-30.webp" "$IMAGES_DIR/ecran-lenovo-34-incurve-gaming-ultrawide-g34w-30.webp" "image/webp"
+upload "products/ordinateurs/ordinateur-de-bureau-lenovo-thinkcentre-neo-50t-gen-5-intel-core-i3-8-go-ram-ssd-512-go-plus-ecran-22.webp" "$IMAGES_DIR/ordinateur-de-bureau-lenovo-thinkcentre-neo-50t-gen-5-intel-core-i3-8-go-ram-ssd-512-go-plus-ecran-22.webp" "image/webp"
+upload "products/ordinateurs/ordinateur-de-bureau-dell-vostro-3030mt-intel-core-i7-14-generation-8-go-ram-ssd-512-go-dvd-dos-plus-ecran-22-fhd.webp" "$IMAGES_DIR/ordinateur-de-bureau-dell-vostro-3030mt-intel-core-i7-14-generation-8-go-ram-ssd-512-go-dvd-dos-plus-ecran-22-fhd.webp" "image/webp"
+upload "products/ordinateurs/bureau-hp-prodesk-400-g9-i5-8gb-512-ssd-ecran22-g5-hdmi-vga-fhd-13th.webp" "$IMAGES_DIR/bureau-hp-prodesk-400-g9-i5-8gb-512-ssd-ecran22-g5-hdmi-vga-fhd-13th.webp" "image/webp"
+upload "products/ordinateurs/bureau-hp-290-g9-i5-8gb-512-ssd-ecran22-g5-hdmi-vga-12-th.webp" "$IMAGES_DIR/bureau-hp-290-g9-i5-8gb-512-ssd-ecran22-g5-hdmi-vga-12-th.webp" "image/webp"
+upload "products/accessoires/airtag-pack-of-1.webp" "$IMAGES_DIR/airtag-pack-of-1.webp" "image/webp"
+upload "products/accessoires/airtag-pack-of-4.webp" "$IMAGES_DIR/airtag-pack-of-4.webp" "image/webp"
+upload "products/accessoires/airpods-4-anc.webp" "$IMAGES_DIR/airpods-4-anc.webp" "image/webp"
+upload "products/montres-connectees/apple-watch-ultra-2.webp" "$IMAGES_DIR/apple-watch-ultra-2.webp" "image/webp"
+upload "products/montres-connectees/apple-watch-series-10.webp" "$IMAGES_DIR/apple-watch-series-10.webp" "image/webp"
+upload "products/montres-connectees/apple-watch-series-9.webp" "$IMAGES_DIR/apple-watch-series-9.webp" "image/webp"
+upload "products/montres-connectees/apple-watch-se.webp" "$IMAGES_DIR/apple-watch-se.webp" "image/webp"
+upload "products/accessoires/apple-tv-4k-128gb-2025.webp" "$IMAGES_DIR/apple-tv-4k-128gb-2025.webp" "image/webp"
+upload "products/accessoires/trackpad-white-2025.webp" "$IMAGES_DIR/trackpad-white-2025.webp" "image/webp"
+upload "products/accessoires/magic-mouse-usb-c-white.webp" "$IMAGES_DIR/magic-mouse-usb-c-white.webp" "image/webp"
+upload "products/accessoires/magic-mouse-usb-c-black.webp" "$IMAGES_DIR/magic-mouse-usb-c-black.webp" "image/webp"
+upload "products/accessoires/magic-keyboard-imac-numeric-touch-id.webp" "$IMAGES_DIR/magic-keyboard-imac-numeric-touch-id.webp" "image/webp"
+upload "products/accessoires/magic-keyboard-imac-qwerty.webp" "$IMAGES_DIR/magic-keyboard-imac-qwerty.webp" "image/webp"
+upload "products/ordinateurs/imac-m4-2024.webp" "$IMAGES_DIR/imac-m4-2024.webp" "image/webp"
+upload "products/ordinateurs/imac-m3-2024.webp" "$IMAGES_DIR/imac-m3-2024.webp" "image/webp"
+upload "products/ordinateurs/macbook-pro-m4-max-2024.webp" "$IMAGES_DIR/macbook-pro-m4-max-2024.webp" "image/webp"
+upload "products/ordinateurs/macbook-pro-m4-pro-2024.webp" "$IMAGES_DIR/macbook-pro-m4-pro-2024.webp" "image/webp"
+upload "products/ordinateurs/macbook-pro-2023.webp" "$IMAGES_DIR/macbook-pro-2023.webp" "image/webp"
+upload "products/ordinateurs/macbook-pro-m2-2022.webp" "$IMAGES_DIR/macbook-pro-m2-2022.webp" "image/webp"
+upload "products/ordinateurs/macbook-air-m3-2023.webp" "$IMAGES_DIR/macbook-air-m3-2023.webp" "image/webp"
+upload "products/ordinateurs/macbook-air-m4-2025.webp" "$IMAGES_DIR/macbook-air-m4-2025.webp" "image/webp"
+upload "products/ordinateurs/macbook-air-m2-2024.webp" "$IMAGES_DIR/macbook-air-m2-2024.webp" "image/webp"
+upload "products/ordinateurs/macbook-air-m1-2021.webp" "$IMAGES_DIR/macbook-air-m1-2021.webp" "image/webp"
+upload "products/smartphones/iphone-16-pro-max.webp" "$IMAGES_DIR/iphone-16-pro-max.webp" "image/webp"
+upload "products/smartphones/iphone-16-plus.webp" "$IMAGES_DIR/iphone-16-plus.webp" "image/webp"
+upload "products/smartphones/iphone-16.webp" "$IMAGES_DIR/iphone-16.webp" "image/webp"
+upload "products/accessoires/xiaomi-smart-blender.webp" "$IMAGES_DIR/xiaomi-smart-blender.webp" "image/webp"
+upload "products/accessoires/xiaomi-tv-stick.webp" "$IMAGES_DIR/xiaomi-tv-stick.webp" "image/webp"
+upload "products/accessoires/xiaomi-tv-box-3.webp" "$IMAGES_DIR/xiaomi-tv-box-3.webp" "image/webp"
+upload "products/televiseurs/xiaomi-tv-a.webp" "$IMAGES_DIR/xiaomi-tv-a.webp" "image/webp"
+upload "products/televiseurs/xiaomi-tv-a-pro.webp" "$IMAGES_DIR/xiaomi-tv-a-pro.webp" "image/webp"
+upload "products/ecouteurs/mi-in-ear-headphones-basic.webp" "$IMAGES_DIR/mi-in-ear-headphones-basic.webp" "image/webp"
+upload "products/ecouteurs/redmi-buds-6-active.webp" "$IMAGES_DIR/redmi-buds-6-active.webp" "image/webp"
+upload "products/ecouteurs/redmi-buds-6-play.webp" "$IMAGES_DIR/redmi-buds-6-play.webp" "image/webp"
+upload "products/ecouteurs/redmi-buds-6-lite.webp" "$IMAGES_DIR/redmi-buds-6-lite.webp" "image/webp"
+upload "products/ecouteurs/redmi-buds-6.webp" "$IMAGES_DIR/redmi-buds-6.webp" "image/webp"
+upload "products/ecouteurs/xiaomi-buds-5.webp" "$IMAGES_DIR/xiaomi-buds-5.webp" "image/webp"
+upload "products/ecouteurs/redmi-buds-6-pro.webp" "$IMAGES_DIR/redmi-buds-6-pro.webp" "image/webp"
+upload "products/ecouteurs/xiaomi-buds-5-pro.webp" "$IMAGES_DIR/xiaomi-buds-5-pro.webp" "image/webp"
+upload "products/accessoires/xiaomi-67w-hypercharge-combo-type-a-eu.webp" "$IMAGES_DIR/xiaomi-67w-hypercharge-combo-type-a-eu.webp" "image/webp"
+upload "products/accessoires/xiaomi-45w-turbo-charging-power-adapter.webp" "$IMAGES_DIR/xiaomi-45w-turbo-charging-power-adapter.webp" "image/webp"
+upload "products/accessoires/redmi-18w-fast-charge-power-bank-20000mah.webp" "$IMAGES_DIR/redmi-18w-fast-charge-power-bank-20000mah.webp" "image/webp"
+upload "products/accessoires/xiaomi-33w-power-bank-cable-integrated-20000mah.webp" "$IMAGES_DIR/xiaomi-33w-power-bank-cable-integrated-20000mah.webp" "image/webp"
+upload "products/accessoires/xiaomi-22-5w-power-bank-10000mah.webp" "$IMAGES_DIR/xiaomi-22-5w-power-bank-10000mah.webp" "image/webp"
+upload "products/accessoires/xiaomi-212w-hypercharge-power-bank-25000mah.webp" "$IMAGES_DIR/xiaomi-212w-hypercharge-power-bank-25000mah.webp" "image/webp"
+upload "products/projecteurs/xiaomi-smart-laser-measure.webp" "$IMAGES_DIR/xiaomi-smart-laser-measure.webp" "image/webp"
+upload "products/projecteurs/mi-laser-projector-150.webp" "$IMAGES_DIR/mi-laser-projector-150.webp" "image/webp"
+upload "products/projecteurs/xiaomi-smart-projector-l1-pro.webp" "$IMAGES_DIR/xiaomi-smart-projector-l1-pro.webp" "image/webp"
+upload "products/projecteurs/xiaomi-smart-projector-l1.webp" "$IMAGES_DIR/xiaomi-smart-projector-l1.webp" "image/webp"
+upload "products/projecteurs/mi-smart-projector-2.webp" "$IMAGES_DIR/mi-smart-projector-2.webp" "image/webp"
+upload "products/reseau/mi-wi-fi-range-extender-pro.webp" "$IMAGES_DIR/mi-wi-fi-range-extender-pro.webp" "image/webp"
+upload "products/reseau/xiaomi-wifi-range-extender-n300.webp" "$IMAGES_DIR/xiaomi-wifi-range-extender-n300.webp" "image/webp"
+upload "products/reseau/mi-wifi-range-extender-ac1200-gl.webp" "$IMAGES_DIR/mi-wifi-range-extender-ac1200-gl.webp" "image/webp"
+upload "products/reseau/xiaomi-router-ax1500.webp" "$IMAGES_DIR/xiaomi-router-ax1500.webp" "image/webp"
+upload "products/reseau/xiaomi-router-ax3000t-eu.webp" "$IMAGES_DIR/xiaomi-router-ax3000t-eu.webp" "image/webp"
+upload "products/reseau/xiaomi-router-ax3200.webp" "$IMAGES_DIR/xiaomi-router-ax3200.webp" "image/webp"
+upload "products/reseau/xiaomi-router-ac1200.webp" "$IMAGES_DIR/xiaomi-router-ac1200.webp" "image/webp"
+upload "products/montres-connectees/xiaomi-smart-band-8-pro.webp" "$IMAGES_DIR/xiaomi-smart-band-8-pro.webp" "image/webp"
+upload "products/montres-connectees/redmi-watch-3-active.webp" "$IMAGES_DIR/redmi-watch-3-active.webp" "image/webp"
+upload "products/montres-connectees/xiaomi-smart-band-9.webp" "$IMAGES_DIR/xiaomi-smart-band-9.webp" "image/webp"
+upload "products/montres-connectees/xiaomi-smart-band-9-active.webp" "$IMAGES_DIR/xiaomi-smart-band-9-active.webp" "image/webp"
+upload "products/montres-connectees/xiaomi-smart-band-9-pro.webp" "$IMAGES_DIR/xiaomi-smart-band-9-pro.webp" "image/webp"
+upload "products/montres-connectees/redmi-watch-5-lite.webp" "$IMAGES_DIR/redmi-watch-5-lite.webp" "image/webp"
+upload "products/montres-connectees/redmi-watch-5-active.webp" "$IMAGES_DIR/redmi-watch-5-active.webp" "image/webp"
+upload "products/tablettes/redmi-pad-pro-wifi.webp" "$IMAGES_DIR/redmi-pad-pro-wifi.webp" "image/webp"
+upload "products/tablettes/redmi-pad-pro-5g.webp" "$IMAGES_DIR/redmi-pad-pro-5g.webp" "image/webp"
+upload "products/tablettes/redmi-pad-se.webp" "$IMAGES_DIR/redmi-pad-se.webp" "image/webp"
+upload "products/tablettes/redmi-pad-se-8-7.webp" "$IMAGES_DIR/redmi-pad-se-8-7.webp" "image/webp"
+upload "products/tablettes/xiaomi-pad-7-pro.webp" "$IMAGES_DIR/xiaomi-pad-7-pro.webp" "image/webp"
+upload "products/tablettes/redmi-pad-2.webp" "$IMAGES_DIR/redmi-pad-2.webp" "image/webp"
+upload "products/tablettes/redmi-pad-6s-pro.webp" "$IMAGES_DIR/redmi-pad-6s-pro.webp" "image/webp"
+upload "products/smartphones/xiaomi-14t.webp" "$IMAGES_DIR/xiaomi-14t.webp" "image/webp"
+upload "products/smartphones/redmi-note-14-pro-plus.webp" "$IMAGES_DIR/redmi-note-14-pro-plus.webp" "image/webp"
+upload "products/smartphones/xiaomi-15-ultra.webp" "$IMAGES_DIR/xiaomi-15-ultra.webp" "image/webp"
+upload "products/smartphones/xiaomi-15.webp" "$IMAGES_DIR/xiaomi-15.webp" "image/webp"
+upload "products/smartphones/poco-f7-pro.webp" "$IMAGES_DIR/poco-f7-pro.webp" "image/webp"
+upload "products/smartphones/poco-f7-ultra.webp" "$IMAGES_DIR/poco-f7-ultra.webp" "image/webp"
+upload "products/smartphones/poco-pad.webp" "$IMAGES_DIR/poco-pad.webp" "image/webp"
+upload "products/smartphones/poco-x7-pro.webp" "$IMAGES_DIR/poco-x7-pro.webp" "image/webp"
+upload "products/smartphones/redmi-a5.webp" "$IMAGES_DIR/redmi-a5.webp" "image/webp"
+upload "products/tablettes/samsung-tab-s10-ultra.webp" "$IMAGES_DIR/samsung-tab-s10-ultra.webp" "image/webp"
+upload "products/tablettes/samsung-tab-s9-ultra.webp" "$IMAGES_DIR/samsung-tab-s9-ultra.webp" "image/webp"
+upload "products/tablettes/samsung-tab-s9-plus.webp" "$IMAGES_DIR/samsung-tab-s9-plus.webp" "image/webp"
+upload "products/tablettes/samsung-tab-s9-fe-plus.webp" "$IMAGES_DIR/samsung-tab-s9-fe-plus.webp" "image/webp"
+upload "products/tablettes/samsung-tab-s9-fe.webp" "$IMAGES_DIR/samsung-tab-s9-fe.webp" "image/webp"
+upload "products/tablettes/samsung-tab-a9-plus.webp" "$IMAGES_DIR/samsung-tab-a9-plus.webp" "image/webp"
+upload "products/smartphones/samsung-z-fold-6.webp" "$IMAGES_DIR/samsung-z-fold-6.webp" "image/webp"
+upload "products/smartphones/samsung-z-fold-5.webp" "$IMAGES_DIR/samsung-z-fold-5.webp" "image/webp"
+upload "products/smartphones/samsung-z-fold-4.webp" "$IMAGES_DIR/samsung-z-fold-4.webp" "image/webp"
+upload "products/smartphones/samsung-z-fold-3.webp" "$IMAGES_DIR/samsung-z-fold-3.webp" "image/webp"
+upload "products/smartphones/samsung-z-flip-6.webp" "$IMAGES_DIR/samsung-z-flip-6.webp" "image/webp"
+upload "products/smartphones/samsung-s25-ultra.webp" "$IMAGES_DIR/samsung-s25-ultra.webp" "image/webp"
+upload "products/smartphones/samsung-s25-plus.webp" "$IMAGES_DIR/samsung-s25-plus.webp" "image/webp"
+upload "products/smartphones/samsung-s25.webp" "$IMAGES_DIR/samsung-s25.webp" "image/webp"
+upload "products/smartphones/samsung-s24-ultra.webp" "$IMAGES_DIR/samsung-s24-ultra.webp" "image/webp"
+upload "products/smartphones/samsung-s24-plus.webp" "$IMAGES_DIR/samsung-s24-plus.webp" "image/webp"
+upload "products/smartphones/samsung-s24-fe.webp" "$IMAGES_DIR/samsung-s24-fe.webp" "image/webp"
+upload "products/smartphones/samsung-s24.webp" "$IMAGES_DIR/samsung-s24.webp" "image/webp"
+upload "products/smartphones/samsung-s23-plus.webp" "$IMAGES_DIR/samsung-s23-plus.webp" "image/webp"
+upload "products/smartphones/samsung-s23-fe-5g.webp" "$IMAGES_DIR/samsung-s23-fe-5g.webp" "image/webp"
+upload "products/smartphones/samsung-s23.webp" "$IMAGES_DIR/samsung-s23.webp" "image/webp"
+upload "products/smartphones/samsung-a06.webp" "$IMAGES_DIR/samsung-a06.webp" "image/webp"
+upload "products/smartphones/samsung-a16.webp" "$IMAGES_DIR/samsung-a16.webp" "image/webp"
+upload "products/smartphones/samsung-a26.webp" "$IMAGES_DIR/samsung-a26.webp" "image/webp"
+upload "products/smartphones/samsung-a36.webp" "$IMAGES_DIR/samsung-a36.webp" "image/webp"
+upload "products/smartphones/samsung-a56.webp" "$IMAGES_DIR/samsung-a56.webp" "image/webp"
+upload "products/tablettes/ipad-pro-m4-2024.webp" "$IMAGES_DIR/ipad-pro-m4-2024.webp" "image/webp"
+upload "products/tablettes/ipad-air-7th-m3-2025.webp" "$IMAGES_DIR/ipad-air-7th-m3-2025.webp" "image/webp"
+upload "products/tablettes/ipad-air-6th-m2-2024.webp" "$IMAGES_DIR/ipad-air-6th-m2-2024.webp" "image/webp"
+upload "products/tablettes/ipad-mini-7-2024.webp" "$IMAGES_DIR/ipad-mini-7-2024.webp" "image/webp"
+upload "products/tablettes/ipad-mini-6-2022.webp" "$IMAGES_DIR/ipad-mini-6-2022.webp" "image/webp"
+upload "products/tablettes/ipad-11th-gen-2025.webp" "$IMAGES_DIR/ipad-11th-gen-2025.webp" "image/webp"
+upload "products/smartphones/pixel-6.webp" "$IMAGES_DIR/pixel-6.webp" "image/webp"
+upload "products/smartphones/pixel-7.webp" "$IMAGES_DIR/pixel-7.webp" "image/webp"
+upload "products/smartphones/pixel-8.webp" "$IMAGES_DIR/pixel-8.webp" "image/webp"
+upload "products/smartphones/pixel-8-pro.webp" "$IMAGES_DIR/pixel-8-pro.webp" "image/webp"
+upload "products/smartphones/pixel-9.webp" "$IMAGES_DIR/pixel-9.webp" "image/webp"
+upload "products/tablettes/ipad-10th-gen-2022.webp" "$IMAGES_DIR/ipad-10th-gen-2022.webp" "image/webp"
+upload "products/montres-connectees/redmi-watch-5.webp" "$IMAGES_DIR/redmi-watch-5.webp" "image/webp"
+upload "products/smartphones/pixel-9-pro.webp" "$IMAGES_DIR/pixel-9-pro.webp" "image/webp"
+upload "products/smartphones/pixel-9-pro-xl.webp" "$IMAGES_DIR/pixel-9-pro-xl.webp" "image/webp"
+upload "products/smartphones/pixel-9-pro-fold.webp" "$IMAGES_DIR/pixel-9-pro-fold.webp" "image/webp"
+
+echo ""
+echo "=== Upload Complete ==="
+echo "  Uploaded: $UPLOADED"
+echo "  Failed: $FAILED"
