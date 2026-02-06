@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProductFilters } from "@/components/admin/product-filters";
@@ -57,18 +58,19 @@ export default async function ProductsPage({ searchParams }: Props) {
 
   return (
     <div>
-      <AdminHeader title="Produits" />
-
-      {/* Desktop filters - instant filtering */}
-      <div className="mb-4 hidden items-center justify-between gap-3 lg:flex">
-        <ProductFilters
-          categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-          className="flex-1"
-        />
-        <Button asChild>
-          <Link href="/products/new">Nouveau produit</Link>
-        </Button>
-      </div>
+      <AdminPageHeader className="space-y-4">
+        <AdminHeader title="Produits" />
+        {/* Desktop filters - instant filtering */}
+        <div className="hidden items-center justify-between gap-3 lg:flex">
+          <ProductFilters
+            categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+            className="flex-1"
+          />
+          <Button asChild>
+            <Link href="/products/new">Nouveau produit</Link>
+          </Button>
+        </div>
+      </AdminPageHeader>
 
       {/* Mobile header with filter sheet and view switcher */}
       <ProductsPageClient

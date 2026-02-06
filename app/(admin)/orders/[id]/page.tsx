@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { getAdminOrderById } from "@/lib/db/admin/orders";
 import { OrderMainContent } from "./_components/order-main-content";
 import { OrderSidebarAsync, OrderSidebarSkeleton } from "./_components/order-sidebar";
@@ -23,25 +24,27 @@ export default async function OrderDetailPage({ params }: Props) {
 
   return (
     <div>
-      <header className="mb-6 flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          asChild
-          className="h-11 w-11 shrink-0"
-          aria-label="Retour à la liste des commandes"
-        >
-          <Link href="/orders">
-            {backIcon}
-          </Link>
-        </Button>
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold sm:text-2xl">
-            {order.order_number}
-          </h1>
-          <p className="text-sm text-muted-foreground">Détails de la commande</p>
-        </div>
-      </header>
+      <AdminPageHeader>
+        <header className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            asChild
+            className="h-11 w-11 shrink-0"
+            aria-label="Retour à la liste des commandes"
+          >
+            <Link href="/orders">
+              {backIcon}
+            </Link>
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold sm:text-2xl">
+              {order.order_number}
+            </h1>
+            <p className="text-sm text-muted-foreground">Détails de la commande</p>
+          </div>
+        </header>
+      </AdminPageHeader>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content - Synchronous since order data is already fetched */}

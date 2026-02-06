@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -110,9 +111,10 @@ export default async function AuditLogPage({ searchParams }: Props) {
 
   return (
     <div>
-      <AdminHeader title="Journal d'audit" />
-
-      <AuditLogFilters />
+      <AdminPageHeader className="space-y-4">
+        <AdminHeader title="Journal d'audit" />
+        <AuditLogFilters />
+      </AdminPageHeader>
 
       {logs.length === 0 ? (
         <div className="rounded-lg border p-8 text-center text-muted-foreground">

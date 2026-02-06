@@ -14,7 +14,7 @@ interface AdminHeaderProps {
 
 export function AdminHeader({ title, className }: AdminHeaderProps) {
   return (
-    <header className={cn("mb-6 flex items-center gap-4", className)}>
+    <header className={cn("flex items-center gap-4", className)}>
       <Sheet>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon" className="lg:hidden">

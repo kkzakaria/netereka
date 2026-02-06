@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { CustomersClientWrapper } from "./_components/customers-client-wrapper";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,7 +60,9 @@ export default async function CustomersPage({ searchParams }: Props) {
 
   return (
     <div>
-      <AdminHeader title="Utilisateurs" />
+      <AdminPageHeader>
+        <AdminHeader title="Utilisateurs" />
+      </AdminPageHeader>
 
       {/* Client wrapper handles responsive filters + data list */}
       <CustomersClientWrapper customers={customers} />
