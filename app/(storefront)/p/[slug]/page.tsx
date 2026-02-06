@@ -44,13 +44,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: `${product.name} - ${price}`,
     description,
-    keywords: [
-      product.name,
-      product.brand,
-      product.brand ? `${product.brand} Côte d'Ivoire` : null,
-      `acheter ${product.name} Abidjan`,
-      product.category_name,
-    ].filter(Boolean) as string[],
     openGraph: {
       title: `${product.name} - ${price} | ${SITE_NAME}`,
       description,
@@ -58,13 +51,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       siteName: SITE_NAME,
       images,
       locale: "fr_CI",
-      type: "article",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: `${product.name} - ${price}`,
-      description: description.slice(0, 200),
-      images: images[0] ? [images[0].url] : undefined,
+      type: "website",
     },
     alternates: {
       canonical: `/p/${slug}`,
@@ -170,8 +157,9 @@ export default async function ProductPage({ params }: Props) {
     getProductRatingStats(product.id),
   ]);
 
-  const currentYear = new Date().getFullYear();
-  const priceValidUntil = `${currentYear}-12-31`;
+  const validUntil = new Date();
+  validUntil.setDate(validUntil.getDate() + 60);
+  const priceValidUntil = validUntil.toISOString().split("T")[0];
 
   const productSchema: Record<string, unknown> = {
     "@context": "https://schema.org",
