@@ -328,22 +328,46 @@ Back-office complet + Notifications + Espace client
 
 ---
 
-### Jour 19 : Notifications (17 fév)
+### Back-office Utilisateurs (6 fév — réalisé en avance)
 
 #### Tâches
-- [ ] Setup Resend ou Brevo (email)
-- [ ] Templates emails (confirmation, expédition, livraison)
-- [ ] Setup WhatsApp Business API
-- [ ] Templates WhatsApp pré-approuvés
-- [ ] Queue Cloudflare pour envoi asynchrone
-- [ ] Triggers automatiques sur changement statut
+- [x] Séparer `/customers` (clients, role=customer) et `/users` (staff, role=admin|super_admin)
+- [x] Filtrer les requêtes DB par rôle (customers.ts + nouveau users.ts)
+- [x] Sidebar admin : deux entrées distinctes "Clients" et "Utilisateurs"
+- [x] Supprimer filtre/colonne/badge rôle des vues clients
+- [x] Créer vues utilisateurs (table desktop, cards mobile, filtres, detail)
+- [x] Page détail utilisateur (info + gestion rôle admin ↔ super_admin)
+- [x] Guards sur les pages détail (404 si rôle incorrect)
+- [x] Revalidation croisée lors des changements de rôle
 
 #### Livrables
-- [ ] Emails transactionnels fonctionnels
+- [x] Section clients dédiée aux acheteurs
+- [x] Section utilisateurs dédiée au staff admin
+
+#### Validation
+- [x] `/customers` n'affiche que les clients
+- [x] `/users` n'affiche que les admins/super_admins
+- [x] Promotion client → admin : disparaît de clients, apparaît dans utilisateurs
+- [x] Vues responsive (desktop table + mobile cards) fonctionnelles
+
+---
+
+### Jour 19 : Notifications (17 fév — emails réalisés en avance)
+
+#### Tâches
+- [x] Setup Resend (email) — `resend` v6.9.1, `lib/notifications/email.ts`
+- [x] Templates emails (confirmation commande, 6 statuts : confirmé/préparation/expédition/livré/annulé/retourné)
+- [ ] Setup WhatsApp Business API
+- [ ] Templates WhatsApp pré-approuvés
+- [ ] Queue Cloudflare pour envoi asynchrone (actuellement fire-and-forget direct)
+- [x] Triggers automatiques sur changement statut (`actions/checkout.ts`, `actions/admin/orders.ts`)
+
+#### Livrables
+- [x] Emails transactionnels fonctionnels
 - [ ] WhatsApp notifications
 
 #### Validation
-- [ ] Commande → email confirmation reçu
+- [x] Commande → email confirmation reçu
 - [ ] Changement statut → WhatsApp reçu
 
 ---
@@ -376,7 +400,8 @@ Back-office complet + Notifications + Espace client
 |---------|--------|
 | Back-office produits | ✅ |
 | Back-office commandes | ✅ |
-| Emails transactionnels | ⬜ |
+| Back-office utilisateurs (clients/staff séparés) | ✅ |
+| Emails transactionnels (Resend) | ✅ |
 | WhatsApp notifications | ⬜ |
 | Espace client complet | ✅ |
 | Avis produits | ✅ |
@@ -388,28 +413,29 @@ Back-office complet + Notifications + Espace client
 ### Objectif
 Tests, contenu, optimisation, mise en production
 
-### Jour 22-23 : Contenu & SEO (20-21 fév)
+### Jour 22-23 : Contenu & SEO (20-21 fév — largement réalisé en avance)
 
 #### Tâches
-- [ ] Rédiger CGV
-- [ ] Rédiger politique de livraison
-- [ ] Rédiger page À propos
-- [ ] Rédiger FAQ
-- [ ] Page Contact (formulaire + infos)
-- [ ] Métadonnées SEO toutes pages
-- [ ] Sitemap.xml
-- [ ] Robots.txt
-- [ ] Données structurées (Schema.org)
-- [ ] Configuration Google Search Console
-- [ ] Configuration Google Analytics 4
+- [x] Rédiger CGV → `/conditions-generales` (12 sections complètes)
+- [x] Rédiger politique de livraison → `/livraison` (zones, tarifs, délais)
+- [x] Rédiger page À propos → `/a-propos` (mission, engagements, schema LocalBusiness)
+- [x] Rédiger FAQ → `/faq` (12 Q&A + schema FAQPage)
+- [x] Page Contact → `/contact` (adresse, email, horaires)
+- [x] Métadonnées SEO toutes pages (OG, Twitter, canonical, keywords, locale fr_CI)
+- [x] Sitemap.xml → `app/sitemap.ts` (dynamique : pages statiques + produits + catégories depuis DB)
+- [x] Robots.txt → `app/robots.ts` (exclut admin, auth, filtres anti-duplicate)
+- [x] Données structurées (Schema.org) — Organization, WebSite, Product, FAQPage, LocalBusiness, Breadcrumbs
+- [ ] Configuration Google Search Console (clé de vérification à ajouter)
+- [ ] Configuration Google Analytics 4 (gtag à intégrer)
 
 #### Livrables
-- [ ] Contenu légal complet
-- [ ] SEO configuré
+- [x] Contenu légal complet
+- [x] SEO technique configuré
+- [ ] Analytics (GA4 + Search Console)
 
 #### Validation
-- [ ] Toutes pages accessibles
-- [ ] Sitemap valide
+- [x] Toutes pages accessibles
+- [x] Sitemap valide
 - [ ] GA4 reçoit des données
 
 ---
@@ -512,8 +538,8 @@ Tests, contenu, optimisation, mise en production
 
 | Critère | Status |
 |---------|--------|
-| Contenu légal complet | ⬜ |
-| SEO configuré | ⬜ |
+| Contenu légal complet | ✅ |
+| SEO configuré (hors GA4/Search Console) | ✅ |
 | Images produits | ⬜ |
 | Tests validés | ⬜ |
 | Domaine configuré | ⬜ |
@@ -536,7 +562,7 @@ Tests, contenu, optimisation, mise en production
 - [ ] Inscription/connexion OK
 - [ ] Parcours achat complet OK
 - [ ] Paiement à la livraison OK
-- [ ] Emails envoyés OK
+- [x] Emails envoyés OK (Resend)
 - [ ] WhatsApp envoyé OK
 - [ ] Back-office fonctionnel
 
@@ -545,17 +571,17 @@ Tests, contenu, optimisation, mise en production
 - [ ] Descriptions complètes
 - [ ] Prix corrects
 - [ ] Stock à jour
-- [ ] CGV publiées
-- [ ] Politique livraison publiée
+- [x] CGV publiées
+- [x] Politique livraison publiée
 
 ### SEO & Analytics
-- [ ] Titles et descriptions uniques
-- [ ] Sitemap soumis
+- [x] Titles et descriptions uniques
+- [x] Sitemap soumis
 - [ ] Google Analytics actif
 - [ ] Search Console configuré
 
 ### Légal
-- [ ] Mentions légales
+- [x] Mentions légales (CGV + À propos)
 - [ ] Politique confidentialité
 - [ ] Gestion cookies (si applicable)
 
@@ -566,17 +592,17 @@ Tests, contenu, optimisation, mise en production
 ### Contenu (à préparer en parallèle)
 | Tâche | Deadline | Status |
 |-------|----------|--------|
-| Rédiger CGV | 19 fév | ⬜ |
-| Rédiger politique livraison | 19 fév | ⬜ |
-| Rédiger page À propos | 19 fév | ⬜ |
-| Rédiger FAQ | 19 fév | ⬜ |
+| Rédiger CGV | 19 fév | ✅ |
+| Rédiger politique livraison | 19 fév | ✅ |
+| Rédiger page À propos | 19 fév | ✅ |
+| Rédiger FAQ | 19 fév | ✅ |
 | Préparer images produits | 21 fév | ⬜ |
 
 ### Infrastructure (à faire dès que possible)
 | Tâche | Deadline | Status |
 |-------|----------|--------|
 | Réserver nom de domaine | 15 fév | ⬜ |
-| Créer compte Resend/Brevo | 10 fév | ⬜ |
+| Créer compte Resend | 10 fév | ✅ |
 | Configurer WhatsApp templates | 15 fév | ⬜ |
 
 ---
