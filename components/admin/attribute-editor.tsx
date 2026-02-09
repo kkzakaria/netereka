@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,19 @@ import {
 } from "@/components/ui/select";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon, Cancel01Icon, Delete02Icon } from "@hugeicons/core-free-icons";
+
+const PREDEFINED_COLORS = [
+  { name: "Noir", hex: "#000000" },
+  { name: "Blanc", hex: "#FFFFFF" },
+  { name: "Bleu", hex: "#2563EB" },
+  { name: "Rouge", hex: "#DC2626" },
+  { name: "Vert", hex: "#16A34A" },
+  { name: "Rose", hex: "#EC4899" },
+  { name: "Violet", hex: "#7C3AED" },
+  { name: "Gris", hex: "#6B7280" },
+  { name: "Or", hex: "#D97706" },
+  { name: "Argent", hex: "#9CA3AF" },
+] as const;
 
 const PREDEFINED_ATTRIBUTES = [
   { label: "Couleur", value: "color" },
@@ -57,6 +70,96 @@ function serializeAttributes(pairs: AttributePair[]): string {
     if (k && v) obj[k] = v;
   }
   return JSON.stringify(obj);
+}
+
+function ColorValueInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const [showCustom, setShowCustom] = useState(
+    () => !!value && !PREDEFINED_COLORS.some((c) => c.name === value)
+  );
+  const [customHex, setCustomHex] = useState("#000000");
+
+  const activeHex = PREDEFINED_COLORS.find((c) => c.name === value)?.hex;
+
+  const handleSwatchClick = useCallback(
+    (name: string) => {
+      setShowCustom(false);
+      onChange(name);
+    },
+    [onChange]
+  );
+
+  const handleCustomToggle = useCallback(() => {
+    setShowCustom(true);
+    onChange("");
+  }, [onChange]);
+
+  return (
+    <div className="flex flex-1 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {PREDEFINED_COLORS.map((color) => (
+          <button
+            key={color.name}
+            type="button"
+            title={color.name}
+            onClick={() => handleSwatchClick(color.name)}
+            className={`size-6 rounded-full border border-border transition-shadow ${
+              value === color.name
+                ? "ring-2 ring-primary ring-offset-1"
+                : "hover:ring-1 hover:ring-muted-foreground"
+            }`}
+            style={{ backgroundColor: color.hex }}
+            aria-label={`Couleur ${color.name}`}
+          />
+        ))}
+        <button
+          type="button"
+          title="Personnalisé"
+          onClick={handleCustomToggle}
+          className={`flex size-6 items-center justify-center rounded-full border border-dashed border-border text-xs text-muted-foreground transition-shadow ${
+            showCustom
+              ? "ring-2 ring-primary ring-offset-1"
+              : "hover:ring-1 hover:ring-muted-foreground"
+          }`}
+          aria-label="Couleur personnalisée"
+        >
+          +
+        </button>
+        {(activeHex || (showCustom && value)) && (
+          <span className="ml-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <span
+              className="inline-block size-3.5 rounded-full border border-border"
+              style={{ backgroundColor: activeHex ?? customHex }}
+            />
+            {value}
+          </span>
+        )}
+      </div>
+      {showCustom && (
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={customHex}
+            onChange={(e) => setCustomHex(e.target.value)}
+            className="h-8 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+            aria-label="Sélecteur de couleur"
+          />
+          <Input
+            placeholder="Nom (ex: Turquoise)"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="flex-1"
+            aria-label="Nom de la couleur personnalisée"
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface AttributeEditorProps {
@@ -174,13 +277,20 @@ export function AttributeEditor({ defaultValue }: AttributeEditorProps) {
                 </SelectContent>
               </Select>
             )}
-            <Input
-              placeholder="Valeur"
-              value={pair.value}
-              onChange={(e) => updateValue(pair.id, e.target.value)}
-              aria-label={`Valeur de l'attribut ${keyLabel}`}
-              className="flex-1"
-            />
+            {pair.key === "color" ? (
+              <ColorValueInput
+                value={pair.value}
+                onChange={(val) => updateValue(pair.id, val)}
+              />
+            ) : (
+              <Input
+                placeholder="Valeur"
+                value={pair.value}
+                onChange={(e) => updateValue(pair.id, e.target.value)}
+                aria-label={`Valeur de l'attribut ${keyLabel}`}
+                className="flex-1"
+              />
+            )}
             <Button
               type="button"
               variant="ghost"
