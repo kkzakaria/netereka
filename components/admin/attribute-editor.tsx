@@ -119,8 +119,9 @@ function ColorValueInput({
 
   const handleCustomToggle = useCallback(() => {
     setShowCustom(true);
-    onChange("");
-  }, [onChange]);
+    // Keep current custom hex as value so the attribute isn't empty
+    onChange(`Personnalisé:${customHex}`);
+  }, [onChange, customHex]);
 
   function handleCustomNameChange(name: string) {
     onChange(name ? `${name}:${customHex}` : "");
@@ -128,9 +129,8 @@ function ColorValueInput({
 
   function handleCustomHexChange(hex: string) {
     setCustomHex(hex);
-    if (displayName) {
-      onChange(`${displayName}:${hex}`);
-    }
+    const name = displayName || "Personnalisé";
+    onChange(`${name}:${hex}`);
   }
 
   return (
