@@ -28,6 +28,14 @@ const PREDEFINED_COLORS = [
   { name: "Argent", hex: "#9CA3AF" },
 ] as const;
 
+const PREDEFINED_STORAGE = [
+  "32 Go", "64 Go", "128 Go", "256 Go", "512 Go", "1 To", "2 To",
+] as const;
+
+const PREDEFINED_RAM = [
+  "2 Go", "3 Go", "4 Go", "6 Go", "8 Go", "12 Go", "16 Go", "32 Go",
+] as const;
+
 const PREDEFINED_ATTRIBUTES = [
   { label: "Couleur", value: "color" },
   { label: "Stockage", value: "storage" },
@@ -167,6 +175,70 @@ function ColorValueInput({
   );
 }
 
+function ChipValueInput({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: readonly string[];
+  value: string;
+  onChange: (val: string) => void;
+  label: string;
+}) {
+  const [showCustom, setShowCustom] = useState(
+    () => !!value && !options.includes(value)
+  );
+
+  return (
+    <div className="flex flex-1 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => {
+              setShowCustom(false);
+              onChange(opt);
+            }}
+            className={`rounded-md border px-2 py-0.5 text-xs transition-colors ${
+              value === opt
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background hover:bg-muted"
+            }`}
+            aria-label={`${label} ${opt}`}
+          >
+            {opt}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            setShowCustom(true);
+            onChange("");
+          }}
+          className={`rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground transition-colors ${
+            showCustom
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border hover:bg-muted"
+          }`}
+          aria-label={`${label} personnalisé`}
+        >
+          Autre
+        </button>
+      </div>
+      {showCustom && (
+        <Input
+          placeholder={`Ex: 24 Go`}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={`Valeur personnalisée ${label}`}
+        />
+      )}
+    </div>
+  );
+}
+
 interface AttributeEditorProps {
   defaultValue?: string | null;
 }
@@ -286,6 +358,20 @@ export function AttributeEditor({ defaultValue }: AttributeEditorProps) {
               <ColorValueInput
                 value={pair.value}
                 onChange={(val) => updateValue(pair.id, val)}
+              />
+            ) : pair.key === "storage" ? (
+              <ChipValueInput
+                options={PREDEFINED_STORAGE}
+                value={pair.value}
+                onChange={(val) => updateValue(pair.id, val)}
+                label="Stockage"
+              />
+            ) : pair.key === "ram" ? (
+              <ChipValueInput
+                options={PREDEFINED_RAM}
+                value={pair.value}
+                onChange={(val) => updateValue(pair.id, val)}
+                label="RAM"
               />
             ) : (
               <Input
