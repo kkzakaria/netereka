@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,21 +53,23 @@ interface AttributePair {
   custom: boolean;
 }
 
-let nextId = 0;
-
-function parseAttributes(json: string | undefined | null): AttributePair[] {
-  if (!json) return [];
+function parseAttributes(
+  json: string | undefined | null
+): { pairs: AttributePair[]; nextId: number } {
+  if (!json) return { pairs: [], nextId: 0 };
   try {
     const obj = JSON.parse(json);
-    if (typeof obj !== "object" || obj === null) return [];
-    return Object.entries(obj).map(([key, val]) => ({
-      id: ++nextId,
+    if (typeof obj !== "object" || obj === null) return { pairs: [], nextId: 0 };
+    let id = 0;
+    const pairs = Object.entries(obj).map(([key, val]) => ({
+      id: ++id,
       key,
       value: String(val),
       custom: !PREDEFINED_ATTRIBUTES.some((a) => a.value === key),
     }));
+    return { pairs, nextId: id };
   } catch {
-    return [];
+    return { pairs: [], nextId: 0 };
   }
 }
 
@@ -117,22 +119,26 @@ function ColorValueInput({
             type="button"
             title={color.name}
             onClick={() => handleSwatchClick(color.name)}
-            className={`size-6 rounded-full border border-border transition-shadow ${
+            className={`relative size-8 rounded-full transition-shadow ${
               value === color.name
-                ? "ring-2 ring-primary ring-offset-1"
+                ? "ring-2 ring-primary ring-offset-2"
                 : "hover:ring-1 hover:ring-muted-foreground"
             }`}
-            style={{ backgroundColor: color.hex }}
             aria-label={`Couleur ${color.name}`}
-          />
+          >
+            <span
+              className="absolute inset-1 rounded-full border border-border shadow-sm"
+              style={{ backgroundColor: color.hex }}
+            />
+          </button>
         ))}
         <button
           type="button"
           title="Personnalisé"
           onClick={handleCustomToggle}
-          className={`flex size-6 items-center justify-center rounded-full border border-dashed border-border text-xs text-muted-foreground transition-shadow ${
+          className={`flex size-8 items-center justify-center rounded-full border border-dashed border-border text-xs text-muted-foreground transition-shadow ${
             showCustom
-              ? "ring-2 ring-primary ring-offset-1"
+              ? "ring-2 ring-primary ring-offset-2"
               : "hover:ring-1 hover:ring-muted-foreground"
           }`}
           aria-label="Couleur personnalisée"
@@ -201,7 +207,7 @@ function ChipValueInput({
               setShowCustom(false);
               onChange(opt);
             }}
-            className={`rounded-md border px-2 py-0.5 text-xs transition-colors ${
+            className={`rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
               value === opt
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border bg-background hover:bg-muted"
@@ -217,7 +223,7 @@ function ChipValueInput({
             setShowCustom(true);
             onChange("");
           }}
-          className={`rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground transition-colors ${
+          className={`rounded-md border border-dashed px-2.5 py-1.5 text-xs text-muted-foreground transition-colors ${
             showCustom
               ? "border-primary bg-primary text-primary-foreground"
               : "border-border hover:bg-muted"
@@ -244,17 +250,23 @@ interface AttributeEditorProps {
 }
 
 export function AttributeEditor({ defaultValue }: AttributeEditorProps) {
-  const idCounter = useRef(nextId);
-  const [pairs, setPairs] = useState<AttributePair[]>(() =>
-    parseAttributes(defaultValue)
-  );
+  const [{ pairs }, setData] = useState(() => {
+    const parsed = parseAttributes(defaultValue);
+    return { pairs: parsed.pairs, nextId: parsed.nextId };
+  });
+
+  function setPairs(updater: (prev: AttributePair[]) => AttributePair[]) {
+    setData((prev) => ({ ...prev, pairs: updater(prev.pairs) }));
+  }
 
   function addPair() {
-    idCounter.current += 1;
-    setPairs((prev) => [
-      ...prev,
-      { id: idCounter.current, key: "", value: "", custom: false },
-    ]);
+    setData((prev) => ({
+      nextId: prev.nextId + 1,
+      pairs: [
+        ...prev.pairs,
+        { id: prev.nextId + 1, key: "", value: "", custom: false },
+      ],
+    }));
   }
 
   function removePair(id: number) {
