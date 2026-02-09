@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AttributeEditor } from "@/components/admin/attribute-editor";
 import {
   Dialog,
   DialogContent,
@@ -117,17 +118,7 @@ export function VariantForm({
               defaultValue={variant?.stock_quantity ?? 0}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="v-attributes">
-              Attributs (JSON)
-            </Label>
-            <Input
-              id="v-attributes"
-              name="attributes"
-              defaultValue={variant?.attributes ?? "{}"}
-              placeholder='{"color":"Bleu","storage":"256 Go"}'
-            />
-          </div>
+          <AttributeEditor defaultValue={variant?.attributes} />
           <input type="hidden" name="is_active" value={variant?.is_active ?? 1} />
           <Button type="submit" className="w-full" disabled={isPending}>
             {isPending ? "Enregistrement..." : isEdit ? "Mettre à jour" : "Ajouter"}
