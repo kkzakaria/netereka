@@ -83,6 +83,15 @@ function serializeAttributes(pairs: AttributePair[]): string {
   return JSON.stringify(obj);
 }
 
+/** Parse a stored color value: "Bleu" or "Corail:#FF5733" */
+function parseColorValue(stored: string): { name: string; hex: string | null } {
+  const idx = stored.lastIndexOf(":#");
+  if (idx > 0 && stored.length - idx <= 8) {
+    return { name: stored.slice(0, idx), hex: stored.slice(idx + 1) };
+  }
+  return { name: stored, hex: null };
+}
+
 function ColorValueInput({
   value,
   onChange,
@@ -90,12 +99,15 @@ function ColorValueInput({
   value: string;
   onChange: (val: string) => void;
 }) {
-  const [showCustom, setShowCustom] = useState(
-    () => !!value && !PREDEFINED_COLORS.some((c) => c.name === value)
-  );
-  const [customHex, setCustomHex] = useState("#000000");
+  const parsed = parseColorValue(value);
+  const predefined = PREDEFINED_COLORS.find((c) => c.name === parsed.name);
+  const isCustom = !!value && !predefined;
 
-  const activeHex = PREDEFINED_COLORS.find((c) => c.name === value)?.hex;
+  const [showCustom, setShowCustom] = useState(() => isCustom);
+  const [customHex, setCustomHex] = useState(parsed.hex ?? "#000000");
+
+  const displayName = parsed.name;
+  const displayHex = predefined?.hex ?? parsed.hex ?? customHex;
 
   const handleSwatchClick = useCallback(
     (name: string) => {
@@ -110,6 +122,17 @@ function ColorValueInput({
     onChange("");
   }, [onChange]);
 
+  function handleCustomNameChange(name: string) {
+    onChange(name ? `${name}:${customHex}` : "");
+  }
+
+  function handleCustomHexChange(hex: string) {
+    setCustomHex(hex);
+    if (displayName) {
+      onChange(`${displayName}:${hex}`);
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -120,7 +143,7 @@ function ColorValueInput({
             title={color.name}
             onClick={() => handleSwatchClick(color.name)}
             className={`relative size-8 rounded-full transition-shadow ${
-              value === color.name
+              displayName === color.name && !showCustom
                 ? "ring-2 ring-primary ring-offset-2"
                 : "hover:ring-1 hover:ring-muted-foreground"
             }`}
@@ -145,13 +168,13 @@ function ColorValueInput({
         >
           +
         </button>
-        {(activeHex || (showCustom && value)) && (
+        {value && (
           <span className="ml-1 flex items-center gap-1 text-xs text-muted-foreground">
             <span
               className="inline-block size-3.5 rounded-full border border-border"
-              style={{ backgroundColor: activeHex ?? customHex }}
+              style={{ backgroundColor: displayHex }}
             />
-            {value}
+            {displayName}
           </span>
         )}
       </div>
@@ -159,7 +182,7 @@ function ColorValueInput({
         <div className="flex flex-col gap-2">
           <HexColorPicker
             color={customHex}
-            onChange={setCustomHex}
+            onChange={handleCustomHexChange}
             style={{ width: "100%", height: 150 }}
           />
           <div className="flex items-center gap-2">
@@ -169,8 +192,8 @@ function ColorValueInput({
             />
             <Input
               placeholder="Nom (ex: Turquoise)"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
+              value={displayName}
+              onChange={(e) => handleCustomNameChange(e.target.value)}
               className="flex-1"
               aria-label="Nom de la couleur personnalisée"
             />
@@ -292,9 +315,11 @@ export function AttributeEditor({ defaultValue }: AttributeEditorProps) {
   }
 
   function updateCustomKey(id: number, newKey: string) {
-    setPairs((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, key: newKey } : p))
-    );
+    setPairs((prev) => {
+      const conflict = prev.some((p) => p.id !== id && p.key === newKey && newKey !== "");
+      if (conflict) return prev;
+      return prev.map((p) => (p.id === id ? { ...p, key: newKey } : p));
+    });
   }
 
   function updateValue(id: number, newValue: string) {

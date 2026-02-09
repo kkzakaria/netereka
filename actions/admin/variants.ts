@@ -15,7 +15,20 @@ const variantSchema = z.object({
   price: z.coerce.number().int().min(0, "Le prix doit être positif"),
   compare_price: z.coerce.number().int().min(0).optional(),
   stock_quantity: z.coerce.number().int().min(0).default(0),
-  attributes: z.string().default("{}"),
+  attributes: z
+    .string()
+    .default("{}")
+    .refine(
+      (val) => {
+        try {
+          const obj = JSON.parse(val);
+          return typeof obj === "object" && obj !== null && !Array.isArray(obj);
+        } catch {
+          return false;
+        }
+      },
+      { message: "Attributs JSON invalides" }
+    ),
   is_active: z.coerce.number().min(0).max(1).default(1),
   sort_order: z.coerce.number().int().min(0).default(0),
 });

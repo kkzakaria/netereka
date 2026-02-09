@@ -48,7 +48,7 @@ export function VariantForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Modifier la variante" : "Ajouter une variante"}
