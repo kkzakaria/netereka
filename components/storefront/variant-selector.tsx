@@ -13,6 +13,28 @@ function parseAttributes(variant: ProductVariant): ParsedVariantAttributes {
   }
 }
 
+const COLOR_HEX_MAP: Record<string, string> = {
+  Noir: "#000000",
+  Blanc: "#FFFFFF",
+  Bleu: "#2563EB",
+  Rouge: "#DC2626",
+  Vert: "#16A34A",
+  Rose: "#EC4899",
+  Violet: "#7C3AED",
+  Gris: "#6B7280",
+  Or: "#D97706",
+  Argent: "#9CA3AF",
+};
+
+/** Parse "Bleu" or "Corail:#FF5733" into { name, hex } */
+function parseColorValue(raw: string): { name: string; hex: string | null } {
+  const idx = raw.lastIndexOf(":#");
+  if (idx > 0 && raw.length - idx <= 8) {
+    return { name: raw.slice(0, idx), hex: raw.slice(idx + 1) };
+  }
+  return { name: raw, hex: COLOR_HEX_MAP[raw] ?? null };
+}
+
 interface ProductInfo {
   id: string;
   name: string;
@@ -79,22 +101,34 @@ export function VariantSelector({
       {colors.length > 1 ? (
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">
-            Couleur : <span className="text-foreground">{selectedAttrs.color}</span>
+            Couleur :{" "}
+            <span className="text-foreground">
+              {parseColorValue(selectedAttrs.color ?? "").name}
+            </span>
           </p>
           <div className="flex flex-wrap gap-2">
-            {colors.map((color) => (
-              <button
-                key={color}
-                onClick={() => selectByAttrs(color, selectedAttrs.storage)}
-                className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
-                  selectedAttrs.color === color
-                    ? "border-primary bg-primary/10 font-medium text-primary"
-                    : "hover:border-foreground/30"
-                }`}
-              >
-                {color}
-              </button>
-            ))}
+            {colors.map((color) => {
+              const { name, hex } = parseColorValue(color);
+              return (
+                <button
+                  key={color}
+                  onClick={() => selectByAttrs(color, selectedAttrs.storage)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm transition-colors ${
+                    selectedAttrs.color === color
+                      ? "border-primary bg-primary/10 font-medium text-primary"
+                      : "hover:border-foreground/30"
+                  }`}
+                >
+                  {hex && (
+                    <span
+                      className="inline-block size-3.5 rounded-full border border-black/10"
+                      style={{ backgroundColor: hex }}
+                    />
+                  )}
+                  {name}
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : null}
