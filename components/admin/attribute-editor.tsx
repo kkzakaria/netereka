@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { HexColorPicker } from "react-colorful";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -141,21 +142,25 @@ function ColorValueInput({
         )}
       </div>
       {showCustom && (
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={customHex}
-            onChange={(e) => setCustomHex(e.target.value)}
-            className="h-8 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
-            aria-label="Sélecteur de couleur"
+        <div className="flex flex-col gap-2">
+          <HexColorPicker
+            color={customHex}
+            onChange={setCustomHex}
+            style={{ width: "100%", height: 150 }}
           />
-          <Input
-            placeholder="Nom (ex: Turquoise)"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="flex-1"
-            aria-label="Nom de la couleur personnalisée"
-          />
+          <div className="flex items-center gap-2">
+            <span
+              className="size-8 shrink-0 rounded border border-border"
+              style={{ backgroundColor: customHex }}
+            />
+            <Input
+              placeholder="Nom (ex: Turquoise)"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className="flex-1"
+              aria-label="Nom de la couleur personnalisée"
+            />
+          </div>
         </div>
       )}
     </div>
