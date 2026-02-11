@@ -710,3 +710,305 @@ INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary) VA
 
 INSERT INTO products (id, category_id, name, slug, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity) VALUES ('prod_YaY4fO4U6L', 'cat_smartphones', 'Pixel 9 Pro Fold', 'pixel-9-pro-fold-ToistK', 720000, NULL, 'GOOG-MJAM5S', 'Google', 1, 0, 10);
 INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary) VALUES ('img_tRgzndHb5n', 'prod_YaY4fO4U6L', 'products/smartphones/pixel-9-pro-fold.webp', 'Pixel 9 Pro Fold', 0, 1);
+
+-- ==============================================
+-- DIVERSIFICATION DES DONNÉES (stocks, variantes, promotions, etc.)
+-- ==============================================
+
+-- ==========================================
+-- 1. PRODUITS EN RUPTURE DE STOCK (stock_quantity = 0)
+-- ==========================================
+
+-- Nothing Phone 2 — ancien modèle épuisé
+UPDATE products SET stock_quantity = 0 WHERE id = 'prod_jiK5EME7CQ';
+
+-- MacBook Pro M2 (2022) — modèle remplacé, plus en stock
+UPDATE products SET stock_quantity = 0 WHERE id = 'prod_lY3mriX0R9';
+
+-- Samsung Z Fold 3 — ancienne génération épuisée
+UPDATE products SET stock_quantity = 0 WHERE id = 'prod_nHTCXpaqk4';
+
+-- Pixel 6 — ancien modèle épuisé
+UPDATE products SET stock_quantity = 0 WHERE id = 'prod_Uca959l1U0';
+
+-- ==========================================
+-- 2. PRODUITS EN STOCK FAIBLE (1-5 unités)
+-- ==========================================
+
+-- Nothing Phone 3a — 2 unités restantes
+UPDATE products SET stock_quantity = 2 WHERE id = 'prod_0HhIMIoqDM';
+
+-- Xiaomi Smart Laser Measure — dernière unité
+UPDATE products SET stock_quantity = 1 WHERE id = 'prod_hVny4PAdJe';
+
+-- Redmi Buds 6 Active — 3 restants
+UPDATE products SET stock_quantity = 3 WHERE id = 'prod_rF53DMkJ69';
+
+-- Samsung Z Fold 4 — 2 restants (ancien modèle)
+UPDATE products SET stock_quantity = 2 WHERE id = 'prod_-B2qugOhk0';
+
+-- iPad mini 6 (2022) — 4 restants
+UPDATE products SET stock_quantity = 4 WHERE id = 'prod_9frA9mLsiU';
+
+-- ==========================================
+-- 3. PRODUITS DÉSACTIVÉS (is_active = 0)
+-- ==========================================
+
+-- Huawei Mate X3 — retiré du catalogue (ancien modèle)
+UPDATE products SET is_active = 0 WHERE id = 'prod_cgzkWeiQ0J';
+
+-- Honor Magic V2 — retiré du catalogue
+UPDATE products SET is_active = 0 WHERE id = 'prod_mQ3Ux-Q09Z';
+
+-- ==========================================
+-- 4. PROMOTIONS (ajout de compare_price)
+-- ==========================================
+
+-- OnePlus 15 512Go : promo -100 000 XOF
+UPDATE products SET compare_price = 800000 WHERE id = 'prod_sSmRBUV0-l';
+
+-- Sony WH-1000XM5 : promo -70 000 XOF
+UPDATE products SET compare_price = 350000 WHERE id = 'prod_FDafNLx40d';
+
+-- POCO F7 Pro : promo -50 000 XOF
+UPDATE products SET compare_price = 430000 WHERE id = 'prod_VlwP9vWHmq';
+
+-- Samsung A56 : promo -40 000 XOF
+UPDATE products SET compare_price = 250000 WHERE id = 'prod_E4xUKDgvTO';
+
+-- Nothing Phone 3a : promo avant rupture
+UPDATE products SET compare_price = 400000 WHERE id = 'prod_0HhIMIoqDM';
+
+-- iPad Air 6th (M2) : promo -60 000 XOF
+UPDATE products SET compare_price = 450000 WHERE id = 'prod_DMjyxZLfqz';
+
+-- MacBook Air M3 (2023) : promo avant sortie M4
+UPDATE products SET compare_price = 1100000 WHERE id = 'prod_SfzjXgbOqH';
+
+-- ==========================================
+-- 5. VARIANTES : iPhone 16 Pro Max (stockage + couleur)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 25, base_price = 770000, compare_price = 850000 WHERE id = 'prod_VFZ9ADoJZQ';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_ip16pm_256_nat', 'prod_VFZ9ADoJZQ', '256 Go – Titane Naturel', 'APPL-1XFTAV-256-NAT', 770000, 8, '{"storage":"256 Go","color":"#968b7b"}', 0),
+  ('var_ip16pm_256_noi', 'prod_VFZ9ADoJZQ', '256 Go – Titane Noir', 'APPL-1XFTAV-256-NOI', 770000, 5, '{"storage":"256 Go","color":"#3c3b37"}', 1),
+  ('var_ip16pm_256_bla', 'prod_VFZ9ADoJZQ', '256 Go – Titane Blanc', 'APPL-1XFTAV-256-BLA', 770000, 0, '{"storage":"256 Go","color":"#f0e8d8"}', 2),
+  ('var_ip16pm_512_nat', 'prod_VFZ9ADoJZQ', '512 Go – Titane Naturel', 'APPL-1XFTAV-512-NAT', 920000, 4, '{"storage":"512 Go","color":"#968b7b"}', 3),
+  ('var_ip16pm_512_noi', 'prod_VFZ9ADoJZQ', '512 Go – Titane Noir', 'APPL-1XFTAV-512-NOI', 920000, 3, '{"storage":"512 Go","color":"#3c3b37"}', 4),
+  ('var_ip16pm_1tb_nat', 'prod_VFZ9ADoJZQ', '1 To – Titane Naturel', 'APPL-1XFTAV-1TB-NAT', 1150000, 2, '{"storage":"1 To","color":"#968b7b"}', 5),
+  ('var_ip16pm_1tb_des', 'prod_VFZ9ADoJZQ', '1 To – Titane Sable', 'APPL-1XFTAV-1TB-DES', 1150000, 0, '{"storage":"1 To","color":"#c4a96a"}', 6);
+
+-- ==========================================
+-- 6. VARIANTES : Samsung S25 Ultra (stockage + couleur)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 30, compare_price = 650000 WHERE id = 'prod_AWIJizVNSF';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_s25u_256_bleu', 'prod_AWIJizVNSF', '256 Go – Bleu Titane', 'SAMS-FC1UL5-256-BL', 550000, 10, '{"storage":"256 Go","color":"#3b4e6b"}', 0),
+  ('var_s25u_256_noir', 'prod_AWIJizVNSF', '256 Go – Noir Titane', 'SAMS-FC1UL5-256-NO', 550000, 8, '{"storage":"256 Go","color":"#2c2c2c"}', 1),
+  ('var_s25u_256_gris', 'prod_AWIJizVNSF', '256 Go – Gris Titane', 'SAMS-FC1UL5-256-GR', 550000, 0, '{"storage":"256 Go","color":"#8c8c8c"}', 2),
+  ('var_s25u_512_bleu', 'prod_AWIJizVNSF', '512 Go – Bleu Titane', 'SAMS-FC1UL5-512-BL', 650000, 6, '{"storage":"512 Go","color":"#3b4e6b"}', 3),
+  ('var_s25u_512_noir', 'prod_AWIJizVNSF', '512 Go – Noir Titane', 'SAMS-FC1UL5-512-NO', 650000, 4, '{"storage":"512 Go","color":"#2c2c2c"}', 4),
+  ('var_s25u_1tb_bleu', 'prod_AWIJizVNSF', '1 To – Bleu Titane', 'SAMS-FC1UL5-1TB-BL', 800000, 2, '{"storage":"1 To","color":"#3b4e6b"}', 5);
+
+-- ==========================================
+-- 7. VARIANTES : MacBook Air M4 (2025) (RAM/stockage + couleur)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 20, base_price = 770000 WHERE id = 'prod_8UNn7r3Kdo';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_mbam4_16_256_min', 'prod_8UNn7r3Kdo', '16 Go / 256 Go – Minuit', 'APPL-6LSAEY-16-256-MIN', 770000, 5, '{"ram":"16 Go","storage":"256 Go","color":"#2e3642"}', 0),
+  ('var_mbam4_16_256_lum', 'prod_8UNn7r3Kdo', '16 Go / 256 Go – Lumière Stellaire', 'APPL-6LSAEY-16-256-LUM', 770000, 4, '{"ram":"16 Go","storage":"256 Go","color":"#f0e6d3"}', 1),
+  ('var_mbam4_16_512_min', 'prod_8UNn7r3Kdo', '16 Go / 512 Go – Minuit', 'APPL-6LSAEY-16-512-MIN', 920000, 3, '{"ram":"16 Go","storage":"512 Go","color":"#2e3642"}', 2),
+  ('var_mbam4_24_512_sid', 'prod_8UNn7r3Kdo', '24 Go / 512 Go – Sidéral', 'APPL-6LSAEY-24-512-SID', 1100000, 2, '{"ram":"24 Go","storage":"512 Go","color":"#7a7a7e"}', 3),
+  ('var_mbam4_24_1tb_lum', 'prod_8UNn7r3Kdo', '24 Go / 1 To – Lumière Stellaire', 'APPL-6LSAEY-24-1TB-LUM', 1350000, 0, '{"ram":"24 Go","storage":"1 To","color":"#f0e6d3"}', 4);
+
+-- ==========================================
+-- 8. VARIANTES : Samsung A56 (couleur uniquement)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 40, compare_price = 250000 WHERE id = 'prod_E4xUKDgvTO';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_a56_noir', 'prod_E4xUKDgvTO', 'Noir', 'SAMS-ZJTIB7-NOI', 210000, 15, '{"color":"#1a1a1a"}', 0),
+  ('var_a56_bleu', 'prod_E4xUKDgvTO', 'Bleu Glacier', 'SAMS-ZJTIB7-BLE', 210000, 12, '{"color":"#7ba7c9"}', 1),
+  ('var_a56_lav', 'prod_E4xUKDgvTO', 'Lavande', 'SAMS-ZJTIB7-LAV', 210000, 8, '{"color":"#b8a9d1"}', 2),
+  ('var_a56_vert', 'prod_E4xUKDgvTO', 'Vert Menthe', 'SAMS-ZJTIB7-VER', 210000, 5, '{"color":"#a8d8b9"}', 3);
+
+-- ==========================================
+-- 9. VARIANTES : Galaxy Z Fold 7 — TOUTES épuisées
+-- ==========================================
+
+UPDATE products SET stock_quantity = 0 WHERE id = 'prod_WAQOPQ_04y';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_zfold7_256_noir', 'prod_WAQOPQ_04y', '256 Go – Noir', 'SAMS-IJC0UX-256-NO', 950000, 0, '{"storage":"256 Go","color":"#1a1a1a"}', 0),
+  ('var_zfold7_256_crem', 'prod_WAQOPQ_04y', '256 Go – Crème', 'SAMS-IJC0UX-256-CR', 950000, 0, '{"storage":"256 Go","color":"#f5f0e1"}', 1),
+  ('var_zfold7_512_noir', 'prod_WAQOPQ_04y', '512 Go – Noir', 'SAMS-IJC0UX-512-NO', 1100000, 0, '{"storage":"512 Go","color":"#1a1a1a"}', 2);
+
+-- ==========================================
+-- 10. VARIANTES : iPhone 16 Pro (stockage + couleur)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 18, compare_price = 750000 WHERE id = 'prod_SvHt16RKtj';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_ip16p_128_nat', 'prod_SvHt16RKtj', '128 Go – Titane Naturel', 'APPL-DPBFET-128-NAT', 650000, 6, '{"storage":"128 Go","color":"#968b7b"}', 0),
+  ('var_ip16p_256_nat', 'prod_SvHt16RKtj', '256 Go – Titane Naturel', 'APPL-DPBFET-256-NAT', 750000, 5, '{"storage":"256 Go","color":"#968b7b"}', 1),
+  ('var_ip16p_256_noi', 'prod_SvHt16RKtj', '256 Go – Titane Noir', 'APPL-DPBFET-256-NOI', 750000, 4, '{"storage":"256 Go","color":"#3c3b37"}', 2),
+  ('var_ip16p_512_noi', 'prod_SvHt16RKtj', '512 Go – Titane Noir', 'APPL-DPBFET-512-NOI', 900000, 3, '{"storage":"512 Go","color":"#3c3b37"}', 3);
+
+-- ==========================================
+-- 11. VARIANTES : Console PS5 Slim (édition)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 15, base_price = 350000 WHERE id = 'prod_ogszJmqVeJ';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_ps5_std_fc26', 'prod_ogszJmqVeJ', 'Standard + EA FC 26', 'SONY-WMDMH8-STD', 400000, 8, '{"edition":"Standard + FC 26"}', 0),
+  ('var_ps5_digital', 'prod_ogszJmqVeJ', 'Numérique', 'SONY-WMDMH8-DIG', 350000, 5, '{"edition":"Numérique"}', 1),
+  ('var_ps5_std', 'prod_ogszJmqVeJ', 'Standard (sans jeu)', 'SONY-WMDMH8-SOLO', 380000, 2, '{"edition":"Standard"}', 2);
+
+-- ==========================================
+-- 12. VARIANTES : OnePlus 13 (stockage + couleur)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 20, compare_price = 600000 WHERE id = 'prod_ahpoVYy8Tt';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_op13_256_noir', 'prod_ahpoVYy8Tt', '256 Go – Midnight Ocean', 'ONEP-5INY_O-256-NO', 530000, 8, '{"storage":"256 Go","color":"#1a2333"}', 0),
+  ('var_op13_256_vert', 'prod_ahpoVYy8Tt', '256 Go – Arctic Dawn', 'ONEP-5INY_O-256-VE', 530000, 7, '{"storage":"256 Go","color":"#d4e4d9"}', 1),
+  ('var_op13_512_noir', 'prod_ahpoVYy8Tt', '512 Go – Midnight Ocean', 'ONEP-5INY_O-512-NO', 630000, 3, '{"storage":"512 Go","color":"#1a2333"}', 2),
+  ('var_op13_512_vert', 'prod_ahpoVYy8Tt', '512 Go – Arctic Dawn', 'ONEP-5INY_O-512-VE', 630000, 0, '{"storage":"512 Go","color":"#d4e4d9"}', 3);
+
+-- ==========================================
+-- 13. VARIANTES : iPad Air 7th M3 (stockage + couleur)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 15, base_price = 490000 WHERE id = 'prod_3gvX3UQHkO';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_ipam3_128_bleu', 'prod_3gvX3UQHkO', '128 Go – Bleu', 'APPL-2CLB-Y-128-BL', 490000, 5, '{"storage":"128 Go","color":"#5b7fa6"}', 0),
+  ('var_ipam3_128_viol', 'prod_3gvX3UQHkO', '128 Go – Mauve', 'APPL-2CLB-Y-128-VI', 490000, 4, '{"storage":"128 Go","color":"#b8a0c8"}', 1),
+  ('var_ipam3_256_bleu', 'prod_3gvX3UQHkO', '256 Go – Bleu', 'APPL-2CLB-Y-256-BL', 580000, 3, '{"storage":"256 Go","color":"#5b7fa6"}', 2),
+  ('var_ipam3_256_lum', 'prod_3gvX3UQHkO', '256 Go – Lumière Stellaire', 'APPL-2CLB-Y-256-LU', 580000, 3, '{"storage":"256 Go","color":"#f0e6d3"}', 3);
+
+-- ==========================================
+-- 14. VARIANTES : Xiaomi 15 Ultra (stockage)
+-- ==========================================
+
+UPDATE products SET stock_quantity = 12, compare_price = 780000 WHERE id = 'prod_0hH_jay24s';
+
+INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity, attributes, sort_order) VALUES
+  ('var_x15u_256', 'prod_0hH_jay24s', '256 Go – Noir', 'XIAO-SS3T2Z-256', 680000, 6, '{"storage":"256 Go","color":"#1a1a1a"}', 0),
+  ('var_x15u_512', 'prod_0hH_jay24s', '512 Go – Noir', 'XIAO-SS3T2Z-512', 780000, 4, '{"storage":"512 Go","color":"#1a1a1a"}', 1),
+  ('var_x15u_512_whi', 'prod_0hH_jay24s', '512 Go – Blanc', 'XIAO-SS3T2Z-512W', 780000, 2, '{"storage":"512 Go","color":"#f5f5f5"}', 2);
+
+-- ==========================================
+-- 15. ATTRIBUTS PRODUIT (specs)
+-- ==========================================
+
+-- iPhone 16 Pro Max
+INSERT INTO product_attributes (id, product_id, name, value) VALUES
+  ('attr_ip16pm_ecran', 'prod_VFZ9ADoJZQ', 'Écran', '6.9" Super Retina XDR OLED'),
+  ('attr_ip16pm_puce', 'prod_VFZ9ADoJZQ', 'Processeur', 'A18 Pro'),
+  ('attr_ip16pm_cam', 'prod_VFZ9ADoJZQ', 'Caméra', '48 MP + 48 MP Ultra-angle + 12 MP Téléphoto 5x'),
+  ('attr_ip16pm_bat', 'prod_VFZ9ADoJZQ', 'Batterie', '4685 mAh'),
+  ('attr_ip16pm_os', 'prod_VFZ9ADoJZQ', 'OS', 'iOS 18');
+
+-- Samsung S25 Ultra
+INSERT INTO product_attributes (id, product_id, name, value) VALUES
+  ('attr_s25u_ecran', 'prod_AWIJizVNSF', 'Écran', '6.9" Dynamic AMOLED 2X, 120Hz'),
+  ('attr_s25u_puce', 'prod_AWIJizVNSF', 'Processeur', 'Snapdragon 8 Elite'),
+  ('attr_s25u_cam', 'prod_AWIJizVNSF', 'Caméra', '200 MP + 50 MP Ultra-angle + 50 MP Téléphoto 5x'),
+  ('attr_s25u_bat', 'prod_AWIJizVNSF', 'Batterie', '5000 mAh'),
+  ('attr_s25u_spen', 'prod_AWIJizVNSF', 'S Pen', 'Intégré');
+
+-- MacBook Air M4
+INSERT INTO product_attributes (id, product_id, name, value) VALUES
+  ('attr_mbam4_ecran', 'prod_8UNn7r3Kdo', 'Écran', '13.6" Liquid Retina'),
+  ('attr_mbam4_puce', 'prod_8UNn7r3Kdo', 'Processeur', 'Apple M4'),
+  ('attr_mbam4_auto', 'prod_8UNn7r3Kdo', 'Autonomie', 'Jusqu''à 18h'),
+  ('attr_mbam4_poids', 'prod_8UNn7r3Kdo', 'Poids', '1,24 kg');
+
+-- ==========================================
+-- 16. IMAGES SECONDAIRES (produits populaires)
+-- ==========================================
+
+-- iPhone 16 Pro Max — images supplémentaires
+INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary) VALUES
+  ('img_ip16pm_side', 'prod_VFZ9ADoJZQ', 'products/smartphones/iphone-16-pro-max.webp', 'iPhone 16 Pro Max – Vue latérale', 1, 0),
+  ('img_ip16pm_back', 'prod_VFZ9ADoJZQ', 'products/smartphones/iphone-16-pro-max.webp', 'iPhone 16 Pro Max – Vue arrière', 2, 0);
+
+-- Samsung S25 Ultra — images supplémentaires
+INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary) VALUES
+  ('img_s25u_side', 'prod_AWIJizVNSF', 'products/smartphones/samsung-s25-ultra.webp', 'Samsung S25 Ultra – Vue latérale', 1, 0),
+  ('img_s25u_spen', 'prod_AWIJizVNSF', 'products/smartphones/samsung-s25-ultra.webp', 'Samsung S25 Ultra – S Pen', 2, 0);
+
+-- MacBook Air M4 — images supplémentaires
+INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary) VALUES
+  ('img_mbam4_open', 'prod_8UNn7r3Kdo', 'products/ordinateurs/macbook-air-m4-2025.webp', 'MacBook Air M4 – Ouvert', 1, 0),
+  ('img_mbam4_close', 'prod_8UNn7r3Kdo', 'products/ordinateurs/macbook-air-m4-2025.webp', 'MacBook Air M4 – Fermé', 2, 0);
+
+-- ==========================================
+-- 17. AVIS CLIENTS
+-- ==========================================
+
+INSERT INTO reviews (id, product_id, user_id, rating, comment, is_verified_purchase, created_at) VALUES
+  ('rev_ip16pm_1', 'prod_VFZ9ADoJZQ', 'user_client_test', 5, 'Excellent téléphone, la caméra est incroyable ! Livraison rapide à Cocody.', 1, datetime('now', '-15 days')),
+  ('rev_ip16pm_2', 'prod_VFZ9ADoJZQ', 'user_client_test', 4, 'Très bon produit mais le prix est élevé. Autonomie correcte.', 1, datetime('now', '-10 days')),
+  ('rev_s25u_1', 'prod_AWIJizVNSF', 'user_client_test', 5, 'Le S Pen est un vrai plus. Écran magnifique, je recommande !', 1, datetime('now', '-12 days')),
+  ('rev_s25u_2', 'prod_AWIJizVNSF', 'user_client_test', 4, 'Bon téléphone, Galaxy AI très utile. Un peu lourd.', 0, datetime('now', '-8 days')),
+  ('rev_mbam4_1', 'prod_8UNn7r3Kdo', 'user_client_test', 5, 'Parfait pour le travail, léger et puissant. La puce M4 est rapide.', 1, datetime('now', '-20 days')),
+  ('rev_sony_1', 'prod_FDafNLx40d', 'user_client_test', 5, 'Réduction de bruit exceptionnelle. Confort parfait même après des heures.', 1, datetime('now', '-25 days')),
+  ('rev_sony_2', 'prod_FDafNLx40d', 'user_client_test', 3, 'Bon casque mais le boîtier de charge est fragile.', 0, datetime('now', '-18 days')),
+  ('rev_ps5_1', 'prod_ogszJmqVeJ', 'user_client_test', 5, 'Console au top ! FC 26 inclus, super affaire.', 1, datetime('now', '-7 days')),
+  ('rev_op13_1', 'prod_ahpoVYy8Tt', 'user_client_test', 4, 'Excellent rapport qualité/prix, charge ultra rapide.', 1, datetime('now', '-5 days')),
+  ('rev_a56_1', 'prod_E4xUKDgvTO', 'user_client_test', 4, 'Très bon pour le prix. Batterie qui tient 2 jours.', 1, datetime('now', '-3 days')),
+  ('rev_a56_2', 'prod_E4xUKDgvTO', 'user_client_test', 5, 'Design soigné, la couleur Lavande est superbe !', 0, datetime('now', '-1 day')),
+  ('rev_poco_1', 'prod_VlwP9vWHmq', 'user_client_test', 4, 'Performances gaming excellentes pour le prix.', 1, datetime('now', '-6 days')),
+  ('rev_noth3a_1', 'prod_0HhIMIoqDM', 'user_client_test', 4, 'Design unique avec les LED, appareil original et performant.', 1, datetime('now', '-14 days'));
+
+-- ==========================================
+-- 18. CODES PROMO
+-- ==========================================
+
+INSERT INTO promo_codes (id, code, description, discount_type, discount_value, min_order_amount, max_uses, used_count, starts_at, expires_at, is_active) VALUES
+  ('promo_bienvenue', 'BIENVENUE', 'Remise de bienvenue pour les nouveaux clients', 'percentage', 10, 50000, 100, 12, datetime('now', '-30 days'), datetime('now', '+60 days'), 1),
+  ('promo_noel', 'NOEL2025', 'Promo fin d''année 2025', 'fixed', 15000, 100000, 50, 50, datetime('now', '-60 days'), datetime('now', '-10 days'), 0),
+  ('promo_livraison', 'LIVRAISON0', 'Livraison offerte dès 200 000 XOF', 'fixed', 3000, 200000, NULL, 35, datetime('now', '-15 days'), datetime('now', '+30 days'), 1),
+  ('promo_flash', 'FLASH20', 'Vente flash 20%', 'percentage', 20, 150000, 20, 3, datetime('now', '-1 day'), datetime('now', '+2 days'), 1);
+
+-- ==========================================
+-- 19. STOCKS VARIÉS POUR LES PRODUITS EXISTANTS (plus réalistes)
+-- ==========================================
+
+-- Smartphones populaires : stocks plus importants
+UPDATE products SET stock_quantity = 25 WHERE id = 'prod_H1T_kUu5tb'; -- REDMI Note 15 Pro+
+UPDATE products SET stock_quantity = 30 WHERE id = 'prod_XJy8ciwtSM'; -- Samsung Galaxy A17
+UPDATE products SET stock_quantity = 15 WHERE id = 'prod_wdeu06fH9E'; -- HONOR Magic 8 Pro
+UPDATE products SET stock_quantity = 20 WHERE id = 'prod_SsQhFPEgkK'; -- XIAOMI 15 Ultra 1TB
+
+-- Montres : stock moyen
+UPDATE products SET stock_quantity = 15 WHERE id = 'prod_x7jfx0NWLo'; -- Huawei Watch D2
+
+-- Accessoires : stocks élevés (petits produits)
+UPDATE products SET stock_quantity = 50 WHERE id = 'prod_zTXnjOYv2R'; -- AirTag (pack 1)
+UPDATE products SET stock_quantity = 30 WHERE id = 'prod_GKMlVAJDMC'; -- AirTag (pack 4)
+UPDATE products SET stock_quantity = 40 WHERE id = 'prod_an_X2z5huS'; -- Power Bank 20000mAh
+UPDATE products SET stock_quantity = 35 WHERE id = 'prod_JhQf4gCitR'; -- Power Bank 33W
+
+-- Anciens modèles : stocks réduits
+UPDATE products SET stock_quantity = 5 WHERE id = 'prod_MzqoMKEOBT'; -- Samsung Z Fold 5
+UPDATE products SET stock_quantity = 6 WHERE id = 'prod_0t3T8PzOU3'; -- Samsung S23+
+UPDATE products SET stock_quantity = 5 WHERE id = 'prod_ZaZLDIsvJW'; -- Samsung S23
+UPDATE products SET stock_quantity = 7 WHERE id = 'prod_vNM5z9WTAW'; -- MacBook Air M1 (2021)
+
+-- Écouteurs populaires : stocks variés
+UPDATE products SET stock_quantity = 25 WHERE id = 'prod_v90yBDvz22'; -- Mi In-Ear (pas cher)
+UPDATE products SET stock_quantity = 20 WHERE id = 'prod_z3ZEExs71f'; -- Redmi Buds 6
+UPDATE products SET stock_quantity = 8 WHERE id = 'prod_LQhETW8Htz'; -- OnePlus Buds Pro 3
