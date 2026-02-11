@@ -49,7 +49,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | nu
       [product.id]
     ),
     query<ProductAttribute>(
-      "SELECT * FROM product_attributes WHERE product_id = ?",
+      "SELECT * FROM product_attributes WHERE product_id = ? ORDER BY name ASC",
       [product.id]
     ),
   ]);

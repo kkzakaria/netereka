@@ -120,7 +120,7 @@ export async function getAdminProductById(
       [product.id]
     ),
     query<ProductAttribute>(
-      "SELECT * FROM product_attributes WHERE product_id = ?",
+      "SELECT * FROM product_attributes WHERE product_id = ? ORDER BY name ASC",
       [product.id]
     ),
   ]);

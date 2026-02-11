@@ -1,5 +1,3 @@
-"use client";
-
 import type { ProductAttribute } from "@/lib/db/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -47,7 +45,7 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
         </TabsList>
 
         <TabsContent value="description">
-          <DescriptionContent description={description} />
+          <DescriptionContent description={description!} />
         </TabsContent>
 
         <TabsContent value="characteristics">
