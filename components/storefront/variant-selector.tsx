@@ -26,10 +26,12 @@ const COLOR_HEX_MAP: Record<string, string> = {
   Argent: "#9CA3AF",
 };
 
+const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{3,8}$/;
+
 /** Parse "Bleu", "Corail:#FF5733", or "#968b7b" into { name, hex } */
 function parseColorValue(raw: string): { name: string; hex: string | null } {
   // Pure hex value like "#968b7b"
-  if (/^#[0-9A-Fa-f]{3,8}$/.test(raw)) {
+  if (HEX_COLOR_REGEX.test(raw)) {
     return { name: raw, hex: raw };
   }
   // "Name:#hex" format like "Corail:#FF5733"
