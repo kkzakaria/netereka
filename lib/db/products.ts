@@ -1,5 +1,5 @@
 import { query, queryFirst } from "@/lib/db";
-import type { Product, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
+import type { Product, ProductAttribute, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
 
 export async function getProductsByCategory(
   categoryId: string,
@@ -39,7 +39,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | nu
   );
   if (!product) return null;
 
-  const [images, variants] = await Promise.all([
+  const [images, variants, attributes] = await Promise.all([
     query<ProductImage>(
       "SELECT * FROM product_images WHERE product_id = ? ORDER BY sort_order ASC",
       [product.id]
@@ -48,9 +48,13 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | nu
       "SELECT * FROM product_variants WHERE product_id = ? AND is_active = 1 ORDER BY price ASC",
       [product.id]
     ),
+    query<ProductAttribute>(
+      "SELECT * FROM product_attributes WHERE product_id = ? ORDER BY name ASC",
+      [product.id]
+    ),
   ]);
 
-  return { ...product, images, variants };
+  return { ...product, images, variants, attributes };
 }
 
 export async function getFeaturedProducts(limit = 10): Promise<Product[]> {

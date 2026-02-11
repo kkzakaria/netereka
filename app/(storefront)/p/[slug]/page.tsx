@@ -8,6 +8,7 @@ import { VariantSelector } from "@/components/storefront/variant-selector";
 import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
+import { ProductDetails } from "@/components/storefront/product-details";
 import { StarRating } from "@/components/storefront/star-rating";
 import { JsonLd } from "@/components/seo/json-ld";
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
@@ -303,16 +304,14 @@ export default async function ProductPage({ params }: Props) {
             </div>
           )}
 
-          {product.description ? (
-            <div className="border-t pt-4">
-              <h3 className="mb-2 text-sm font-semibold">Description</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {product.description}
-              </p>
-            </div>
-          ) : null}
         </div>
       </div>
+
+      {/* Description & Characteristics */}
+      <ProductDetails
+        description={product.description}
+        attributes={product.attributes}
+      />
 
       {/* Reviews */}
       <Suspense fallback={null}>

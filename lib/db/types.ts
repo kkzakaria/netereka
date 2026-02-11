@@ -55,9 +55,17 @@ export interface ProductImage {
   is_primary: number;
 }
 
+export interface ProductAttribute {
+  id: string;
+  product_id: string;
+  name: string;
+  value: string;
+}
+
 export interface ProductDetail extends Product {
   images: ProductImage[];
   variants: ProductVariant[];
+  attributes: ProductAttribute[];
 }
 
 export interface ParsedVariantAttributes {

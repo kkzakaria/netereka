@@ -1,6 +1,7 @@
 import { query, queryFirst } from "@/lib/db";
 import type {
   Product,
+  ProductAttribute,
   ProductDetail,
   ProductImage,
   ProductVariant,
@@ -109,7 +110,7 @@ export async function getAdminProductById(
   );
   if (!product) return null;
 
-  const [images, variants] = await Promise.all([
+  const [images, variants, attributes] = await Promise.all([
     query<ProductImage>(
       "SELECT * FROM product_images WHERE product_id = ? ORDER BY sort_order ASC",
       [product.id]
@@ -118,7 +119,11 @@ export async function getAdminProductById(
       "SELECT * FROM product_variants WHERE product_id = ? ORDER BY sort_order ASC",
       [product.id]
     ),
+    query<ProductAttribute>(
+      "SELECT * FROM product_attributes WHERE product_id = ? ORDER BY name ASC",
+      [product.id]
+    ),
   ]);
 
-  return { ...product, images, variants };
+  return { ...product, images, variants, attributes };
 }
