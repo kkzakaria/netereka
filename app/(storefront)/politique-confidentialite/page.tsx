@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
+import { JsonLd } from "@/components/seo/json-ld";
 
 export const metadata: Metadata = {
   title: "Politique de Confidentialité",
@@ -9,8 +10,23 @@ export const metadata: Metadata = {
 };
 
 export default function PolitiqueConfidentialitePage() {
+  const webPageSchema = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: "Politique de Confidentialité",
+    description: `Découvrez comment ${SITE_NAME} collecte, utilise et protège vos données personnelles.`,
+    url: `${SITE_URL}/politique-confidentialite`,
+    inLanguage: "fr",
+    publisher: {
+      "@type": "Organization",
+      name: SITE_NAME,
+      url: SITE_URL,
+    },
+  };
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
+      <JsonLd data={webPageSchema} />
       <h1 className="mb-8 text-3xl font-bold">Politique de Confidentialité</h1>
       <p className="mb-6 text-sm text-muted-foreground">
         Dernière mise à jour : février 2026
@@ -148,8 +164,9 @@ export default function PolitiqueConfidentialitePage() {
         <section>
           <h2 className="text-xl font-semibold">7. Vos droits</h2>
           <p>
-            Conformément à la réglementation en vigueur en Côte d&apos;Ivoire, vous
-            disposez des droits suivants sur vos données personnelles :
+            Conformément à la loi n°2013-450 du 19 juin 2013 relative à la protection
+            des données à caractère personnel en Côte d&apos;Ivoire, vous disposez des
+            droits suivants sur vos données personnelles :
           </p>
           <ul className="list-disc space-y-1 pl-6">
             <li>
