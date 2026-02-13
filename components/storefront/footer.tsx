@@ -34,7 +34,7 @@ export function Footer() {
         <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-4">
           {/* Brand */}
           <div>
-            <Link href="/" className="inline-block">
+            <Link href="/" className="inline-block" aria-label="NETEREKA — Accueil">
               <Image
                 src="/logo.png"
                 alt={SITE_NAME}
