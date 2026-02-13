@@ -58,6 +58,9 @@ export const metadata: Metadata = {
       "fr-CI": SITE_URL,
     },
   },
+  verification: {
+    google: "eTGvr_PnIZo_IlPTvpB3mnFRdQ7Hks6T6Xp4wlHOAAw",
+  },
 };
 
 const organizationSchema = {
