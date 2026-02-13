@@ -98,16 +98,17 @@ export const useCartStore = create<CartState>()(
 );
 
 export function useCartHydrated() {
-  const [hydrated, setHydrated] = useState(() => useCartStore.persist.hasHydrated());
+  const [hydrated, setHydrated] = useState(
+    () => useCartStore.persist?.hasHydrated?.() ?? false
+  );
 
-  // Catch hydration that completed between useState init and effect setup
-  if (!hydrated && useCartStore.persist.hasHydrated()) {
+  if (!hydrated && (useCartStore.persist?.hasHydrated?.() ?? false)) {
     setHydrated(true);
   }
 
   useEffect(() => {
-    const unsub = useCartStore.persist.onFinishHydration(() => setHydrated(true));
-    return unsub;
+    const unsub = useCartStore.persist?.onFinishHydration?.(() => setHydrated(true));
+    return () => unsub?.();
   }, []);
   return hydrated;
 }

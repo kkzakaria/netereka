@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { SITE_NAME } from "@/lib/utils/constants";
+import { CookieSettingsButton } from "@/components/storefront/cookie-settings-button";
 
 const footerLinks = {
   boutique: {
@@ -75,6 +76,9 @@ export function Footer() {
             &copy; {new Date().getFullYear()} {SITE_NAME}. Tous droits
             réservés. Paiement à la livraison uniquement.
           </p>
+          <div className="mt-2">
+            <CookieSettingsButton />
+          </div>
         </div>
       </div>
     </footer>
