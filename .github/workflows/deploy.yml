@@ -46,6 +46,8 @@ jobs:
 
       - name: Build worker
         run: npm run build:worker
+        env:
+          NEXT_PUBLIC_R2_URL: ${{ vars.NEXT_PUBLIC_R2_URL }}
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
