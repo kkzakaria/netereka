@@ -22,7 +22,6 @@ export function AddToCartButton({ item, className, disabled }: AddToCartButtonPr
   }, []);
 
   function handleClick() {
-    if (disabled) return;
     add(item);
     setAdded(true);
     if (timerRef.current) clearTimeout(timerRef.current);

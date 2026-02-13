@@ -221,6 +221,13 @@ export default async function ProductPage({ params }: Props) {
     }),
   };
 
+  const comparePrice = product.compare_price;
+  const hasDiscount = comparePrice != null && comparePrice > product.base_price;
+  const discountPercent = hasDiscount
+    ? Math.round(((comparePrice - product.base_price) / comparePrice) * 100)
+    : 0;
+  const isOutOfStock = product.stock_quantity <= 0;
+
   const breadcrumbItems = [
     { name: "Accueil", href: "/" },
     ...(product.category_slug && product.category_name
@@ -286,15 +293,7 @@ export default async function ProductPage({ params }: Props) {
               }}
             />
           ) : (
-            (() => {
-              const comparePrice = product.compare_price;
-              const hasDiscount = comparePrice != null && comparePrice > product.base_price;
-              const discountPercent = hasDiscount
-                ? Math.round(((comparePrice - product.base_price) / comparePrice) * 100)
-                : 0;
-              const isOutOfStock = product.stock_quantity <= 0;
-              return (
-                <div className="space-y-4">
+            <div className="space-y-4">
                   <div>
                     <div className="flex items-center gap-3">
                       <p className="text-2xl font-bold">
@@ -328,8 +327,6 @@ export default async function ProductPage({ params }: Props) {
                     }}
                   />
                 </div>
-              );
-            })()
           )}
 
         </div>
