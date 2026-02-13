@@ -64,7 +64,7 @@ Infrastructure technique + Authentification + Catalogue de base
 - [x] Installer dépendances (Tailwind, shadcn/ui, Zustand, etc.)
 - [x] Créer structure dossiers selon architecture
 - [x] Configurer ESLint, Prettier, TypeScript strict
-- [ ] Premier déploiement test sur Cloudflare
+- [x] Premier déploiement test sur Cloudflare (13 fév — Workers Paid, domaine netereka.ci)
 
 #### Livrables
 - [x] Projet qui build et déploie sur Cloudflare
@@ -158,7 +158,7 @@ npm run db:seed     # Données de test insérées
 
 | Critère | Status |
 |---------|--------|
-| Projet déployé sur Cloudflare | ⬜ |
+| Projet déployé sur Cloudflare | ✅ |
 | Auth email fonctionnelle | ✅ |
 | Auth OAuth 3 providers | ⬜ (clés à configurer) |
 | Catalogue produits affiché | ✅ |
@@ -175,8 +175,8 @@ Panier + Checkout + Gestion commandes
 
 #### Tâches
 - [x] Store Zustand pour panier (état local, persistance localStorage versionnée)
-- [ ] Sync panier avec KV (persistance serveur) → reporté à l'intégration auth
-- [ ] Merge panier anonyme → authentifié → reporté à l'intégration auth
+- [x] Sync panier avec KV (persistance serveur) — PR #47
+- [x] Merge panier anonyme → authentifié — PR #47
 - [x] Actions : ajouter, modifier quantité (max 10), supprimer
 - [x] Drawer panier (slide from right, Escape, body scroll lock)
 - [x] Page `/cart` complète (récapitulatif, vider avec confirmation)
@@ -425,18 +425,18 @@ Tests, contenu, optimisation, mise en production
 - [x] Sitemap.xml → `app/sitemap.ts` (dynamique : pages statiques + produits + catégories depuis DB)
 - [x] Robots.txt → `app/robots.ts` (exclut admin, auth, filtres anti-duplicate)
 - [x] Données structurées (Schema.org) — Organization, WebSite, Product, FAQPage, LocalBusiness, Breadcrumbs
-- [ ] Configuration Google Search Console (clé de vérification à ajouter)
-- [ ] Configuration Google Analytics 4 (gtag à intégrer)
+- [x] Configuration Google Search Console (meta tag vérification ajoutée)
+- [x] Configuration Google Analytics 4 (gtag conditionnel au consentement cookies — PR #48)
 
 #### Livrables
 - [x] Contenu légal complet
 - [x] SEO technique configuré
-- [ ] Analytics (GA4 + Search Console)
+- [x] Analytics (GA4 + Search Console)
 
 #### Validation
 - [x] Toutes pages accessibles
 - [x] Sitemap valide
-- [ ] GA4 reçoit des données
+- [x] GA4 conditionnel au consentement cookies
 
 ---
 
@@ -482,21 +482,21 @@ Tests, contenu, optimisation, mise en production
 
 ---
 
-### Jour 27 : Nom de Domaine & DNS (25 fév)
+### Jour 27 : Nom de Domaine & DNS (13 fév — réalisé en avance)
 
 #### Tâches
-- [ ] Acheter domaine (netereka.ci ou alternative)
-- [ ] Configurer DNS sur Cloudflare
-- [ ] Certificat SSL actif
-- [ ] Redirection www → apex (ou inverse)
-- [ ] Tester accès production
+- [x] Acheter domaine netereka.ci
+- [x] Configurer DNS sur Cloudflare (A records proxied + Workers routes)
+- [x] Certificat SSL actif (Cloudflare Universal SSL)
+- [x] Routes www.netereka.ci + netereka.ci configurées
+- [x] Tester accès production
 
 #### Livrables
-- [ ] Site accessible sur domaine final
+- [x] Site accessible sur domaine final
 
 #### Validation
-- [ ] https://netereka.ci fonctionne
-- [ ] SSL valide (cadenas vert)
+- [x] https://netereka.ci fonctionne
+- [x] SSL valide (cadenas vert)
 
 ---
 
@@ -539,23 +539,23 @@ Tests, contenu, optimisation, mise en production
 | Critère | Status |
 |---------|--------|
 | Contenu légal complet | ✅ |
-| SEO configuré (hors GA4/Search Console) | ✅ |
+| SEO configuré (GA4 + Search Console) | ✅ |
 | Images produits | ⬜ |
 | Tests validés | ⬜ |
-| Domaine configuré | ⬜ |
+| Domaine configuré | ✅ |
 | Lighthouse > 90 | ⬜ |
-| **SITE EN LIGNE** | ⬜ |
+| **SITE EN LIGNE** | ✅ |
 
 ---
 
 ## 📋 Checklist Pré-lancement
 
 ### Technique
-- [ ] HTTPS actif
+- [x] HTTPS actif (Cloudflare Universal SSL)
 - [ ] Toutes pages chargent < 3s
 - [ ] Mobile responsive parfait
 - [ ] Formulaires validés
-- [ ] Erreurs 404 gérées
+- [x] Erreurs 404 gérées (page not-found custom)
 - [ ] Erreurs 500 gérées avec page erreur
 
 ### Fonctionnel
@@ -577,13 +577,13 @@ Tests, contenu, optimisation, mise en production
 ### SEO & Analytics
 - [x] Titles et descriptions uniques
 - [x] Sitemap soumis
-- [ ] Google Analytics actif
-- [ ] Search Console configuré
+- [x] Google Analytics actif (conditionnel au consentement)
+- [x] Search Console configuré (meta tag vérification)
 
 ### Légal
 - [x] Mentions légales (CGV + À propos)
-- [ ] Politique confidentialité
-- [ ] Gestion cookies (si applicable)
+- [x] Politique confidentialité (mise à jour avec Google Analytics)
+- [x] Gestion cookies (bandeau consentement + personnalisation — PR #48)
 
 ---
 
@@ -601,7 +601,7 @@ Tests, contenu, optimisation, mise en production
 ### Infrastructure (à faire dès que possible)
 | Tâche | Deadline | Status |
 |-------|----------|--------|
-| Réserver nom de domaine | 15 fév | ⬜ |
+| Réserver nom de domaine | 15 fév | ✅ (netereka.ci) |
 | Créer compte Resend | 10 fév | ✅ |
 | Configurer WhatsApp templates | 15 fév | ⬜ |
 
@@ -620,7 +620,8 @@ Tests, contenu, optimisation, mise en production
 ### Blockers Log
 | Date | Blocker | Impact | Résolution |
 |------|---------|--------|------------|
-| - | - | - | - |
+| 13 fév | opennextjs-cloudflare: "Node.js middleware not supported" | Build bloqué | Convertir proxy.ts → middleware.ts (Edge runtime) |
+| 13 fév | Worker exceeds 3 MiB free plan limit (3.9 MiB gzipped) | Deploy bloqué | Upgrade Workers Paid plan ($5/mois) |
 
 ---
 

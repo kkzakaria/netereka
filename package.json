@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "build:worker": "npx opennextjs-cloudflare",
+    "build:worker": "npx opennextjs-cloudflare build",
     "preview": "npx wrangler dev",
     "deploy": "npm run build:worker && npx wrangler deploy",
     "start": "next start",
@@ -22,7 +22,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@hugeicons/core-free-icons": "^3.1.1",
     "@hugeicons/react": "^1.1.4",
-    "@opennextjs/cloudflare": "^1.16.1",
+    "@opennextjs/cloudflare": "^1.16.4",
     "better-auth": "^1.4.18",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
