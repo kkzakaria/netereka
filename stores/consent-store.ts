@@ -33,19 +33,19 @@ export const useConsentStore = create<ConsentState>()(
 );
 
 export function useConsentHydrated() {
-  const [hydrated, setHydrated] = useState(() =>
-    useConsentStore.persist.hasHydrated()
+  const [hydrated, setHydrated] = useState(
+    () => useConsentStore.persist?.hasHydrated?.() ?? false
   );
 
-  if (!hydrated && useConsentStore.persist.hasHydrated()) {
+  if (!hydrated && (useConsentStore.persist?.hasHydrated?.() ?? false)) {
     setHydrated(true);
   }
 
   useEffect(() => {
-    const unsub = useConsentStore.persist.onFinishHydration(() =>
+    const unsub = useConsentStore.persist?.onFinishHydration?.(() =>
       setHydrated(true)
     );
-    return unsub;
+    return () => unsub?.();
   }, []);
 
   return hydrated;

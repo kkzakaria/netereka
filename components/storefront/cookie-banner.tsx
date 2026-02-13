@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useConsentStore, useConsentHydrated } from "@/stores/consent-store";
+import { useConsentStore } from "@/stores/consent-store";
 import { Button } from "@/components/ui/button";
 
 export function CookieBanner() {
   const consent = useConsentStore((s) => s.consent);
   const { acceptAll, rejectAll, updateConsent } = useConsentStore();
-  const hydrated = useConsentHydrated();
+  const [mounted, setMounted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [analyticsToggle, setAnalyticsToggle] = useState(false);
 
-  // Don't render until hydrated or if user already consented
-  if (!hydrated || consent !== null) return null;
+  useEffect(() => setMounted(true), []);
+
+  // Don't render until mounted (avoids hydration mismatch) or if already consented
+  if (!mounted || consent !== null) return null;
 
   if (showSettings) {
     return (

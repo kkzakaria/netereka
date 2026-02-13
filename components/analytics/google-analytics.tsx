@@ -1,16 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Script from "next/script";
-import { useConsentStore, useConsentHydrated } from "@/stores/consent-store";
+import { useConsentStore } from "@/stores/consent-store";
 
 const GA_ID = process.env.NEXT_PUBLIC_GA4_ID;
 
 export function GoogleAnalytics() {
   const consent = useConsentStore((s) => s.consent);
-  const hydrated = useConsentHydrated();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   if (!GA_ID) return null;
-  if (!hydrated) return null;
+  if (!mounted) return null;
   if (!consent?.analytics) return null;
 
   return (
