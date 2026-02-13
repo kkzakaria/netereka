@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -8,6 +7,7 @@ interface ConsentState {
   consent: { analytics: boolean } | null;
   acceptAll: () => void;
   rejectAll: () => void;
+  resetConsent: () => void;
   updateConsent: (category: "analytics", value: boolean) => void;
 }
 
@@ -20,6 +20,8 @@ export const useConsentStore = create<ConsentState>()(
 
       rejectAll: () => set({ consent: { analytics: false } }),
 
+      resetConsent: () => set({ consent: null }),
+
       updateConsent: (_category, value) =>
         set(() => ({
           consent: { analytics: value },
@@ -31,22 +33,3 @@ export const useConsentStore = create<ConsentState>()(
     }
   )
 );
-
-export function useConsentHydrated() {
-  const [hydrated, setHydrated] = useState(
-    () => useConsentStore.persist?.hasHydrated?.() ?? false
-  );
-
-  if (!hydrated && (useConsentStore.persist?.hasHydrated?.() ?? false)) {
-    setHydrated(true);
-  }
-
-  useEffect(() => {
-    const unsub = useConsentStore.persist?.onFinishHydration?.(() =>
-      setHydrated(true)
-    );
-    return () => unsub?.();
-  }, []);
-
-  return hydrated;
-}

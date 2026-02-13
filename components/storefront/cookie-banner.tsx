@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useConsentStore } from "@/stores/consent-store";
+import { useMounted } from "@/hooks/use-mounted";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 
 export function CookieBanner() {
   const consent = useConsentStore((s) => s.consent);
   const { acceptAll, rejectAll, updateConsent } = useConsentStore();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
   const [showSettings, setShowSettings] = useState(false);
   const [analyticsToggle, setAnalyticsToggle] = useState(false);
-
-  useEffect(() => setMounted(true), []);
 
   // Don't render until mounted (avoids hydration mismatch) or if already consented
   if (!mounted || consent !== null) return null;
@@ -51,20 +51,10 @@ export function CookieBanner() {
                   utilisez le site pour l&apos;améliorer.
                 </p>
               </div>
-              <button
-                role="switch"
-                aria-checked={analyticsToggle}
-                onClick={() => setAnalyticsToggle(!analyticsToggle)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 ${
-                  analyticsToggle ? "bg-primary" : "bg-muted"
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block size-5 rounded-full bg-background shadow-sm ring-0 transition-transform ${
-                    analyticsToggle ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
+              <Switch
+                checked={analyticsToggle}
+                onCheckedChange={setAnalyticsToggle}
+              />
             </div>
           </div>
 

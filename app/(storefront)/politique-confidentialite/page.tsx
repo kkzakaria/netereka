@@ -133,6 +133,10 @@ export default function PolitiqueConfidentialitePage() {
               <strong>Resend</strong> — envoi des emails transactionnels (confirmations de
               commande, notifications)
             </li>
+            <li>
+              <strong>Google Analytics</strong> — mesure d&apos;audience anonymisée
+              (uniquement si vous avez donné votre consentement via le bandeau cookies)
+            </li>
           </ul>
           <p>
             Ces prestataires n&apos;ont accès qu&apos;aux données strictement nécessaires à
