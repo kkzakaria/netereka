@@ -20,6 +20,8 @@ declare global {
   }
 }
 
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
 export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -29,10 +31,10 @@ export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
   onErrorRef.current = onError;
 
   const renderWidget = () => {
-    if (!containerRef.current || !window.turnstile || widgetIdRef.current)
+    if (!containerRef.current || !window.turnstile || widgetIdRef.current || !TURNSTILE_SITE_KEY)
       return;
     widgetIdRef.current = window.turnstile.render(containerRef.current, {
-      sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!,
+      sitekey: TURNSTILE_SITE_KEY,
       callback: (token: string) => onVerifyRef.current(token),
       "error-callback": () => onErrorRef.current?.(),
       theme: "auto",
@@ -43,6 +45,8 @@ export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
     renderWidget();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (!TURNSTILE_SITE_KEY) return null;
 
   return (
     <>
