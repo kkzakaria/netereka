@@ -22,6 +22,7 @@ const footerLinks = {
     title: "Légal",
     links: [
       { label: "Conditions générales de vente", href: "/conditions-generales" },
+      { label: "Politique de confidentialité", href: "/politique-confidentialite" },
     ],
   },
 };

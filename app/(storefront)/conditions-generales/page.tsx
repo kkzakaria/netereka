@@ -161,7 +161,11 @@ export default function CGVPage() {
             Ces données ne sont en aucun cas cédées ou vendues à des tiers. Le client dispose
             d&apos;un droit d&apos;accès, de rectification et de suppression de ses données
             personnelles, qu&apos;il peut exercer via son espace client ou en contactant
-            notre service client.
+            notre service client. Pour plus de détails, consultez notre{" "}
+            <Link href="/politique-confidentialite" className="text-primary hover:underline">
+              politique de confidentialité
+            </Link>
+            .
           </p>
         </section>
 
