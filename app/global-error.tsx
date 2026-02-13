@@ -1,11 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
+
 export default function GlobalError({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    console.error("Global error:", error);
+  }, [error]);
   return (
     <html lang="fr">
       <body
@@ -44,7 +50,10 @@ export default function GlobalError({
               border: "none",
               borderRadius: "0.75rem",
               cursor: "pointer",
+              transition: "opacity 0.2s",
             }}
+            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.9")}
+            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
           >
             Réessayer
           </button>
