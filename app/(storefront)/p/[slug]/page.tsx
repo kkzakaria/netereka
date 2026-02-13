@@ -221,6 +221,13 @@ export default async function ProductPage({ params }: Props) {
     }),
   };
 
+  const comparePrice = product.compare_price;
+  const hasDiscount = comparePrice != null && comparePrice > product.base_price;
+  const discountPercent = hasDiscount
+    ? Math.round(((comparePrice - product.base_price) / comparePrice) * 100)
+    : 0;
+  const isOutOfStock = product.stock_quantity <= 0;
+
   const breadcrumbItems = [
     { name: "Accueil", href: "/" },
     ...(product.category_slug && product.category_name
@@ -287,21 +294,39 @@ export default async function ProductPage({ params }: Props) {
             />
           ) : (
             <div className="space-y-4">
-              <p className="text-2xl font-bold">
-                {formatPrice(product.base_price)}
-              </p>
-              <AddToCartButton
-                item={{
-                  productId: product.id,
-                  variantId: null,
-                  name: product.name,
-                  variantName: null,
-                  price: product.base_price,
-                  imageUrl: product.image_url ?? product.images[0]?.url ?? null,
-                  slug: product.slug,
-                }}
-              />
-            </div>
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <p className="text-2xl font-bold">
+                        {formatPrice(product.base_price)}
+                      </p>
+                      {hasDiscount && (
+                        <span className="rounded-md bg-destructive px-2 py-0.5 text-xs font-bold text-white">
+                          -{discountPercent}%
+                        </span>
+                      )}
+                    </div>
+                    {hasDiscount && (
+                      <p className="text-sm text-muted-foreground line-through">
+                        {formatPrice(comparePrice)}
+                      </p>
+                    )}
+                  </div>
+                  {isOutOfStock && (
+                    <p className="text-sm font-medium text-destructive">Rupture de stock</p>
+                  )}
+                  <AddToCartButton
+                    disabled={isOutOfStock}
+                    item={{
+                      productId: product.id,
+                      variantId: null,
+                      name: product.name,
+                      variantName: null,
+                      price: product.base_price,
+                      imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+                      slug: product.slug,
+                    }}
+                  />
+                </div>
           )}
 
         </div>
