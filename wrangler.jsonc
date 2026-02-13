@@ -3,6 +3,11 @@
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": ".open-next/worker.js",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "netereka.ci/*", "zone_name": "netereka.ci" },
+    { "pattern": "www.netereka.ci/*", "zone_name": "netereka.ci" }
+  ],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -11,15 +16,13 @@
     {
       "binding": "DB",
       "database_name": "netereka-db",
-      // Replace with actual database_id from `npx wrangler d1 create netereka-db`
-      "database_id": "LOCAL_DB_ID"
+      "database_id": "4f7ff29e-aa15-47a3-a01c-68792a90f9ba"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "KV",
-      // Replace with actual id from `npx wrangler kv namespace create KV`
-      "id": "LOCAL_KV_ID"
+      "id": "35fe4cd4dd084a629f0ebe1a795064db"
     }
   ],
   "r2_buckets": [

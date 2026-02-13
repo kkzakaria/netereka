@@ -10,7 +10,7 @@ export async function Header() {
   const session = await getOptionalSession();
 
   const userForMenu = session?.user
-    ? { id: session.user.id, name: session.user.name, email: session.user.email, image: session.user.image, role: session.user.role }
+    ? { id: session.user.id, name: session.user.name, email: session.user.email, image: session.user.image ?? undefined, role: session.user.role ?? undefined }
     : null;
 
   return (

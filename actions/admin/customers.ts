@@ -113,7 +113,7 @@ export async function toggleCustomerActive(
 
   // Note: better-auth user table doesn't have is_active column
   // This is a no-op placeholder until user status management is implemented
-  const newActive = 0;
+  const newActive: number = 0;
 
   const db = await getDB();
   const updateStmt = db
