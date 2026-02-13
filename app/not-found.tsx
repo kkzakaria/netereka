@@ -25,6 +25,9 @@ export default function NotFound() {
           Retour à l&apos;accueil
         </Link>
       </main>
+      <footer className="border-t py-4 text-center text-xs text-muted-foreground">
+        <p>&copy; {new Date().getFullYear()} NETEREKA. Tous droits réservés.</p>
+      </footer>
     </>
   );
 }

@@ -14,7 +14,7 @@ export default async function AdminLayout({
   const session = await requireAdmin();
 
   return (
-    <AdminUserProvider user={{ ...session.user, role: session.user.role as "admin" | "super_admin" }}>
+    <AdminUserProvider user={session.user}>
     <ViewProvider>
       <div className="flex min-h-dvh">
         <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 overflow-y-auto border-r bg-sidebar lg:block">
