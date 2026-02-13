@@ -200,10 +200,10 @@ export default function PolitiqueConfidentialitePage() {
 
         <section>
           <h2 className="text-xl font-semibold">8. Cookies</h2>
-          <p>
-            Notre site utilise uniquement des cookies techniques strictement nécessaires au
-            fonctionnement du service :
-          </p>
+          <p>Notre site utilise deux catégories de cookies :</p>
+          <h3 className="mt-3 text-base font-medium">
+            Cookies nécessaires (toujours actifs)
+          </h3>
           <ul className="list-disc space-y-1 pl-6">
             <li>
               <strong>Cookie de session</strong> — maintient votre connexion active (durée :
@@ -214,9 +214,24 @@ export default function PolitiqueConfidentialitePage() {
               du panier
             </li>
           </ul>
+          <p className="text-sm text-muted-foreground">
+            Ces cookies sont indispensables au fonctionnement du site et ne peuvent pas être
+            désactivés.
+          </p>
+          <h3 className="mt-3 text-base font-medium">
+            Cookies analytiques (soumis à votre consentement)
+          </h3>
+          <ul className="list-disc space-y-1 pl-6">
+            <li>
+              <strong>Google Analytics 4</strong> — nous aide à comprendre comment vous utilisez
+              le site afin de l&apos;améliorer. Ces cookies collectent des données anonymisées
+              sur les pages visitées et les interactions.
+            </li>
+          </ul>
           <p>
-            Ces cookies ne collectent aucune donnée à des fins publicitaires ou de profilage.
-            Aucun cookie tiers n&apos;est déposé sans votre consentement préalable.
+            Les cookies analytiques ne sont déposés qu&apos;après votre consentement explicite
+            via le bandeau affiché lors de votre première visite. Vous pouvez modifier votre
+            choix à tout moment depuis le lien « Gérer les cookies » en pied de page.
           </p>
         </section>
 
