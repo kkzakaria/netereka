@@ -8,10 +8,15 @@ import { cartItemKey } from "@/lib/types/cart";
 import { saveCart, clearServerCart } from "@/actions/cart";
 
 const MAX_QUANTITY = 10;
+const MAX_CART_ITEMS = 50;
 
+let debounceTimer: ReturnType<typeof setTimeout>;
 function persistToServer() {
-  const items = useCartStore.getState().items;
-  saveCart(items).catch(() => {});
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    const items = useCartStore.getState().items;
+    saveCart(items).catch(() => {});
+  }, 500);
 }
 
 interface CartState {
@@ -44,9 +49,10 @@ export const useCartStore = create<CartState>()(
                 : i
             );
           } else {
+            if (state.items.length >= MAX_CART_ITEMS) return state;
             newItems = [...state.items, { ...item, quantity: Math.min(quantity, MAX_QUANTITY) }];
           }
-          queueMicrotask(persistToServer);
+          persistToServer();
           return { items: newItems, drawerOpen: true };
         }),
 
@@ -54,7 +60,7 @@ export const useCartStore = create<CartState>()(
         set((state) => {
           const key = cartItemKey({ productId, variantId });
           const newItems = state.items.filter((i) => cartItemKey(i) !== key);
-          queueMicrotask(persistToServer);
+          persistToServer();
           return { items: newItems };
         }),
 
@@ -70,12 +76,12 @@ export const useCartStore = create<CartState>()(
               cartItemKey(i) === key ? { ...i, quantity: clamped } : i
             );
           }
-          queueMicrotask(persistToServer);
+          persistToServer();
           return { items: newItems };
         }),
 
       clear: () => {
-        clearServerCart().catch(() => {});
+        clearServerCart().catch((e) => console.error("[cart] clearServerCart failed", e));
         set({ items: [] });
       },
 

@@ -5,6 +5,13 @@ import { authClient } from "@/lib/auth/client";
 import { useCartStore, useCartHydrated } from "@/stores/cart-store";
 import { syncCart } from "@/actions/cart";
 
+function mergeAndSync() {
+  const localItems = useCartStore.getState().items;
+  syncCart(localItems)
+    .then((merged) => useCartStore.getState().setItems(merged))
+    .catch(() => {});
+}
+
 export function CartSync() {
   const session = authClient.useSession();
   const hydrated = useCartHydrated();
@@ -17,25 +24,16 @@ export function CartSync() {
     const userId = session.data?.user?.id ?? null;
     const prevUserId = prevUserIdRef.current;
 
-    // Skip the very first render (undefined → initial value)
+    // First evaluation after hydration — set baseline
     if (prevUserId === undefined) {
       prevUserIdRef.current = userId;
-      // On first load with active session, sync cart
-      if (userId) {
-        const localItems = useCartStore.getState().items;
-        syncCart(localItems).then((merged) => {
-          useCartStore.getState().setItems(merged);
-        }).catch(() => {});
-      }
+      if (userId) mergeAndSync();
       return;
     }
 
     // Login: null → userId
     if (!prevUserId && userId) {
-      const localItems = useCartStore.getState().items;
-      syncCart(localItems).then((merged) => {
-        useCartStore.getState().setItems(merged);
-      }).catch(() => {});
+      mergeAndSync();
     }
 
     // Logout: userId → null — clear local cart but keep KV for next login
