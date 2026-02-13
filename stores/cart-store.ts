@@ -5,8 +5,14 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CartItem } from "@/lib/types/cart";
 import { cartItemKey } from "@/lib/types/cart";
+import { saveCart, clearServerCart } from "@/actions/cart";
 
 const MAX_QUANTITY = 10;
+
+function persistToServer() {
+  const items = useCartStore.getState().items;
+  saveCart(items).catch(() => {});
+}
 
 interface CartState {
   items: CartItem[];
@@ -15,6 +21,7 @@ interface CartState {
   remove: (productId: string, variantId: string | null) => void;
   updateQuantity: (productId: string, variantId: string | null, quantity: number) => void;
   clear: () => void;
+  setItems: (items: CartItem[]) => void;
   openDrawer: () => void;
   closeDrawer: () => void;
 }
@@ -29,43 +36,51 @@ export const useCartStore = create<CartState>()(
         set((state) => {
           const key = cartItemKey(item);
           const existing = state.items.find((i) => cartItemKey(i) === key);
+          let newItems: CartItem[];
           if (existing) {
-            return {
-              items: state.items.map((i) =>
-                cartItemKey(i) === key
-                  ? { ...i, quantity: Math.min(i.quantity + quantity, MAX_QUANTITY) }
-                  : i
-              ),
-              drawerOpen: true,
-            };
+            newItems = state.items.map((i) =>
+              cartItemKey(i) === key
+                ? { ...i, quantity: Math.min(i.quantity + quantity, MAX_QUANTITY) }
+                : i
+            );
+          } else {
+            newItems = [...state.items, { ...item, quantity: Math.min(quantity, MAX_QUANTITY) }];
           }
-          return {
-            items: [...state.items, { ...item, quantity: Math.min(quantity, MAX_QUANTITY) }],
-            drawerOpen: true,
-          };
+          queueMicrotask(persistToServer);
+          return { items: newItems, drawerOpen: true };
         }),
 
       remove: (productId, variantId) =>
         set((state) => {
           const key = cartItemKey({ productId, variantId });
-          return { items: state.items.filter((i) => cartItemKey(i) !== key) };
+          const newItems = state.items.filter((i) => cartItemKey(i) !== key);
+          queueMicrotask(persistToServer);
+          return { items: newItems };
         }),
 
       updateQuantity: (productId, variantId, quantity) =>
         set((state) => {
           const key = cartItemKey({ productId, variantId });
+          let newItems: CartItem[];
           if (quantity <= 0) {
-            return { items: state.items.filter((i) => cartItemKey(i) !== key) };
-          }
-          const clamped = Math.min(quantity, MAX_QUANTITY);
-          return {
-            items: state.items.map((i) =>
+            newItems = state.items.filter((i) => cartItemKey(i) !== key);
+          } else {
+            const clamped = Math.min(quantity, MAX_QUANTITY);
+            newItems = state.items.map((i) =>
               cartItemKey(i) === key ? { ...i, quantity: clamped } : i
-            ),
-          };
+            );
+          }
+          queueMicrotask(persistToServer);
+          return { items: newItems };
         }),
 
-      clear: () => set({ items: [] }),
+      clear: () => {
+        clearServerCart().catch(() => {});
+        set({ items: [] });
+      },
+
+      setItems: (items) => set({ items }),
+
       openDrawer: () => set({ drawerOpen: true }),
       closeDrawer: () => set({ drawerOpen: false }),
     }),

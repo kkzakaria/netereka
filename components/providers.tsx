@@ -1,3 +1,10 @@
+import { CartSync } from "@/components/storefront/cart-sync";
+
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <CartSync />
+      {children}
+    </>
+  );
 }
