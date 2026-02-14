@@ -41,23 +41,23 @@ describe("slugify", () => {
 });
 
 describe("formatPrice", () => {
-  it("formate un prix avec le suffixe FCFA", () => {
+  it("formate un prix en XOF avec indicateur CFA", () => {
     const result = formatPrice(15000);
     expect(result).toContain("15");
     expect(result).toContain("000");
-    expect(result).toContain("FCFA");
+    // Re-exported from lib/utils/format — uses Intl currency format (F CFA)
+    expect(result).toMatch(/CFA/);
   });
 
   it("formate zéro", () => {
     const result = formatPrice(0);
     expect(result).toContain("0");
-    expect(result).toContain("FCFA");
+    expect(result).toMatch(/CFA/);
   });
 
   it("formate un grand nombre avec séparateurs", () => {
     const result = formatPrice(1500000);
-    expect(result).toContain("FCFA");
-    // Le séparateur de milliers est présent (espace ou point selon locale)
+    expect(result).toMatch(/CFA/);
     expect(result).toMatch(/1.*500.*000/);
   });
 });

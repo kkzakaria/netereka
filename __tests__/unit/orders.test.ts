@@ -49,6 +49,14 @@ describe("isValidStatusTransition", () => {
     expect(isValidStatusTransition("confirmed", "preparing")).toBe(true);
   });
 
+  it("permet confirmed → cancelled", () => {
+    expect(isValidStatusTransition("confirmed", "cancelled")).toBe(true);
+  });
+
+  it("permet preparing → cancelled", () => {
+    expect(isValidStatusTransition("preparing", "cancelled")).toBe(true);
+  });
+
   it("permet preparing → shipping", () => {
     expect(isValidStatusTransition("preparing", "shipping")).toBe(true);
   });
