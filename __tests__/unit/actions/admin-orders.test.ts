@@ -3,13 +3,17 @@ import { mockAdminSession, mockCustomerSession } from "../../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
+  redirect: vi.fn((url: string): never => {
+    const error = new Error(`NEXT_REDIRECT: ${url}`) as Error & { digest: string };
+    error.digest = `NEXT_REDIRECT;${url}`;
+    throw error;
+  }),
   queryFirst: vi.fn(),
   execute: vi.fn(),
   refundOrderStock: vi.fn(),
   getAdminOrders: vi.fn(),
   getAdminOrderCount: vi.fn(),
   notifyOrderStatusUpdate: vi.fn(),
-  redirect: vi.fn((url: string) => { throw new Error(`NEXT_REDIRECT: ${url}`); }),
   dbPrepare: vi.fn(),
 }));
 

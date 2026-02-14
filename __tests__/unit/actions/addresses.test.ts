@@ -3,13 +3,17 @@ import { mockCustomerSession } from "../../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
+  redirect: vi.fn((url: string): never => {
+    const error = new Error(`NEXT_REDIRECT: ${url}`) as Error & { digest: string };
+    error.digest = `NEXT_REDIRECT;${url}`;
+    throw error;
+  }),
   createAddress: vi.fn(),
   updateAddress: vi.fn(),
   deleteAddress: vi.fn(),
   setDefaultAddress: vi.fn(),
   getAddressById: vi.fn(),
   getDeliveryZoneByCommune: vi.fn(),
-  redirect: vi.fn((url: string) => { throw new Error(`NEXT_REDIRECT: ${url}`); }),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));

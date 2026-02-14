@@ -3,9 +3,13 @@ import { mockCustomerSession } from "../../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
+  redirect: vi.fn((url: string): never => {
+    const error = new Error(`NEXT_REDIRECT: ${url}`) as Error & { digest: string };
+    error.digest = `NEXT_REDIRECT;${url}`;
+    throw error;
+  }),
   queryFirst: vi.fn(),
   atomicToggleWishlist: vi.fn(),
-  redirect: vi.fn((url: string) => { throw new Error(`NEXT_REDIRECT: ${url}`); }),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));

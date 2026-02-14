@@ -1,16 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  RedirectError,
-  mockCustomerSession,
-  mockAdminSession,
-  mockSuperAdminSession,
-} from "../helpers/mocks";
-
-// ─── Hoisted mocks ───
+import { mockCustomerSession, mockAdminSession, mockSuperAdminSession } from "../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
-  redirect: vi.fn((url: string) => { throw new (class extends Error { digest: string; constructor(u: string) { super(`NEXT_REDIRECT: ${u}`); this.digest = `NEXT_REDIRECT;${u}`; } })(url); }),
+  redirect: vi.fn((url: string): never => {
+    const error = new Error(`NEXT_REDIRECT: ${url}`) as Error & { digest: string };
+    error.digest = `NEXT_REDIRECT;${url}`;
+    throw error;
+  }),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));

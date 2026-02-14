@@ -1,6 +1,5 @@
-/**
- * Shared mock session data for tests.
- */
+// ─── Session fixtures ───
+
 export const mockCustomerSession = {
   user: {
     id: "user-1",
@@ -33,14 +32,3 @@ export const mockSuperAdminSession = {
   },
   session: { id: "sess-3", expiresAt: new Date("2099-01-01") },
 };
-
-/**
- * Custom error class to simulate Next.js redirect behavior.
- */
-export class RedirectError extends Error {
-  public readonly digest: string;
-  constructor(public readonly url: string) {
-    super(`NEXT_REDIRECT: ${url}`);
-    this.digest = `NEXT_REDIRECT;${url}`;
-  }
-}
