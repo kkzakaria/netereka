@@ -113,10 +113,18 @@ export function useCartHydrated() {
   return hydrated;
 }
 
+/** Pure selector — total number of items in cart. */
+export const selectCartItemCount = (s: CartState) =>
+  s.items.reduce((sum, i) => sum + i.quantity, 0);
+
+/** Pure selector — cart subtotal in XOF. */
+export const selectCartSubtotal = (s: CartState) =>
+  s.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
 export function useCartItemCount() {
-  return useCartStore((s) => s.items.reduce((sum, i) => sum + i.quantity, 0));
+  return useCartStore(selectCartItemCount);
 }
 
 export function useCartSubtotal() {
-  return useCartStore((s) => s.items.reduce((sum, i) => sum + i.price * i.quantity, 0));
+  return useCartStore(selectCartSubtotal);
 }

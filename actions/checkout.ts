@@ -5,9 +5,16 @@ import { checkoutSchema, type CheckoutInput, type CheckoutOutput } from "@/lib/v
 import { query, queryFirst } from "@/lib/db";
 import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
 import { getAddressById, createAddress } from "@/lib/db/addresses";
-import { createOrderWithItems, generateOrderNumber } from "@/lib/db/orders";
+import { createOrderWithItems } from "@/lib/db/orders";
+import { generateOrderNumber } from "@/lib/utils/order-number";
 import type { Product, ProductVariant, PromoCode } from "@/lib/db/types";
 import { notifyOrderConfirmation } from "@/lib/notifications";
+import {
+  validatePromoEligibility,
+  calculateDiscount,
+  calculateOrderTotal,
+  calculateSubtotal,
+} from "@/lib/utils/checkout";
 
 // ---------- internal promo validation (no auth check) ----------
 
@@ -38,34 +45,14 @@ async function resolvePromoCode(
 
   if (!promo) return invalidPromo("Code promo invalide");
 
-  const now = Date.now();
-  if (promo.starts_at && now < new Date(promo.starts_at).getTime()) {
-    return invalidPromo("Ce code promo n'est pas encore actif");
-  }
-  if (promo.expires_at && now > new Date(promo.expires_at).getTime()) {
-    return invalidPromo("Ce code promo a expire");
-  }
-  if (promo.max_uses && promo.used_count >= promo.max_uses) {
-    return invalidPromo("Ce code promo a atteint sa limite d'utilisation");
-  }
-  if (promo.min_order_amount && subtotal < promo.min_order_amount) {
-    return invalidPromo(
-      `Montant minimum de commande: ${promo.min_order_amount} FCFA`
-    );
-  }
+  const eligibilityError = validatePromoEligibility(promo, subtotal);
+  if (eligibilityError) return invalidPromo(eligibilityError);
 
-  const rawDiscount =
-    promo.discount_type === "percentage"
-      ? Math.round((subtotal * promo.discount_value) / 100)
-      : promo.discount_value;
-
-  // Cap discount at subtotal to prevent negative totals
-  const discount = Math.min(rawDiscount, subtotal);
-
-  const label =
-    promo.discount_type === "percentage"
-      ? `-${promo.discount_value}%`
-      : `-${promo.discount_value} FCFA`;
+  const { discount, label } = calculateDiscount(
+    promo.discount_type,
+    promo.discount_value,
+    subtotal
+  );
 
   return { valid: true, discount, promoCodeId: promo.id, label, error: null };
 }
@@ -211,10 +198,7 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   }
 
   // 7. Calculate totals
-  const subtotal = validatedItems.reduce(
-    (sum, item) => sum + item.unitPrice * item.quantity,
-    0
-  );
+  const subtotal = calculateSubtotal(validatedItems);
   const deliveryFee = zone.fee;
 
   // 8. Validate promo code if provided (internal call, no double auth)
@@ -230,7 +214,7 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     promoCodeId = promoResult.promoCodeId;
   }
 
-  const total = Math.max(0, subtotal + deliveryFee - discountAmount);
+  const total = calculateOrderTotal(subtotal, deliveryFee, discountAmount);
 
   // 9. Optionally save new address
   if (!data.savedAddressId && data.saveAddress) {
