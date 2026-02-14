@@ -5,7 +5,8 @@ import { checkoutSchema, type CheckoutInput, type CheckoutOutput } from "@/lib/v
 import { query, queryFirst } from "@/lib/db";
 import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
 import { getAddressById, createAddress } from "@/lib/db/addresses";
-import { createOrderWithItems, generateOrderNumber } from "@/lib/db/orders";
+import { createOrderWithItems } from "@/lib/db/orders";
+import { generateOrderNumber } from "@/lib/utils/order-number";
 import type { Product, ProductVariant, PromoCode } from "@/lib/db/types";
 import { notifyOrderConfirmation } from "@/lib/notifications";
 

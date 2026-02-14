@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateOrderNumber } from "@/lib/db/orders";
+import { generateOrderNumber } from "@/lib/utils/order-number";
 
 describe("generateOrderNumber", () => {
   it("commence par ORD-", () => {
