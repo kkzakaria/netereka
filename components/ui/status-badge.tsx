@@ -1,7 +1,7 @@
 import * as React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Badge, type badgeVariants } from "./badge";
-import { ORDER_STATUS_ICONS } from "@/lib/constants/orders";
+import { ORDER_STATUS_ICONS } from "@/lib/constants/order-icons";
 import type { VariantProps } from "class-variance-authority";
 import type { OrderStatus } from "@/lib/db/types";
 

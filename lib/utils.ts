@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+export { formatPrice } from "@/lib/utils/format";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -12,10 +13,6 @@ export function slugify(text: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-export function formatPrice(price: number): string {
-  return new Intl.NumberFormat("fr-CI", { style: "decimal" }).format(price) + " FCFA";
 }
 
 // Date formatting options for order lists (shared across components)
