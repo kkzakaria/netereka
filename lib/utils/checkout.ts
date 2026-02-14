@@ -8,6 +8,9 @@ export interface DiscountResult {
 /**
  * Validate promo code eligibility (date range, usage limits, min order).
  * Returns an error message or null if valid.
+ *
+ * Note: does NOT check `is_active` — the caller must filter by
+ * `is_active = 1` before calling this (e.g. via the SQL query).
  */
 export function validatePromoEligibility(
   promo: PromoCode,

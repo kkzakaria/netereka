@@ -1,12 +1,16 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// Mock server actions before importing the store
-vi.mock("@/actions/cart", () => ({
+const mocks = vi.hoisted(() => ({
   saveCart: vi.fn().mockResolvedValue(undefined),
   clearServerCart: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { useCartStore } from "@/stores/cart-store";
+vi.mock("@/actions/cart", () => ({
+  saveCart: mocks.saveCart,
+  clearServerCart: mocks.clearServerCart,
+}));
+
+import { useCartStore, selectCartItemCount, selectCartSubtotal } from "@/stores/cart-store";
 import { cartItemKey } from "@/lib/types/cart";
 import type { CartItem } from "@/lib/types/cart";
 
@@ -34,9 +38,9 @@ describe("Cart Store", () => {
     vi.clearAllMocks();
   });
 
-  // ─── add ───
+  // ─── ajout ───
 
-  describe("add", () => {
+  describe("ajout", () => {
     it("ajoute un nouvel article au panier", () => {
       useCartStore.getState().add(makeItem());
       const items = useCartStore.getState().items;
@@ -113,9 +117,9 @@ describe("Cart Store", () => {
     });
   });
 
-  // ─── remove ───
+  // ─── suppression ───
 
-  describe("remove", () => {
+  describe("suppression", () => {
     it("supprime un article par productId et variantId", () => {
       useCartStore.getState().add(makeItem());
       useCartStore.getState().remove("prod-1", null);
@@ -145,9 +149,9 @@ describe("Cart Store", () => {
     });
   });
 
-  // ─── updateQuantity ───
+  // ─── mise à jour quantité ───
 
-  describe("updateQuantity", () => {
+  describe("mise à jour quantité", () => {
     it("met à jour la quantité d'un article", () => {
       useCartStore.getState().add(makeItem(), 1);
       useCartStore.getState().updateQuantity("prod-1", null, 5);
@@ -173,9 +177,9 @@ describe("Cart Store", () => {
     });
   });
 
-  // ─── clear ───
+  // ─── vidage ───
 
-  describe("clear", () => {
+  describe("vidage", () => {
     it("vide le panier", () => {
       useCartStore.getState().add(makeItem({ productId: "prod-1" }));
       useCartStore.getState().add(makeItem({ productId: "prod-2" }));
@@ -184,9 +188,9 @@ describe("Cart Store", () => {
     });
   });
 
-  // ─── setItems ───
+  // ─── remplacement d'articles ───
 
-  describe("setItems", () => {
+  describe("remplacement d'articles", () => {
     it("remplace tous les articles", () => {
       useCartStore.getState().add(makeItem());
       const newItems = [makeCartItem({ productId: "prod-x", quantity: 4 })];
@@ -207,44 +211,91 @@ describe("Cart Store", () => {
     });
   });
 
-  // ─── derived selectors ───
+  // ─── sélecteurs dérivés ───
 
-  describe("calculs dérivés", () => {
-    it("calcule le nombre total d'articles", () => {
+  describe("sélecteurs dérivés", () => {
+    it("selectCartItemCount retourne le nombre total d'articles", () => {
       useCartStore.setState({
         items: [
           makeCartItem({ productId: "prod-1", quantity: 3 }),
           makeCartItem({ productId: "prod-2", quantity: 2 }),
         ],
       });
-      const count = useCartStore
-        .getState()
-        .items.reduce((sum, i) => sum + i.quantity, 0);
-      expect(count).toBe(5);
+      expect(selectCartItemCount(useCartStore.getState())).toBe(5);
     });
 
-    it("calcule le sous-total", () => {
+    it("selectCartSubtotal retourne le sous-total", () => {
       useCartStore.setState({
         items: [
           makeCartItem({ productId: "prod-1", price: 25000, quantity: 2 }),
           makeCartItem({ productId: "prod-2", price: 15000, quantity: 1 }),
         ],
       });
-      const subtotal = useCartStore
-        .getState()
-        .items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      expect(subtotal).toBe(65000);
+      expect(selectCartSubtotal(useCartStore.getState())).toBe(65000);
     });
 
     it("retourne 0 pour un panier vide", () => {
-      const count = useCartStore
-        .getState()
-        .items.reduce((sum, i) => sum + i.quantity, 0);
-      const subtotal = useCartStore
-        .getState()
-        .items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      expect(count).toBe(0);
-      expect(subtotal).toBe(0);
+      const state = useCartStore.getState();
+      expect(selectCartItemCount(state)).toBe(0);
+      expect(selectCartSubtotal(state)).toBe(0);
+    });
+  });
+
+  // ─── persistance serveur ───
+
+  describe("persistance serveur", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("appelle saveCart après ajout (debounced)", async () => {
+      useCartStore.getState().add(makeItem());
+      // Le debounce est de 500ms
+      vi.advanceTimersByTime(500);
+      expect(mocks.saveCart).toHaveBeenCalledTimes(1);
+      expect(mocks.saveCart).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ productId: "prod-1" })])
+      );
+    });
+
+    it("appelle saveCart après suppression (debounced)", async () => {
+      useCartStore.setState({ items: [makeCartItem()] });
+      vi.clearAllMocks();
+      useCartStore.getState().remove("prod-1", null);
+      vi.advanceTimersByTime(500);
+      expect(mocks.saveCart).toHaveBeenCalledTimes(1);
+      expect(mocks.saveCart).toHaveBeenCalledWith([]);
+    });
+
+    it("appelle saveCart après mise à jour de quantité (debounced)", async () => {
+      useCartStore.setState({ items: [makeCartItem()] });
+      vi.clearAllMocks();
+      useCartStore.getState().updateQuantity("prod-1", null, 5);
+      vi.advanceTimersByTime(500);
+      expect(mocks.saveCart).toHaveBeenCalledTimes(1);
+      expect(mocks.saveCart).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ quantity: 5 })])
+      );
+    });
+
+    it("regroupe les appels rapides en un seul (debounce)", async () => {
+      useCartStore.getState().add(makeItem({ productId: "prod-1" }));
+      useCartStore.getState().add(makeItem({ productId: "prod-2" }));
+      useCartStore.getState().add(makeItem({ productId: "prod-3" }));
+      vi.advanceTimersByTime(500);
+      // Un seul appel malgré 3 ajouts rapides
+      expect(mocks.saveCart).toHaveBeenCalledTimes(1);
+    });
+
+    it("appelle clearServerCart lors du vidage", () => {
+      useCartStore.getState().add(makeItem());
+      vi.clearAllMocks();
+      useCartStore.getState().clear();
+      expect(mocks.clearServerCart).toHaveBeenCalledTimes(1);
     });
   });
 });
