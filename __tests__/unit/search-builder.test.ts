@@ -87,6 +87,12 @@ describe("buildWhere", () => {
     const { clause } = buildWhere({ brands: ["Apple", "Samsung", "Xiaomi"] });
     expect(clause).toContain("p.brand IN (?, ?, ?)");
   });
+
+  it("la recherche textuelle utilise des paramètres bindés (pas d'interpolation)", () => {
+    const { clause, params } = buildWhere({ query: '"; DROP TABLE --' });
+    expect(clause).not.toContain("DROP TABLE");
+    expect(params[0]).toBe('%"; DROP TABLE --%');
+  });
 });
 
 // ─── buildOrderBy ───
@@ -108,7 +114,8 @@ describe("buildOrderBy", () => {
     expect(buildOrderBy()).toBe("ORDER BY p.is_featured DESC, p.created_at DESC");
   });
 
-  it("utilise le tri par défaut pour une valeur inconnue", () => {
+  it("utilise le tri par défaut pour une valeur inconnue (fallback du switch default)", () => {
+    // Comportement voulu : toute valeur non reconnue retombe sur le tri featured+date
     expect(buildOrderBy("unknown")).toBe("ORDER BY p.is_featured DESC, p.created_at DESC");
   });
 });

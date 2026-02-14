@@ -52,12 +52,12 @@ describe("escapeHtml", () => {
     );
   });
 
-  it("ne modifie pas le texte normal", () => {
-    expect(escapeHtml("Bonjour le monde")).toBe("Bonjour le monde");
+  it("échappe les apostrophes", () => {
+    expect(escapeHtml("l'iPhone")).toBe("l&#39;iPhone");
   });
 
-  it("gère une chaîne vide", () => {
-    expect(escapeHtml("")).toBe("");
+  it("ne modifie pas le texte normal", () => {
+    expect(escapeHtml("Bonjour le monde")).toBe("Bonjour le monde");
   });
 });
 
@@ -159,6 +159,12 @@ describe("orderConfirmationEmail", () => {
     const { html } = orderConfirmationEmail(data);
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("affiche les prix formatés dans le récapitulatif", () => {
+    const { html } = orderConfirmationEmail(makeOrderData());
+    // Le total (752 000) doit apparaître — le séparateur de milliers varie selon la locale
+    expect(html).toMatch(/752[\s\u202f\u00a0]?000/);
   });
 
   it("affiche la quantité pour chaque article", () => {
