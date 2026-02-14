@@ -51,6 +51,7 @@ import {
   processReturn,
   exportOrdersCSV,
   updateInternalNotes,
+  assignDeliveryPerson,
 } from "@/actions/admin/orders";
 
 const mockOrder = {
@@ -227,5 +228,43 @@ describe("updateInternalNotes", () => {
   it("rejette des notes trop longues (>5000)", async () => {
     const result = await updateInternalNotes("order-1", "a".repeat(5001));
     expect(result.success).toBe(false);
+  });
+});
+
+describe("assignDeliveryPerson", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
+  });
+
+  it("assigne un livreur à une commande", async () => {
+    mocks.queryFirst.mockResolvedValue({ id: "delivery-1" });
+    const result = await assignDeliveryPerson("order-1", "delivery-1", "Koné Livreur");
+    expect(result.success).toBe(true);
+    expect(mocks.execute).toHaveBeenCalled();
+  });
+
+  it("désassigne un livreur (null)", async () => {
+    const result = await assignDeliveryPerson("order-1", null, null);
+    expect(result.success).toBe(true);
+    expect(mocks.queryFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejette si le livreur n'existe pas", async () => {
+    mocks.queryFirst.mockResolvedValue(null);
+    const result = await assignDeliveryPerson("order-1", "unknown-id", "Inconnu");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("introuvable");
+  });
+
+  it("rejette un ID commande vide", async () => {
+    const result = await assignDeliveryPerson("", "delivery-1", "Nom");
+    expect(result.success).toBe(false);
+  });
+
+  it("redirige si non admin", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(assignDeliveryPerson("order-1", "d-1", "Nom")).rejects.toThrow("NEXT_REDIRECT");
   });
 });

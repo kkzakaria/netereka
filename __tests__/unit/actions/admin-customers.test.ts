@@ -35,7 +35,7 @@ vi.mock("@/lib/db/admin/audit-log", () => ({
   prepareAuditLog: mocks.prepareAuditLog.mockResolvedValue({ bind: vi.fn() }),
 }));
 
-import { updateCustomerRole } from "@/actions/admin/customers";
+import { updateCustomerRole, toggleCustomerActive } from "@/actions/admin/customers";
 
 describe("updateCustomerRole", () => {
   beforeEach(() => {
@@ -91,5 +91,43 @@ describe("updateCustomerRole", () => {
     expect(mocks.prepareAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: "user.role_changed", targetId: "user-target" })
     );
+  });
+});
+
+describe("toggleCustomerActive", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+    mocks.queryFirst.mockResolvedValue({ id: "user-target" });
+    mocks.batch.mockResolvedValue([]);
+  });
+
+  it("désactive un utilisateur", async () => {
+    const result = await toggleCustomerActive("user-target");
+    expect(result.success).toBe(true);
+  });
+
+  it("crée un log d'audit", async () => {
+    await toggleCustomerActive("user-target");
+    expect(mocks.prepareAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ targetType: "user", targetId: "user-target" })
+    );
+  });
+
+  it("rejette si l'utilisateur n'existe pas", async () => {
+    mocks.queryFirst.mockResolvedValue(null);
+    const result = await toggleCustomerActive("user-x");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("introuvable");
+  });
+
+  it("rejette un ID vide", async () => {
+    const result = await toggleCustomerActive("");
+    expect(result.success).toBe(false);
+  });
+
+  it("redirige si non admin", async () => {
+    mocks.getSession.mockResolvedValue(null);
+    await expect(toggleCustomerActive("user-target")).rejects.toThrow("NEXT_REDIRECT");
   });
 });
