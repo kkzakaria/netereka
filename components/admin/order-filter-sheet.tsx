@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, FilterIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
-import { ORDER_STATUS_LABELS, ORDER_STATUS_ICONS } from "@/lib/constants/orders";
+import { ORDER_STATUS_LABELS } from "@/lib/constants/orders";
+import { ORDER_STATUS_ICONS } from "@/lib/constants/order-icons";
 import type { OrderStatus } from "@/lib/db/types";
 
 interface OrderFilterSheetProps {
