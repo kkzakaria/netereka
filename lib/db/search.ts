@@ -8,7 +8,7 @@ const BASE_SELECT = `SELECT p.*,
 FROM products p
 JOIN categories c ON c.id = p.category_id`;
 
-function buildWhere(opts: SearchOptions): { clause: string; params: unknown[] } {
+export function buildWhere(opts: SearchOptions): { clause: string; params: unknown[] } {
   const conditions: string[] = ["p.is_active = 1"];
   const params: unknown[] = [];
 
@@ -42,7 +42,7 @@ function buildWhere(opts: SearchOptions): { clause: string; params: unknown[] } 
   return { clause: conditions.join(" AND "), params };
 }
 
-function buildOrderBy(sort?: string): string {
+export function buildOrderBy(sort?: string): string {
   switch (sort) {
     case "price_asc":
       return "ORDER BY p.base_price ASC";
