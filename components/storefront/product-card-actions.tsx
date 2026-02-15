@@ -63,7 +63,7 @@ export function ProductCardActions({
         productId={product.id}
         isWishlisted={isWishlisted}
         className={cn(
-          "pointer-events-auto absolute right-0.5 top-0.5 size-11",
+          "pointer-events-auto absolute right-1 top-1 size-8",
           "opacity-0 translate-y-(-1) group-hover:opacity-100 group-hover:translate-y-0",
           "touch:opacity-100 touch:translate-y-0",
           "focus-visible:opacity-100 focus-visible:translate-y-0",
