@@ -28,7 +28,7 @@ export function WishlistButton({ productId, isWishlisted, className }: Props) {
       onClick={handleClick}
       disabled={pending}
       className={cn(
-        "flex size-8 items-center justify-center rounded-full bg-background/80 text-muted-foreground backdrop-blur-sm transition-colors hover:text-destructive",
+        "flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-destructive",
         optimistic && "text-destructive",
         className
       )}
