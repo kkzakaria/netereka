@@ -3,7 +3,7 @@ import Image from "next/image";
 import type { Product } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
-import { WishlistButton } from "@/components/storefront/wishlist-button";
+import { ProductCardActions } from "@/components/storefront/product-card-actions";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -46,28 +46,19 @@ export function ProductCard({ product, isWishlisted = false, showWishlist = fals
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
         />
 
-        {/* Top row: category + discount + wishlist */}
-        <div className="absolute inset-x-0 top-0 flex items-start justify-between p-2">
-          <div className="flex items-center gap-1.5">
-            {product.category_name && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                {product.category_name}
-              </span>
-            )}
-            {hasDiscount && (
-              <span className="rounded-md bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-tight text-white">
-                -{discountPercent}%
-              </span>
-            )}
-          </div>
-          {showWishlist && (
-            <WishlistButton
-              productId={product.id}
-              isWishlisted={isWishlisted}
-              className="size-11"
-            />
-          )}
-        </div>
+        {/* Category badge */}
+        {product.category_name && (
+          <span className="absolute left-2 top-2 z-10 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+            {product.category_name}
+          </span>
+        )}
+
+        {/* Quick action buttons */}
+        <ProductCardActions
+          product={product}
+          isWishlisted={isWishlisted}
+          showWishlist={showWishlist}
+        />
 
         {/* Out of stock overlay */}
         {isOutOfStock && (
@@ -93,8 +84,13 @@ export function ProductCard({ product, isWishlisted = false, showWishlist = fals
           <span className={cn("text-[11px]", hasVariants ? "text-muted-foreground" : "invisible")}>
             {hasVariants ? "À partir de" : "\u00A0"}
           </span>
-          <p className="text-sm font-bold tabular-nums text-foreground">
+          <p className="flex items-center gap-1.5 text-sm font-bold tabular-nums text-foreground">
             {formatPrice(product.base_price)}
+            {hasDiscount && (
+              <span className="rounded-md bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-tight text-white">
+                -{discountPercent}%
+              </span>
+            )}
           </p>
           {/* Compare price — always reserve one line */}
           <p className={cn("text-[10px] tabular-nums line-through", hasDiscount ? "text-muted-foreground" : "invisible")}>
