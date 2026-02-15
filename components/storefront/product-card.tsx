@@ -9,10 +9,9 @@ import { cn } from "@/lib/utils";
 interface Props {
   product: Product;
   isWishlisted?: boolean;
-  showWishlist?: boolean;
 }
 
-export function ProductCard({ product, isWishlisted = false, showWishlist = false }: Props) {
+export function ProductCard({ product, isWishlisted = false }: Props) {
   const hasVariants = (product.variant_count ?? 0) > 1;
   const isOutOfStock = product.stock_quantity <= 0;
   const comparePrice = product.compare_price;
@@ -57,7 +56,6 @@ export function ProductCard({ product, isWishlisted = false, showWishlist = fals
         <ProductCardActions
           product={product}
           isWishlisted={isWishlisted}
-          showWishlist={showWishlist}
         />
 
         {/* Out of stock overlay */}

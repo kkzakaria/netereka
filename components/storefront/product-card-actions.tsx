@@ -12,13 +12,11 @@ import { cn } from "@/lib/utils";
 interface Props {
   product: Product;
   isWishlisted?: boolean;
-  showWishlist?: boolean;
 }
 
 export function ProductCardActions({
   product,
   isWishlisted = false,
-  showWishlist = false,
 }: Props) {
   const router = useRouter();
   const add = useCartStore((s) => s.add);
@@ -61,13 +59,17 @@ export function ProductCardActions({
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       {/* Wishlist — top-right */}
-      {showWishlist && (
-        <WishlistButton
-          productId={product.id}
-          isWishlisted={isWishlisted}
-          className="pointer-events-auto absolute right-2 top-2 size-11"
-        />
-      )}
+      <WishlistButton
+        productId={product.id}
+        isWishlisted={isWishlisted}
+        className={cn(
+          "pointer-events-auto absolute right-2 top-2 size-11",
+          "opacity-0 translate-y-(-1) group-hover:opacity-100 group-hover:translate-y-0",
+          "touch:opacity-100 touch:translate-y-0",
+          "focus-visible:opacity-100 focus-visible:translate-y-0",
+          "transition-all duration-200",
+        )}
+      />
 
       {/* Cart — bottom-right, hover-reveal */}
       {!isOutOfStock && (
