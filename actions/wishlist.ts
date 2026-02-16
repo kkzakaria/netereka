@@ -36,7 +36,9 @@ export async function toggleWishlist(productId: string): Promise<{ success: bool
 }
 
 export async function checkWishlist(productId: string): Promise<boolean> {
+  const parsed = productIdSchema.safeParse(productId);
+  if (!parsed.success) return false;
   const session = await getOptionalSession();
   if (!session) return false;
-  return isInWishlist(session.user.id, productId);
+  return isInWishlist(session.user.id, parsed.data);
 }

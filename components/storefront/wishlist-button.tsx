@@ -7,10 +7,11 @@ import { cn } from "@/lib/utils";
 interface Props {
   productId: string;
   isWishlisted: boolean;
+  onToggled?: (added: boolean) => void;
   className?: string;
 }
 
-export function WishlistButton({ productId, isWishlisted, className }: Props) {
+export function WishlistButton({ productId, isWishlisted, onToggled, className }: Props) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(isWishlisted);
 
@@ -19,7 +20,8 @@ export function WishlistButton({ productId, isWishlisted, className }: Props) {
     e.stopPropagation();
     startTransition(async () => {
       setOptimistic(!optimistic);
-      await toggleWishlist(productId);
+      const result = await toggleWishlist(productId);
+      onToggled?.(result.added);
     });
   }
 

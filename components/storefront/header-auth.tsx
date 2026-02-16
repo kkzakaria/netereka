@@ -7,7 +7,7 @@ export function HeaderAuth() {
   const session = authClient.useSession();
 
   if (session.isPending) {
-    return <div className="size-8 animate-pulse rounded-full bg-muted" />;
+    return <div className="h-8 w-20 animate-pulse rounded-md bg-muted" />;
   }
 
   const user = session.data?.user

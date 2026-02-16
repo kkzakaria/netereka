@@ -11,11 +11,17 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
 
   useEffect(() => {
     if (session.data?.user) {
-      checkWishlist(productId).then(setIsWishlisted).catch(() => {});
+      checkWishlist(productId).then(setIsWishlisted).catch(console.error);
     }
   }, [session.data?.user, productId]);
 
   if (!session.data?.user) return null;
 
-  return <WishlistButton productId={productId} isWishlisted={isWishlisted} />;
+  return (
+    <WishlistButton
+      productId={productId}
+      isWishlisted={isWishlisted}
+      onToggled={setIsWishlisted}
+    />
+  );
 }
