@@ -47,7 +47,7 @@ export function ProductCardActions({
       name: product.name,
       variantName: null,
       price: product.base_price,
-      imageUrl: product.image_url,
+      imageUrl: product.image_url ?? null,
       slug: product.slug,
     });
 

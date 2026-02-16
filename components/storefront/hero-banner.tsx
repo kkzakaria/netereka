@@ -32,7 +32,7 @@ export function HeroBanner({ product }: { product: Product }) {
             src={getImageUrl(product.image_url)}
             alt={product.name}
             fill
-            className="object-contain drop-shadow-2xl"
+            className="object-contain"
             sizes="(max-width: 640px) 80vw, 320px"
             priority
           />
