@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant touch (@media (pointer: coarse));
 
 @theme inline {
   --color-hero-bg: var(--hero-bg);
