@@ -44,15 +44,22 @@ const signUpSchema = z
 
 type SignUpValues = z.infer<typeof signUpSchema>;
 
-const errorMessages: Record<string, string> = {
+const errorCodeMessages: Record<string, string> = {
   USER_ALREADY_EXISTS: "Un compte existe déjà avec cet email.",
   INVALID_EMAIL: "Adresse email invalide.",
   PASSWORD_TOO_SHORT: "Le mot de passe doit contenir au moins 8 caractères.",
-  TOO_MANY_REQUESTS: "Trop de tentatives. Réessayez plus tard.",
+};
+
+const errorTextMessages: Record<string, string> = {
+  "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
+  "Captcha verification failed": "La vérification captcha a échoué. Veuillez réessayer.",
+  "Missing CAPTCHA response": "Veuillez compléter la vérification de sécurité.",
+  "Something went wrong": "Une erreur est survenue. Veuillez réessayer.",
 };
 
 export default function SignUpPage() {
   const router = useRouter();
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaToken, setCaptchaToken] = useState("");
   const [serverError, setServerError] = useState("");
 
@@ -64,8 +71,18 @@ export default function SignUpPage() {
     resolver: zodResolver(signUpSchema),
   });
 
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaKey((k) => k + 1);
+  };
+
   const onSubmit = async (data: SignUpValues) => {
     setServerError("");
+
+    if (!captchaToken) {
+      setServerError("Veuillez compléter la vérification de sécurité.");
+      return;
+    }
 
     try {
       const { error } = await authClient.signUp.email({
@@ -74,20 +91,24 @@ export default function SignUpPage() {
         name: data.name,
         phone: data.phone,
         callbackURL: "/",
-        fetchOptions: captchaToken
-          ? { headers: { "x-captcha-response": captchaToken } }
-          : undefined,
+        fetchOptions: {
+          headers: { "x-captcha-response": captchaToken },
+        },
       });
 
       if (error) {
+        resetCaptcha();
         setServerError(
-          errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
+          errorCodeMessages[error.code ?? ""] ??
+            errorTextMessages[error.message ?? ""] ??
+            "Une erreur est survenue."
         );
       } else {
         router.push("/");
         router.refresh();
       }
     } catch {
+      resetCaptcha();
       setServerError("Une erreur réseau est survenue. Réessayez.");
     }
   };
@@ -172,7 +193,11 @@ export default function SignUpPage() {
           ) : null}
         </div>
 
-        <TurnstileCaptcha onVerify={setCaptchaToken} />
+        <TurnstileCaptcha
+          key={captchaKey}
+          onVerify={setCaptchaToken}
+          onExpire={() => setCaptchaToken("")}
+        />
 
         {serverError ? (
           <p className="text-sm text-destructive">{serverError}</p>

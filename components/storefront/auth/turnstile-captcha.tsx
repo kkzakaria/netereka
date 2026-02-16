@@ -5,6 +5,7 @@ import Script from "next/script";
 
 interface TurnstileCaptchaProps {
   onVerify: (token: string) => void;
+  onExpire?: () => void;
   onError?: () => void;
 }
 
@@ -16,22 +17,25 @@ declare global {
         options: Record<string, unknown>
       ) => string;
       reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
     };
   }
 }
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
+export function TurnstileCaptcha({ onVerify, onExpire, onError }: TurnstileCaptchaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const onVerifyRef = useRef(onVerify);
+  const onExpireRef = useRef(onExpire);
   const onErrorRef = useRef(onError);
 
   useEffect(() => {
     onVerifyRef.current = onVerify;
+    onExpireRef.current = onExpire;
     onErrorRef.current = onError;
-  }, [onVerify, onError]);
+  }, [onVerify, onExpire, onError]);
 
   const renderWidget = () => {
     if (!containerRef.current || !window.turnstile || widgetIdRef.current || !TURNSTILE_SITE_KEY)
@@ -39,6 +43,7 @@ export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
     widgetIdRef.current = window.turnstile.render(containerRef.current, {
       sitekey: TURNSTILE_SITE_KEY,
       callback: (token: string) => onVerifyRef.current(token),
+      "expired-callback": () => onExpireRef.current?.(),
       "error-callback": () => onErrorRef.current?.(),
       theme: "auto",
     });
@@ -46,6 +51,12 @@ export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
 
   useEffect(() => {
     renderWidget();
+    return () => {
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(widgetIdRef.current);
+        widgetIdRef.current = null;
+      }
+    };
   }, []);
 
   if (!TURNSTILE_SITE_KEY) return null;
