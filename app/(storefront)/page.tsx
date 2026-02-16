@@ -1,4 +1,4 @@
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 import { getCategories } from "@/lib/db/categories";
 import {
