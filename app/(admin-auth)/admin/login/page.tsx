@@ -120,7 +120,7 @@ export default function AdminLoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="admin@netereka.com"
+                  placeholder="admin@netereka.ci"
                   className="h-11"
                   {...register("email")}
                 />

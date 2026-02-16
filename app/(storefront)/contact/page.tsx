@@ -22,10 +22,10 @@ export default function ContactPage() {
               <div>
                 <p className="font-medium text-foreground">Email</p>
                 <a
-                  href="mailto:contact@netereka.com"
+                  href="mailto:contact@netereka.ci"
                   className="text-primary hover:underline"
                 >
-                  contact@netereka.com
+                  contact@netereka.ci
                 </a>
               </div>
               <div>
@@ -64,7 +64,7 @@ export default function ContactPage() {
           </p>
 
           <a
-            href="mailto:contact@netereka.com"
+            href="mailto:contact@netereka.ci"
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Envoyer un email
@@ -74,10 +74,10 @@ export default function ContactPage() {
             <p>
               Vous pouvez aussi nous écrire directement à{" "}
               <a
-                href="mailto:contact@netereka.com"
+                href="mailto:contact@netereka.ci"
                 className="font-medium text-primary hover:underline"
               >
-                contact@netereka.com
+                contact@netereka.ci
               </a>
             </p>
           </div>
