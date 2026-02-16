@@ -35,10 +35,14 @@ const errorMessages: Record<string, string> = {
   INVALID_EMAIL_OR_PASSWORD: "Email ou mot de passe incorrect.",
   USER_NOT_FOUND: "Aucun compte trouvé avec cet email.",
   TOO_MANY_REQUESTS: "Trop de tentatives. Réessayez plus tard.",
+  CAPTCHA_NOT_CONFIGURED: "Le captcha n'est pas configuré. Contactez l'administrateur.",
+  CAPTCHA_INVALID: "La vérification captcha a échoué. Veuillez réessayer.",
+  CAPTCHA_FAILED_TO_VERIFY: "La vérification captcha a échoué. Veuillez réessayer.",
 };
 
 export default function SignInPage() {
   const router = useRouter();
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaToken, setCaptchaToken] = useState("");
   const [serverError, setServerError] = useState("");
 
@@ -50,20 +54,31 @@ export default function SignInPage() {
     resolver: zodResolver(signInSchema),
   });
 
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaKey((k) => k + 1);
+  };
+
   const onSubmit = async (data: SignInValues) => {
     setServerError("");
+
+    if (!captchaToken) {
+      setServerError("Veuillez compléter la vérification de sécurité.");
+      return;
+    }
 
     try {
       const { error } = await authClient.signIn.email({
         email: data.email,
         password: data.password,
         callbackURL: "/",
-        fetchOptions: captchaToken
-          ? { headers: { "x-captcha-response": captchaToken } }
-          : undefined,
+        fetchOptions: {
+          headers: { "x-captcha-response": captchaToken },
+        },
       });
 
       if (error) {
+        resetCaptcha();
         setServerError(
           errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
         );
@@ -72,6 +87,7 @@ export default function SignInPage() {
         router.refresh();
       }
     } catch {
+      resetCaptcha();
       setServerError("Une erreur réseau est survenue. Réessayez.");
     }
   };
@@ -124,7 +140,11 @@ export default function SignInPage() {
           ) : null}
         </div>
 
-        <TurnstileCaptcha onVerify={setCaptchaToken} />
+        <TurnstileCaptcha
+          key={captchaKey}
+          onVerify={setCaptchaToken}
+          onExpire={() => setCaptchaToken("")}
+        />
 
         {serverError ? (
           <p className="text-sm text-destructive">{serverError}</p>

@@ -10,27 +10,40 @@ import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha
 import { authClient } from "@/lib/auth/client";
 
 export default function ForgotPasswordPage() {
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [email, setEmail] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaKey((k) => k + 1);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!captchaToken) {
+      setError("Veuillez compléter la vérification de sécurité.");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const { error } = await authClient.requestPasswordReset({
         email,
         redirectTo: "/auth/reset-password",
-        fetchOptions: captchaToken
-          ? { headers: { "x-captcha-response": captchaToken } }
-          : undefined,
+        fetchOptions: {
+          headers: { "x-captcha-response": captchaToken },
+        },
       });
 
       if (error) {
+        resetCaptcha();
         setError(error.message ?? "Une erreur est survenue.");
       } else {
         setSent(true);
@@ -74,7 +87,11 @@ export default function ForgotPasswordPage() {
             />
           </div>
 
-          <TurnstileCaptcha onVerify={setCaptchaToken} />
+          <TurnstileCaptcha
+            key={captchaKey}
+            onVerify={setCaptchaToken}
+            onExpire={() => setCaptchaToken("")}
+          />
 
           {error && (
             <p className="text-sm text-destructive">{error}</p>
