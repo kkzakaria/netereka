@@ -48,6 +48,7 @@ jobs:
         run: npm run build:worker
         env:
           NEXT_PUBLIC_R2_URL: ${{ vars.NEXT_PUBLIC_R2_URL }}
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
