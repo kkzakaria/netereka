@@ -3,6 +3,7 @@ interface CloudflareEnv {
   KV: KVNamespace;
   R2: R2Bucket;
   ASSETS: Fetcher;
+  IMAGES: ImagesBinding;
 
   // Auth (Better Auth)
   BETTER_AUTH_SECRET: string;
