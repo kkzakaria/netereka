@@ -1,6 +1,6 @@
 export const SITE_NAME = "NETEREKA";
 export const SITE_DESCRIPTION = "Votre boutique électronique en Côte d'Ivoire";
-export const SITE_URL = "https://netereka.com";
+export const SITE_URL = "https://netereka.ci";
 
 export const ORDER_STATUSES = {
   pending: "En attente",
