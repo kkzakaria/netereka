@@ -1,3 +1,5 @@
+export const revalidate = 86400;
+
 import Link from "next/link";
 
 export default function ContactPage() {

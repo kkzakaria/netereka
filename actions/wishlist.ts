@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAuth } from "@/lib/auth/guards";
-import { atomicToggleWishlist } from "@/lib/db/wishlist";
+import { requireAuth, getOptionalSession } from "@/lib/auth/guards";
+import { atomicToggleWishlist, isInWishlist } from "@/lib/db/wishlist";
 import { queryFirst } from "@/lib/db";
 import { z } from "zod";
 
@@ -33,4 +33,10 @@ export async function toggleWishlist(productId: string): Promise<{ success: bool
   } catch {
     return { success: false, added: false };
   }
+}
+
+export async function checkWishlist(productId: string): Promise<boolean> {
+  const session = await getOptionalSession();
+  if (!session) return false;
+  return isInWishlist(session.user.id, productId);
 }
