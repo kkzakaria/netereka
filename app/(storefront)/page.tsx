@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import type { Metadata } from "next";
 import { getCategories } from "@/lib/db/categories";
 import {
   getFeaturedProducts,
@@ -10,6 +11,10 @@ import { CategoryNav } from "@/components/storefront/category-nav";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { TrustBadges } from "@/components/storefront/trust-badges";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 const HIGHLIGHTED_CATEGORIES = 3;
 

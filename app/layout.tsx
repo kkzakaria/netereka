@@ -53,7 +53,6 @@ export const metadata: Metadata = {
     },
   },
   alternates: {
-    canonical: SITE_URL,
     languages: {
       "fr-CI": SITE_URL,
     },
