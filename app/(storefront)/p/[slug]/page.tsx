@@ -2,8 +2,10 @@ import { Suspense, cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { getProductBySlug, getRelatedProducts } from "@/lib/db/products";
 import { ImageGallery } from "@/components/storefront/image-gallery";
+import { getImageUrl } from "@/lib/utils/images";
 import { VariantSelector } from "@/components/storefront/variant-selector";
 import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
@@ -257,7 +259,16 @@ export default async function ProductPage({ params }: Props) {
 
       <div className="grid gap-8 md:grid-cols-2">
         {/* Images */}
-        <ImageGallery images={product.images} />
+        <ImageGallery images={product.images}>
+          <Image
+            src={getImageUrl(product.images[0]?.url)}
+            alt={product.images[0]?.alt || product.name}
+            fill
+            priority
+            sizes="(max-width: 768px) 100vw, 50vw"
+            className="object-contain p-6"
+          />
+        </ImageGallery>
 
         {/* Product info */}
         <div className="space-y-4">

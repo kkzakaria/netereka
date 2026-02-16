@@ -1,11 +1,17 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
 import Image from "next/image";
 import type { ProductImage } from "@/lib/db/types";
 import { getImageUrl } from "@/lib/utils/images";
 
-export function ImageGallery({ images }: { images: ProductImage[] }) {
+interface ImageGalleryProps {
+  images: ProductImage[];
+  children?: ReactNode;
+}
+
+export function ImageGallery({ images, children }: ImageGalleryProps) {
   const [selected, setSelected] = useState(0);
   const current = images[selected] ?? images[0];
 
@@ -20,14 +26,17 @@ export function ImageGallery({ images }: { images: ProductImage[] }) {
   return (
     <div className="space-y-3">
       <div className="relative aspect-square overflow-hidden rounded-xl bg-muted">
-        <Image
-          src={getImageUrl(current.url)}
-          alt={current.alt || "Produit"}
-          fill
-          className="object-contain p-6"
-          sizes="(max-width: 768px) 100vw, 50vw"
-          priority
-        />
+        {selected === 0 && children ? (
+          children
+        ) : (
+          <Image
+            src={getImageUrl(current.url)}
+            alt={current.alt || "Produit"}
+            fill
+            className="object-contain p-6"
+            sizes="(max-width: 768px) 100vw, 50vw"
+          />
+        )}
       </div>
       {images.length > 1 && (
         <div className="flex gap-2 overflow-x-auto">
