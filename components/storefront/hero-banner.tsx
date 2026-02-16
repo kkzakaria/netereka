@@ -35,6 +35,7 @@ export function HeroBanner({ product }: { product: Product }) {
             className="object-contain"
             sizes="(max-width: 640px) 80vw, 320px"
             priority
+            fetchPriority="high"
           />
         </div>
       </div>
