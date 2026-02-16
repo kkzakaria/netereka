@@ -344,3 +344,28 @@ export const wishlist = sqliteTable("wishlist", {
   index("idx_wishlist_user").on(table.user_id),
   index("idx_wishlist_product").on(table.product_id),
 ]);
+
+// =============================================================================
+// Banners
+// =============================================================================
+export const banners = sqliteTable("banners", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  subtitle: text("subtitle"),
+  badge_text: text("badge_text"),
+  badge_color: text("badge_color").notNull().default("mint"),
+  image_url: text("image_url"),
+  link_url: text("link_url").notNull(),
+  cta_text: text("cta_text").notNull().default("Découvrir"),
+  price: integer("price"),
+  bg_gradient_from: text("bg_gradient_from").notNull().default("#183C78"),
+  bg_gradient_to: text("bg_gradient_to").notNull().default("#1E4A8F"),
+  display_order: integer("display_order").notNull().default(0),
+  is_active: integer("is_active").notNull().default(1),
+  starts_at: text("starts_at"),
+  ends_at: text("ends_at"),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_banners_active_order").on(table.is_active, table.display_order),
+]);

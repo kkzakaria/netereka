@@ -300,3 +300,23 @@ export interface AuditLog {
   details: string | null;
   created_at: string;
 }
+
+export interface Banner {
+  id: number;
+  title: string;
+  subtitle: string | null;
+  badge_text: string | null;
+  badge_color: string;
+  image_url: string | null;
+  link_url: string;
+  cta_text: string;
+  price: number | null;
+  bg_gradient_from: string;
+  bg_gradient_to: string;
+  display_order: number;
+  is_active: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
