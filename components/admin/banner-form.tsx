@@ -41,17 +41,21 @@ export function BannerForm({ banner }: BannerFormProps) {
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
-      const result = isEdit
-        ? await updateBanner(banner!.id, formData)
-        : await createBanner(formData);
+      try {
+        const result = isEdit
+          ? await updateBanner(banner!.id, formData)
+          : await createBanner(formData);
 
-      if (result.success) {
-        toast.success(isEdit ? "Bannière mise à jour" : "Bannière créée");
-        if (!isEdit && result.id) {
-          router.push(`/banners/${result.id}/edit`);
+        if (result.success) {
+          toast.success(isEdit ? "Bannière mise à jour" : "Bannière créée");
+          if (!isEdit && result.id) {
+            router.push(`/banners/${result.id}/edit`);
+          }
+        } else {
+          toast.error(result.error || "Une erreur est survenue");
         }
-      } else {
-        toast.error(result.error);
+      } catch {
+        toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
       }
     });
   }
@@ -61,15 +65,19 @@ export function BannerForm({ banner }: BannerFormProps) {
     if (!file) return;
 
     startTransition(async () => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const result = await uploadBannerImage(banner!.id, formData);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const result = await uploadBannerImage(banner!.id, formData);
 
-      if (result.success) {
-        toast.success("Image mise à jour");
-        setImagePreview(result.url ?? null);
-      } else {
-        toast.error(result.error);
+        if (result.success) {
+          toast.success("Image mise à jour");
+          setImagePreview(result.url ?? null);
+        } else {
+          toast.error(result.error || "Une erreur est survenue");
+        }
+      } catch {
+        toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
       }
     });
   }

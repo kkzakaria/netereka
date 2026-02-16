@@ -5,7 +5,7 @@ import type { Banner } from "@/lib/db/types";
 
 export async function getActiveBanners(): Promise<Banner[]> {
   const db = await getDrizzle();
-  const now = new Date().toISOString();
+  const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
   return db
     .select()

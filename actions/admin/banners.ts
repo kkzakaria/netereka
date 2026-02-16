@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
@@ -9,12 +10,17 @@ import { banners } from "@/lib/db/schema";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
 import type { ActionResult } from "@/lib/utils";
 
+const ALLOWED_IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "avif"]);
+
 const bannerSchema = z.object({
   title: z.string().min(1, "Le titre est requis").max(200),
   subtitle: z.string().max(500).optional().default(""),
   badge_text: z.string().max(50).optional().default(""),
   badge_color: z.enum(["mint", "red", "orange", "blue"]).default("mint"),
-  link_url: z.string().min(1, "Le lien est requis"),
+  link_url: z.string().min(1, "Le lien est requis").refine(
+    (val) => val.startsWith("/"),
+    "Le lien doit être un chemin relatif (ex: /p/produit)"
+  ),
   cta_text: z.string().max(50).optional().default("Découvrir"),
   price: z.coerce.number().int().min(0).optional(),
   bg_gradient_from: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide").default("#183C78"),
@@ -23,7 +29,15 @@ const bannerSchema = z.object({
   is_active: z.coerce.number().min(0).max(1).default(1),
   starts_at: z.string().optional().default(""),
   ends_at: z.string().optional().default(""),
-});
+}).refine(
+  (data) => {
+    if (data.starts_at && data.ends_at) {
+      return data.starts_at < data.ends_at;
+    }
+    return true;
+  },
+  { message: "La date de fin doit être postérieure à la date de début" }
+);
 
 export async function createBanner(formData: FormData): Promise<ActionResult> {
   await requireAdmin();
@@ -35,28 +49,38 @@ export async function createBanner(formData: FormData): Promise<ActionResult> {
     return { success: false, error: msg };
   }
 
-  const data = parsed.data;
-  const db = await getDrizzle();
+  try {
+    const data = parsed.data;
+    const db = await getDrizzle();
 
-  const [inserted] = await db.insert(banners).values({
-    title: data.title,
-    subtitle: data.subtitle || null,
-    badge_text: data.badge_text || null,
-    badge_color: data.badge_color,
-    link_url: data.link_url,
-    cta_text: data.cta_text,
-    price: data.price ?? null,
-    bg_gradient_from: data.bg_gradient_from,
-    bg_gradient_to: data.bg_gradient_to,
-    display_order: data.display_order,
-    is_active: data.is_active,
-    starts_at: data.starts_at || null,
-    ends_at: data.ends_at || null,
-  }).returning({ id: banners.id });
+    const rows = await db.insert(banners).values({
+      title: data.title,
+      subtitle: data.subtitle || null,
+      badge_text: data.badge_text || null,
+      badge_color: data.badge_color,
+      link_url: data.link_url,
+      cta_text: data.cta_text,
+      price: data.price ?? null,
+      bg_gradient_from: data.bg_gradient_from,
+      bg_gradient_to: data.bg_gradient_to,
+      display_order: data.display_order,
+      is_active: data.is_active,
+      starts_at: data.starts_at || null,
+      ends_at: data.ends_at || null,
+    }).returning({ id: banners.id });
 
-  revalidatePath("/banners");
-  revalidatePath("/");
-  return { success: true, id: String(inserted.id) };
+    const inserted = rows[0];
+    if (!inserted) {
+      return { success: false, error: "Échec de la création de la bannière" };
+    }
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    return { success: true, id: String(inserted.id) };
+  } catch (error) {
+    console.error("[admin/banners] createBanner error:", error);
+    return { success: false, error: "Erreur lors de la création de la bannière" };
+  }
 }
 
 export async function updateBanner(
@@ -74,29 +98,43 @@ export async function updateBanner(
     return { success: false, error: msg };
   }
 
-  const data = parsed.data;
-  const db = await getDrizzle();
+  try {
+    const data = parsed.data;
+    const db = await getDrizzle();
 
-  await db.update(banners).set({
-    title: data.title,
-    subtitle: data.subtitle || null,
-    badge_text: data.badge_text || null,
-    badge_color: data.badge_color,
-    link_url: data.link_url,
-    cta_text: data.cta_text,
-    price: data.price ?? null,
-    bg_gradient_from: data.bg_gradient_from,
-    bg_gradient_to: data.bg_gradient_to,
-    display_order: data.display_order,
-    is_active: data.is_active,
-    starts_at: data.starts_at || null,
-    ends_at: data.ends_at || null,
-    updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
-  }).where(eq(banners.id, id));
+    const existing = await db.query.banners.findFirst({
+      where: eq(banners.id, id),
+      columns: { id: true },
+    });
 
-  revalidatePath("/banners");
-  revalidatePath("/");
-  return { success: true, id: String(id) };
+    if (!existing) {
+      return { success: false, error: "Bannière introuvable" };
+    }
+
+    await db.update(banners).set({
+      title: data.title,
+      subtitle: data.subtitle || null,
+      badge_text: data.badge_text || null,
+      badge_color: data.badge_color,
+      link_url: data.link_url,
+      cta_text: data.cta_text,
+      price: data.price ?? null,
+      bg_gradient_from: data.bg_gradient_from,
+      bg_gradient_to: data.bg_gradient_to,
+      display_order: data.display_order,
+      is_active: data.is_active,
+      starts_at: data.starts_at || null,
+      ends_at: data.ends_at || null,
+      updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
+    }).where(eq(banners.id, id));
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    return { success: true, id: String(id) };
+  } catch (error) {
+    console.error("[admin/banners] updateBanner error:", error);
+    return { success: false, error: "Erreur lors de la mise à jour de la bannière" };
+  }
 }
 
 export async function uploadBannerImage(
@@ -120,42 +158,50 @@ export async function uploadBannerImage(
     return { success: false, error: "L'image ne doit pas dépasser 5 Mo" };
   }
 
-  const db = await getDrizzle();
-
-  // Fetch existing banner to delete old image if present
-  const existing = await db.query.banners.findFirst({
-    where: eq(banners.id, bannerId),
-    columns: { image_url: true },
-  });
-
-  if (!existing) {
-    return { success: false, error: "Bannière introuvable" };
+  const rawExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  if (!ALLOWED_IMAGE_EXTENSIONS.has(rawExt)) {
+    return { success: false, error: "Format d'image non supporté. Utilisez JPG, PNG ou WebP." };
   }
 
-  // Delete old image from R2 if exists
-  if (existing.image_url) {
-    const oldKey = existing.image_url.replace(/^\/images\//, "");
-    try {
-      await deleteFromR2(oldKey);
-    } catch {
-      // R2 delete may fail in dev, continue anyway
+  try {
+    const db = await getDrizzle();
+
+    const existing = await db.query.banners.findFirst({
+      where: eq(banners.id, bannerId),
+      columns: { image_url: true },
+    });
+
+    if (!existing) {
+      return { success: false, error: "Bannière introuvable" };
     }
+
+    if (existing.image_url) {
+      const oldKey = existing.image_url.replace(/^\/images\//, "");
+      try {
+        await deleteFromR2(oldKey);
+      } catch (deleteError) {
+        console.error(`[admin/banners] Failed to delete old R2 image key="${oldKey}" for banner=${bannerId}:`, deleteError);
+      }
+    }
+
+    const uid = nanoid(8);
+    const key = `banners/${bannerId}-${uid}.${rawExt}`;
+
+    await uploadToR2(file, key);
+
+    const url = `/images/${key}`;
+    await db.update(banners).set({
+      image_url: url,
+      updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
+    }).where(eq(banners.id, bannerId));
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    return { success: true, url };
+  } catch (error) {
+    console.error("[admin/banners] uploadBannerImage error:", error);
+    return { success: false, error: "Erreur lors de l'upload de l'image" };
   }
-
-  const ext = file.name.split(".").pop() || "jpg";
-  const key = `banners/${bannerId}.${ext}`;
-
-  await uploadToR2(file, key);
-
-  const url = `/images/${key}`;
-  await db.update(banners).set({
-    image_url: url,
-    updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
-  }).where(eq(banners.id, bannerId));
-
-  revalidatePath("/banners");
-  revalidatePath("/");
-  return { success: true, url };
 }
 
 export async function toggleBannerActive(id: number): Promise<ActionResult> {
@@ -163,26 +209,30 @@ export async function toggleBannerActive(id: number): Promise<ActionResult> {
 
   if (!id || id <= 0) return { success: false, error: "ID bannière invalide" };
 
-  const db = await getDrizzle();
+  try {
+    const db = await getDrizzle();
 
-  // Fetch current state
-  const banner = await db.query.banners.findFirst({
-    where: eq(banners.id, id),
-    columns: { is_active: true },
-  });
+    const banner = await db.query.banners.findFirst({
+      where: eq(banners.id, id),
+      columns: { is_active: true },
+    });
 
-  if (!banner) {
-    return { success: false, error: "Bannière introuvable" };
+    if (!banner) {
+      return { success: false, error: "Bannière introuvable" };
+    }
+
+    await db.update(banners).set({
+      is_active: banner.is_active === 1 ? 0 : 1,
+      updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
+    }).where(eq(banners.id, id));
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    return { success: true };
+  } catch (error) {
+    console.error("[admin/banners] toggleBannerActive error:", error);
+    return { success: false, error: "Erreur lors du changement de statut" };
   }
-
-  await db.update(banners).set({
-    is_active: banner.is_active === 1 ? 0 : 1,
-    updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
-  }).where(eq(banners.id, id));
-
-  revalidatePath("/banners");
-  revalidatePath("/");
-  return { success: true };
 }
 
 export async function deleteBanner(id: number): Promise<ActionResult> {
@@ -190,31 +240,34 @@ export async function deleteBanner(id: number): Promise<ActionResult> {
 
   if (!id || id <= 0) return { success: false, error: "ID bannière invalide" };
 
-  const db = await getDrizzle();
+  try {
+    const db = await getDrizzle();
 
-  // Fetch banner to clean up R2 image before DB delete
-  const banner = await db.query.banners.findFirst({
-    where: eq(banners.id, id),
-    columns: { image_url: true },
-  });
+    const banner = await db.query.banners.findFirst({
+      where: eq(banners.id, id),
+      columns: { image_url: true },
+    });
 
-  if (!banner) {
-    return { success: false, error: "Bannière introuvable" };
-  }
-
-  // Delete R2 image if exists (best-effort)
-  if (banner.image_url) {
-    const key = banner.image_url.replace(/^\/images\//, "");
-    try {
-      await deleteFromR2(key);
-    } catch {
-      // R2 delete may fail in dev, continue anyway
+    if (!banner) {
+      return { success: false, error: "Bannière introuvable" };
     }
+
+    if (banner.image_url) {
+      const key = banner.image_url.replace(/^\/images\//, "");
+      try {
+        await deleteFromR2(key);
+      } catch (deleteError) {
+        console.error(`[admin/banners] Failed to delete R2 image key="${key}" for banner=${id}:`, deleteError);
+      }
+    }
+
+    await db.delete(banners).where(eq(banners.id, id));
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    return { success: true };
+  } catch (error) {
+    console.error("[admin/banners] deleteBanner error:", error);
+    return { success: false, error: "Erreur lors de la suppression de la bannière" };
   }
-
-  await db.delete(banners).where(eq(banners.id, id));
-
-  revalidatePath("/banners");
-  revalidatePath("/");
-  return { success: true };
 }

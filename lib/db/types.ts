@@ -301,12 +301,14 @@ export interface AuditLog {
   created_at: string;
 }
 
+export type BadgeColor = "mint" | "red" | "orange" | "blue";
+
 export interface Banner {
   id: number;
   title: string;
   subtitle: string | null;
   badge_text: string | null;
-  badge_color: string;
+  badge_color: BadgeColor;
   image_url: string | null;
   link_url: string;
   cta_text: string;

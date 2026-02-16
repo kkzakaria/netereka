@@ -7,6 +7,7 @@ import {
   getLatestProducts,
   getProductsByCategorySlug,
 } from "@/lib/db/products";
+import type { Banner } from "@/lib/db/types";
 import { getActiveBanners } from "@/lib/db/storefront/banners";
 import { CategoryNav } from "@/components/storefront/category-nav";
 import { HeroBanner } from "@/components/storefront/hero-banner";
@@ -24,7 +25,10 @@ export default async function HomePage() {
     getCategories(),
     getFeaturedProducts(10),
     getLatestProducts(10, true),
-    getActiveBanners(),
+    getActiveBanners().catch((error) => {
+      console.error("[homepage] Failed to fetch active banners:", error);
+      return [] as Banner[];
+    }),
   ]);
 
   // Dynamically fetch products for the first N categories

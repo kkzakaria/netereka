@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
-import type { Banner, Product } from "@/lib/db/types";
+import type { BadgeColor, Banner, Product } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,7 @@ interface Slide {
   title: string;
   subtitle: string | null;
   badge_text: string | null;
-  badge_color: string;
+  badge_color: BadgeColor;
   image_url: string | null;
   link_url: string;
   cta_text: string;
@@ -23,7 +23,7 @@ interface Slide {
   bg_to: string;
 }
 
-const badgeColorMap: Record<string, string> = {
+const badgeColorMap: Record<BadgeColor, string> = {
   mint: "bg-emerald-500/20 text-emerald-300",
   red: "bg-red-500/20 text-red-300",
   orange: "bg-orange-500/20 text-orange-300",
@@ -36,7 +36,7 @@ function buildSlides(banners: Banner[], fallbackProducts: Product[]): Slide[] {
       title: b.title,
       subtitle: b.subtitle,
       badge_text: b.badge_text,
-      badge_color: b.badge_color || "mint",
+      badge_color: b.badge_color,
       image_url: b.image_url,
       link_url: b.link_url,
       cta_text: b.cta_text || "Découvrir",
@@ -69,19 +69,8 @@ export function HeroBanner({
 }) {
   const slides = buildSlides(banners, fallbackProducts);
 
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReducedMotion(mq.matches);
-  }, []);
-
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, duration: 30 }, [
-    Autoplay({
-      delay: 5000,
-      stopOnInteraction: true,
-      active: !prefersReducedMotion,
-    }),
+    Autoplay({ delay: 5000, stopOnInteraction: true }),
   ]);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -95,6 +84,14 @@ export function HeroBanner({
     if (!emblaApi) return;
     onSelect();
     emblaApi.on("select", onSelect);
+
+    // Respect prefers-reduced-motion by stopping autoplay after mount
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq.matches) {
+      const autoplay = emblaApi.plugins()?.autoplay;
+      if (autoplay) (autoplay as unknown as { stop: () => void }).stop();
+    }
+
     return () => {
       emblaApi.off("select", onSelect);
     };
@@ -133,8 +130,7 @@ export function HeroBanner({
                     <span
                       className={cn(
                         "mb-3 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide",
-                        badgeColorMap[slide.badge_color] ||
-                          badgeColorMap.mint
+                        badgeColorMap[slide.badge_color]
                       )}
                     >
                       {slide.badge_text}

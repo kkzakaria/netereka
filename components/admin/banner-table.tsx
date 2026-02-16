@@ -39,16 +39,9 @@ import {
   toggleBannerActive,
   deleteBanner,
 } from "@/actions/admin/banners";
+import type { Banner } from "@/lib/db/types";
 
-interface BannerRowData {
-  id: number;
-  title: string;
-  image_url: string | null;
-  display_order: number;
-  is_active: number;
-  starts_at: string | null;
-  ends_at: string | null;
-}
+type BannerRowData = Pick<Banner, "id" | "title" | "image_url" | "display_order" | "is_active" | "starts_at" | "ends_at">;
 
 function getBannerStatus(banner: BannerRowData): {
   label: string;
@@ -59,7 +52,7 @@ function getBannerStatus(banner: BannerRowData): {
     return { label: "Inactive", variant: "secondary" };
   }
 
-  const now = new Date().toISOString();
+  const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
   if (banner.starts_at && banner.starts_at > now) {
     return {
@@ -89,7 +82,7 @@ function formatDate(dateStr: string | null): string {
       year: "numeric",
     }).format(new Date(dateStr));
   } catch {
-    return "—";
+    return "Date invalide";
   }
 }
 
@@ -204,18 +197,26 @@ export function BannerTable({ banners }: { banners: BannerRowData[] }) {
 
   const handleToggleActive = useCallback((id: number) => {
     startTransition(async () => {
-      const result = await toggleBannerActive(id);
-      if (!result.success) toast.error(result.error);
+      try {
+        const result = await toggleBannerActive(id);
+        if (!result.success) toast.error(result.error || "Une erreur est survenue");
+      } catch {
+        toast.error("Erreur de connexion au serveur");
+      }
     });
   }, []);
 
   const handleDelete = useCallback((id: number) => {
     startTransition(async () => {
-      const result = await deleteBanner(id);
-      if (result.success) {
-        toast.success("Bannière supprimée");
-      } else {
-        toast.error(result.error);
+      try {
+        const result = await deleteBanner(id);
+        if (result.success) {
+          toast.success("Bannière supprimée");
+        } else {
+          toast.error(result.error || "Une erreur est survenue");
+        }
+      } catch {
+        toast.error("Erreur de connexion au serveur");
       }
     });
   }, []);
