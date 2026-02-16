@@ -7,16 +7,16 @@ import { ImageGallery } from "@/components/storefront/image-gallery";
 import { VariantSelector } from "@/components/storefront/variant-selector";
 import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
-import { WishlistButton } from "@/components/storefront/wishlist-button";
+import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
 import { ProductDetails } from "@/components/storefront/product-details";
 import { StarRating } from "@/components/storefront/star-rating";
 import { JsonLd } from "@/components/seo/json-ld";
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 import { formatPrice, formatDate } from "@/lib/utils/format";
-import { getOptionalSession } from "@/lib/auth/guards";
-import { isInWishlist } from "@/lib/db/wishlist";
 import { getProductReviews, getProductRatingStats } from "@/lib/db/reviews";
+
+export const revalidate = 3600;
 
 const getProductCached = cache(getProductBySlug);
 
@@ -151,16 +151,10 @@ async function ProductReviews({
 
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
-  const [product, session] = await Promise.all([
-    getProductCached(slug),
-    getOptionalSession(),
-  ]);
+  const product = await getProductCached(slug);
   if (!product) notFound();
 
-  const [wishlisted, ratingStats] = await Promise.all([
-    session ? isInWishlist(session.user.id, product.id) : false,
-    getProductRatingStats(product.id),
-  ]);
+  const ratingStats = await getProductRatingStats(product.id);
 
   const validUntil = new Date();
   validUntil.setDate(validUntil.getDate() + 60);
@@ -276,9 +270,7 @@ export default async function ProductPage({ params }: Props) {
               ) : null}
               <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
             </div>
-            {session && (
-              <WishlistButton productId={product.id} isWishlisted={wishlisted} />
-            )}
+            <WishlistButtonDynamic productId={product.id} />
           </div>
 
           {product.variants.length > 0 ? (

@@ -21,6 +21,8 @@ import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 
+export const revalidate = 300;
+
 const getCategoryCached = cache(getCategoryBySlug);
 
 interface Props {
