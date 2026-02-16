@@ -4,12 +4,8 @@ import type { NextRequest } from "next/server";
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
 const AUTH_PATHS = ["/auth/"];
 const SESSION_COOKIE = "better-auth.session_token";
+const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 
-// Cookie-only checks for fast Edge redirects.
-// Full session validation (expiry, DB lookup) is handled by page-level guards
-// (requireAuth, requireAdmin in lib/auth/guards.ts). A stale cookie may cause
-// a brief page flash before the server guard redirects — this is an acceptable
-// trade-off for Edge runtime compatibility on Cloudflare Workers.
 export function middleware(request: NextRequest) {
   const { hostname, pathname } = request.nextUrl;
 
@@ -25,7 +21,7 @@ export function middleware(request: NextRequest) {
 
   if (!isAuthPath && !isProtectedPath) return NextResponse.next();
 
-  const hasCookie = request.cookies.has(SESSION_COOKIE);
+  const hasCookie = request.cookies.has(SESSION_COOKIE) || request.cookies.has(SECURE_SESSION_COOKIE);
 
   // No cookie on protected page → redirect to sign-in
   if (isProtectedPath && !hasCookie) {
