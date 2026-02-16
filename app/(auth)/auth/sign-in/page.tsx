@@ -31,13 +31,16 @@ const signInSchema = z.object({
 
 type SignInValues = z.infer<typeof signInSchema>;
 
-const errorMessages: Record<string, string> = {
+const errorCodeMessages: Record<string, string> = {
   INVALID_EMAIL_OR_PASSWORD: "Email ou mot de passe incorrect.",
   USER_NOT_FOUND: "Aucun compte trouvé avec cet email.",
-  TOO_MANY_REQUESTS: "Trop de tentatives. Réessayez plus tard.",
-  CAPTCHA_NOT_CONFIGURED: "Le captcha n'est pas configuré. Contactez l'administrateur.",
-  CAPTCHA_INVALID: "La vérification captcha a échoué. Veuillez réessayer.",
-  CAPTCHA_FAILED_TO_VERIFY: "La vérification captcha a échoué. Veuillez réessayer.",
+};
+
+const errorTextMessages: Record<string, string> = {
+  "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
+  "Captcha verification failed": "La vérification captcha a échoué. Veuillez réessayer.",
+  "Missing CAPTCHA response": "Veuillez compléter la vérification de sécurité.",
+  "Something went wrong": "Une erreur est survenue. Veuillez réessayer.",
 };
 
 export default function SignInPage() {
@@ -80,7 +83,9 @@ export default function SignInPage() {
       if (error) {
         resetCaptcha();
         setServerError(
-          errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
+          errorCodeMessages[error.code ?? ""] ??
+            errorTextMessages[error.message ?? ""] ??
+            "Une erreur est survenue."
         );
       } else {
         router.push("/");

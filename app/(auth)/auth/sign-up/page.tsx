@@ -44,14 +44,17 @@ const signUpSchema = z
 
 type SignUpValues = z.infer<typeof signUpSchema>;
 
-const errorMessages: Record<string, string> = {
+const errorCodeMessages: Record<string, string> = {
   USER_ALREADY_EXISTS: "Un compte existe déjà avec cet email.",
   INVALID_EMAIL: "Adresse email invalide.",
   PASSWORD_TOO_SHORT: "Le mot de passe doit contenir au moins 8 caractères.",
-  TOO_MANY_REQUESTS: "Trop de tentatives. Réessayez plus tard.",
-  CAPTCHA_NOT_CONFIGURED: "Le captcha n'est pas configuré. Contactez l'administrateur.",
-  CAPTCHA_INVALID: "La vérification captcha a échoué. Veuillez réessayer.",
-  CAPTCHA_FAILED_TO_VERIFY: "La vérification captcha a échoué. Veuillez réessayer.",
+};
+
+const errorTextMessages: Record<string, string> = {
+  "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
+  "Captcha verification failed": "La vérification captcha a échoué. Veuillez réessayer.",
+  "Missing CAPTCHA response": "Veuillez compléter la vérification de sécurité.",
+  "Something went wrong": "Une erreur est survenue. Veuillez réessayer.",
 };
 
 export default function SignUpPage() {
@@ -96,7 +99,9 @@ export default function SignUpPage() {
       if (error) {
         resetCaptcha();
         setServerError(
-          errorMessages[error.code ?? ""] ?? error.message ?? "Une erreur est survenue."
+          errorCodeMessages[error.code ?? ""] ??
+            errorTextMessages[error.message ?? ""] ??
+            "Une erreur est survenue."
         );
       } else {
         router.push("/");

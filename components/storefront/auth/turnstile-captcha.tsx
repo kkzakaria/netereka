@@ -17,6 +17,7 @@ declare global {
         options: Record<string, unknown>
       ) => string;
       reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
     };
   }
 }
@@ -50,6 +51,12 @@ export function TurnstileCaptcha({ onVerify, onExpire, onError }: TurnstileCaptc
 
   useEffect(() => {
     renderWidget();
+    return () => {
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(widgetIdRef.current);
+        widgetIdRef.current = null;
+      }
+    };
   }, []);
 
   if (!TURNSTILE_SITE_KEY) return null;

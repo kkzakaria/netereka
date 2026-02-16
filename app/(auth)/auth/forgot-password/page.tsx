@@ -9,6 +9,13 @@ import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha";
 import { authClient } from "@/lib/auth/client";
 
+const errorTextMessages: Record<string, string> = {
+  "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
+  "Captcha verification failed": "La vérification captcha a échoué. Veuillez réessayer.",
+  "Missing CAPTCHA response": "Veuillez compléter la vérification de sécurité.",
+  "Something went wrong": "Une erreur est survenue. Veuillez réessayer.",
+};
+
 export default function ForgotPasswordPage() {
   const [captchaKey, setCaptchaKey] = useState(0);
   const [email, setEmail] = useState("");
@@ -44,10 +51,15 @@ export default function ForgotPasswordPage() {
 
       if (error) {
         resetCaptcha();
-        setError(error.message ?? "Une erreur est survenue.");
+        setError(
+          errorTextMessages[error.message ?? ""] ?? "Une erreur est survenue."
+        );
       } else {
         setSent(true);
       }
+    } catch {
+      resetCaptcha();
+      setError("Une erreur réseau est survenue. Réessayez.");
     } finally {
       setLoading(false);
     }
