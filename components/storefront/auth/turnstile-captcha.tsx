@@ -27,8 +27,11 @@ export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
   const widgetIdRef = useRef<string | null>(null);
   const onVerifyRef = useRef(onVerify);
   const onErrorRef = useRef(onError);
-  onVerifyRef.current = onVerify;
-  onErrorRef.current = onError;
+
+  useEffect(() => {
+    onVerifyRef.current = onVerify;
+    onErrorRef.current = onError;
+  }, [onVerify, onError]);
 
   const renderWidget = () => {
     if (!containerRef.current || !window.turnstile || widgetIdRef.current || !TURNSTILE_SITE_KEY)
@@ -43,7 +46,6 @@ export function TurnstileCaptcha({ onVerify, onError }: TurnstileCaptchaProps) {
 
   useEffect(() => {
     renderWidget();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!TURNSTILE_SITE_KEY) return null;

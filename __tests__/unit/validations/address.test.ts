@@ -17,6 +17,7 @@ describe("addressSchema", () => {
   });
 
   it("utilise Abidjan comme ville par défaut", () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { city, ...withoutCity } = validAddress;
     const result = addressSchema.safeParse(withoutCity);
     expect(result.success).toBe(true);
