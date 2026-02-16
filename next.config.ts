@@ -5,6 +5,7 @@ initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
   experimental: {
+    inlineCss: true,
     optimizePackageImports: ["@hugeicons/core-free-icons"],
   },
   images: {
