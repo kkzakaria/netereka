@@ -7,6 +7,8 @@ import {
   getLatestProducts,
   getProductsByCategorySlug,
 } from "@/lib/db/products";
+import type { Banner } from "@/lib/db/types";
+import { getActiveBanners } from "@/lib/db/storefront/banners";
 import { CategoryNav } from "@/components/storefront/category-nav";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
@@ -19,10 +21,14 @@ export const metadata: Metadata = {
 const HIGHLIGHTED_CATEGORIES = 3;
 
 export default async function HomePage() {
-  const [categories, featured, latest] = await Promise.all([
+  const [categories, featured, latest, activeBanners] = await Promise.all([
     getCategories(),
     getFeaturedProducts(10),
     getLatestProducts(10, true),
+    getActiveBanners().catch((error) => {
+      console.error("[homepage] Failed to fetch active banners:", error);
+      return [] as Banner[];
+    }),
   ]);
 
   // Dynamically fetch products for the first N categories
@@ -34,12 +40,10 @@ export default async function HomePage() {
     }))
   );
 
-  const heroProduct = featured[0];
-
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
       <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
-      {heroProduct && <HeroBanner product={heroProduct} />}
+      <HeroBanner banners={activeBanners} fallbackProducts={featured.slice(0, 3)} />
 
       <CategoryNav categories={categories} />
 
