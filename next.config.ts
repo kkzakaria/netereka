@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["@hugeicons/core-free-icons"],
   },
   images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 2592000,
     remotePatterns: [
       {
         protocol: "https",
@@ -15,7 +17,11 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "netereka.com",
+        hostname: "netereka.ci",
+      },
+      {
+        protocol: "https",
+        hostname: "*.netereka.ci",
       },
       {
         protocol: "https",

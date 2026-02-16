@@ -10,7 +10,10 @@ export async function uploadToR2(
   }
   const buffer = await file.arrayBuffer();
   await r2.put(key, buffer, {
-    httpMetadata: { contentType: file.type },
+    httpMetadata: {
+      contentType: file.type,
+      cacheControl: "public, max-age=31536000, immutable",
+    },
   });
   return key;
 }

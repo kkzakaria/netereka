@@ -108,6 +108,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" className={inter.variable}>
+      <head>
+        <link rel="preconnect" href="https://r2.netereka.ci" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://r2.netereka.ci" />
+      </head>
       <body className="antialiased">
         <JsonLd data={organizationSchema} />
         <JsonLd data={websiteSchema} />

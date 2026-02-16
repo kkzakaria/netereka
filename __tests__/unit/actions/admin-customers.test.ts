@@ -77,7 +77,8 @@ describe("updateCustomerRole", () => {
   });
 
   it("rejette un rôle invalide", async () => {
-    const result = await updateCustomerRole("user-target", "invalid_role" as any);
+    // @ts-expect-error -- testing invalid role on purpose
+    const result = await updateCustomerRole("user-target", "invalid_role");
     expect(result.success).toBe(false);
   });
 
