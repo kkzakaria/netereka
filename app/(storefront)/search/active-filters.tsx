@@ -2,10 +2,20 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatPrice } from "@/lib/utils/format";
+import type { CategoryNode } from "@/lib/db/types";
 import { useFilterData } from "./filter-context";
 
+function findInTree(nodes: CategoryNode[], slug: string): CategoryNode | undefined {
+  for (const node of nodes) {
+    if (node.slug === slug) return node;
+    const found = findInTree(node.children, slug);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function ActiveFilters() {
-  const { categories, basePath } = useFilterData();
+  const { categoryTree, basePath } = useFilterData();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -43,7 +53,7 @@ export function ActiveFilters() {
   };
 
   const categoryName = activeCategory
-    ? categories.find((c) => c.slug === activeCategory)?.name
+    ? findInTree(categoryTree, activeCategory)?.name
     : null;
 
   return (

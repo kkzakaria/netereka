@@ -4,14 +4,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { formatPrice } from "@/lib/utils/format";
+import { CategorySidebar } from "@/components/storefront/category-sidebar";
 import { useFilterData } from "./filter-context";
 
 export function SearchFilters() {
-  const { categories, brands, priceRange, basePath, hideCategory } = useFilterData();
+  const { categoryTree, activeCategorySlug, brands, priceRange, basePath } = useFilterData();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const activeCategory = searchParams.get("category") ?? "";
   const activeBrands = searchParams.get("brand")?.split(",").filter(Boolean) ?? [];
   const activeMinPrice = searchParams.get("min_price") ?? "";
   const activeMaxPrice = searchParams.get("max_price") ?? "";
@@ -43,10 +43,6 @@ export function SearchFilters() {
     [router, searchParams, basePath]
   );
 
-  const handleCategoryChange = (slug: string) => {
-    updateParams({ category: slug === activeCategory ? null : slug });
-  };
-
   const handleBrandToggle = (brand: string) => {
     const next = activeBrands.includes(brand)
       ? activeBrands.filter((b) => b !== brand)
@@ -73,33 +69,15 @@ export function SearchFilters() {
     router.push(`${basePath}?${params.toString()}`);
   };
 
-  const hasFilters = activeCategory || activeBrands.length > 0 || activeMinPrice || activeMaxPrice;
+  const hasFilters = activeBrands.length > 0 || activeMinPrice || activeMaxPrice;
 
   return (
     <div className="space-y-6">
-      {/* Categories */}
-      {!hideCategory && (
-        <fieldset>
-          <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Catégorie
-          </legend>
-          <div className="space-y-1">
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => handleCategoryChange(cat.slug)}
-                className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none ${
-                  cat.slug === activeCategory
-                    ? "bg-primary/10 font-medium text-primary"
-                    : "text-foreground hover:bg-muted"
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-      )}
+      {/* Category tree sidebar */}
+      <CategorySidebar
+        categoryTree={categoryTree}
+        activeCategorySlug={activeCategorySlug}
+      />
 
       {/* Brands */}
       {brands.length > 0 && (

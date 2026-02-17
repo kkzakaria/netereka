@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { getCategories } from "@/lib/db/categories";
+import { getTopLevelCategories } from "@/lib/db/categories";
 import {
   getFeaturedProducts,
   getLatestProducts,
@@ -22,7 +22,7 @@ const HIGHLIGHTED_CATEGORIES = 3;
 
 export default async function HomePage() {
   const [categories, featured, latest, activeBanners] = await Promise.all([
-    getCategories(),
+    getTopLevelCategories(),
     getFeaturedProducts(10),
     getLatestProducts(10, true),
     getActiveBanners().catch((error) => {

@@ -142,9 +142,14 @@ export interface OrderItem {
   total_price: number;
 }
 
+export interface CategoryNode extends Category {
+  children: CategoryNode[];
+}
+
 export interface SearchOptions {
   query?: string;
   category?: string; // category slug
+  categoryIds?: string[]; // category IDs for aggregated search (parent + descendants)
   brands?: string[]; // brand names
   minPrice?: number;
   maxPrice?: number;
@@ -280,9 +285,6 @@ export type CustomerSidebarData = Pick<
   AdminCustomerDetail,
   'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'is_active'
 >;
-
-/** Category data for filter/picker UIs. */
-export type CategoryFilterItem = Pick<Category, 'id' | 'name' | 'slug'>;
 
 // Audit Log Types
 export type AuditAction =

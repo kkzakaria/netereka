@@ -70,6 +70,7 @@ export function CategoryCardMobile({
     <>
       <div
         className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/30"
+        style={{ marginLeft: `${category.depth * 1}rem` }}
         data-pending={isPending || undefined}
       >
         {/* Icon */}
@@ -83,8 +84,14 @@ export function CategoryCardMobile({
 
         {/* Content */}
         <div className="flex flex-1 flex-col gap-1 overflow-hidden">
-          <span className="truncate text-sm font-medium">{category.name}</span>
+          <span className="truncate text-sm font-medium">
+            {category.depth > 0 && (
+              <span className="mr-1 text-muted-foreground">↳</span>
+            )}
+            {category.name}
+          </span>
           <span className="truncate text-xs text-muted-foreground">
+            {category.parent_name ? `${category.parent_name} / ` : ""}
             {category.slug}
           </span>
           <div className="mt-1 flex items-center gap-2">
