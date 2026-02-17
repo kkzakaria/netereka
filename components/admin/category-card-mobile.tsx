@@ -8,6 +8,8 @@ import {
   Edit02Icon,
   Delete02Icon,
   Folder01Icon,
+  ArrowRight01Icon,
+  ArrowDown01Icon,
 } from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { ActionSheet, type ActionSheetItem } from "./action-sheet";
@@ -17,11 +19,17 @@ import { deleteCategory } from "@/actions/admin/categories";
 interface CategoryCardMobileProps {
   category: CategoryWithCount;
   onEdit: (category: CategoryWithCount) => void;
+  isExpanded: boolean;
+  onToggleExpand: (id: string) => void;
+  childCount: number;
 }
 
 export function CategoryCardMobile({
   category,
   onEdit,
+  isExpanded,
+  onToggleExpand,
+  childCount,
 }: CategoryCardMobileProps) {
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -73,14 +81,30 @@ export function CategoryCardMobile({
         style={{ marginLeft: `${category.depth * 1}rem` }}
         data-pending={isPending || undefined}
       >
-        {/* Icon */}
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <HugeiconsIcon
-            icon={Folder01Icon}
-            size={24}
-            className="text-muted-foreground"
-          />
-        </div>
+        {/* Icon / Chevron */}
+        {childCount > 0 ? (
+          <button
+            onClick={() => onToggleExpand(category.id)}
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+            aria-expanded={isExpanded}
+            aria-label={isExpanded ? `Replier ${category.name}` : `Déplier ${category.name}`}
+          >
+            <HugeiconsIcon
+              icon={isExpanded ? ArrowDown01Icon : ArrowRight01Icon}
+              size={24}
+              className="text-muted-foreground"
+              aria-hidden="true"
+            />
+          </button>
+        ) : (
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted">
+            <HugeiconsIcon
+              icon={Folder01Icon}
+              size={24}
+              className="text-muted-foreground"
+            />
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex flex-1 flex-col gap-1 overflow-hidden">
@@ -105,6 +129,11 @@ export function CategoryCardMobile({
             <span className="text-xs text-muted-foreground">
               Ordre: {category.sort_order}
             </span>
+            {childCount > 0 && !isExpanded && (
+              <Badge variant="outline" className="text-xs">
+                {childCount} sous-cat.
+              </Badge>
+            )}
           </div>
         </div>
 
