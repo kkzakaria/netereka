@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { execute, queryFirst, query } from "@/lib/db";
+import { MAX_CATEGORY_DEPTH } from "@/lib/db/types";
 import { slugify, type ActionResult } from "@/lib/utils";
 
 const idSchema = z.string().min(1, "ID requis");
@@ -22,6 +23,10 @@ async function getDepth(categoryId: string): Promise<number> {
   let depth = 0;
   let currentId: string | null = categoryId;
   while (currentId) {
+    if (depth > MAX_CATEGORY_DEPTH + 1) {
+      console.error(`[admin/categories] getDepth: exceeded max iterations for category ${categoryId}`);
+      return depth;
+    }
     const cat: { parent_id: string | null } | null = await queryFirst<{ parent_id: string | null }>(
       "SELECT parent_id FROM categories WHERE id = ?",
       [currentId]
@@ -33,18 +38,49 @@ async function getDepth(categoryId: string): Promise<number> {
   return depth;
 }
 
-async function isDescendantOf(categoryId: string, potentialAncestorId: string): Promise<boolean> {
-  const descendants = await query<{ id: string }>(
-    `WITH RECURSIVE descendants AS (
-      SELECT id FROM categories WHERE parent_id = ?
+async function getMaxSubtreeDepth(categoryId: string): Promise<number> {
+  const result = await queryFirst<{ max_depth: number }>(
+    `WITH RECURSIVE subtree(id, depth) AS (
+      SELECT id, 1 FROM categories WHERE parent_id = ?
       UNION ALL
-      SELECT c.id FROM categories c
-      JOIN descendants d ON c.parent_id = d.id
+      SELECT c.id, s.depth + 1 FROM categories c
+      JOIN subtree s ON c.parent_id = s.id
+      WHERE s.depth < 10
     )
-    SELECT id FROM descendants`,
-    [potentialAncestorId]
+    SELECT COALESCE(MAX(depth), 0) as max_depth FROM subtree`,
+    [categoryId]
   );
-  return descendants.some((d) => d.id === categoryId);
+  return result?.max_depth ?? 0;
+}
+
+async function isDescendantOf(categoryId: string, potentialAncestorId: string): Promise<boolean> {
+  const result = await queryFirst<{ id: string }>(
+    `WITH RECURSIVE descendants(id, depth) AS (
+      SELECT id, 1 FROM categories WHERE parent_id = ?
+      UNION ALL
+      SELECT c.id, d.depth + 1 FROM categories c
+      JOIN descendants d ON c.parent_id = d.id
+      WHERE d.depth < 10
+    )
+    SELECT id FROM descendants WHERE id = ? LIMIT 1`,
+    [potentialAncestorId, categoryId]
+  );
+  return !!result;
+}
+
+async function validateParent(parentId: string): Promise<ActionResult | null> {
+  const parent = await queryFirst<{ id: string }>(
+    "SELECT id FROM categories WHERE id = ?",
+    [parentId]
+  );
+  if (!parent) {
+    return { success: false, error: "Catégorie parente introuvable" };
+  }
+  const parentDepth = await getDepth(parentId);
+  if (parentDepth >= MAX_CATEGORY_DEPTH) {
+    return { success: false, error: "Profondeur maximale atteinte (2 niveaux)" };
+  }
+  return null;
 }
 
 export async function createCategory(formData: FormData): Promise<ActionResult> {
@@ -65,19 +101,9 @@ export async function createCategory(formData: FormData): Promise<ActionResult> 
   const parentId = data.parent_id || null;
   const id = nanoid();
 
-  // Validate depth: parent must exist and result in max 2 levels
   if (parentId) {
-    const parent = await queryFirst<{ id: string }>(
-      "SELECT id FROM categories WHERE id = ?",
-      [parentId]
-    );
-    if (!parent) {
-      return { success: false, error: "Catégorie parente introuvable" };
-    }
-    const parentDepth = await getDepth(parentId);
-    if (parentDepth >= 2) {
-      return { success: false, error: "Profondeur maximale atteinte (2 niveaux)" };
-    }
+    const error = await validateParent(parentId);
+    if (error) return error;
   }
 
   const existing = await queryFirst<{ id: string }>(
@@ -127,23 +153,21 @@ export async function updateCategory(
     return { success: false, error: "Une catégorie ne peut pas être son propre parent" };
   }
 
-  // Prevent circular references: new parent must not be a descendant
   if (parentId) {
-    const parent = await queryFirst<{ id: string }>(
-      "SELECT id FROM categories WHERE id = ?",
-      [parentId]
-    );
-    if (!parent) {
-      return { success: false, error: "Catégorie parente introuvable" };
-    }
-
+    // Prevent circular references: new parent must not be a descendant
     if (await isDescendantOf(parentId, id)) {
       return { success: false, error: "Référence circulaire : le parent est un descendant de cette catégorie" };
     }
 
+    const error = await validateParent(parentId);
+    if (error) return error;
+
+    // Check subtree depth: moving this category under the new parent
+    // must not exceed the max depth
     const parentDepth = await getDepth(parentId);
-    if (parentDepth >= 2) {
-      return { success: false, error: "Profondeur maximale atteinte (2 niveaux)" };
+    const subtreeDepth = await getMaxSubtreeDepth(id);
+    if (parentDepth + 1 + subtreeDepth > MAX_CATEGORY_DEPTH) {
+      return { success: false, error: "Ce déplacement dépasserait la profondeur maximale (2 niveaux)" };
     }
   }
 

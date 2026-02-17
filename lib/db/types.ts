@@ -142,8 +142,11 @@ export interface OrderItem {
   total_price: number;
 }
 
+/** Maximum category hierarchy depth (0-indexed). Root = 0, max child depth = MAX_CATEGORY_DEPTH. */
+export const MAX_CATEGORY_DEPTH = 2;
+
 export interface CategoryNode extends Category {
-  children: CategoryNode[];
+  readonly children: readonly CategoryNode[];
 }
 
 export interface SearchOptions {

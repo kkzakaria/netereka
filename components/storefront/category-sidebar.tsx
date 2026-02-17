@@ -19,11 +19,9 @@ function isActiveOrAncestor(node: CategoryNode, activeSlug: string): boolean {
 function CategoryTreeNode({
   node,
   activeCategorySlug,
-  depth = 0,
 }: {
   node: CategoryNode;
   activeCategorySlug?: string;
-  depth?: number;
 }) {
   const isActive = node.slug === activeCategorySlug;
   const hasChildren = node.children.length > 0;
@@ -67,7 +65,6 @@ function CategoryTreeNode({
               key={child.id}
               node={child}
               activeCategorySlug={activeCategorySlug}
-              depth={depth + 1}
             />
           ))}
         </div>

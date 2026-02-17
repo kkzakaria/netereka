@@ -4,7 +4,7 @@ import type { Category } from "@/lib/db/types";
 export interface CategoryWithCount extends Category {
   product_count: number;
   parent_name: string | null;
-  depth: number;
+  depth: 0 | 1 | 2;
 }
 
 export async function getAllCategories(): Promise<CategoryWithCount[]> {

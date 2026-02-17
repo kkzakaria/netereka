@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useTransition, useState } from "react";
+import { useRef, useTransition, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,12 @@ function getDescendantIds(categoryId: string, allCategories: Category[]): Set<st
   return ids;
 }
 
+function getDepth(cat: Category, allCategories: Category[]): number {
+  if (!cat.parent_id) return 0;
+  const parent = allCategories.find((c) => c.id === cat.parent_id);
+  return parent?.parent_id ? 2 : 1;
+}
+
 export function CategoryForm({
   category,
   categories = [],
@@ -53,8 +59,12 @@ export function CategoryForm({
   const [isPending, startTransition] = useTransition();
   const isEdit = !!category;
   const isActiveRef = useRef<HTMLInputElement>(null);
-  const parentIdRef = useRef<HTMLInputElement>(null);
   const [parentId, setParentId] = useState(category?.parent_id ?? "");
+
+  // Reset parentId when the edited category changes
+  useEffect(() => {
+    setParentId(category?.parent_id ?? "");
+  }, [category?.id, category?.parent_id]);
 
   // Filter out current category and its descendants from parent options
   const excludeIds = isEdit
@@ -62,14 +72,6 @@ export function CategoryForm({
     : new Set<string>();
 
   const parentOptions = categories.filter((c) => !excludeIds.has(c.id));
-
-  // Build indentation for parent options
-  function getIndent(cat: Category): string {
-    if (!cat.parent_id) return "";
-    const parent = categories.find((c) => c.id === cat.parent_id);
-    if (!parent || !parent.parent_id) return "\u00A0\u00A0\u00A0\u00A0";
-    return "\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0";
-  }
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -124,13 +126,11 @@ export function CategoryForm({
           </div>
           <div className="space-y-2">
             <Label>Catégorie parente</Label>
-            <input type="hidden" name="parent_id" ref={parentIdRef} value={parentId} />
+            <input type="hidden" name="parent_id" value={parentId} />
             <Select
               value={parentId || "__none__"}
               onValueChange={(value) => {
-                const newVal = value === "__none__" ? "" : value;
-                setParentId(newVal);
-                if (parentIdRef.current) parentIdRef.current.value = newVal;
+                setParentId(value === "__none__" ? "" : value);
               }}
             >
               <SelectTrigger>
@@ -140,7 +140,7 @@ export function CategoryForm({
                 <SelectItem value="__none__">Aucune (catégorie principale)</SelectItem>
                 {parentOptions.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
-                    {getIndent(cat)}{cat.parent_id ? "↳ " : ""}{cat.name}
+                    {"\u00A0".repeat(getDepth(cat, categories) * 4)}{cat.parent_id ? "↳ " : ""}{cat.name}
                   </SelectItem>
                 ))}
               </SelectContent>

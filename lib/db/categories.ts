@@ -1,5 +1,6 @@
 import { query, queryFirst } from "@/lib/db";
 import type { Category, CategoryNode } from "@/lib/db/types";
+import { MAX_CATEGORY_DEPTH } from "@/lib/db/types";
 
 export async function getCategories(): Promise<Category[]> {
   return query<Category>(
@@ -45,17 +46,22 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
 export async function getCategoryAncestors(categoryId: string): Promise<Category[]> {
   const ancestors: Category[] = [];
   let currentId: string | null = categoryId;
+  let iterations = 0;
 
-  // Walk up the parent chain (max 2 levels, so at most 2 iterations)
   while (currentId) {
-    const cat: Category | null = await queryFirst<Category>(
-      "SELECT * FROM categories WHERE id = ?",
+    if (iterations++ > MAX_CATEGORY_DEPTH + 1) {
+      console.error(`[db/categories] getCategoryAncestors: exceeded max iterations for category ${categoryId}`);
+      break;
+    }
+    const row: { parent_id: string | null } | null = await queryFirst<{ parent_id: string | null }>(
+      "SELECT parent_id FROM categories WHERE id = ?",
       [currentId]
     );
-    if (!cat || !cat.parent_id) break;
+    if (!row?.parent_id) break;
+
     const parent: Category | null = await queryFirst<Category>(
       "SELECT * FROM categories WHERE id = ?",
-      [cat.parent_id]
+      [row.parent_id]
     );
     if (!parent) break;
     ancestors.unshift(parent);
@@ -74,13 +80,17 @@ export async function getCategoryTree(): Promise<CategoryNode[]> {
     nodeMap.set(cat.id, { ...cat, children: [] });
   }
 
-  // Build tree structure
+  // Build tree structure — exclude orphans (active children whose parent is inactive/missing)
   const roots: CategoryNode[] = [];
   for (const node of nodeMap.values()) {
     if (node.parent_id && nodeMap.has(node.parent_id)) {
-      nodeMap.get(node.parent_id)!.children.push(node);
-    } else {
+      (nodeMap.get(node.parent_id)!.children as CategoryNode[]).push(node);
+    } else if (!node.parent_id) {
       roots.push(node);
+    } else {
+      console.warn(
+        `[db/categories] getCategoryTree: category "${node.name}" (${node.id}) has parent_id="${node.parent_id}" but parent is inactive or missing. Excluding from tree.`
+      );
     }
   }
 
