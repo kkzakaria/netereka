@@ -59,9 +59,10 @@ npm run db:seed-catalogue  # Seed product catalogue
 
 - `actions/` — Server Actions organized by domain (`checkout.ts`, `reviews.ts`, `search.ts`, `wishlist.ts`, `addresses.ts`, `account.ts`, `admin/*.ts`)
 - `lib/db/` — D1 query helpers with `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()`
+- `lib/db/categories.ts` — Category tree queries: `getCategoryTree()`, `getCategoryAncestors()`, `getCategoryDescendantIds()`, `minifyCategoryTree()`
 - `lib/db/drizzle.ts` — Drizzle ORM client via `getDrizzle()` (for new code)
 - `lib/db/schema.ts` — Drizzle schema definitions for all tables
-- `lib/db/types.ts` — TypeScript interfaces for all DB entities (Product, Order, Category, etc.)
+- `lib/db/types.ts` — TypeScript interfaces for all DB entities (Product, Order, Category, etc.). Also exports `SidebarCategoryNode`, `ProductCardData`, `CategoryNode` — use minimal projection types at RSC→client boundary
 - `lib/auth/guards.ts` — Auth guards: `requireAuth()`, `requireAdmin()`, `requireGuest()`, `getOptionalSession()`
 - `lib/cloudflare/context.ts` — `getDB()`, `getKV()`, `getR2()` helpers via `getCloudflareContext()`
 - `lib/validations/` — Zod schemas for forms (checkout, account, address, review)
@@ -118,6 +119,8 @@ Environment types defined in `env.d.ts` as `CloudflareEnv` interface.
 
 D1 SQLite with Drizzle ORM. Prices stored as integers (XOF, no decimals). Schema defined in `lib/db/schema.ts`, legacy migrations in `db/migrations/`, seeds in `db/seeds/`.
 
+**Category hierarchy:** 2-level max depth (`MAX_CATEGORY_DEPTH = 2` in `lib/db/types.ts`). Categories use recursive CTEs for tree queries. URLs are flat (`/c/slug`) with breadcrumbs for hierarchy.
+
 Two DB access patterns coexist (gradual migration in progress):
 - **Raw SQL** (legacy): `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()` in `lib/db/index.ts`
 - **Drizzle ORM** (new code): `getDrizzle()` from `lib/db/drizzle.ts`
@@ -140,6 +143,7 @@ Wrangler config: `wrangler.jsonc` (not `.toml`).
 ## Gotchas
 
 - **Pre-commit hook (Husky):** Runs `tsc --noEmit` + `eslint` + `vitest run` before every commit. Fix all type, lint, and test errors before committing — the hook blocks commits on failure.
+- **Bash and route groups:** Paths with parentheses like `app/(admin)/...` must be quoted in bash commands (e.g., `git add "app/(admin)/file.tsx"`), otherwise the shell interprets them as subshells.
 - **Local D1 bootstrap:** Before `npm run db:studio` works, you must initialize the local D1 SQLite file first: `npx wrangler d1 execute netereka-db --local --command "SELECT 1"`. Then run the legacy migration and seed scripts.
 - **SEO files:** `app/robots.ts` and `app/sitemap.ts` generate SEO metadata dynamically.
 - **Drizzle remote mode:** To use `drizzle-kit` against remote D1, set `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, and `CLOUDFLARE_D1_TOKEN` env vars.
