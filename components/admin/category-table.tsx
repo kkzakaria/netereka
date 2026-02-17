@@ -76,7 +76,7 @@ export function CategoryTable({
               <TableHead>Produits</TableHead>
               <TableHead>Ordre</TableHead>
               <TableHead>Statut</TableHead>
-              <TableHead className="w-14"></TableHead>
+              <TableHead className="w-14"><span className="sr-only">Actions</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

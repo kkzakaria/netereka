@@ -142,7 +142,7 @@ export function CategoryForm({
             />
           </div>
           <div className="space-y-2">
-            <Label>Catégorie parente</Label>
+            <Label htmlFor="c-parent">Catégorie parente</Label>
             <input type="hidden" name="parent_id" value={parentId} />
             <Select
               value={parentId || "__none__"}
@@ -150,7 +150,7 @@ export function CategoryForm({
                 setParentId(value === "__none__" ? "" : value);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger id="c-parent">
                 <SelectValue placeholder="Aucune (catégorie principale)" />
               </SelectTrigger>
               <SelectContent>
@@ -174,7 +174,7 @@ export function CategoryForm({
             />
           </div>
           <div className="flex items-center justify-between">
-            <Label>Active</Label>
+            <Label htmlFor="c-active">Active</Label>
             <input
               type="hidden"
               name="is_active"
@@ -182,6 +182,7 @@ export function CategoryForm({
               defaultValue={category?.is_active ?? 1}
             />
             <Switch
+              id="c-active"
               defaultChecked={category ? category.is_active === 1 : true}
               onCheckedChange={(checked) => {
                 if (isActiveRef.current) isActiveRef.current.value = checked ? "1" : "0";
@@ -190,7 +191,7 @@ export function CategoryForm({
           </div>
           <Button type="submit" className="w-full" disabled={isPending}>
             {isPending
-              ? "Enregistrement..."
+              ? "Enregistrement\u2026"
               : isEdit
                 ? "Mettre à jour"
                 : "Créer"}

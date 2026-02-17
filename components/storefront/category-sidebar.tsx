@@ -37,12 +37,14 @@ function CategoryTreeNode({
           <button
             onClick={() => setExpanded(!expanded)}
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+            aria-expanded={expanded}
             aria-label={expanded ? "Réduire" : "Développer"}
           >
             <HugeiconsIcon
               icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
               size={14}
               className="text-muted-foreground"
+              aria-hidden="true"
             />
           </button>
         )}
@@ -80,10 +82,10 @@ export function CategorySidebar({
   if (categoryTree.length === 0) return null;
 
   return (
-    <fieldset>
-      <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <nav aria-label="Catégories">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Catégories
-      </legend>
+      </p>
       <div className="space-y-0.5">
         {categoryTree.map((node) => (
           <CategoryTreeNode
@@ -93,6 +95,6 @@ export function CategorySidebar({
           />
         ))}
       </div>
-    </fieldset>
+    </nav>
   );
 }

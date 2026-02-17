@@ -69,7 +69,7 @@ export function CategoryCardMobile({
   return (
     <>
       <div
-        className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/30"
+        className="flex items-center gap-3 rounded-xl border bg-card p-3"
         style={{ marginLeft: `${category.depth * 1}rem` }}
         data-pending={isPending || undefined}
       >

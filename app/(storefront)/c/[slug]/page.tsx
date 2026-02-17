@@ -149,19 +149,19 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         />
 
         {/* Breadcrumbs */}
-        <nav className="mb-4 text-sm text-muted-foreground">
+        <nav aria-label="Fil d'Ariane" className="mb-4 text-sm text-muted-foreground">
           <Link href="/" className="hover:text-foreground">
             Accueil
           </Link>
           {ancestors.map((a) => (
             <span key={a.id}>
-              <span className="mx-1.5">/</span>
+              <span className="mx-1.5" aria-hidden="true">/</span>
               <Link href={`/c/${a.slug}`} className="hover:text-foreground">
                 {a.name}
               </Link>
             </span>
           ))}
-          <span className="mx-1.5">/</span>
+          <span className="mx-1.5" aria-hidden="true">/</span>
           <span className="text-foreground">{category.name}</span>
         </nav>
 
@@ -196,7 +196,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                     className="h-12 w-12 rounded-lg object-cover"
                   />
                 )}
-                <span className="text-sm font-medium">{child.name}</span>
+                <span className="line-clamp-2 text-sm font-medium">{child.name}</span>
               </Link>
             ))}
           </div>

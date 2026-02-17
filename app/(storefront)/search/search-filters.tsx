@@ -95,7 +95,7 @@ export function SearchFilters() {
                   type="checkbox"
                   checked={activeBrands.includes(brand)}
                   onChange={() => handleBrandToggle(brand)}
-                  className="size-3.5 rounded border-input accent-primary"
+                  className="size-3.5 rounded border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
                 />
                 {brand}
               </label>

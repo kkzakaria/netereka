@@ -78,7 +78,7 @@ export function ActiveFilters() {
       )}
       <button
         onClick={clearAll}
-        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+        className="min-h-[44px] text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
       >
         Tout effacer
       </button>
@@ -91,10 +91,12 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
     <button
       onClick={onRemove}
       aria-label={`Retirer ${label}`}
-      className="inline-flex h-5 items-center gap-1 rounded-full border px-2 text-[0.625rem] font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+      className="relative inline-flex min-h-[44px] items-center gap-1 rounded-full px-2 text-[0.625rem] font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
     >
-      {label}
-      <span aria-hidden="true" className="ml-0.5 text-muted-foreground">&times;</span>
+      <span className="inline-flex h-5 items-center gap-1 rounded-full border px-2">
+        {label}
+        <span aria-hidden="true" className="ml-0.5 text-muted-foreground">&times;</span>
+      </span>
     </button>
   );
 }

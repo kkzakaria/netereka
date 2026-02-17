@@ -47,8 +47,9 @@ export function MobileFilterSheet() {
       {/* Sheet — slides up from bottom */}
       <div
         role="dialog"
-        aria-modal={open}
+        aria-modal="true"
         aria-label="Filtres"
+        {...(!open && { inert: true })}
         className={`fixed inset-x-0 bottom-0 z-[61] flex max-h-[85vh] flex-col rounded-t-2xl bg-background shadow-xl transition-transform duration-300 ease-out ${
           open ? "translate-y-0" : "translate-y-full"
         }`}
