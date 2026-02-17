@@ -137,7 +137,7 @@ Wrangler config: `wrangler.jsonc` (not `.toml`).
 
 ## Gotchas
 
-- **Pre-commit hook (Husky):** Runs `tsc --noEmit` + `eslint` before every commit. Fix all type and lint errors before committing — the hook blocks commits on failure.
+- **Pre-commit hook (Husky):** Runs `tsc --noEmit` + `eslint` + `vitest run` before every commit. Fix all type, lint, and test errors before committing — the hook blocks commits on failure.
 - **Local D1 bootstrap:** Before `npm run db:studio` works, you must initialize the local D1 SQLite file first: `npx wrangler d1 execute netereka-db --local --command "SELECT 1"`. Then run the legacy migration and seed scripts.
 - **SEO files:** `app/robots.ts` and `app/sitemap.ts` generate SEO metadata dynamically.
 - **Drizzle remote mode:** To use `drizzle-kit` against remote D1, set `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, and `CLOUDFLARE_D1_TOKEN` env vars.
