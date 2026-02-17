@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Tests
+        run: npm test
+
   deploy:
     name: Deploy to Cloudflare Workers
     needs: ci
