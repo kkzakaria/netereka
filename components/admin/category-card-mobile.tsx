@@ -77,7 +77,7 @@ export function CategoryCardMobile({
   return (
     <>
       <div
-        className="flex items-center gap-3 rounded-xl border bg-card p-3"
+        className={`flex items-center gap-3 rounded-xl border p-3 ${category.depth > 0 ? "bg-muted/50" : "bg-card"}`}
         style={{ marginLeft: `${category.depth * 1}rem` }}
         data-pending={isPending || undefined}
       >
