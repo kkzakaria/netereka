@@ -9,7 +9,12 @@ echo "🔍 Vérification du linting ESLint..."
 npm run lint
 LINT_EXIT=$?
 
-if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ]; then
+echo ""
+echo "🧪 Exécution des tests..."
+npm test
+TEST_EXIT=$?
+
+if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
   echo ""
   echo "❌ =============================================="
   echo "❌  COMMIT BLOQUÉ"
@@ -21,6 +26,9 @@ if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ]; then
   if [ $LINT_EXIT -ne 0 ]; then
     echo "  → Des erreurs ESLint ont été détectées."
   fi
+  if [ $TEST_EXIT -ne 0 ]; then
+    echo "  → Des tests ont échoué."
+  fi
   echo ""
   echo "  Corrigez ces erreurs avant de commit."
   echo "  NE PAS utiliser --no-verify pour bypasser."
@@ -29,4 +37,4 @@ if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ]; then
 fi
 
 echo ""
-echo "✅ Types et lint OK — commit autorisé."
+echo "✅ Types, lint et tests OK — commit autorisé."
