@@ -100,7 +100,7 @@ export function CategoryTable({
                     key={cat.id}
                     data-pending={isPending || undefined}
                     data-expanded={children > 0 && isExpanded ? "" : undefined}
-                    className={`data-[expanded]:bg-muted/30${cat.depth > 0 ? " bg-muted/50" : ""}`}
+                    className={`data-[expanded]:bg-muted/50${cat.depth > 0 ? " bg-muted" : ""}`}
                   >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-1" style={{ paddingLeft: `${cat.depth * 1.5}rem` }}>
