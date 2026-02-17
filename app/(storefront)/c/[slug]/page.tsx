@@ -2,6 +2,8 @@ import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
+import { getImageUrl } from "@/lib/utils/images";
 import {
   getCategoryBySlug,
   getCategoryChildren,
@@ -186,9 +188,11 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                 className="flex flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center transition-colors hover:bg-muted/50"
               >
                 {child.image_url && (
-                  <img
-                    src={child.image_url}
+                  <Image
+                    src={getImageUrl(child.image_url)}
                     alt={child.name}
+                    width={48}
+                    height={48}
                     className="h-12 w-12 rounded-lg object-cover"
                   />
                 )}

@@ -61,6 +61,24 @@ describe("buildWhere", () => {
     expect(params).toHaveLength(7);
   });
 
+  it("ajoute un filtre par categoryIds", () => {
+    const { clause, params } = buildWhere({ categoryIds: ["id1", "id2"] });
+    expect(clause).toContain("p.category_id IN (?, ?)");
+    expect(params).toContain("id1");
+    expect(params).toContain("id2");
+  });
+
+  it("categoryIds a priorité sur category", () => {
+    const { clause } = buildWhere({ categoryIds: ["id1"], category: "smartphones" });
+    expect(clause).toContain("p.category_id IN (?)");
+    expect(clause).not.toContain("c.slug = ?");
+  });
+
+  it("ignore categoryIds si le tableau est vide", () => {
+    const { clause } = buildWhere({ categoryIds: [] });
+    expect(clause).not.toContain("p.category_id IN");
+  });
+
   it("ignore brands si le tableau est vide", () => {
     const { clause } = buildWhere({ brands: [] });
     expect(clause).not.toContain("p.brand IN");

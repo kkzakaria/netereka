@@ -4,22 +4,28 @@ import type { Category } from "@/lib/db/types";
 export interface CategoryWithCount extends Category {
   product_count: number;
   parent_name: string | null;
-  depth: 0 | 1 | 2;
+  depth: number;
 }
 
 export async function getAllCategories(): Promise<CategoryWithCount[]> {
   return query<CategoryWithCount>(
-    `SELECT c.*,
+    `WITH RECURSIVE tree(id, depth, path) AS (
+       SELECT id, 0, printf('%04d', sort_order)
+       FROM categories WHERE parent_id IS NULL
+       UNION ALL
+       SELECT c.id, t.depth + 1, t.path || '/' || printf('%04d', c.sort_order)
+       FROM categories c
+       JOIN tree t ON c.parent_id = t.id
+       WHERE t.depth < 3
+     )
+     SELECT c.*,
        (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id) as product_count,
        parent.name as parent_name,
-       CASE
-         WHEN c.parent_id IS NULL THEN 0
-         WHEN (SELECT parent_id FROM categories WHERE id = c.parent_id) IS NULL THEN 1
-         ELSE 2
-       END as depth
-     FROM categories c
+       t.depth
+     FROM tree t
+     JOIN categories c ON c.id = t.id
      LEFT JOIN categories parent ON parent.id = c.parent_id
-     ORDER BY COALESCE(c.parent_id, c.id), c.parent_id IS NOT NULL, c.sort_order ASC`
+     ORDER BY t.path ASC`
   );
 }
 

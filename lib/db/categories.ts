@@ -30,12 +30,12 @@ export async function getCategoryChildren(parentId: string): Promise<Category[]>
 
 export async function getCategoryDescendantIds(categoryId: string): Promise<string[]> {
   const rows = await query<{ id: string }>(
-    `WITH RECURSIVE descendants AS (
-      SELECT id FROM categories WHERE parent_id = ? AND is_active = 1
+    `WITH RECURSIVE descendants(id, depth) AS (
+      SELECT id, 1 FROM categories WHERE parent_id = ? AND is_active = 1
       UNION ALL
-      SELECT c.id FROM categories c
+      SELECT c.id, d.depth + 1 FROM categories c
       JOIN descendants d ON c.parent_id = d.id
-      WHERE c.is_active = 1
+      WHERE c.is_active = 1 AND d.depth < 10
     )
     SELECT id FROM descendants`,
     [categoryId]
@@ -44,8 +44,7 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
 }
 
 export async function getCategoryAncestors(categoryId: string): Promise<Category[]> {
-  // Single recursive CTE query instead of N+1 iterative queries
-  const rows = await query<Category & { depth: number }>(
+  return query<Category & { depth: number }>(
     `WITH RECURSIVE ancestors(id, depth) AS (
       SELECT parent_id, 1 FROM categories WHERE id = ?
       UNION ALL
@@ -58,33 +57,50 @@ export async function getCategoryAncestors(categoryId: string): Promise<Category
     ORDER BY a.depth DESC`,
     [categoryId, MAX_CATEGORY_DEPTH]
   );
-  return rows;
 }
 
 export async function getCategoryTree(): Promise<CategoryNode[]> {
   const all = await getCategories();
 
-  // Build a map of all nodes
-  const nodeMap = new Map<string, CategoryNode>();
+  // Use mutable children arrays during construction, returned as readonly via CategoryNode
+  const nodeMap = new Map<string, CategoryNode & { children: CategoryNode[] }>();
   for (const cat of all) {
     nodeMap.set(cat.id, { ...cat, children: [] });
   }
 
-  // Build tree structure — exclude orphans (active children whose parent is inactive/missing)
   const roots: CategoryNode[] = [];
+  let orphanCount = 0;
   for (const node of nodeMap.values()) {
     if (node.parent_id && nodeMap.has(node.parent_id)) {
-      (nodeMap.get(node.parent_id)!.children as CategoryNode[]).push(node);
+      nodeMap.get(node.parent_id)!.children.push(node);
     } else if (!node.parent_id) {
       roots.push(node);
     } else {
+      orphanCount++;
       console.warn(
         `[db/categories] getCategoryTree: category "${node.name}" (${node.id}) has parent_id="${node.parent_id}" but parent is inactive or missing. Excluding from tree.`
       );
     }
   }
 
+  // Detect cycles: nodes whose parent exists in the map but never became roots or children of roots
+  const treeNodeCount = countTreeNodes(roots);
+  const cyclicCount = all.length - treeNodeCount - orphanCount;
+  if (cyclicCount > 0) {
+    console.error(
+      `[db/categories] getCategoryTree: ${cyclicCount} category(ies) excluded due to circular parent references.`
+    );
+  }
+
   return roots;
+}
+
+function countTreeNodes(nodes: readonly CategoryNode[]): number {
+  let count = 0;
+  for (const node of nodes) {
+    count += 1 + countTreeNodes(node.children);
+  }
+  return count;
 }
 
 /** Strip a category tree to only the fields needed by client-side sidebar. */

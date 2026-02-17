@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
-import { execute, queryFirst, query } from "@/lib/db";
+import { execute, queryFirst } from "@/lib/db";
 import { MAX_CATEGORY_DEPTH } from "@/lib/db/types";
 import { slugify, type ActionResult } from "@/lib/utils";
 
@@ -19,23 +19,20 @@ const categorySchema = z.object({
   is_active: z.coerce.number().min(0).max(1).default(1),
 });
 
+/** Count how many ancestors a category has (root = 0). Single CTE query. */
 async function getDepth(categoryId: string): Promise<number> {
-  let depth = 0;
-  let currentId: string | null = categoryId;
-  while (currentId) {
-    if (depth > MAX_CATEGORY_DEPTH + 1) {
-      console.error(`[admin/categories] getDepth: exceeded max iterations for category ${categoryId}`);
-      return depth;
-    }
-    const cat: { parent_id: string | null } | null = await queryFirst<{ parent_id: string | null }>(
-      "SELECT parent_id FROM categories WHERE id = ?",
-      [currentId]
-    );
-    if (!cat || !cat.parent_id) break;
-    depth++;
-    currentId = cat.parent_id;
-  }
-  return depth;
+  const result = await queryFirst<{ depth: number }>(
+    `WITH RECURSIVE ancestors(id, depth) AS (
+      SELECT parent_id, 1 FROM categories WHERE id = ?
+      UNION ALL
+      SELECT c.parent_id, a.depth + 1 FROM categories c
+      JOIN ancestors a ON c.id = a.id
+      WHERE c.parent_id IS NOT NULL AND a.depth <= ?
+    )
+    SELECT COALESCE(MAX(depth), 0) as depth FROM ancestors`,
+    [categoryId, MAX_CATEGORY_DEPTH + 1]
+  );
+  return result?.depth ?? 0;
 }
 
 async function getMaxSubtreeDepth(categoryId: string): Promise<number> {
@@ -69,14 +66,13 @@ async function isDescendantOf(categoryId: string, potentialAncestorId: string): 
 }
 
 async function validateParent(parentId: string): Promise<ActionResult | null> {
-  const parent = await queryFirst<{ id: string }>(
-    "SELECT id FROM categories WHERE id = ?",
-    [parentId]
-  );
+  const [parent, parentDepth] = await Promise.all([
+    queryFirst<{ id: string }>("SELECT id FROM categories WHERE id = ?", [parentId]),
+    getDepth(parentId),
+  ]);
   if (!parent) {
     return { success: false, error: "Catégorie parente introuvable" };
   }
-  const parentDepth = await getDepth(parentId);
   if (parentDepth >= MAX_CATEGORY_DEPTH) {
     return { success: false, error: "Profondeur maximale atteinte (2 niveaux)" };
   }
@@ -226,7 +222,10 @@ export async function deleteCategory(id: string): Promise<ActionResult> {
     };
   }
 
-  await execute("DELETE FROM categories WHERE id = ?", [id]);
+  const result = await execute("DELETE FROM categories WHERE id = ?", [id]);
+  if (result.meta.changes === 0) {
+    return { success: false, error: "Catégorie introuvable ou déjà supprimée" };
+  }
   revalidatePath("/categories");
   revalidatePath("/dashboard");
   return { success: true };

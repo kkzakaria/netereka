@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Category } from "@/lib/db/types";
+import { MAX_CATEGORY_DEPTH } from "@/lib/db/types";
 import { createCategory, updateCategory } from "@/actions/admin/categories";
 
 interface CategoryFormProps {
@@ -85,7 +86,9 @@ export function CategoryForm({
     ? new Set([category!.id, ...getDescendantIds(category!.id, childrenMap)])
     : new Set<string>();
 
-  const parentOptions = categories.filter((c) => !excludeIds.has(c.id));
+  const parentOptions = categories.filter(
+    (c) => !excludeIds.has(c.id) && getDepth(c, categoryById) < MAX_CATEGORY_DEPTH
+  );
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
