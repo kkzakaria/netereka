@@ -31,7 +31,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
+import {
+  MoreVerticalIcon,
+  ArrowRight01Icon,
+  ArrowDown01Icon,
+} from "@hugeicons/core-free-icons";
 import type { CategoryWithCount } from "@/lib/db/admin/categories";
 import type { Category } from "@/lib/db/types";
 import { deleteCategory } from "@/actions/admin/categories";
@@ -40,9 +44,15 @@ import { CategoryForm } from "./category-form";
 export function CategoryTable({
   categories,
   allCategories = [],
+  expandedIds,
+  onToggleExpand,
+  childCount,
 }: {
   categories: CategoryWithCount[];
   allCategories?: Category[];
+  expandedIds: Set<string>;
+  onToggleExpand: (id: string) => void;
+  childCount: (id: string) => number;
 }) {
   const [editCategory, setEditCategory] = useState<CategoryWithCount | null>(
     null
@@ -58,11 +68,6 @@ export function CategoryTable({
         toast.error(result.error);
       }
     });
-  }
-
-  // Count children for delete warning
-  function childCount(id: string): number {
-    return categories.filter((c) => c.parent_id === id).length;
   }
 
   return (
@@ -89,19 +94,48 @@ export function CategoryTable({
             ) : (
               categories.map((cat) => {
                 const children = childCount(cat.id);
+                const isExpanded = expandedIds.has(cat.id);
                 return (
-                  <TableRow key={cat.id} data-pending={isPending || undefined}>
+                  <TableRow
+                    key={cat.id}
+                    data-pending={isPending || undefined}
+                    data-expanded={children > 0 && isExpanded ? "" : undefined}
+                    className={`data-[expanded]:bg-muted/50${cat.depth > 0 ? " bg-muted" : ""}`}
+                  >
                     <TableCell className="font-medium">
-                      <div style={{ paddingLeft: `${cat.depth * 1.5}rem` }}>
-                        <span>
-                          {cat.depth > 0 && (
-                            <span className="mr-1 text-muted-foreground">↳</span>
-                          )}
-                          {cat.name}
-                        </span>
-                        {cat.parent_name && (
-                          <p className="text-xs text-muted-foreground">{cat.parent_name}</p>
+                      <div className="flex items-center gap-1" style={{ paddingLeft: `${cat.depth * 1.5}rem` }}>
+                        {children > 0 ? (
+                          <button
+                            onClick={() => onToggleExpand(cat.id)}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+                            aria-expanded={isExpanded}
+                            aria-label={isExpanded ? `Replier ${cat.name}` : `Déplier ${cat.name}`}
+                          >
+                            <HugeiconsIcon
+                              icon={isExpanded ? ArrowDown01Icon : ArrowRight01Icon}
+                              size={16}
+                              aria-hidden="true"
+                            />
+                          </button>
+                        ) : (
+                          <span className="w-6 shrink-0" />
                         )}
+                        <div>
+                          <span>
+                            {cat.depth > 0 && (
+                              <span className="mr-1 text-muted-foreground">↳</span>
+                            )}
+                            {cat.name}
+                          </span>
+                          {children > 0 && !isExpanded && (
+                            <Badge variant="outline" className="ml-2 text-xs">
+                              {children} sous-cat.
+                            </Badge>
+                          )}
+                          {cat.parent_name && (
+                            <p className="text-xs text-muted-foreground">{cat.parent_name}</p>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
