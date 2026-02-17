@@ -159,13 +159,19 @@ export async function updateCategory(
       return { success: false, error: "Référence circulaire : le parent est un descendant de cette catégorie" };
     }
 
-    const error = await validateParent(parentId);
-    if (error) return error;
+    // Validate parent exists + check depths in parallel
+    const [parent, parentDepth, subtreeDepth] = await Promise.all([
+      queryFirst<{ id: string }>("SELECT id FROM categories WHERE id = ?", [parentId]),
+      getDepth(parentId),
+      getMaxSubtreeDepth(id),
+    ]);
 
-    // Check subtree depth: moving this category under the new parent
-    // must not exceed the max depth
-    const parentDepth = await getDepth(parentId);
-    const subtreeDepth = await getMaxSubtreeDepth(id);
+    if (!parent) {
+      return { success: false, error: "Catégorie parente introuvable" };
+    }
+    if (parentDepth >= MAX_CATEGORY_DEPTH) {
+      return { success: false, error: "Profondeur maximale atteinte (2 niveaux)" };
+    }
     if (parentDepth + 1 + subtreeDepth > MAX_CATEGORY_DEPTH) {
       return { success: false, error: "Ce déplacement dépasserait la profondeur maximale (2 niveaux)" };
     }
@@ -195,10 +201,17 @@ export async function deleteCategory(id: string): Promise<ActionResult> {
   const idResult = idSchema.safeParse(id);
   if (!idResult.success) return { success: false, error: "ID catégorie invalide" };
 
-  const hasProducts = await queryFirst<{ count: number }>(
-    "SELECT COUNT(*) as count FROM products WHERE category_id = ?",
-    [id]
-  );
+  const [hasProducts, hasChildren] = await Promise.all([
+    queryFirst<{ count: number }>(
+      "SELECT COUNT(*) as count FROM products WHERE category_id = ?",
+      [id]
+    ),
+    queryFirst<{ count: number }>(
+      "SELECT COUNT(*) as count FROM categories WHERE parent_id = ?",
+      [id]
+    ),
+  ]);
+
   if (hasProducts && hasProducts.count > 0) {
     return {
       success: false,
@@ -206,10 +219,6 @@ export async function deleteCategory(id: string): Promise<ActionResult> {
     };
   }
 
-  const hasChildren = await queryFirst<{ count: number }>(
-    "SELECT COUNT(*) as count FROM categories WHERE parent_id = ?",
-    [id]
-  );
   if (hasChildren && hasChildren.count > 0) {
     return {
       success: false,

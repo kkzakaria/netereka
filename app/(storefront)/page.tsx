@@ -21,24 +21,31 @@ export const metadata: Metadata = {
 const HIGHLIGHTED_CATEGORIES = 3;
 
 export default async function HomePage() {
-  const [categories, featured, latest, activeBanners] = await Promise.all([
-    getTopLevelCategories(),
-    getFeaturedProducts(10),
-    getLatestProducts(10, true),
-    getActiveBanners().catch((error) => {
-      console.error("[homepage] Failed to fetch active banners:", error);
-      return [] as Banner[];
-    }),
-  ]);
+  // Start categories early — category sections depend on it
+  const categoriesPromise = getTopLevelCategories();
 
-  // Dynamically fetch products for the first N categories
-  const topCategories = categories.slice(0, HIGHLIGHTED_CATEGORIES);
-  const categorySections = await Promise.all(
-    topCategories.map(async (cat) => ({
-      category: cat,
-      products: await getProductsByCategorySlug(cat.slug, 10),
-    }))
+  // Start category sections as soon as categories resolve (don't wait for other fetches)
+  const categorySectionsPromise = categoriesPromise.then((cats) =>
+    Promise.all(
+      cats.slice(0, HIGHLIGHTED_CATEGORIES).map(async (cat) => ({
+        category: cat,
+        products: await getProductsByCategorySlug(cat.slug, 10),
+      }))
+    )
   );
+
+  // Run all independent fetches in parallel
+  const [categories, featured, latest, activeBanners, categorySections] =
+    await Promise.all([
+      categoriesPromise,
+      getFeaturedProducts(10),
+      getLatestProducts(10, true),
+      getActiveBanners().catch((error) => {
+        console.error("[homepage] Failed to fetch active banners:", error);
+        return [] as Banner[];
+      }),
+      categorySectionsPromise,
+    ]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">

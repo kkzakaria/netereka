@@ -44,31 +44,21 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
 }
 
 export async function getCategoryAncestors(categoryId: string): Promise<Category[]> {
-  const ancestors: Category[] = [];
-  let currentId: string | null = categoryId;
-  let iterations = 0;
-
-  while (currentId) {
-    if (iterations++ > MAX_CATEGORY_DEPTH + 1) {
-      console.error(`[db/categories] getCategoryAncestors: exceeded max iterations for category ${categoryId}`);
-      break;
-    }
-    const row: { parent_id: string | null } | null = await queryFirst<{ parent_id: string | null }>(
-      "SELECT parent_id FROM categories WHERE id = ?",
-      [currentId]
-    );
-    if (!row?.parent_id) break;
-
-    const parent: Category | null = await queryFirst<Category>(
-      "SELECT * FROM categories WHERE id = ?",
-      [row.parent_id]
-    );
-    if (!parent) break;
-    ancestors.unshift(parent);
-    currentId = parent.parent_id;
-  }
-
-  return ancestors;
+  // Single recursive CTE query instead of N+1 iterative queries
+  const rows = await query<Category & { depth: number }>(
+    `WITH RECURSIVE ancestors(id, depth) AS (
+      SELECT parent_id, 1 FROM categories WHERE id = ?
+      UNION ALL
+      SELECT c.parent_id, a.depth + 1 FROM categories c
+      JOIN ancestors a ON c.id = a.id
+      WHERE c.parent_id IS NOT NULL AND a.depth <= ?
+    )
+    SELECT c.*, a.depth FROM ancestors a
+    JOIN categories c ON c.id = a.id
+    ORDER BY a.depth DESC`,
+    [categoryId, MAX_CATEGORY_DEPTH]
+  );
+  return rows;
 }
 
 export async function getCategoryTree(): Promise<CategoryNode[]> {

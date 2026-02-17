@@ -75,18 +75,21 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const sp = await searchParams;
+  // Start category tree fetch early (doesn't depend on category.id)
+  const categoryTreePromise = getCategoryTree();
+
   const category = await getCategoryCached(slug);
   if (!category) notFound();
 
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
-  // Fetch subcategories, ancestors, descendant IDs, and category tree in parallel
+  // Fetch subcategories, ancestors, descendant IDs in parallel (+ await tree started above)
   const [children, ancestors, descendantIds, categoryTree] = await Promise.all([
     getCategoryChildren(category.id),
     getCategoryAncestors(category.id),
     getCategoryDescendantIds(category.id),
-    getCategoryTree(),
+    categoryTreePromise,
   ]);
 
   // Aggregate category IDs: current + all descendants
