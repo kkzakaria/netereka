@@ -33,6 +33,10 @@ npm run preview         # Preview with wrangler
 npm run deploy          # Build and deploy to Cloudflare
 npm run lint            # ESLint
 
+# Testing (Vitest 4)
+npm run test               # Run all tests once (vitest run)
+npm run test:watch         # Watch mode
+
 # Database (Drizzle ORM + local D1)
 npm run db:generate        # Generate SQL migrations from schema changes
 npm run db:studio          # Open Drizzle Studio (visual DB browser)
@@ -40,8 +44,6 @@ npm run db:migrate:legacy  # Run legacy SQL migrations (initial setup)
 npm run db:seed            # Seed initial data
 npm run db:seed-catalogue  # Seed product catalogue
 ```
-
-No test framework is configured yet.
 
 ## Architecture
 
