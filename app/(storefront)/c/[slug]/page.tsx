@@ -2,7 +2,16 @@ import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getCategoryBySlug } from "@/lib/db/categories";
+import Image from "next/image";
+import { getImageUrl } from "@/lib/utils/images";
+import {
+  getCategoryBySlug,
+  getCategoryChildren,
+  getCategoryAncestors,
+  getCategoryDescendantIds,
+  getCategoryTree,
+  minifyCategoryTree,
+} from "@/lib/db/categories";
 import {
   searchProducts,
   countSearchResults,
@@ -69,14 +78,28 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const sp = await searchParams;
+  // Start category tree fetch early (doesn't depend on category.id)
+  const categoryTreePromise = getCategoryTree();
+
   const category = await getCategoryCached(slug);
   if (!category) notFound();
 
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
+  // Fetch subcategories, ancestors, descendant IDs in parallel (+ await tree started above)
+  const [children, ancestors, descendantIds, categoryTree] = await Promise.all([
+    getCategoryChildren(category.id),
+    getCategoryAncestors(category.id),
+    getCategoryDescendantIds(category.id),
+    categoryTreePromise,
+  ]);
+
+  // Aggregate category IDs: current + all descendants
+  const allCategoryIds = [category.id, ...descendantIds];
+
   const opts: SearchOptions = {
-    category: slug,
+    categoryIds: allCategoryIds,
     brands: sp.brand ? sp.brand.split(",").filter(Boolean) : undefined,
     minPrice: sp.min_price ? parseInt(sp.min_price, 10) : undefined,
     maxPrice: sp.max_price ? parseInt(sp.max_price, 10) : undefined,
@@ -88,27 +111,29 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const [products, total, brands, priceRange] = await Promise.all([
     searchProducts(opts),
     countSearchResults(opts),
-    getBrandsInCategory(category.id),
-    getPriceRangeInCategory(category.id),
+    getBrandsInCategory(allCategoryIds),
+    getPriceRangeInCategory(allCategoryIds),
   ]);
 
   const hasMore = (currentPage - 1) * limit + products.length < total;
 
+  // Build breadcrumb chain: Accueil > ...ancestors > current
+  const breadcrumbItems = [
+    { name: "Accueil", href: "/" },
+    ...ancestors.map((a) => ({ name: a.name, href: `/c/${a.slug}` })),
+    { name: category.name },
+  ];
+
   return (
     <FilterProvider
-      categories={[]}
+      categoryTree={minifyCategoryTree(categoryTree)}
+      activeCategorySlug={slug}
       brands={brands}
       priceRange={priceRange}
       basePath={`/c/${slug}`}
-      hideCategory
     >
       <div className="mx-auto max-w-7xl px-4 py-6">
-        <BreadcrumbSchema
-          items={[
-            { name: "Accueil", href: "/" },
-            { name: category.name },
-          ]}
-        />
+        <BreadcrumbSchema items={breadcrumbItems} />
         <JsonLd
           data={{
             "@context": "https://schema.org",
@@ -128,6 +153,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           <Link href="/" className="hover:text-foreground">
             Accueil
           </Link>
+          {ancestors.map((a) => (
+            <span key={a.id}>
+              <span className="mx-1.5">/</span>
+              <Link href={`/c/${a.slug}`} className="hover:text-foreground">
+                {a.name}
+              </Link>
+            </span>
+          ))}
           <span className="mx-1.5">/</span>
           <span className="text-foreground">{category.name}</span>
         </nav>
@@ -144,6 +177,30 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             {total} produit{total !== 1 ? "s" : ""}
           </p>
         </div>
+
+        {/* Subcategories grid */}
+        {children.length > 0 && (
+          <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {children.map((child) => (
+              <Link
+                key={child.id}
+                href={`/c/${child.slug}`}
+                className="flex flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center transition-colors hover:bg-muted/50"
+              >
+                {child.image_url && (
+                  <Image
+                    src={getImageUrl(child.image_url)}
+                    alt={child.name}
+                    width={48}
+                    height={48}
+                    className="h-12 w-12 rounded-lg object-cover"
+                  />
+                )}
+                <span className="text-sm font-medium">{child.name}</span>
+              </Link>
+            ))}
+          </div>
+        )}
 
         {/* Active filters + sort */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

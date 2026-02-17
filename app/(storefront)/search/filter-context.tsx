@@ -1,14 +1,14 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { CategoryFilterItem, PriceRange } from "@/lib/db/types";
+import type { SidebarCategoryNode, PriceRange } from "@/lib/db/types";
 
 interface FilterData {
-  categories: CategoryFilterItem[];
+  categoryTree: SidebarCategoryNode[];
+  activeCategorySlug?: string;
   brands: string[];
   priceRange: PriceRange;
   basePath: string;
-  hideCategory?: boolean;
 }
 
 const FilterContext = createContext<FilterData | null>(null);

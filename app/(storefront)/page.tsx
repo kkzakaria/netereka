@@ -1,11 +1,12 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { getCategories } from "@/lib/db/categories";
+import { getTopLevelCategories } from "@/lib/db/categories";
 import {
   getFeaturedProducts,
   getLatestProducts,
   getProductsByCategorySlug,
+  toProductCardData,
 } from "@/lib/db/products";
 import type { Banner } from "@/lib/db/types";
 import { getActiveBanners } from "@/lib/db/storefront/banners";
@@ -21,40 +22,50 @@ export const metadata: Metadata = {
 const HIGHLIGHTED_CATEGORIES = 3;
 
 export default async function HomePage() {
-  const [categories, featured, latest, activeBanners] = await Promise.all([
-    getCategories(),
-    getFeaturedProducts(10),
-    getLatestProducts(10, true),
-    getActiveBanners().catch((error) => {
-      console.error("[homepage] Failed to fetch active banners:", error);
-      return [] as Banner[];
-    }),
-  ]);
+  // Start categories early — category sections depend on it
+  const categoriesPromise = getTopLevelCategories();
 
-  // Dynamically fetch products for the first N categories
-  const topCategories = categories.slice(0, HIGHLIGHTED_CATEGORIES);
-  const categorySections = await Promise.all(
-    topCategories.map(async (cat) => ({
-      category: cat,
-      products: await getProductsByCategorySlug(cat.slug, 10),
-    }))
+  // Start category sections as soon as categories resolve (don't wait for other fetches)
+  const categorySectionsPromise = categoriesPromise.then((cats) =>
+    Promise.all(
+      cats.slice(0, HIGHLIGHTED_CATEGORIES).map(async (cat) => ({
+        category: cat,
+        products: (await getProductsByCategorySlug(cat.slug, 10)).map(toProductCardData),
+      }))
+    )
   );
+
+  // Run all independent fetches in parallel
+  const [categories, featured, latest, activeBanners, categorySections] =
+    await Promise.all([
+      categoriesPromise,
+      getFeaturedProducts(10),
+      getLatestProducts(10, true),
+      getActiveBanners().catch((error) => {
+        console.error("[homepage] Failed to fetch active banners:", error);
+        return [] as Banner[];
+      }),
+      categorySectionsPromise,
+    ]);
+
+  const featuredCards = featured.map(toProductCardData);
+  const latestCards = latest.map(toProductCardData);
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
       <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
-      <HeroBanner banners={activeBanners} fallbackProducts={featured.slice(0, 3)} />
+      <HeroBanner banners={activeBanners} fallbackProducts={featuredCards.slice(0, 3)} />
 
       <CategoryNav categories={categories} />
 
       <HorizontalSection
         title="Meilleures ventes"
-        products={featured}
+        products={featuredCards}
       />
 
       <HorizontalSection
         title="Nouveautés"
-        products={latest}
+        products={latestCards}
       />
 
       {categorySections.map(({ category, products }) => (

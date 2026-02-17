@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { searchProducts, countSearchResults, getBrandsInUse, getPriceRange } from "@/lib/db/search";
-import { getCategories } from "@/lib/db/categories";
+import { getCategoryTree, minifyCategoryTree } from "@/lib/db/categories";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { SITE_NAME } from "@/lib/utils/constants";
-import type { SearchOptions, CategoryFilterItem } from "@/lib/db/types";
+import type { SearchOptions } from "@/lib/db/types";
 import { FilterProvider } from "./filter-context";
 import { SearchFilters } from "./search-filters";
 import { SearchSort } from "./search-sort";
@@ -53,22 +53,23 @@ export default async function SearchPage({ searchParams }: Props) {
     offset: (currentPage - 1) * limit,
   };
 
-  const [products, total, brands, categories, priceRange] = await Promise.all([
+  const [products, total, brands, categoryTree, priceRange] = await Promise.all([
     searchProducts(opts),
     countSearchResults(opts),
     getBrandsInUse(),
-    getCategories(),
+    getCategoryTree(),
     getPriceRange(),
   ]);
 
   const hasMore = (currentPage - 1) * limit + products.length < total;
 
-  const categoryFilterData = categories.map((c) => ({
-    id: c.id, name: c.name, slug: c.slug,
-  } satisfies CategoryFilterItem));
-
   return (
-    <FilterProvider categories={categoryFilterData} brands={brands} priceRange={priceRange}>
+    <FilterProvider
+      categoryTree={minifyCategoryTree(categoryTree)}
+      activeCategorySlug={sp.category}
+      brands={brands}
+      priceRange={priceRange}
+    >
       <div className="mx-auto max-w-7xl px-4 py-6">
         {/* Header */}
         <div className="mb-6">

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
-import { getProductBySlug, getRelatedProducts } from "@/lib/db/products";
+import { getProductBySlug, getRelatedProducts, toProductCardData } from "@/lib/db/products";
 import { ImageGallery } from "@/components/storefront/image-gallery";
 import { getImageUrl } from "@/lib/utils/images";
 import { VariantSelector } from "@/components/storefront/variant-selector";
@@ -79,7 +79,7 @@ async function RelatedProducts({
       <HorizontalSection
         title="Produits similaires"
         href={categorySlug ? `/c/${categorySlug}` : undefined}
-        products={related}
+        products={related.map(toProductCardData)}
       />
     </div>
   );

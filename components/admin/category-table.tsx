@@ -33,13 +33,16 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
 import type { CategoryWithCount } from "@/lib/db/admin/categories";
+import type { Category } from "@/lib/db/types";
 import { deleteCategory } from "@/actions/admin/categories";
 import { CategoryForm } from "./category-form";
 
 export function CategoryTable({
   categories,
+  allCategories = [],
 }: {
   categories: CategoryWithCount[];
+  allCategories?: Category[];
 }) {
   const [editCategory, setEditCategory] = useState<CategoryWithCount | null>(
     null
@@ -55,6 +58,11 @@ export function CategoryTable({
         toast.error(result.error);
       }
     });
+  }
+
+  // Count children for delete warning
+  function childCount(id: string): number {
+    return categories.filter((c) => c.parent_id === id).length;
   }
 
   return (
@@ -79,74 +87,93 @@ export function CategoryTable({
                 </TableCell>
               </TableRow>
             ) : (
-              categories.map((cat) => (
-                <TableRow key={cat.id} data-pending={isPending || undefined}>
-                  <TableCell className="font-medium">{cat.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {cat.slug}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{cat.product_count}</Badge>
-                  </TableCell>
-                  <TableCell>{cat.sort_order}</TableCell>
-                  <TableCell>
-                    <Badge variant={cat.is_active ? "default" : "secondary"}>
-                      {cat.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <AlertDialog>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-11 w-11">
-                            <HugeiconsIcon icon={MoreVerticalIcon} size={18} />
-                            <span className="sr-only">Actions</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setEditCategory(cat)}>
-                            Modifier
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <AlertDialogTrigger asChild>
-                            <DropdownMenuItem className="text-destructive">
-                              Supprimer
+              categories.map((cat) => {
+                const children = childCount(cat.id);
+                return (
+                  <TableRow key={cat.id} data-pending={isPending || undefined}>
+                    <TableCell className="font-medium">
+                      <div style={{ paddingLeft: `${cat.depth * 1.5}rem` }}>
+                        <span>
+                          {cat.depth > 0 && (
+                            <span className="mr-1 text-muted-foreground">↳</span>
+                          )}
+                          {cat.name}
+                        </span>
+                        {cat.parent_name && (
+                          <p className="text-xs text-muted-foreground">{cat.parent_name}</p>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {cat.slug}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{cat.product_count}</Badge>
+                    </TableCell>
+                    <TableCell>{cat.sort_order}</TableCell>
+                    <TableCell>
+                      <Badge variant={cat.is_active ? "default" : "secondary"}>
+                        {cat.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <AlertDialog>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-11 w-11">
+                              <HugeiconsIcon icon={MoreVerticalIcon} size={18} />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setEditCategory(cat)}>
+                              Modifier
                             </DropdownMenuItem>
-                          </AlertDialogTrigger>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Supprimer cette catégorie ?
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            La catégorie &quot;{cat.name}&quot; sera supprimée.
-                            {cat.product_count > 0 &&
-                              ` Elle contient ${cat.product_count} produit(s) — la suppression sera bloquée.`}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Annuler</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleDelete(cat.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Supprimer
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))
+                            <DropdownMenuSeparator />
+                            <AlertDialogTrigger asChild>
+                              <DropdownMenuItem className="text-destructive">
+                                Supprimer
+                              </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Supprimer cette catégorie ?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              La catégorie &quot;{cat.name}&quot; sera supprimée.
+                              {cat.product_count > 0 &&
+                                ` Elle contient ${cat.product_count} produit(s) — la suppression sera bloquée.`}
+                              {children > 0 &&
+                                ` Elle contient ${children} sous-catégorie(s) — la suppression sera bloquée.`}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Annuler</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(cat.id)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Supprimer
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
 
       <CategoryForm
+        key={editCategory?.id}
         category={editCategory}
+        categories={allCategories}
         open={!!editCategory}
         onOpenChange={(open) => {
           if (!open) setEditCategory(null);

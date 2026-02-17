@@ -8,12 +8,14 @@ import { ResponsiveDataList } from "@/components/admin/responsive-data-list";
 import { ViewSwitcher } from "@/components/admin/view-switcher";
 import { CategoryCreateButton } from "./category-create-button";
 import type { CategoryWithCount } from "@/lib/db/admin/categories";
+import type { Category } from "@/lib/db/types";
 
 interface CategoriesPageClientProps {
   categories: CategoryWithCount[];
+  allCategories: Category[];
 }
 
-export function CategoriesPageClient({ categories }: CategoriesPageClientProps) {
+export function CategoriesPageClient({ categories, allCategories }: CategoriesPageClientProps) {
   const [editCategory, setEditCategory] = useState<CategoryWithCount | null>(null);
 
   return (
@@ -26,13 +28,13 @@ export function CategoriesPageClient({ categories }: CategoriesPageClientProps) 
             {categories.length} catégorie(s)
           </span>
         </div>
-        <CategoryCreateButton />
+        <CategoryCreateButton categories={allCategories} />
       </div>
 
       {/* Responsive data list */}
       <ResponsiveDataList
         data={categories}
-        renderTable={(data) => <CategoryTable categories={data} />}
+        renderTable={(data) => <CategoryTable categories={data} allCategories={allCategories} />}
         renderCard={(category) => (
           <CategoryCardMobile
             category={category}
@@ -44,7 +46,9 @@ export function CategoriesPageClient({ categories }: CategoriesPageClientProps) 
 
       {/* Edit form dialog */}
       <CategoryForm
+        key={editCategory?.id}
         category={editCategory}
+        categories={allCategories}
         open={!!editCategory}
         onOpenChange={(open) => {
           if (!open) setEditCategory(null);

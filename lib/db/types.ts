@@ -33,6 +33,22 @@ export interface Product {
   variant_count?: number;
 }
 
+/** Minimal product fields for client-side cards (server-serialization optimization). */
+export type ProductCardData = Pick<
+  Product,
+  | "id"
+  | "slug"
+  | "name"
+  | "base_price"
+  | "compare_price"
+  | "brand"
+  | "is_featured"
+  | "stock_quantity"
+  | "image_url"
+  | "category_name"
+  | "variant_count"
+>;
+
 export interface ProductVariant {
   id: string;
   product_id: string;
@@ -142,9 +158,25 @@ export interface OrderItem {
   total_price: number;
 }
 
+/** Maximum category hierarchy depth (0-indexed). Root = 0, max child depth = MAX_CATEGORY_DEPTH. */
+export const MAX_CATEGORY_DEPTH = 2;
+
+export interface CategoryNode extends Category {
+  readonly children: readonly CategoryNode[];
+}
+
+/** Minimal category node for client-side sidebar (server-serialization optimization). */
+export interface SidebarCategoryNode {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly children: readonly SidebarCategoryNode[];
+}
+
 export interface SearchOptions {
   query?: string;
   category?: string; // category slug
+  categoryIds?: string[]; // category IDs for aggregated search (parent + descendants)
   brands?: string[]; // brand names
   minPrice?: number;
   maxPrice?: number;
@@ -280,9 +312,6 @@ export type CustomerSidebarData = Pick<
   AdminCustomerDetail,
   'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'is_active'
 >;
-
-/** Category data for filter/picker UIs. */
-export type CategoryFilterItem = Pick<Category, 'id' | 'name' | 'slug'>;
 
 // Audit Log Types
 export type AuditAction =

@@ -18,7 +18,11 @@ export function buildWhere(opts: SearchOptions): { clause: string; params: unkno
     params.push(like, like, like);
   }
 
-  if (opts.category) {
+  if (opts.categoryIds && opts.categoryIds.length > 0) {
+    const placeholders = opts.categoryIds.map(() => "?").join(", ");
+    conditions.push(`p.category_id IN (${placeholders})`);
+    params.push(...opts.categoryIds);
+  } else if (opts.category) {
     conditions.push("c.slug = ?");
     params.push(opts.category);
   }
@@ -76,18 +80,24 @@ export async function countSearchResults(opts: SearchOptions): Promise<number> {
   return result?.count ?? 0;
 }
 
-export async function getBrandsInCategory(categoryId: string): Promise<string[]> {
+export async function getBrandsInCategory(categoryIds: string | string[]): Promise<string[]> {
+  const ids = Array.isArray(categoryIds) ? categoryIds : [categoryIds];
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
   const rows = await query<{ brand: string }>(
-    "SELECT DISTINCT brand FROM products WHERE is_active = 1 AND brand IS NOT NULL AND category_id = ? ORDER BY brand",
-    [categoryId]
+    `SELECT DISTINCT brand FROM products WHERE is_active = 1 AND brand IS NOT NULL AND category_id IN (${placeholders}) ORDER BY brand`,
+    ids
   );
   return rows.map((r) => r.brand);
 }
 
-export async function getPriceRangeInCategory(categoryId: string): Promise<PriceRange> {
+export async function getPriceRangeInCategory(categoryIds: string | string[]): Promise<PriceRange> {
+  const ids = Array.isArray(categoryIds) ? categoryIds : [categoryIds];
+  if (ids.length === 0) return { min: 0, max: 0 };
+  const placeholders = ids.map(() => "?").join(", ");
   const result = await queryFirst<{ min_price: number; max_price: number }>(
-    "SELECT MIN(base_price) as min_price, MAX(base_price) as max_price FROM products WHERE is_active = 1 AND category_id = ?",
-    [categoryId]
+    `SELECT MIN(base_price) as min_price, MAX(base_price) as max_price FROM products WHERE is_active = 1 AND category_id IN (${placeholders})`,
+    ids
   );
   return { min: result?.min_price ?? 0, max: result?.max_price ?? 0 };
 }
