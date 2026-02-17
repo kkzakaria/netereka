@@ -8,6 +8,7 @@ import {
   getCategoryAncestors,
   getCategoryDescendantIds,
   getCategoryTree,
+  minifyCategoryTree,
 } from "@/lib/db/categories";
 import {
   searchProducts,
@@ -123,7 +124,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   return (
     <FilterProvider
-      categoryTree={categoryTree}
+      categoryTree={minifyCategoryTree(categoryTree)}
       activeCategorySlug={slug}
       brands={brands}
       priceRange={priceRange}

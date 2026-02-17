@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useTransition, useState, useEffect } from "react";
+import { useRef, useTransition, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,24 +29,39 @@ interface CategoryFormProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function getDescendantIds(categoryId: string, allCategories: Category[]): Set<string> {
+function buildChildrenMap(allCategories: Category[]): Map<string, Category[]> {
+  const map = new Map<string, Category[]>();
+  for (const cat of allCategories) {
+    if (cat.parent_id) {
+      const children = map.get(cat.parent_id);
+      if (children) children.push(cat);
+      else map.set(cat.parent_id, [cat]);
+    }
+  }
+  return map;
+}
+
+function getDescendantIds(categoryId: string, childrenMap: Map<string, Category[]>): Set<string> {
   const ids = new Set<string>();
   const queue = [categoryId];
   while (queue.length > 0) {
     const current = queue.pop()!;
-    for (const cat of allCategories) {
-      if (cat.parent_id === current && !ids.has(cat.id)) {
-        ids.add(cat.id);
-        queue.push(cat.id);
+    const children = childrenMap.get(current);
+    if (children) {
+      for (const child of children) {
+        if (!ids.has(child.id)) {
+          ids.add(child.id);
+          queue.push(child.id);
+        }
       }
     }
   }
   return ids;
 }
 
-function getDepth(cat: Category, allCategories: Category[]): number {
+function getDepth(cat: Category, categoryById: Map<string, Category>): number {
   if (!cat.parent_id) return 0;
-  const parent = allCategories.find((c) => c.id === cat.parent_id);
+  const parent = categoryById.get(cat.parent_id);
   return parent?.parent_id ? 2 : 1;
 }
 
@@ -61,14 +76,13 @@ export function CategoryForm({
   const isActiveRef = useRef<HTMLInputElement>(null);
   const [parentId, setParentId] = useState(category?.parent_id ?? "");
 
-  // Reset parentId when the edited category changes
-  useEffect(() => {
-    setParentId(category?.parent_id ?? "");
-  }, [category?.id, category?.parent_id]);
+  // Build indexes for O(1) lookups
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const childrenMap = buildChildrenMap(categories);
 
   // Filter out current category and its descendants from parent options
   const excludeIds = isEdit
-    ? new Set([category!.id, ...getDescendantIds(category!.id, categories)])
+    ? new Set([category!.id, ...getDescendantIds(category!.id, childrenMap)])
     : new Set<string>();
 
   const parentOptions = categories.filter((c) => !excludeIds.has(c.id));
@@ -140,7 +154,7 @@ export function CategoryForm({
                 <SelectItem value="__none__">Aucune (catégorie principale)</SelectItem>
                 {parentOptions.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
-                    {"\u00A0".repeat(getDepth(cat, categories) * 4)}{cat.parent_id ? "↳ " : ""}{cat.name}
+                    {"\u00A0".repeat(getDepth(cat, categoryById) * 4)}{cat.parent_id ? "↳ " : ""}{cat.name}
                   </SelectItem>
                 ))}
               </SelectContent>

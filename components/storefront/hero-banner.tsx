@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
-import type { BadgeColor, Banner, Product } from "@/lib/db/types";
+import type { BadgeColor, Banner, ProductCardData } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ const badgeColorMap: Record<BadgeColor, string> = {
   blue: "bg-blue-500/20 text-blue-300",
 };
 
-function buildSlides(banners: Banner[], fallbackProducts: Product[]): Slide[] {
+function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Slide[] {
   if (banners.length > 0) {
     return banners.map((b) => ({
       title: b.title,
@@ -65,7 +65,7 @@ export function HeroBanner({
   fallbackProducts,
 }: {
   banners: Banner[];
-  fallbackProducts: Product[];
+  fallbackProducts: ProductCardData[];
 }) {
   const slides = buildSlides(banners, fallbackProducts);
 

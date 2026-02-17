@@ -1,5 +1,5 @@
 import { query, queryFirst } from "@/lib/db";
-import type { Category, CategoryNode } from "@/lib/db/types";
+import type { Category, CategoryNode, SidebarCategoryNode } from "@/lib/db/types";
 import { MAX_CATEGORY_DEPTH } from "@/lib/db/types";
 
 export async function getCategories(): Promise<Category[]> {
@@ -85,4 +85,14 @@ export async function getCategoryTree(): Promise<CategoryNode[]> {
   }
 
   return roots;
+}
+
+/** Strip a category tree to only the fields needed by client-side sidebar. */
+export function minifyCategoryTree(nodes: readonly CategoryNode[]): SidebarCategoryNode[] {
+  return nodes.map((n) => ({
+    id: n.id,
+    slug: n.slug,
+    name: n.name,
+    children: minifyCategoryTree(n.children),
+  }));
 }

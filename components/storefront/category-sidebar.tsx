@@ -4,14 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import type { CategoryNode } from "@/lib/db/types";
+import type { SidebarCategoryNode } from "@/lib/db/types";
 
 interface CategorySidebarProps {
-  categoryTree: CategoryNode[];
+  categoryTree: SidebarCategoryNode[];
   activeCategorySlug?: string;
 }
 
-function isActiveOrAncestor(node: CategoryNode, activeSlug: string): boolean {
+function isActiveOrAncestor(node: SidebarCategoryNode, activeSlug: string): boolean {
   if (node.slug === activeSlug) return true;
   return node.children.some((child) => isActiveOrAncestor(child, activeSlug));
 }
@@ -20,7 +20,7 @@ function CategoryTreeNode({
   node,
   activeCategorySlug,
 }: {
-  node: CategoryNode;
+  node: SidebarCategoryNode;
   activeCategorySlug?: string;
 }) {
   const isActive = node.slug === activeCategorySlug;

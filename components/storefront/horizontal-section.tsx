@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { Product } from "@/lib/db/types";
+import type { ProductCardData } from "@/lib/db/types";
 import { ProductCard } from "@/components/storefront/product-card";
 import { useHorizontalScroll } from "@/hooks/use-horizontal-scroll";
 import { ScrollButtons } from "@/components/storefront/scroll-buttons";
@@ -13,7 +13,7 @@ export function HorizontalSection({
 }: {
   title: string;
   href?: string;
-  products: Product[];
+  products: ProductCardData[];
 }) {
   const { scrollRef, canScrollLeft, canScrollRight, scroll, dragProps } =
     useHorizontalScroll();

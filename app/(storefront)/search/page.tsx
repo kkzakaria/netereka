@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { searchProducts, countSearchResults, getBrandsInUse, getPriceRange } from "@/lib/db/search";
-import { getCategoryTree } from "@/lib/db/categories";
+import { getCategoryTree, minifyCategoryTree } from "@/lib/db/categories";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { SITE_NAME } from "@/lib/utils/constants";
 import type { SearchOptions } from "@/lib/db/types";
@@ -65,7 +65,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   return (
     <FilterProvider
-      categoryTree={categoryTree}
+      categoryTree={minifyCategoryTree(categoryTree)}
       activeCategorySlug={sp.category}
       brands={brands}
       priceRange={priceRange}

@@ -2,10 +2,10 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatPrice } from "@/lib/utils/format";
-import type { CategoryNode } from "@/lib/db/types";
+import type { SidebarCategoryNode } from "@/lib/db/types";
 import { useFilterData } from "./filter-context";
 
-function findInTree(nodes: readonly CategoryNode[], slug: string): CategoryNode | undefined {
+function findInTree(nodes: readonly SidebarCategoryNode[], slug: string): SidebarCategoryNode | undefined {
   for (const node of nodes) {
     if (node.slug === slug) return node;
     const found = findInTree(node.children, slug);

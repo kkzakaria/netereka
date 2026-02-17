@@ -1,13 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
-import type { Product } from "@/lib/db/types";
+import type { ProductCardData } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  product: Product;
+  product: ProductCardData;
   isWishlisted?: boolean;
   showWishlist?: boolean;
 }

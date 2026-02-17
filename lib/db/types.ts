@@ -33,6 +33,22 @@ export interface Product {
   variant_count?: number;
 }
 
+/** Minimal product fields for client-side cards (server-serialization optimization). */
+export type ProductCardData = Pick<
+  Product,
+  | "id"
+  | "slug"
+  | "name"
+  | "base_price"
+  | "compare_price"
+  | "brand"
+  | "is_featured"
+  | "stock_quantity"
+  | "image_url"
+  | "category_name"
+  | "variant_count"
+>;
+
 export interface ProductVariant {
   id: string;
   product_id: string;
@@ -147,6 +163,14 @@ export const MAX_CATEGORY_DEPTH = 2;
 
 export interface CategoryNode extends Category {
   readonly children: readonly CategoryNode[];
+}
+
+/** Minimal category node for client-side sidebar (server-serialization optimization). */
+export interface SidebarCategoryNode {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly children: readonly SidebarCategoryNode[];
 }
 
 export interface SearchOptions {

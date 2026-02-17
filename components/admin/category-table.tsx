@@ -171,6 +171,7 @@ export function CategoryTable({
       </div>
 
       <CategoryForm
+        key={editCategory?.id}
         category={editCategory}
         categories={allCategories}
         open={!!editCategory}

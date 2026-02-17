@@ -1,5 +1,5 @@
 import { query, queryFirst } from "@/lib/db";
-import type { Product, ProductAttribute, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
+import type { Product, ProductCardData, ProductAttribute, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
 
 export async function getProductsByCategory(
   categoryId: string,
@@ -104,6 +104,23 @@ export async function getProductsByCategorySlug(
      LIMIT ?`,
     [categorySlug, limit]
   );
+}
+
+/** Strip a Product to only the fields needed by client-side cards. */
+export function toProductCardData(p: Product): ProductCardData {
+  return {
+    id: p.id,
+    slug: p.slug,
+    name: p.name,
+    base_price: p.base_price,
+    compare_price: p.compare_price,
+    brand: p.brand,
+    is_featured: p.is_featured,
+    stock_quantity: p.stock_quantity,
+    image_url: p.image_url,
+    category_name: p.category_name,
+    variant_count: p.variant_count,
+  };
 }
 
 export async function getRelatedProducts(

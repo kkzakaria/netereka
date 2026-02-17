@@ -6,6 +6,7 @@ import {
   getFeaturedProducts,
   getLatestProducts,
   getProductsByCategorySlug,
+  toProductCardData,
 } from "@/lib/db/products";
 import type { Banner } from "@/lib/db/types";
 import { getActiveBanners } from "@/lib/db/storefront/banners";
@@ -29,7 +30,7 @@ export default async function HomePage() {
     Promise.all(
       cats.slice(0, HIGHLIGHTED_CATEGORIES).map(async (cat) => ({
         category: cat,
-        products: await getProductsByCategorySlug(cat.slug, 10),
+        products: (await getProductsByCategorySlug(cat.slug, 10)).map(toProductCardData),
       }))
     )
   );
@@ -47,21 +48,24 @@ export default async function HomePage() {
       categorySectionsPromise,
     ]);
 
+  const featuredCards = featured.map(toProductCardData);
+  const latestCards = latest.map(toProductCardData);
+
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
       <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
-      <HeroBanner banners={activeBanners} fallbackProducts={featured.slice(0, 3)} />
+      <HeroBanner banners={activeBanners} fallbackProducts={featuredCards.slice(0, 3)} />
 
       <CategoryNav categories={categories} />
 
       <HorizontalSection
         title="Meilleures ventes"
-        products={featured}
+        products={featuredCards}
       />
 
       <HorizontalSection
         title="Nouveautés"
-        products={latest}
+        products={latestCards}
       />
 
       {categorySections.map(({ category, products }) => (

@@ -46,6 +46,7 @@ export function CategoriesPageClient({ categories, allCategories }: CategoriesPa
 
       {/* Edit form dialog */}
       <CategoryForm
+        key={editCategory?.id}
         category={editCategory}
         categories={allCategories}
         open={!!editCategory}
