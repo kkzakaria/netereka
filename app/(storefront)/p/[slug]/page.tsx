@@ -351,7 +351,7 @@ export default async function ProductPage({ params }: Props) {
       <Suspense fallback={<RelatedProductsSkeleton />}>
         <RelatedProducts
           productId={product.id}
-          categoryId={product.category_id}
+          categoryId={product.category_id ?? ""}
           categorySlug={product.category_slug}
         />
       </Suspense>

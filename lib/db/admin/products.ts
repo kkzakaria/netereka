@@ -27,7 +27,7 @@ function buildFilterClause(opts: AdminProductFilters): {
   where: string;
   params: unknown[];
 } {
-  const conditions: string[] = [];
+  const conditions: string[] = ["p.is_draft = 0"];
   const params: unknown[] = [];
 
   if (opts.search) {

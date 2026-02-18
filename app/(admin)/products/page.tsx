@@ -3,9 +3,11 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { after } from "next/server";
 import { ProductFilters } from "@/components/admin/product-filters";
 import { getAdminProducts, getAdminProductCount } from "@/lib/db/admin/products";
 import { getAllCategories } from "@/lib/db/admin/categories";
+import { cleanupDraftProducts } from "@/actions/admin/products";
 import { ProductsPageClient } from "./products-page-client";
 
 interface Props {
@@ -20,6 +22,13 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function ProductsPage({ searchParams }: Props) {
+  // Remove draft products abandoned for 24+ hours after response is sent
+  after(() =>
+    cleanupDraftProducts().catch((err) => {
+      console.error("[admin/products] draft cleanup failed:", err);
+    })
+  );
+
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
   const filters = {

@@ -9,7 +9,7 @@ interface DashboardStats {
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const [total, active, categories, lowStock] = await Promise.all([
-    queryFirst<{ count: number }>("SELECT COUNT(*) as count FROM products"),
+    queryFirst<{ count: number }>("SELECT COUNT(*) as count FROM products WHERE is_draft = 0"),
     queryFirst<{ count: number }>(
       "SELECT COUNT(*) as count FROM products WHERE is_active = 1"
     ),
