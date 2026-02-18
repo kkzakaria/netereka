@@ -23,7 +23,14 @@ import {
   createBanner,
   updateBanner,
   uploadBannerImage,
+  setBannerImageUrl,
 } from "@/actions/admin/banners";
+import dynamic from "next/dynamic";
+import { AiGenerateButton } from "./ai-generate-button";
+import { generateBannerText } from "@/actions/admin/ai";
+
+const AiImageDialog = dynamic(() => import("./ai-image-dialog").then((m) => m.AiImageDialog));
+import type { BannerTextResult } from "@/lib/ai/schemas";
 
 interface BannerFormProps {
   banner?: Banner | null;
@@ -35,6 +42,10 @@ export function BannerForm({ banner }: BannerFormProps) {
   const isEdit = !!banner;
   const isActiveRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const subtitleRef = useRef<HTMLTextAreaElement>(null);
+  const ctaTextRef = useRef<HTMLInputElement>(null);
+  const badgeTextRef = useRef<HTMLInputElement>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(
     banner?.image_url ?? null
   );
@@ -88,8 +99,23 @@ export function BannerForm({ banner }: BannerFormProps) {
         <div className="lg:col-span-2 space-y-6">
           {/* Informations */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Informations</CardTitle>
+              <AiGenerateButton<BannerTextResult>
+                label="Générer les textes"
+                onGenerate={() => {
+                  const title = titleRef.current?.value;
+                  return generateBannerText({
+                    productName: title || undefined,
+                  });
+                }}
+                onResult={(data) => {
+                  if (titleRef.current) titleRef.current.value = data.title;
+                  if (subtitleRef.current) subtitleRef.current.value = data.subtitle;
+                  if (ctaTextRef.current) ctaTextRef.current.value = data.ctaText;
+                  if (badgeTextRef.current) badgeTextRef.current.value = data.badgeText ?? "";
+                }}
+              />
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -97,6 +123,7 @@ export function BannerForm({ banner }: BannerFormProps) {
                 <Input
                   id="title"
                   name="title"
+                  ref={titleRef}
                   required
                   defaultValue={banner?.title ?? ""}
                   placeholder="Ex: PlayStation 5 - Offre spéciale"
@@ -107,6 +134,7 @@ export function BannerForm({ banner }: BannerFormProps) {
                 <Textarea
                   id="subtitle"
                   name="subtitle"
+                  ref={subtitleRef}
                   rows={2}
                   defaultValue={banner?.subtitle ?? ""}
                   placeholder="Description courte de la bannière"
@@ -128,6 +156,7 @@ export function BannerForm({ banner }: BannerFormProps) {
                   <Input
                     id="cta_text"
                     name="cta_text"
+                    ref={ctaTextRef}
                     defaultValue={banner?.cta_text ?? "Découvrir"}
                     placeholder="Découvrir"
                   />
@@ -148,6 +177,7 @@ export function BannerForm({ banner }: BannerFormProps) {
                   <Input
                     id="badge_text"
                     name="badge_text"
+                    ref={badgeTextRef}
                     defaultValue={banner?.badge_text ?? ""}
                     placeholder="Ex: Nouveau, Promo"
                   />
@@ -231,14 +261,29 @@ export function BannerForm({ banner }: BannerFormProps) {
                     className="hidden"
                     onChange={handleImageUpload}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isPending}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {imagePreview ? "Changer l'image" : "Ajouter une image"}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isPending}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {imagePreview ? "Changer l'image" : "Ajouter une image"}
+                    </Button>
+                    <AiImageDialog
+                      onImageGenerated={(url) => {
+                        startTransition(async () => {
+                          const result = await setBannerImageUrl(banner!.id, url);
+                          if (result.success) {
+                            setImagePreview(url);
+                            toast.success("Image IA enregistrée");
+                          } else {
+                            toast.error(result.error || "Erreur lors de l'enregistrement de l'image");
+                          }
+                        });
+                      }}
+                    />
+                  </div>
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">

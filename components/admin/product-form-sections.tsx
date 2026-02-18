@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
@@ -14,6 +14,9 @@ import type { ProductDetail } from "@/lib/db/types";
 import { updateProduct } from "@/actions/admin/products";
 import { CategoryCascadingSelect, type CategoryOption } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
+import { AiGenerateButton } from "./ai-generate-button";
+import { generateProductText, suggestCategory } from "@/actions/admin/ai";
+import type { ProductTextResult, CategorySuggestionResult } from "@/lib/ai/schemas";
 
 const ImageManager = dynamic(() => import("./image-manager").then((m) => m.ImageManager));
 const VariantList = dynamic(() => import("./variant-list").then((m) => m.VariantList));
@@ -43,6 +46,14 @@ export function ProductFormSections({
   const router = useRouter();
   const isActiveRef = useRef<HTMLInputElement>(null);
   const isFeaturedRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  const shortDescriptionRef = useRef<HTMLInputElement>(null);
+  const metaTitleRef = useRef<HTMLInputElement>(null);
+  const metaDescriptionRef = useRef<HTMLTextAreaElement>(null);
+  const [categorySuggestions, setCategorySuggestions] = useState<
+    CategorySuggestionResult["suggestions"]
+  >([]);
+  const lastAiTextRef = useRef<{ name: string; data: ProductTextResult } | null>(null);
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -69,8 +80,25 @@ export function ProductFormSections({
         <div className="space-y-6 lg:col-span-3">
           {/* Section: Informations générales */}
           <Card id="section-general">
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Informations générales</CardTitle>
+              <AiGenerateButton<ProductTextResult>
+                label="Générer les textes"
+                onGenerate={() => {
+                  const name = (document.getElementById("name") as HTMLInputElement)?.value;
+                  if (!name) return Promise.resolve({ success: false as const, error: "Entrez d'abord le nom du produit" });
+                  const brand = (document.getElementById("brand") as HTMLInputElement)?.value;
+                  return generateProductText({ name, brand });
+                }}
+                onResult={(data) => {
+                  const name = (document.getElementById("name") as HTMLInputElement)?.value;
+                  lastAiTextRef.current = { name, data };
+                  if (descriptionRef.current) descriptionRef.current.value = data.description;
+                  if (shortDescriptionRef.current) shortDescriptionRef.current.value = data.shortDescription;
+                  if (metaTitleRef.current) metaTitleRef.current.value = data.metaTitle;
+                  if (metaDescriptionRef.current) metaDescriptionRef.current.value = data.metaDescription;
+                }}
+              />
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -117,6 +145,7 @@ export function ProductFormSections({
                 <Input
                   id="short_description"
                   name="short_description"
+                  ref={shortDescriptionRef}
                   defaultValue={product.short_description ?? ""}
                 />
               </div>
@@ -125,6 +154,7 @@ export function ProductFormSections({
                 <Textarea
                   id="description"
                   name="description"
+                  ref={descriptionRef}
                   rows={5}
                   defaultValue={product.description ?? ""}
                 />
@@ -134,14 +164,45 @@ export function ProductFormSections({
 
           {/* Section: Catégorie */}
           <Card id="section-category">
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Catégorie</CardTitle>
+              <AiGenerateButton<CategorySuggestionResult>
+                label="Suggérer"
+                onGenerate={() => {
+                  const name = (document.getElementById("name") as HTMLInputElement)?.value;
+                  if (!name) return Promise.resolve({ success: false as const, error: "Entrez d'abord le nom du produit" });
+                  const desc = descriptionRef.current?.value;
+                  return suggestCategory({ productName: name, description: desc });
+                }}
+                onResult={(data) => {
+                  setCategorySuggestions(data.suggestions);
+                }}
+              />
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <CategoryCascadingSelect
                 categories={categories}
                 defaultCategoryId={product.category_id || undefined}
               />
+              {categorySuggestions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {categorySuggestions.map((s) => (
+                    <button
+                      key={s.categoryId}
+                      type="button"
+                      className="rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:bg-primary hover:text-primary-foreground"
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent("ai-category-select", { detail: { categoryId: s.categoryId } })
+                        );
+                        setCategorySuggestions([]);
+                      }}
+                    >
+                      {s.categoryName} ({Math.round(s.confidence * 100)}%)
+                    </button>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -243,8 +304,27 @@ export function ProductFormSections({
 
           {/* Section: SEO */}
           <Card id="section-seo">
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>SEO</CardTitle>
+              <AiGenerateButton<ProductTextResult>
+                label="Générer SEO"
+                onGenerate={() => {
+                  const name = (document.getElementById("name") as HTMLInputElement)?.value;
+                  if (!name) return Promise.resolve({ success: false as const, error: "Entrez d'abord le nom du produit" });
+                  // Reuse cached result if product name hasn't changed
+                  if (lastAiTextRef.current?.name === name) {
+                    return Promise.resolve({ success: true as const, data: lastAiTextRef.current.data });
+                  }
+                  const brand = (document.getElementById("brand") as HTMLInputElement)?.value;
+                  return generateProductText({ name, brand });
+                }}
+                onResult={(data) => {
+                  const name = (document.getElementById("name") as HTMLInputElement)?.value;
+                  lastAiTextRef.current = { name, data };
+                  if (metaTitleRef.current) metaTitleRef.current.value = data.metaTitle;
+                  if (metaDescriptionRef.current) metaDescriptionRef.current.value = data.metaDescription;
+                }}
+              />
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -255,6 +335,7 @@ export function ProductFormSections({
                 <Input
                   id="meta_title"
                   name="meta_title"
+                  ref={metaTitleRef}
                   defaultValue={product.meta_title ?? ""}
                   maxLength={60}
                   placeholder="Titre pour les moteurs de recherche"
@@ -268,6 +349,7 @@ export function ProductFormSections({
                 <Textarea
                   id="meta_description"
                   name="meta_description"
+                  ref={metaDescriptionRef}
                   rows={3}
                   defaultValue={product.meta_description ?? ""}
                   maxLength={160}

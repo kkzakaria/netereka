@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -52,6 +52,23 @@ export function CategoryCascadingSelect({
 
   const [parentId, setParentId] = useState(initialParentId);
   const [subcategoryId, setSubcategoryId] = useState(initialSubcategoryId);
+
+  useEffect(() => {
+    function handleAiSelect(e: Event) {
+      const { categoryId } = (e as CustomEvent).detail;
+      const cat = categories.find((c) => c.id === categoryId);
+      if (!cat) return;
+      if (cat.depth === 0) {
+        setParentId(cat.id);
+        setSubcategoryId("");
+      } else if (cat.parent_id) {
+        setParentId(cat.parent_id);
+        setSubcategoryId(cat.id);
+      }
+    }
+    window.addEventListener("ai-category-select", handleAiSelect);
+    return () => window.removeEventListener("ai-category-select", handleAiSelect);
+  }, [categories]);
 
   const subcategories = parentId ? (childrenByParent.get(parentId) ?? []) : [];
   const hasSubcategories = subcategories.length > 0;
