@@ -4,6 +4,7 @@ interface CloudflareEnv {
   R2: R2Bucket;
   ASSETS: Fetcher;
   IMAGES: ImagesBinding;
+  AI: Ai;
 
   // Auth (Better Auth)
   BETTER_AUTH_SECRET: string;
