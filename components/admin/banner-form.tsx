@@ -23,6 +23,7 @@ import {
   createBanner,
   updateBanner,
   uploadBannerImage,
+  setBannerImageUrl,
 } from "@/actions/admin/banners";
 import dynamic from "next/dynamic";
 import { AiGenerateButton } from "./ai-generate-button";
@@ -102,7 +103,12 @@ export function BannerForm({ banner }: BannerFormProps) {
               <CardTitle>Informations</CardTitle>
               <AiGenerateButton<BannerTextResult>
                 label="Générer les textes"
-                onGenerate={() => generateBannerText({})}
+                onGenerate={() => {
+                  const title = titleRef.current?.value;
+                  return generateBannerText({
+                    productName: title || undefined,
+                  });
+                }}
                 onResult={(data) => {
                   if (titleRef.current) titleRef.current.value = data.title;
                   if (subtitleRef.current) subtitleRef.current.value = data.subtitle;
@@ -266,7 +272,15 @@ export function BannerForm({ banner }: BannerFormProps) {
                     </Button>
                     <AiImageDialog
                       onImageGenerated={(url) => {
-                        setImagePreview(url);
+                        startTransition(async () => {
+                          const result = await setBannerImageUrl(banner!.id, url);
+                          if (result.success) {
+                            setImagePreview(url);
+                            toast.success("Image IA enregistrée");
+                          } else {
+                            toast.error(result.error || "Erreur lors de l'enregistrement de l'image");
+                          }
+                        });
                       }}
                     />
                   </div>

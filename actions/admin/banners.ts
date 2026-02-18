@@ -204,6 +204,50 @@ export async function uploadBannerImage(
   }
 }
 
+export async function setBannerImageUrl(
+  bannerId: number,
+  imageUrl: string
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  if (!bannerId || bannerId <= 0) return { success: false, error: "ID bannière invalide" };
+  if (!imageUrl.startsWith("/images/")) return { success: false, error: "URL d'image invalide" };
+
+  try {
+    const db = await getDrizzle();
+
+    const existing = await db.query.banners.findFirst({
+      where: eq(banners.id, bannerId),
+      columns: { image_url: true },
+    });
+
+    if (!existing) {
+      return { success: false, error: "Bannière introuvable" };
+    }
+
+    if (existing.image_url) {
+      const oldKey = existing.image_url.replace(/^\/images\//, "");
+      try {
+        await deleteFromR2(oldKey);
+      } catch (deleteError) {
+        console.error(`[admin/banners] Failed to delete old R2 image key="${oldKey}" for banner=${bannerId}:`, deleteError);
+      }
+    }
+
+    await db.update(banners).set({
+      image_url: imageUrl,
+      updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
+    }).where(eq(banners.id, bannerId));
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    return { success: true, url: imageUrl };
+  } catch (error) {
+    console.error("[admin/banners] setBannerImageUrl error:", error);
+    return { success: false, error: "Erreur lors de la mise à jour de l'image" };
+  }
+}
+
 export async function toggleBannerActive(id: number): Promise<ActionResult> {
   await requireAdmin();
 

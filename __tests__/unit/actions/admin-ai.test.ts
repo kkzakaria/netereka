@@ -135,6 +135,14 @@ describe("generateProductText", () => {
     );
     expect(mocks.aiRun).toHaveBeenCalledTimes(2);
   });
+
+  it("returns rate-limit error on 429", async () => {
+    mocks.aiRun.mockRejectedValue(new Error("429 Too Many Requests"));
+
+    const result = await generateProductText({ name: "iPhone 15" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Limite IA quotidienne");
+  });
 });
 
 // ─── generateBannerText ─────────────────────────────────────────────────────────
@@ -239,6 +247,30 @@ describe("suggestCategory", () => {
     expect(result.data!.suggestions).toHaveLength(1);
     expect(result.data!.suggestions[0].categoryId).toBe("cat-1a");
   });
+
+  it("returns error when ALL suggested IDs are hallucinated", async () => {
+    const mockResponse = {
+      suggestions: [
+        { categoryId: "fake-1", categoryName: "Fake A", confidence: 0.9 },
+        { categoryId: "fake-2", categoryName: "Fake B", confidence: 0.7 },
+      ],
+    };
+    mocks.aiRun.mockResolvedValue({
+      response: JSON.stringify(mockResponse),
+    });
+
+    const result = await suggestCategory({ productName: "Produit inconnu" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("catégorie valide");
+  });
+
+  it("returns error when category tree is empty", async () => {
+    mocks.getCategoryTree.mockResolvedValue([]);
+
+    const result = await suggestCategory({ productName: "iPhone 15" });
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Aucune catégorie disponible.");
+  });
 });
 
 // ─── generateBannerImage ──────────────────────────────────────────────────────
@@ -275,5 +307,39 @@ describe("generateBannerImage", () => {
     expect(result.data?.imageUrl).toBe("/images/banners/ai-mock-nano-id.png");
     expect(mocks.aiRun).toHaveBeenCalledOnce();
     expect(mocks.uploadToR2).toHaveBeenCalledOnce();
+  });
+
+  it("handles ReadableStream response from AI model", async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+    mocks.aiRun.mockResolvedValue(stream);
+    mocks.uploadToR2.mockResolvedValue("ok");
+
+    const result = await generateBannerImage({ prompt: "Stream banner" });
+    expect(result.success).toBe(true);
+    expect(mocks.uploadToR2).toHaveBeenCalledOnce();
+  });
+
+  it("returns error when AI returns empty image data", async () => {
+    mocks.aiRun.mockResolvedValue(new Uint8Array(0));
+
+    const result = await generateBannerImage({ prompt: "Empty response" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("image vide");
+  });
+
+  it("returns error when R2 upload fails", async () => {
+    const fakeImageData = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    mocks.aiRun.mockResolvedValue(fakeImageData);
+    mocks.uploadToR2.mockRejectedValue(new Error("R2 upload failed"));
+
+    const result = await generateBannerImage({ prompt: "Upload fail" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("générer l'image");
   });
 });

@@ -53,6 +53,7 @@ export function ProductFormSections({
   const [categorySuggestions, setCategorySuggestions] = useState<
     CategorySuggestionResult["suggestions"]
   >([]);
+  const lastAiTextRef = useRef<{ name: string; data: ProductTextResult } | null>(null);
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -90,8 +91,12 @@ export function ProductFormSections({
                   return generateProductText({ name, brand });
                 }}
                 onResult={(data) => {
+                  const name = (document.getElementById("name") as HTMLInputElement)?.value;
+                  lastAiTextRef.current = { name, data };
                   if (descriptionRef.current) descriptionRef.current.value = data.description;
                   if (shortDescriptionRef.current) shortDescriptionRef.current.value = data.shortDescription;
+                  if (metaTitleRef.current) metaTitleRef.current.value = data.metaTitle;
+                  if (metaDescriptionRef.current) metaDescriptionRef.current.value = data.metaDescription;
                 }}
               />
             </CardHeader>
@@ -306,10 +311,16 @@ export function ProductFormSections({
                 onGenerate={() => {
                   const name = (document.getElementById("name") as HTMLInputElement)?.value;
                   if (!name) return Promise.resolve({ success: false as const, error: "Entrez d'abord le nom du produit" });
+                  // Reuse cached result if product name hasn't changed
+                  if (lastAiTextRef.current?.name === name) {
+                    return Promise.resolve({ success: true as const, data: lastAiTextRef.current.data });
+                  }
                   const brand = (document.getElementById("brand") as HTMLInputElement)?.value;
                   return generateProductText({ name, brand });
                 }}
                 onResult={(data) => {
+                  const name = (document.getElementById("name") as HTMLInputElement)?.value;
+                  lastAiTextRef.current = { name, data };
                   if (metaTitleRef.current) metaTitleRef.current.value = data.metaTitle;
                   if (metaDescriptionRef.current) metaDescriptionRef.current.value = data.metaDescription;
                 }}

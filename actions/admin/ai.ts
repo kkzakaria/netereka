@@ -185,13 +185,14 @@ export async function suggestCategory(
     // Filter out hallucinated category IDs
     const filtered = raw.suggestions.filter((s) => validIds.has(s.categoryId));
 
-    return {
-      success: true,
-      data: {
-        suggestions:
-          filtered.length > 0 ? filtered : raw.suggestions.slice(0, 1),
-      },
-    };
+    if (filtered.length === 0) {
+      return {
+        success: false,
+        error: "L'IA n'a pas pu identifier de catégorie valide. Sélectionnez manuellement.",
+      };
+    }
+
+    return { success: true, data: { suggestions: filtered } };
   } catch (error) {
     console.error("[admin/ai] suggestCategory error:", error);
     if (error instanceof Error && error.message.includes("429")) {
@@ -229,8 +230,14 @@ export async function generateBannerImage(
       bytes = new Uint8Array(await new Response(imageData).arrayBuffer());
     } else if (imageData instanceof Uint8Array) {
       bytes = imageData;
+    } else if (imageData instanceof ArrayBuffer) {
+      bytes = new Uint8Array(imageData);
     } else {
-      bytes = new Uint8Array(imageData as ArrayBuffer);
+      throw new Error("Format de réponse image inattendu");
+    }
+
+    if (bytes.length === 0) {
+      return { success: false, error: "Le modèle a retourné une image vide. Réessayez." };
     }
 
     const key = `banners/ai-${nanoid()}.png`;

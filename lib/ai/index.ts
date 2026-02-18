@@ -6,5 +6,8 @@ export const IMAGE_MODEL =
 
 export async function getAI() {
   const { env } = await getCloudflareContext();
+  if (!env.AI) {
+    throw new Error("Workers AI binding (AI) is not configured in wrangler.jsonc");
+  }
   return env.AI;
 }
