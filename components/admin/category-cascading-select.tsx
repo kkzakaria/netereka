@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,15 +25,18 @@ export function CategoryCascadingSelect({
   categories,
   defaultCategoryId,
 }: CategoryCascadingSelectProps) {
-  const roots = categories.filter((c) => c.depth === 0);
-  const childrenByParent = new Map<string, CategoryOption[]>();
-  for (const cat of categories) {
-    if (cat.parent_id) {
-      const existing = childrenByParent.get(cat.parent_id) ?? [];
-      existing.push(cat);
-      childrenByParent.set(cat.parent_id, existing);
+  const { roots, childrenByParent } = useMemo(() => {
+    const r = categories.filter((c) => c.depth === 0);
+    const map = new Map<string, CategoryOption[]>();
+    for (const cat of categories) {
+      if (cat.parent_id) {
+        const existing = map.get(cat.parent_id) ?? [];
+        existing.push(cat);
+        map.set(cat.parent_id, existing);
+      }
     }
-  }
+    return { roots: r, childrenByParent: map };
+  }, [categories]);
 
   // Determine initial state from defaultCategoryId
   let initialParentId = "";

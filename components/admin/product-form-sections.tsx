@@ -2,6 +2,7 @@
 
 import { useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,8 +14,9 @@ import type { ProductDetail } from "@/lib/db/types";
 import { updateProduct } from "@/actions/admin/products";
 import { CategoryCascadingSelect, type CategoryOption } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
-import { ImageManager } from "./image-manager";
-import { VariantList } from "./variant-list";
+
+const ImageManager = dynamic(() => import("./image-manager").then((m) => m.ImageManager));
+const VariantList = dynamic(() => import("./variant-list").then((m) => m.VariantList));
 
 const SECTIONS: SectionDef[] = [
   { id: "section-general", label: "Informations" },
