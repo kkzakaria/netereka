@@ -24,6 +24,11 @@ export interface Product {
   is_active: number;
   is_featured: number;
   stock_quantity: number;
+  low_stock_threshold: number;
+  weight_grams: number | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  is_draft: number;
   created_at: string;
   updated_at: string;
   // Joined fields

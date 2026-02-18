@@ -146,6 +146,7 @@ export const products = sqliteTable("products", {
   brand: text("brand"),
   is_active: integer("is_active").notNull().default(1),
   is_featured: integer("is_featured").notNull().default(0),
+  is_draft: integer("is_draft").notNull().default(0),
   stock_quantity: integer("stock_quantity").notNull().default(0),
   low_stock_threshold: integer("low_stock_threshold").notNull().default(5),
   weight_grams: integer("weight_grams"),
