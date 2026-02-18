@@ -223,7 +223,7 @@ export async function createDraftProduct(): Promise<ActionResult> {
   try {
     await execute(
       `INSERT INTO products (id, category_id, name, slug, base_price, is_active, is_draft, created_at, updated_at)
-       VALUES (?, '', '', ?, 0, 0, 1, datetime('now'), datetime('now'))`,
+       VALUES (?, NULL, '', ?, 0, 0, 1, datetime('now'), datetime('now'))`,
       [id, slug]
     );
   } catch (error) {

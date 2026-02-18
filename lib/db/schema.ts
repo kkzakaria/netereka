@@ -135,7 +135,7 @@ export const categories = sqliteTable("categories", {
 // =============================================================================
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
-  category_id: text("category_id").notNull().references(() => categories.id),
+  category_id: text("category_id").references(() => categories.id),
   name: text("name").notNull(),
   slug: text("slug").unique().notNull(),
   description: text("description"),
