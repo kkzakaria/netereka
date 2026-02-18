@@ -70,7 +70,7 @@ export function CategoryCascadingSelect({
 
       <div className="space-y-2">
         <Label htmlFor="parent-category">Catégorie</Label>
-        <Select value={parentId || undefined} onValueChange={handleParentChange}>
+        <Select value={parentId} onValueChange={handleParentChange}>
           <SelectTrigger id="parent-category">
             <SelectValue placeholder="Choisir une catégorie…" />
           </SelectTrigger>
@@ -88,7 +88,7 @@ export function CategoryCascadingSelect({
         <div className="space-y-2">
           <Label htmlFor="subcategory">Sous-catégorie</Label>
           <Select
-            value={subcategoryId || undefined}
+            value={subcategoryId}
             onValueChange={setSubcategoryId}
           >
             <SelectTrigger id="subcategory">
