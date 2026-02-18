@@ -40,7 +40,8 @@ npm run test:watch         # Watch mode
 # Database (Drizzle ORM + local D1)
 npm run db:generate        # Generate SQL migrations from schema changes
 npm run db:studio          # Open Drizzle Studio (visual DB browser)
-npm run db:migrate:legacy  # Run legacy SQL migrations (initial setup)
+npm run db:migrate         # Run all pending migrations locally (auto-tracks)
+npm run db:migrate:remote  # Run all pending migrations on remote D1
 npm run db:seed            # Seed initial data
 npm run db:seed-catalogue  # Seed product catalogue
 ```
@@ -125,7 +126,9 @@ Two DB access patterns coexist (gradual migration in progress):
 - **Raw SQL** (legacy): `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()` in `lib/db/index.ts`
 - **Drizzle ORM** (new code): `getDrizzle()` from `lib/db/drizzle.ts`
 
-Schema changes workflow: edit `lib/db/schema.ts` → run `npm run db:generate` → apply generated SQL via `wrangler d1 execute`.
+Schema changes workflow: edit `lib/db/schema.ts` → run `npm run db:generate` → place generated SQL in `db/migrations/` → run `npm run db:migrate` locally. Remote migrations run automatically on deploy via GitHub Actions.
+
+**Migration tracking:** `scripts/migrate.sh` maintains a `_migrations` table in D1. On first run against an existing DB, it bootstraps by recording all current migration filenames without re-running them. Subsequent runs only apply new migrations.
 
 ### Environment Variables
 
