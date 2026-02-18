@@ -32,14 +32,13 @@ const SECTIONS: SectionDef[] = [
 interface ProductFormSectionsProps {
   product: ProductDetail;
   categories: CategoryOption[];
-  isNew?: boolean;
 }
 
 export function ProductFormSections({
   product,
   categories,
-  isNew = false,
 }: ProductFormSectionsProps) {
+  const isNew = product.is_draft === 1;
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const isActiveRef = useRef<HTMLInputElement>(null);
@@ -47,14 +46,18 @@ export function ProductFormSections({
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
-      const result = await updateProduct(product.id, formData);
-      if (result.success) {
-        toast.success(isNew ? "Produit créé" : "Produit mis à jour");
-        if (isNew) {
-          router.replace(`/products/${product.id}/edit`);
+      try {
+        const result = await updateProduct(product.id, formData);
+        if (result.success) {
+          toast.success(isNew ? "Produit créé" : "Produit mis à jour");
+          if (isNew) {
+            router.replace(`/products/${product.id}/edit`);
+          }
+        } else {
+          toast.error(result.error || "Une erreur est survenue");
         }
-      } else {
-        toast.error(result.error);
+      } catch {
+        toast.error("Une erreur inattendue est survenue. Veuillez réessayer.");
       }
     });
   }

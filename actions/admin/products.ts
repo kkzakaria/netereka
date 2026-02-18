@@ -23,10 +23,10 @@ const productSchema = z.object({
   stock_quantity: z.coerce.number().int().min(0).default(0),
   low_stock_threshold: z.coerce.number().int().min(0).default(5),
   weight_grams: z.coerce.number().int().min(0).optional(),
-  meta_title: z.string().optional().default(""),
-  meta_description: z.string().optional().default(""),
-  is_active: z.coerce.number().min(0).max(1).default(1),
-  is_featured: z.coerce.number().min(0).max(1).default(0),
+  meta_title: z.string().max(60).optional().default(""),
+  meta_description: z.string().max(160).optional().default(""),
+  is_active: z.coerce.number().int().min(0).max(1).default(1),
+  is_featured: z.coerce.number().int().min(0).max(1).default(0),
 });
 
 export async function createProduct(formData: FormData): Promise<ActionResult> {
@@ -121,7 +121,7 @@ export async function updateProduct(
        base_price = ?, compare_price = ?, sku = ?, brand = ?,
        is_active = ?, is_featured = ?, stock_quantity = ?,
        low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
-       is_draft = 0, updated_at = datetime('now')
+       is_draft = 0, updated_at = datetime('now') -- Clear draft flag: saving "publishes" the product
      WHERE id = ?`,
     [
       data.category_id,
@@ -211,21 +211,31 @@ export async function toggleProductFeatured(id: string): Promise<ActionResult> {
   return { success: true };
 }
 
+/** Create a minimal draft product row so that images and variants can be
+ *  uploaded immediately while the admin fills in the rest of the form.
+ *  The draft is "published" when the form is saved (is_draft set to 0). */
 export async function createDraftProduct(): Promise<ActionResult> {
   await requireAdmin();
 
   const id = nanoid();
   const slug = `draft-${id}`;
 
-  await execute(
-    `INSERT INTO products (id, category_id, name, slug, base_price, is_active, is_draft, created_at, updated_at)
-     VALUES (?, '', '', ?, 0, 0, 1, datetime('now'), datetime('now'))`,
-    [id, slug]
-  );
+  try {
+    await execute(
+      `INSERT INTO products (id, category_id, name, slug, base_price, is_active, is_draft, created_at, updated_at)
+       VALUES (?, '', '', ?, 0, 0, 1, datetime('now'), datetime('now'))`,
+      [id, slug]
+    );
+  } catch (error) {
+    console.error("[admin/products] createDraftProduct error:", error);
+    return { success: false, error: "Erreur lors de la création du brouillon" };
+  }
 
   return { success: true, id };
 }
 
+/** Delete draft products abandoned for 24+ hours (name still empty).
+ *  Also removes associated product_images, product_variants rows and R2 files. */
 export async function cleanupDraftProducts(): Promise<void> {
   await requireAdmin();
 
@@ -241,10 +251,26 @@ export async function cleanupDraftProducts(): Promise<void> {
   const db = await getDB();
 
   for (const draft of orphanedDrafts) {
-    await db.batch([
-      db.prepare("DELETE FROM product_images WHERE product_id = ?").bind(draft.id),
-      db.prepare("DELETE FROM product_variants WHERE product_id = ?").bind(draft.id),
-      db.prepare("DELETE FROM products WHERE id = ?").bind(draft.id),
-    ]);
+    try {
+      // Clean up R2 files before DB delete (best-effort, matching deleteProduct pattern)
+      const images = await query<{ url: string }>(
+        "SELECT url FROM product_images WHERE product_id = ?",
+        [draft.id]
+      );
+      await Promise.allSettled(
+        images.map((img) => {
+          const key = img.url.replace(/^\/images\//, "");
+          return deleteFromR2(key);
+        })
+      );
+
+      await db.batch([
+        db.prepare("DELETE FROM product_images WHERE product_id = ?").bind(draft.id),
+        db.prepare("DELETE FROM product_variants WHERE product_id = ?").bind(draft.id),
+        db.prepare("DELETE FROM products WHERE id = ?").bind(draft.id),
+      ]);
+    } catch (error) {
+      console.error(`[admin/products] Failed to cleanup draft id="${draft.id}":`, error);
+    }
   }
 }

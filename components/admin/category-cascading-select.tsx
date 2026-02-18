@@ -9,12 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-export interface CategoryOption {
-  id: string;
-  name: string;
-  depth: number;
-  parent_id: string | null;
-}
+import type { CategoryWithCount } from "@/lib/db/admin/categories";
+
+export type CategoryOption = Pick<CategoryWithCount, "id" | "name" | "depth" | "parent_id">;
 
 interface CategoryCascadingSelectProps {
   categories: CategoryOption[];
@@ -59,10 +56,8 @@ export function CategoryCascadingSelect({
   const subcategories = parentId ? (childrenByParent.get(parentId) ?? []) : [];
   const hasSubcategories = subcategories.length > 0;
 
-  // The actual category_id submitted is the subcategory if selected, otherwise the parent
-  const effectiveCategoryId = hasSubcategories
-    ? subcategoryId || ""
-    : parentId;
+  // Submit subcategory if selected, otherwise fall back to parent
+  const effectiveCategoryId = subcategoryId || parentId;
 
   function handleParentChange(value: string) {
     setParentId(value);

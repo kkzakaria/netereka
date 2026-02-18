@@ -22,8 +22,12 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function ProductsPage({ searchParams }: Props) {
-  // Cleanup orphaned draft products after response is sent
-  after(() => cleanupDraftProducts().catch(() => {}));
+  // Remove draft products abandoned for 24+ hours after response is sent
+  after(() =>
+    cleanupDraftProducts().catch((err) => {
+      console.error("[admin/products] draft cleanup failed:", err);
+    })
+  );
 
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);

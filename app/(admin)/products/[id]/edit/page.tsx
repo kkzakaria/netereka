@@ -11,13 +11,10 @@ import type { CategoryOption } from "@/components/admin/category-cascading-selec
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ new?: string }>;
 }
 
-export default async function EditProductPage({ params, searchParams }: Props) {
+export default async function EditProductPage({ params }: Props) {
   const { id } = await params;
-  const { new: isNewParam } = await searchParams;
-  const isNew = isNewParam === "1";
 
   const [product, categories] = await Promise.all([
     getAdminProductById(id),
@@ -25,6 +22,8 @@ export default async function EditProductPage({ params, searchParams }: Props) {
   ]);
 
   if (!product) notFound();
+
+  const isNew = product.is_draft === 1;
 
   return (
     <div>
@@ -59,7 +58,6 @@ export default async function EditProductPage({ params, searchParams }: Props) {
           depth: c.depth,
           parent_id: c.parent_id,
         }))}
-        isNew={isNew}
       />
     </div>
   );
