@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   }),
   aiRun: vi.fn(),
   getCategoryTree: vi.fn(),
+  uploadToR2: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -32,11 +33,16 @@ vi.mock("@/lib/ai", () => ({
 vi.mock("@/lib/db/categories", () => ({
   getCategoryTree: mocks.getCategoryTree,
 }));
+vi.mock("@/lib/storage/images", () => ({
+  uploadToR2: mocks.uploadToR2,
+}));
+vi.mock("nanoid", () => ({ nanoid: vi.fn().mockReturnValue("mock-nano-id") }));
 
 import {
   generateProductText,
   generateBannerText,
   suggestCategory,
+  generateBannerImage,
 } from "@/actions/admin/ai";
 
 const mockCategoryTree = [
@@ -232,5 +238,42 @@ describe("suggestCategory", () => {
     // Only cat-1a should remain after filtering
     expect(result.data!.suggestions).toHaveLength(1);
     expect(result.data!.suggestions[0].categoryId).toBe("cat-1a");
+  });
+});
+
+// ─── generateBannerImage ──────────────────────────────────────────────────────
+
+describe("generateBannerImage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+  });
+
+  it("requires admin auth", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(
+      generateBannerImage({ prompt: "Tech banner" })
+    ).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("returns error when prompt is empty", async () => {
+    const result = await generateBannerImage({ prompt: "" });
+    expect(result.success).toBe(false);
+  });
+
+  it("generates image, uploads to R2, and returns URL", async () => {
+    const fakeImageData = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    mocks.aiRun.mockResolvedValue(fakeImageData);
+    mocks.uploadToR2.mockResolvedValue("banners/ai-mock-nano-id.png");
+
+    const result = await generateBannerImage({
+      prompt: "Modern tech banner with smartphones",
+      style: "product",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.imageUrl).toBe("/images/banners/ai-mock-nano-id.png");
+    expect(mocks.aiRun).toHaveBeenCalledOnce();
+    expect(mocks.uploadToR2).toHaveBeenCalledOnce();
   });
 });

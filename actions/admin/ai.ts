@@ -1,13 +1,16 @@
 "use server";
 
 import { z } from "zod";
+import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
-import { getAI, TEXT_MODEL } from "@/lib/ai";
+import { getAI, TEXT_MODEL, IMAGE_MODEL } from "@/lib/ai";
 import {
   productTextPrompt,
   bannerTextPrompt,
   categorySuggestionPrompt,
+  bannerImagePrompt,
 } from "@/lib/ai/prompts";
+import { uploadToR2 } from "@/lib/storage/images";
 import {
   productTextSchema,
   bannerTextSchema,
@@ -42,6 +45,11 @@ const bannerTextInputSchema = z.object({
 const suggestCategoryInputSchema = z.object({
   productName: z.string().min(1, "Le nom du produit est requis"),
   description: z.string().optional(),
+});
+
+const bannerImageInputSchema = z.object({
+  prompt: z.string().min(1, "Décrivez l'image souhaitée"),
+  style: z.enum(["product", "abstract", "lifestyle"]).optional(),
 });
 
 async function runTextModel(
@@ -195,6 +203,48 @@ export async function suggestCategory(
     return {
       success: false,
       error: "Impossible de suggérer une catégorie. Réessayez.",
+    };
+  }
+}
+
+export async function generateBannerImage(
+  input: z.input<typeof bannerImageInputSchema>
+): Promise<AiResult<{ imageUrl: string }>> {
+  await requireAdmin();
+
+  const parsed = bannerImageInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: "Décrivez l'image souhaitée." };
+  }
+
+  try {
+    const ai = await getAI();
+    const prompt = bannerImagePrompt(parsed.data);
+    // Cast needed: Workers AI types don't include all available model strings
+    const imageData = await ai.run(IMAGE_MODEL as keyof AiModels, { prompt });
+
+    // Workers AI returns a ReadableStream or Uint8Array for image models
+    const buffer =
+      imageData instanceof ReadableStream
+        ? await new Response(imageData).arrayBuffer()
+        : (imageData as ArrayBufferLike);
+
+    const key = `banners/ai-${nanoid()}.png`;
+    const file = new File([buffer], "generated.png", { type: "image/png" });
+    await uploadToR2(file, key);
+
+    return { success: true, data: { imageUrl: `/images/${key}` } };
+  } catch (error) {
+    console.error("[admin/ai] generateBannerImage error:", error);
+    if (error instanceof Error && error.message.includes("429")) {
+      return {
+        success: false,
+        error: "Limite IA quotidienne atteinte. Réessayez demain.",
+      };
+    }
+    return {
+      success: false,
+      error: "Impossible de générer l'image. Réessayez.",
     };
   }
 }
