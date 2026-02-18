@@ -21,6 +21,10 @@ const productSchema = z.object({
   base_price: z.coerce.number().int().min(0, "Le prix doit être positif"),
   compare_price: z.coerce.number().int().min(0).optional(),
   stock_quantity: z.coerce.number().int().min(0).default(0),
+  low_stock_threshold: z.coerce.number().int().min(0).default(5),
+  weight_grams: z.coerce.number().int().min(0).optional(),
+  meta_title: z.string().optional().default(""),
+  meta_description: z.string().optional().default(""),
   is_active: z.coerce.number().min(0).max(1).default(1),
   is_featured: z.coerce.number().min(0).max(1).default(0),
 });
@@ -52,8 +56,8 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
   }
 
   await execute(
-    `INSERT INTO products (id, category_id, name, slug, description, short_description, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+    `INSERT INTO products (id, category_id, name, slug, description, short_description, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity, low_stock_threshold, weight_grams, meta_title, meta_description, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
     [
       id,
       data.category_id,
@@ -68,6 +72,10 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
       data.is_active,
       data.is_featured,
       data.stock_quantity,
+      data.low_stock_threshold,
+      data.weight_grams ?? null,
+      data.meta_title || null,
+      data.meta_description || null,
     ]
   );
 
@@ -111,7 +119,9 @@ export async function updateProduct(
     `UPDATE products SET
        category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
        base_price = ?, compare_price = ?, sku = ?, brand = ?,
-       is_active = ?, is_featured = ?, stock_quantity = ?, updated_at = datetime('now')
+       is_active = ?, is_featured = ?, stock_quantity = ?,
+       low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
+       is_draft = 0, updated_at = datetime('now')
      WHERE id = ?`,
     [
       data.category_id,
@@ -126,6 +136,10 @@ export async function updateProduct(
       data.is_active,
       data.is_featured,
       data.stock_quantity,
+      data.low_stock_threshold,
+      data.weight_grams ?? null,
+      data.meta_title || null,
+      data.meta_description || null,
       id,
     ]
   );
@@ -195,4 +209,42 @@ export async function toggleProductFeatured(id: string): Promise<ActionResult> {
   );
   revalidatePath("/products");
   return { success: true };
+}
+
+export async function createDraftProduct(): Promise<ActionResult> {
+  await requireAdmin();
+
+  const id = nanoid();
+  const slug = `draft-${id}`;
+
+  await execute(
+    `INSERT INTO products (id, category_id, name, slug, base_price, is_active, is_draft, created_at, updated_at)
+     VALUES (?, '', '', ?, 0, 0, 1, datetime('now'), datetime('now'))`,
+    [id, slug]
+  );
+
+  return { success: true, id };
+}
+
+export async function cleanupDraftProducts(): Promise<void> {
+  await requireAdmin();
+
+  const orphanedDrafts = await query<{ id: string }>(
+    `SELECT id FROM products
+     WHERE is_draft = 1 AND name = ''
+     AND created_at < datetime('now', '-24 hours')`
+  );
+
+  if (orphanedDrafts.length === 0) return;
+
+  const { getDB } = await import("@/lib/cloudflare/context");
+  const db = await getDB();
+
+  for (const draft of orphanedDrafts) {
+    await db.batch([
+      db.prepare("DELETE FROM product_images WHERE product_id = ?").bind(draft.id),
+      db.prepare("DELETE FROM product_variants WHERE product_id = ?").bind(draft.id),
+      db.prepare("DELETE FROM products WHERE id = ?").bind(draft.id),
+    ]);
+  }
 }
