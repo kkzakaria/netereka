@@ -49,27 +49,6 @@ CREATE TABLE `audit_log` (
 CREATE INDEX `idx_audit_log_actor` ON `audit_log` (`actor_id`);--> statement-breakpoint
 CREATE INDEX `idx_audit_log_action` ON `audit_log` (`action`);--> statement-breakpoint
 CREATE INDEX `idx_audit_log_created` ON `audit_log` (`created_at`);--> statement-breakpoint
-CREATE TABLE `banners` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`title` text NOT NULL,
-	`subtitle` text,
-	`badge_text` text,
-	`badge_color` text DEFAULT 'mint' NOT NULL,
-	`image_url` text,
-	`link_url` text NOT NULL,
-	`cta_text` text DEFAULT 'Découvrir' NOT NULL,
-	`price` integer,
-	`bg_gradient_from` text DEFAULT '#183C78' NOT NULL,
-	`bg_gradient_to` text DEFAULT '#1E4A8F' NOT NULL,
-	`display_order` integer DEFAULT 0 NOT NULL,
-	`is_active` integer DEFAULT 1 NOT NULL,
-	`starts_at` text,
-	`ends_at` text,
-	`created_at` text DEFAULT (datetime('now')) NOT NULL,
-	`updated_at` text DEFAULT (datetime('now')) NOT NULL
-);
---> statement-breakpoint
-CREATE INDEX `idx_banners_active_order` ON `banners` (`is_active`,`display_order`);--> statement-breakpoint
 CREATE TABLE `categories` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -199,7 +178,7 @@ CREATE UNIQUE INDEX `product_variants_sku_unique` ON `product_variants` (`sku`);
 CREATE INDEX `idx_product_variants_product` ON `product_variants` (`product_id`);--> statement-breakpoint
 CREATE TABLE `products` (
 	`id` text PRIMARY KEY NOT NULL,
-	`category_id` text NOT NULL,
+	`category_id` text,
 	`name` text NOT NULL,
 	`slug` text NOT NULL,
 	`description` text,
@@ -210,6 +189,7 @@ CREATE TABLE `products` (
 	`brand` text,
 	`is_active` integer DEFAULT 1 NOT NULL,
 	`is_featured` integer DEFAULT 0 NOT NULL,
+	`is_draft` integer DEFAULT 0 NOT NULL,
 	`stock_quantity` integer DEFAULT 0 NOT NULL,
 	`low_stock_threshold` integer DEFAULT 5 NOT NULL,
 	`weight_grams` integer,
