@@ -24,9 +24,11 @@ import {
   updateBanner,
   uploadBannerImage,
 } from "@/actions/admin/banners";
+import dynamic from "next/dynamic";
 import { AiGenerateButton } from "./ai-generate-button";
-import { AiImageDialog } from "./ai-image-dialog";
 import { generateBannerText } from "@/actions/admin/ai";
+
+const AiImageDialog = dynamic(() => import("./ai-image-dialog").then((m) => m.AiImageDialog));
 import type { BannerTextResult } from "@/lib/ai/schemas";
 
 interface BannerFormProps {
