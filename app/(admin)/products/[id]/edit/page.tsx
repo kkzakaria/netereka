@@ -7,6 +7,7 @@ import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { ProductFormSections } from "@/components/admin/product-form-sections";
 import { getAdminProductById } from "@/lib/db/admin/products";
 import { getAllCategories } from "@/lib/db/admin/categories";
+import type { CategoryOption } from "@/components/admin/category-cascading-select";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -52,7 +53,12 @@ export default async function EditProductPage({ params, searchParams }: Props) {
       </AdminPageHeader>
       <ProductFormSections
         product={product}
-        categories={categories}
+        categories={categories.map((c): CategoryOption => ({
+          id: c.id,
+          name: c.name,
+          depth: c.depth,
+          parent_id: c.parent_id,
+        }))}
         isNew={isNew}
       />
     </div>

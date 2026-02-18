@@ -10,9 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ProductDetail } from "@/lib/db/types";
-import type { CategoryWithCount } from "@/lib/db/admin/categories";
 import { updateProduct } from "@/actions/admin/products";
-import { CategoryCascadingSelect } from "./category-cascading-select";
+import { CategoryCascadingSelect, type CategoryOption } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
 import { ImageManager } from "./image-manager";
 import { VariantList } from "./variant-list";
@@ -30,7 +29,7 @@ const SECTIONS: SectionDef[] = [
 
 interface ProductFormSectionsProps {
   product: ProductDetail;
-  categories: CategoryWithCount[];
+  categories: CategoryOption[];
   isNew?: boolean;
 }
 

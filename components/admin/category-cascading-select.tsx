@@ -9,10 +9,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { CategoryWithCount } from "@/lib/db/admin/categories";
+export interface CategoryOption {
+  id: string;
+  name: string;
+  depth: number;
+  parent_id: string | null;
+}
 
 interface CategoryCascadingSelectProps {
-  categories: CategoryWithCount[];
+  categories: CategoryOption[];
   defaultCategoryId?: string;
 }
 
@@ -21,7 +26,7 @@ export function CategoryCascadingSelect({
   defaultCategoryId,
 }: CategoryCascadingSelectProps) {
   const roots = categories.filter((c) => c.depth === 0);
-  const childrenByParent = new Map<string, CategoryWithCount[]>();
+  const childrenByParent = new Map<string, CategoryOption[]>();
   for (const cat of categories) {
     if (cat.parent_id) {
       const existing = childrenByParent.get(cat.parent_id) ?? [];
