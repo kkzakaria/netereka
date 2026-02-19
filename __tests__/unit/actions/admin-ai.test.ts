@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   searchProductImages: vi.fn(),
   execute: vi.fn(),
   query: vi.fn(),
+  dbBatch: vi.fn().mockResolvedValue([]),
+  dbPrepare: vi.fn().mockReturnValue({ bind: vi.fn().mockReturnThis() }),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -49,6 +51,15 @@ vi.mock("@/lib/db", () => ({
   execute: mocks.execute,
   query: mocks.query,
   queryFirst: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/lib/cloudflare/context", () => ({
+  getDB: vi.fn().mockResolvedValue({
+    prepare: mocks.dbPrepare,
+    batch: mocks.dbBatch,
+  }),
+  getKV: vi.fn(),
+  getR2: vi.fn(),
+  getEnv: vi.fn(),
 }));
 
 import {
@@ -518,6 +529,8 @@ describe("createProductFromBlueprint", () => {
     mocks.execute.mockResolvedValue(undefined);
     mocks.query.mockResolvedValue([]);
     mocks.uploadToR2.mockResolvedValue("products/id/img.jpg");
+    mocks.dbBatch.mockResolvedValue([]);
+    mocks.dbPrepare.mockReturnValue({ bind: vi.fn().mockReturnThis() });
   });
 
   it("requires admin auth", async () => {
@@ -527,15 +540,17 @@ describe("createProductFromBlueprint", () => {
     ).rejects.toThrow("NEXT_REDIRECT");
   });
 
-  it("creates product and variants, returns id", async () => {
+  it("creates product and variants atomically via batch, returns id", async () => {
     const result = await createProductFromBlueprint({
       blueprint,
       imageUrls: [],
     });
     expect(result.success).toBe(true);
     expect(result.id).toBe("mock-nano-id");
-    // 1 product INSERT + 1 variant INSERT = 2 execute calls
-    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    // product + variant are inserted atomically via db.batch
+    expect(mocks.dbBatch).toHaveBeenCalledTimes(1);
+    // no image INSERTs when imageUrls is empty
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
 
   it("downloads and uploads images when imageUrls provided", async () => {
@@ -548,9 +563,11 @@ describe("createProductFromBlueprint", () => {
       imageUrls: ["https://example.com/img1.jpg"],
     });
     expect(result.success).toBe(true);
+    // product + variant go via batch
+    expect(mocks.dbBatch).toHaveBeenCalledTimes(1);
     expect(mocks.uploadToR2).toHaveBeenCalledTimes(1);
-    // product INSERT + variant INSERT + image INSERT = 3 execute calls
-    expect(mocks.execute).toHaveBeenCalledTimes(3);
+    // only the image INSERT goes through execute
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 
@@ -566,7 +583,7 @@ describe("createProductFromBlueprint", () => {
   });
 
   it("returns error on DB failure", async () => {
-    mocks.execute.mockRejectedValue(new Error("D1 write error"));
+    mocks.dbBatch.mockRejectedValue(new Error("D1 write error"));
     const result = await createProductFromBlueprint({
       blueprint,
       imageUrls: [],
