@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ProductTable } from "@/components/admin/product-table";
@@ -8,7 +9,14 @@ import { ProductCardMobile } from "@/components/admin/product-card-mobile";
 import { ResponsiveDataList } from "@/components/admin/responsive-data-list";
 import { AdminMobileFilterSheet } from "@/components/admin/mobile-filter-sheet";
 import { ViewSwitcher } from "@/components/admin/view-switcher";
-import { AiCreateProductModal } from "@/components/admin/ai-create-product-modal";
+
+const AiCreateProductModal = dynamic(
+  () =>
+    import("@/components/admin/ai-create-product-modal").then(
+      (m) => m.AiCreateProductModal
+    ),
+  { ssr: false }
+);
 
 interface ProductData {
   id: string;

@@ -300,18 +300,19 @@ export async function generateProductBlueprint(
       .filter(Boolean)
       .join(" ");
 
-    const [specs, imageUrls] = await Promise.all([
-      searchProductSpecs(searchQuery).catch((err) => {
-        console.error("[admin/ai] searchProductSpecs failed:", err);
-        return "";
-      }),
-      searchProductImages(searchQuery).catch((err) => {
-        console.error("[admin/ai] searchProductImages failed:", err);
-        return [] as string[];
-      }),
+    const [[specs, imageUrls], tree] = await Promise.all([
+      Promise.all([
+        searchProductSpecs(searchQuery).catch((err) => {
+          console.error("[admin/ai] searchProductSpecs failed:", err);
+          return "";
+        }),
+        searchProductImages(searchQuery).catch((err) => {
+          console.error("[admin/ai] searchProductImages failed:", err);
+          return [] as string[];
+        }),
+      ]),
+      getCategoryTree(),
     ]);
-
-    const tree = await getCategoryTree();
     const categories = flattenCategories(tree);
 
     if (categories.length === 0) {
@@ -409,37 +410,32 @@ export async function createProductFromBlueprint(
       ]
     );
 
-    // 2. Insert variants
-    for (let i = 0; i < blueprint.variants.length; i++) {
-      const v = blueprint.variants[i];
-      const vid = nanoid();
-      await execute(
-        `INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity,
-           attributes, is_active, sort_order)
-         VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?)`,
-        [
-          vid,
-          id,
-          v.name,
-          v.price,
-          v.stock_quantity,
-          JSON.stringify(v.attributes),
-          i,
-        ]
-      );
-    }
+    // 2. Insert variants (parallel)
+    await Promise.all(
+      blueprint.variants.map((v, i) => {
+        const vid = nanoid();
+        return execute(
+          `INSERT INTO product_variants (id, product_id, name, sku, price, stock_quantity,
+             attributes, is_active, sort_order)
+           VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?)`,
+          [vid, id, v.name, v.price, v.stock_quantity, JSON.stringify(v.attributes), i]
+        );
+      })
+    );
 
-    // 3. Download images → R2 (best-effort, failures are silently skipped)
-    for (let i = 0; i < imageUrls.length; i++) {
-      const storedUrl = await downloadImageToR2(imageUrls[i], id).catch(() => null);
-      if (!storedUrl) continue;
-      const iid = nanoid();
-      await execute(
-        `INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary)
-         VALUES (?, ?, ?, NULL, ?, ?)`,
-        [iid, id, storedUrl, i, i === 0 ? 1 : 0]
-      );
-    }
+    // 3. Download images → R2 in parallel (best-effort, failures are silently skipped)
+    await Promise.all(
+      imageUrls.map(async (url, i) => {
+        const storedUrl = await downloadImageToR2(url, id).catch(() => null);
+        if (!storedUrl) return;
+        const iid = nanoid();
+        await execute(
+          `INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary)
+           VALUES (?, ?, ?, NULL, ?, ?)`,
+          [iid, id, storedUrl, i, i === 0 ? 1 : 0]
+        );
+      })
+    );
 
     revalidatePath("/products");
     revalidatePath("/dashboard");
