@@ -34,3 +34,27 @@ export const categorySuggestionSchema = z.object({
 export type CategorySuggestionResult = z.infer<
   typeof categorySuggestionSchema
 >;
+
+export const productVariantBlueprintSchema = z.object({
+  name: z.string().min(1),
+  price: z.coerce.number().int().min(0),
+  stock_quantity: z.coerce.number().int().min(0).default(5),
+  attributes: z.record(z.string(), z.string()).default({}),
+});
+
+export const productBlueprintSchema = z.object({
+  name: z.string().min(1),
+  brand: z.string().optional().default(""),
+  base_price: z.coerce.number().int().min(0),
+  description: z.string().max(500),
+  short_description: z.string().max(150),
+  meta_title: z.string().max(60),
+  meta_description: z.string().max(160),
+  categoryId: z.string(),
+  variants: z.array(productVariantBlueprintSchema).min(0).max(20),
+});
+
+export type ProductVariantBlueprint = z.infer<
+  typeof productVariantBlueprintSchema
+>;
+export type ProductBlueprint = z.infer<typeof productBlueprintSchema>;
