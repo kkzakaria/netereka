@@ -114,7 +114,10 @@ export async function generateProductText(
     const searchQuery = [parsed.data.brand, parsed.data.name]
       .filter(Boolean)
       .join(" ");
-    const specs = await searchProductSpecs(searchQuery).catch(() => "");
+    const specs = await searchProductSpecs(searchQuery).catch((err) => {
+      console.error("[admin/ai] searchProductSpecs failed, continuing without specs:", err);
+      return "";
+    });
 
     const prompt = productTextPrompt({ ...parsed.data, specs });
     const jsonStr = await runTextModel(prompt.system, prompt.user);

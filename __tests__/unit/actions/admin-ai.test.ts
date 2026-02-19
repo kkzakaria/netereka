@@ -172,6 +172,7 @@ describe("generateProductText", () => {
     // The specs must appear in the user message sent to the AI
     const userMessage = mocks.aiRun.mock.calls[0][1].messages[1].content as string;
     expect(userMessage).toContain(fakeSpecs);
+    expect(userMessage).toContain("---");
   });
 
   it("falls back gracefully when search throws", async () => {
@@ -188,6 +189,11 @@ describe("generateProductText", () => {
     expect(result.success).toBe(true);
     // AI was still called despite search failure
     expect(mocks.aiRun).toHaveBeenCalledTimes(1);
+    // Search was called with just the name (no brand)
+    expect(mocks.searchProductSpecs).toHaveBeenCalledWith("Produit inconnu");
+    // Specs section must not appear in the AI prompt
+    const userMessage = mocks.aiRun.mock.calls[0][1].messages[1].content as string;
+    expect(userMessage).not.toContain("Informations trouvées en ligne");
   });
 });
 

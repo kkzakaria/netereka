@@ -8,7 +8,9 @@ export function productTextPrompt(input: {
     `Nom du produit: ${input.name}`,
     input.brand ? `Marque: ${input.brand}` : null,
     input.categoryName ? `Catégorie: ${input.categoryName}` : null,
-    input.specs ? `Informations trouvées en ligne:\n${input.specs}` : null,
+    input.specs
+      ? `Informations trouvées en ligne (utilise uniquement ces données factuelles):\n---\n${input.specs}\n---`
+      : null,
   ]
     .filter(Boolean)
     .join("\n");
