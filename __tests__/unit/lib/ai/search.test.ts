@@ -11,7 +11,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 vi.stubGlobal("fetch", mocks.fetch);
 
-import { searchProductSpecs } from "@/lib/ai/search";
+import { searchProductSpecs, searchProductImages } from "@/lib/ai/search";
 
 // ─── Env fixtures ─────────────────────────────────────────────────────────────
 
@@ -267,5 +267,108 @@ describe("searchProductSpecs — snippet formatting", () => {
   it("includes result with only a title when description is absent", async () => {
     mockFetchOk({ web: { results: [{ title: "Galaxy S24" }] } });
     expect(await searchProductSpecs("query")).toBe("Galaxy S24");
+  });
+});
+
+// ─── searchProductImages ────────────────────────────────────────────────────
+
+describe("searchProductImages", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns image URLs from Brave Image Search when key is set", async () => {
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [
+          { thumbnail: { src: "https://cdn.example.com/img1.jpg" } },
+          { thumbnail: { src: "https://cdn.example.com/img2.jpg" } },
+        ],
+      }),
+    });
+
+    const urls = await searchProductImages("iPhone 16 Pro");
+    expect(urls).toEqual([
+      "https://cdn.example.com/img1.jpg",
+      "https://cdn.example.com/img2.jpg",
+    ]);
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/images/search"),
+      expect.any(Object)
+    );
+  });
+
+  it("returns empty array when no API key is configured", async () => {
+    mocks.getCloudflareContext.mockResolvedValue(NONE);
+    const urls = await searchProductImages("iPhone 16 Pro");
+    expect(urls).toEqual([]);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns empty array when Brave Image Search returns non-ok status", async () => {
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
+    mocks.fetch.mockResolvedValue({ ok: false, status: 403 });
+    const urls = await searchProductImages("test");
+    expect(urls).toEqual([]);
+  });
+
+  it("returns empty array when Brave Image Search returns no results", async () => {
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ results: [] }),
+    });
+    const urls = await searchProductImages("test");
+    expect(urls).toEqual([]);
+  });
+
+  it("returns empty array on fetch timeout/network error", async () => {
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
+    mocks.fetch.mockRejectedValue(new Error("timeout"));
+    const urls = await searchProductImages("test");
+    expect(urls).toEqual([]);
+  });
+
+  it("filters out results with no thumbnail src", async () => {
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [
+          { thumbnail: { src: "https://cdn.example.com/img1.jpg" } },
+          { thumbnail: {} },
+          { thumbnail: { src: "https://cdn.example.com/img3.jpg" } },
+        ],
+      }),
+    });
+    const urls = await searchProductImages("test");
+    expect(urls).toEqual([
+      "https://cdn.example.com/img1.jpg",
+      "https://cdn.example.com/img3.jpg",
+    ]);
+  });
+
+  it("returns at most 3 URLs when results contain more", async () => {
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [
+          { thumbnail: { src: "https://cdn.example.com/img1.jpg" } },
+          { thumbnail: { src: "https://cdn.example.com/img2.jpg" } },
+          { thumbnail: { src: "https://cdn.example.com/img3.jpg" } },
+          { thumbnail: { src: "https://cdn.example.com/img4.jpg" } },
+        ],
+      }),
+    });
+    const urls = await searchProductImages("test");
+    expect(urls).toHaveLength(3);
+    expect(urls).not.toContain("https://cdn.example.com/img4.jpg");
   });
 });

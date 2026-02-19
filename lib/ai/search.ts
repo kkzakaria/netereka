@@ -10,6 +10,10 @@ interface GoogleSearchResult {
   items?: Array<{ title?: string; snippet?: string }>;
 }
 
+interface BraveImageSearchResult {
+  results?: Array<{ thumbnail?: { src?: string } }>;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_SPECS_LENGTH = 1000;
@@ -113,6 +117,46 @@ async function searchWithGoogle(
     .slice(0, MAX_SPECS_LENGTH);
 }
 
+/**
+ * Fetch product images from Brave Image Search.
+ * Returns up to 3 thumbnail URLs, or [] on any failure.
+ */
+async function searchImagesWithBrave(
+  query: string,
+  apiKey: string
+): Promise<string[]> {
+  const url = `https://api.search.brave.com/res/v1/images/search?q=${encodeURIComponent(query)}&count=3&safesearch=strict`;
+
+  let data: BraveImageSearchResult;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "Accept-Encoding": "gzip",
+        "X-Subscription-Token": apiKey,
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+
+    if (!res.ok) {
+      console.error(
+        `[ai/search] Brave Image Search returned ${res.status} for query="${query}"`
+      );
+      return [];
+    }
+
+    data = (await res.json()) as BraveImageSearchResult;
+  } catch (err) {
+    console.error("[ai/search] Brave Image Search threw:", err);
+    return [];
+  }
+
+  return (data.results ?? [])
+    .map((r) => r.thumbnail?.src ?? "")
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -158,4 +202,19 @@ export async function searchProductSpecs(query: string): Promise<string> {
   }
 
   return "";
+}
+
+/**
+ * Search for product images using Brave Image Search.
+ * Returns an array of thumbnail URLs (max 3), or [] if unavailable.
+ */
+export async function searchProductImages(query: string): Promise<string[]> {
+  const { env } = await getCloudflareContext();
+
+  if (env.BRAVE_SEARCH_API_KEY) {
+    return searchImagesWithBrave(query, env.BRAVE_SEARCH_API_KEY);
+  }
+
+  console.warn("[ai/search] No BRAVE_SEARCH_API_KEY — skipping image search");
+  return [];
 }
