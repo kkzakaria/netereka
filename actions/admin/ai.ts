@@ -22,6 +22,7 @@ import type {
   CategorySuggestionResult,
 } from "@/lib/ai/schemas";
 import { getCategoryTree } from "@/lib/db/categories";
+import { searchProductSpecs } from "@/lib/ai/search";
 import type { CategoryNode } from "@/lib/db/types";
 
 interface AiResult<T> {
@@ -110,7 +111,12 @@ export async function generateProductText(
   }
 
   try {
-    const prompt = productTextPrompt(parsed.data);
+    const searchQuery = [parsed.data.brand, parsed.data.name]
+      .filter(Boolean)
+      .join(" ");
+    const specs = await searchProductSpecs(searchQuery).catch(() => "");
+
+    const prompt = productTextPrompt({ ...parsed.data, specs });
     const jsonStr = await runTextModel(prompt.system, prompt.user);
     const data = productTextSchema.parse(JSON.parse(jsonStr));
     return { success: true, data };

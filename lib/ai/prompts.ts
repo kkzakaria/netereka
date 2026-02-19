@@ -2,17 +2,21 @@ export function productTextPrompt(input: {
   name: string;
   categoryName?: string;
   brand?: string;
+  specs?: string;
 }) {
   const context = [
     `Nom du produit: ${input.name}`,
     input.brand ? `Marque: ${input.brand}` : null,
     input.categoryName ? `Catégorie: ${input.categoryName}` : null,
+    input.specs ? `Informations trouvées en ligne:\n${input.specs}` : null,
   ]
     .filter(Boolean)
     .join("\n");
 
   return {
     system: `Tu es un rédacteur e-commerce spécialisé en électronique pour le marché ivoirien. Tu rédiges en français. Les prix sont en FCFA.
+
+Utilise uniquement les informations fournies. Ne pas inventer de spécifications techniques.
 
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ou après. Le JSON doit avoir exactement ces clés :
 - "description": description détaillée du produit (2-3 phrases, max 500 caractères)

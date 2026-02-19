@@ -22,4 +22,7 @@ interface CloudflareEnv {
   // Email (Resend)
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string; // defaults to "NETEREKA <commandes@netereka.ci>"
+
+  // Brave Search (AI product specs enrichment)
+  BRAVE_SEARCH_API_KEY?: string;
 }

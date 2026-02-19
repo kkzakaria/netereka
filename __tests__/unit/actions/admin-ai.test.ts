@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   aiRun: vi.fn(),
   getCategoryTree: vi.fn(),
   uploadToR2: vi.fn(),
+  searchProductSpecs: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -37,6 +38,9 @@ vi.mock("@/lib/storage/images", () => ({
   uploadToR2: mocks.uploadToR2,
 }));
 vi.mock("nanoid", () => ({ nanoid: vi.fn().mockReturnValue("mock-nano-id") }));
+vi.mock("@/lib/ai/search", () => ({
+  searchProductSpecs: mocks.searchProductSpecs,
+}));
 
 import {
   generateProductText,
@@ -91,6 +95,7 @@ describe("generateProductText", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSession.mockResolvedValue(mockAdminSession);
+    mocks.searchProductSpecs.mockResolvedValue("");
   });
 
   it("requires admin auth (customer session → NEXT_REDIRECT)", async () => {
@@ -142,6 +147,47 @@ describe("generateProductText", () => {
     const result = await generateProductText({ name: "iPhone 15" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Limite IA quotidienne");
+  });
+
+  it("passes real specs from search into the prompt user content", async () => {
+    const fakeSpecs =
+      "Samsung Galaxy S24 Ultra — Snapdragon 8 Gen 3, 12 Go RAM, écran 6.8 pouces";
+    mocks.searchProductSpecs.mockResolvedValue(fakeSpecs);
+    const mockResponse = {
+      description: "Un téléphone haut de gamme avec Snapdragon 8 Gen 3.",
+      shortDescription: "Samsung Galaxy S24 Ultra",
+      metaTitle: "Samsung Galaxy S24 Ultra",
+      metaDescription: "Achetez le Samsung Galaxy S24 Ultra sur NETEREKA.",
+    };
+    mocks.aiRun.mockResolvedValue({ response: JSON.stringify(mockResponse) });
+
+    const result = await generateProductText({
+      name: "Galaxy S24 Ultra",
+      brand: "Samsung",
+    });
+
+    expect(result.success).toBe(true);
+    // The search was called with brand + name
+    expect(mocks.searchProductSpecs).toHaveBeenCalledWith("Samsung Galaxy S24 Ultra");
+    // The specs must appear in the user message sent to the AI
+    const userMessage = mocks.aiRun.mock.calls[0][1].messages[1].content as string;
+    expect(userMessage).toContain(fakeSpecs);
+  });
+
+  it("falls back gracefully when search throws", async () => {
+    mocks.searchProductSpecs.mockRejectedValue(new Error("network error"));
+    const mockResponse = {
+      description: "Description générique.",
+      shortDescription: "Produit test",
+      metaTitle: "Produit test",
+      metaDescription: "Description meta.",
+    };
+    mocks.aiRun.mockResolvedValue({ response: JSON.stringify(mockResponse) });
+
+    const result = await generateProductText({ name: "Produit inconnu" });
+    expect(result.success).toBe(true);
+    // AI was still called despite search failure
+    expect(mocks.aiRun).toHaveBeenCalledTimes(1);
   });
 });
 
