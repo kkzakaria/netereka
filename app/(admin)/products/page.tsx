@@ -8,7 +8,7 @@ import { ProductFilters } from "@/components/admin/product-filters";
 import { getAdminProducts, getAdminProductCount } from "@/lib/db/admin/products";
 import { getAllCategories } from "@/lib/db/admin/categories";
 import { cleanupDraftProducts } from "@/actions/admin/products";
-import { ProductsPageClient } from "./products-page-client";
+import { ProductsPageClient, ProductsPageActions } from "./products-page-client";
 
 interface Props {
   searchParams: Promise<{
@@ -75,9 +75,7 @@ export default async function ProductsPage({ searchParams }: Props) {
             categories={categories.map((c) => ({ id: c.id, name: c.name }))}
             className="flex-1"
           />
-          <Button asChild>
-            <Link href="/products/new">Nouveau produit</Link>
-          </Button>
+          <ProductsPageActions />
         </div>
       </AdminPageHeader>
 

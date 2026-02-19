@@ -101,3 +101,53 @@ export function bannerImagePrompt(input: {
 
   return `${input.prompt}, ${style}, e-commerce banner, high quality, 16:9 aspect ratio, navy blue and mint green color scheme`;
 }
+
+export function productBlueprintPrompt(input: {
+  name: string;
+  brand?: string;
+  specs?: string;
+  categories: Array<{ id: string; name: string; parentName?: string }>;
+}) {
+  const categoryList = input.categories
+    .map(
+      (c) =>
+        `- id: "${c.id}", nom: "${c.parentName ? `${c.parentName} > ${c.name}` : c.name}"`
+    )
+    .join("\n");
+
+  const context = [
+    `Nom du produit: ${input.name}`,
+    input.brand ? `Marque: ${input.brand}` : null,
+    input.specs
+      ? `Informations trouvées en ligne:\n---\n${input.specs}\n---`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return {
+    system: `Tu es un expert e-commerce pour le marché ivoirien (Côte d'Ivoire). Les prix sont en XOF (Franc CFA). Tu génères des données produit complètes. Tu rédiges en français.
+
+Voici les catégories disponibles :
+${categoryList}
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ou après. Le JSON doit avoir exactement ces clés :
+- "name": nom exact du produit (string)
+- "brand": marque du produit (string, peut être vide)
+- "base_price": prix de base en XOF, nombre entier (ex: 1049000)
+- "description": description détaillée (2-3 phrases, max 500 caractères)
+- "short_description": résumé accrocheur en une phrase (max 150 caractères)
+- "meta_title": titre SEO (max 60 caractères)
+- "meta_description": description SEO (max 160 caractères)
+- "categoryId": id de la catégorie la plus pertinente parmi la liste ci-dessus (string)
+- "variants": tableau de variantes typiques pour ce produit (max 20). Chaque variante a:
+  - "name": nom de la variante (ex: "128Go / Noir Titanium")
+  - "price": prix en XOF (nombre entier)
+  - "stock_quantity": quantité en stock (nombre entier, généralement 3-10)
+  - "attributes": objet JSON avec les attributs (ex: {"stockage": "128Go", "couleur": "Noir Titanium"})
+
+Si le produit n'a pas de variantes pertinentes (ex: accessoire simple), retourne variants: [].
+Utilise uniquement les informations fournies. Ne pas inventer de spécifications.`,
+    user: context,
+  };
+}

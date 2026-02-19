@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   getCategoryTree: vi.fn(),
   uploadToR2: vi.fn(),
   searchProductSpecs: vi.fn(),
+  searchProductImages: vi.fn(),
+  execute: vi.fn(),
+  query: vi.fn(),
+  dbBatch: vi.fn().mockResolvedValue([]),
+  dbPrepare: vi.fn().mockReturnValue({ bind: vi.fn().mockReturnThis() }),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -40,6 +45,21 @@ vi.mock("@/lib/storage/images", () => ({
 vi.mock("nanoid", () => ({ nanoid: vi.fn().mockReturnValue("mock-nano-id") }));
 vi.mock("@/lib/ai/search", () => ({
   searchProductSpecs: mocks.searchProductSpecs,
+  searchProductImages: mocks.searchProductImages,
+}));
+vi.mock("@/lib/db", () => ({
+  execute: mocks.execute,
+  query: mocks.query,
+  queryFirst: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/lib/cloudflare/context", () => ({
+  getDB: vi.fn().mockResolvedValue({
+    prepare: mocks.dbPrepare,
+    batch: mocks.dbBatch,
+  }),
+  getKV: vi.fn(),
+  getR2: vi.fn(),
+  getEnv: vi.fn(),
 }));
 
 import {
@@ -47,6 +67,8 @@ import {
   generateBannerText,
   suggestCategory,
   generateBannerImage,
+  generateProductBlueprint,
+  createProductFromBlueprint,
 } from "@/actions/admin/ai";
 
 const mockCategoryTree = [
@@ -393,5 +415,180 @@ describe("generateBannerImage", () => {
     const result = await generateBannerImage({ prompt: "Upload fail" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("générer l'image");
+  });
+});
+
+// ─── generateProductBlueprint ─────────────────────────────────────────────────
+
+describe("generateProductBlueprint", () => {
+  const mockBlueprint = {
+    name: "iPhone 16 Pro",
+    brand: "Apple",
+    base_price: 1049000,
+    description: "Un smartphone haut de gamme.",
+    short_description: "Le meilleur iPhone.",
+    meta_title: "iPhone 16 Pro - Achat",
+    meta_description: "Achetez l'iPhone 16 Pro sur NETEREKA.",
+    categoryId: "cat-1a",
+    variants: [
+      {
+        name: "128Go / Noir",
+        price: 1049000,
+        stock_quantity: 5,
+        attributes: { stockage: "128Go", couleur: "Noir" },
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+    mocks.searchProductSpecs.mockResolvedValue("iPhone 16 Pro specs...");
+    mocks.searchProductImages.mockResolvedValue([
+      "https://example.com/img1.jpg",
+    ]);
+    mocks.getCategoryTree.mockResolvedValue(mockCategoryTree);
+    mocks.aiRun.mockResolvedValue({
+      response: JSON.stringify(mockBlueprint),
+    });
+  });
+
+  it("requires admin auth", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(
+      generateProductBlueprint({ name: "iPhone 16 Pro" })
+    ).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("returns error when name is empty", async () => {
+    const result = await generateProductBlueprint({ name: "" });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+
+  it("returns blueprint and imageUrls on success", async () => {
+    const result = await generateProductBlueprint({
+      name: "iPhone 16 Pro",
+      brand: "Apple",
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.blueprint.name).toBe("iPhone 16 Pro");
+    expect(result.data?.blueprint.variants).toHaveLength(1);
+    expect(result.data?.imageUrls).toEqual(["https://example.com/img1.jpg"]);
+  });
+
+  it("filters out hallucinated categoryId not in category tree", async () => {
+    mocks.aiRun.mockResolvedValue({
+      response: JSON.stringify({ ...mockBlueprint, categoryId: "cat-fake-999" }),
+    });
+    const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("catégorie");
+  });
+
+  it("returns error on LLM 429", async () => {
+    mocks.aiRun.mockRejectedValue(new Error("429 Too Many Requests"));
+    const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Limite");
+  });
+
+  it("continues when searchProductImages rejects (catch path returns empty imageUrls)", async () => {
+    mocks.searchProductImages.mockRejectedValue(new Error("network timeout"));
+    const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
+    expect(result.success).toBe(true);
+    expect(result.data?.imageUrls).toEqual([]);
+  });
+});
+
+// ─── createProductFromBlueprint ───────────────────────────────────────────────
+
+describe("createProductFromBlueprint", () => {
+  const blueprint = {
+    name: "iPhone 16 Pro",
+    brand: "Apple",
+    base_price: 1049000,
+    description: "Description produit.",
+    short_description: "Résumé.",
+    meta_title: "iPhone 16 Pro",
+    meta_description: "Meta description.",
+    categoryId: "cat-1a",
+    variants: [
+      {
+        name: "128Go / Noir",
+        price: 1049000,
+        stock_quantity: 5,
+        attributes: { stockage: "128Go", couleur: "Noir" },
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+    mocks.execute.mockResolvedValue(undefined);
+    mocks.query.mockResolvedValue([]);
+    mocks.uploadToR2.mockResolvedValue("products/id/img.jpg");
+    mocks.dbBatch.mockResolvedValue([]);
+    mocks.dbPrepare.mockReturnValue({ bind: vi.fn().mockReturnThis() });
+  });
+
+  it("requires admin auth", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(
+      createProductFromBlueprint({ blueprint, imageUrls: [] })
+    ).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("creates product and variants atomically via batch, returns id", async () => {
+    const result = await createProductFromBlueprint({
+      blueprint,
+      imageUrls: [],
+    });
+    expect(result.success).toBe(true);
+    expect(result.id).toBe("mock-nano-id");
+    // product + variant are inserted atomically via db.batch
+    expect(mocks.dbBatch).toHaveBeenCalledTimes(1);
+    // no image INSERTs when imageUrls is empty
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it("downloads and uploads images when imageUrls provided", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+    const result = await createProductFromBlueprint({
+      blueprint,
+      imageUrls: ["https://example.com/img1.jpg"],
+    });
+    expect(result.success).toBe(true);
+    // product + variant go via batch
+    expect(mocks.dbBatch).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadToR2).toHaveBeenCalledTimes(1);
+    // only the image INSERT goes through execute
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("skips image if download fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network error")));
+    const result = await createProductFromBlueprint({
+      blueprint,
+      imageUrls: ["https://example.com/broken.jpg"],
+    });
+    expect(result.success).toBe(true);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("returns error on DB failure", async () => {
+    mocks.dbBatch.mockRejectedValue(new Error("D1 write error"));
+    const result = await createProductFromBlueprint({
+      blueprint,
+      imageUrls: [],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 });
