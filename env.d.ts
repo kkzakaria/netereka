@@ -23,6 +23,8 @@ interface CloudflareEnv {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string; // defaults to "NETEREKA <commandes@netereka.ci>"
 
-  // Brave Search (AI product specs enrichment)
+  // Search APIs (AI product specs enrichment — at least one recommended)
   BRAVE_SEARCH_API_KEY?: string;
+  GOOGLE_SEARCH_API_KEY?: string;    // Google Custom Search JSON API key
+  GOOGLE_SEARCH_ENGINE_ID?: string;  // Programmable Search Engine cx identifier
 }

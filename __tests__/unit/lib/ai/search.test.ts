@@ -13,8 +13,25 @@ vi.stubGlobal("fetch", mocks.fetch);
 
 import { searchProductSpecs } from "@/lib/ai/search";
 
-const withKey = { env: { BRAVE_SEARCH_API_KEY: "test-key" } };
-const withoutKey = { env: {} };
+// ─── Env fixtures ─────────────────────────────────────────────────────────────
+
+const BRAVE_ONLY = { env: { BRAVE_SEARCH_API_KEY: "brave-key" } };
+const GOOGLE_ONLY = {
+  env: {
+    GOOGLE_SEARCH_API_KEY: "google-key",
+    GOOGLE_SEARCH_ENGINE_ID: "cx-123",
+  },
+};
+const BOTH = {
+  env: {
+    BRAVE_SEARCH_API_KEY: "brave-key",
+    GOOGLE_SEARCH_API_KEY: "google-key",
+    GOOGLE_SEARCH_ENGINE_ID: "cx-123",
+  },
+};
+const NONE = { env: {} };
+
+// ─── Fetch helpers ────────────────────────────────────────────────────────────
 
 function mockFetchOk(body: unknown) {
   mocks.fetch.mockResolvedValue({
@@ -28,78 +45,183 @@ function mockFetchStatus(status: number) {
   mocks.fetch.mockResolvedValue({ ok: false, status });
 }
 
-// ─── Key absent ───────────────────────────────────────────────────────────────
+const BRAVE_BODY = {
+  web: {
+    results: [
+      { title: "Galaxy S24 Ultra", description: "Snapdragon 8 Gen 3, 12 Go RAM" },
+    ],
+  },
+};
 
-describe("searchProductSpecs — no API key", () => {
+const GOOGLE_BODY = {
+  items: [
+    { title: "Galaxy S24 Ultra", snippet: "Snapdragon 8 Gen 3, écran 6.8 pouces" },
+  ],
+};
+
+// ─── No API keys ──────────────────────────────────────────────────────────────
+
+describe("searchProductSpecs — no API keys", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCloudflareContext.mockResolvedValue(withoutKey);
+    mocks.getCloudflareContext.mockResolvedValue(NONE);
   });
 
-  it("returns empty string and does not call fetch when key is absent", async () => {
+  it("returns empty string and does not call fetch", async () => {
     const result = await searchProductSpecs("Samsung Galaxy S24");
     expect(result).toBe("");
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 });
 
-// ─── Non-OK HTTP responses ────────────────────────────────────────────────────
+// ─── Brave only — success ─────────────────────────────────────────────────────
 
-describe("searchProductSpecs — HTTP errors", () => {
+describe("searchProductSpecs — Brave only, success", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCloudflareContext.mockResolvedValue(withKey);
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
+  });
+
+  it("returns snippets from Brave on success", async () => {
+    mockFetchOk(BRAVE_BODY);
+    const result = await searchProductSpecs("Galaxy S24 Ultra");
+    expect(result).toBe("Galaxy S24 Ultra — Snapdragon 8 Gen 3, 12 Go RAM");
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch.mock.calls[0][0]).toContain("search.brave.com");
+  });
+
+  it("appends search suffix to query", async () => {
+    mockFetchOk(BRAVE_BODY);
+    await searchProductSpecs("iPhone 15");
+    const url = mocks.fetch.mock.calls[0][0] as string;
+    expect(url).toContain(encodeURIComponent("specifications fiche technique"));
+  });
+});
+
+// ─── Brave only — HTTP errors ─────────────────────────────────────────────────
+
+describe("searchProductSpecs — Brave only, HTTP errors (no Google fallback)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
   });
 
   it.each([401, 403, 429, 500, 503])(
-    "returns empty string on HTTP %i",
+    "returns empty string on Brave HTTP %i when no Google key",
     async (status) => {
       mockFetchStatus(status);
       expect(await searchProductSpecs("query")).toBe("");
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
     }
   );
-});
 
-// ─── Malformed response body ──────────────────────────────────────────────────
-
-describe("searchProductSpecs — malformed body", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.getCloudflareContext.mockResolvedValue(withKey);
-  });
-
-  it("returns empty string when response body is not valid JSON", async () => {
+  it("returns empty string when Brave body is non-JSON", async () => {
     mocks.fetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => {
-        throw new SyntaxError("Unexpected token < in JSON at position 0");
-      },
+      json: async () => { throw new SyntaxError("bad json"); },
     });
+    expect(await searchProductSpecs("query")).toBe("");
+  });
+
+  it("returns empty string when Brave results array is empty", async () => {
+    mockFetchOk({ web: { results: [] } });
     expect(await searchProductSpecs("query")).toBe("");
   });
 });
 
-// ─── Empty / missing results ──────────────────────────────────────────────────
+// ─── Brave + Google — Brave fails → Google succeeds ──────────────────────────
 
-describe("searchProductSpecs — empty results", () => {
+describe("searchProductSpecs — Brave fails, Google fallback succeeds", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCloudflareContext.mockResolvedValue(withKey);
+    mocks.getCloudflareContext.mockResolvedValue(BOTH);
   });
 
-  it("returns empty string when web key is absent", async () => {
-    mockFetchOk({});
+  it("uses Google when Brave returns a non-OK status", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce({ ok: false, status: 429 })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => GOOGLE_BODY });
+
+    const result = await searchProductSpecs("Galaxy S24 Ultra");
+    expect(result).toBe("Galaxy S24 Ultra — Snapdragon 8 Gen 3, écran 6.8 pouces");
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.fetch.mock.calls[1][0]).toContain("googleapis.com");
+  });
+
+  it("uses Google when Brave returns empty results", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ web: { results: [] } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => GOOGLE_BODY });
+
+    const result = await searchProductSpecs("query");
+    expect(result).toContain("Snapdragon");
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses Google when Brave fetch throws (network error)", async () => {
+    mocks.fetch
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => GOOGLE_BODY });
+
+    const result = await searchProductSpecs("Galaxy S24 Ultra");
+    expect(result).toContain("Snapdragon");
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses Google when Brave fetch times out", async () => {
+    mocks.fetch
+      .mockRejectedValueOnce(new DOMException("The operation was aborted", "AbortError"))
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => GOOGLE_BODY });
+
+    const result = await searchProductSpecs("query");
+    expect(result).toContain("Snapdragon");
+  });
+});
+
+// ─── Google only — success ────────────────────────────────────────────────────
+
+describe("searchProductSpecs — Google only (no Brave key)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getCloudflareContext.mockResolvedValue(GOOGLE_ONLY);
+  });
+
+  it("skips Brave and calls Google directly", async () => {
+    mockFetchOk(GOOGLE_BODY);
+    const result = await searchProductSpecs("Galaxy S24 Ultra");
+    expect(result).toBe("Galaxy S24 Ultra — Snapdragon 8 Gen 3, écran 6.8 pouces");
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch.mock.calls[0][0]).toContain("googleapis.com");
+  });
+
+  it("passes cx and key in the Google URL", async () => {
+    mockFetchOk(GOOGLE_BODY);
+    await searchProductSpecs("query");
+    const url = mocks.fetch.mock.calls[0][0] as string;
+    expect(url).toContain("key=google-key");
+    expect(url).toContain("cx=cx-123");
+  });
+});
+
+// ─── Both fail ────────────────────────────────────────────────────────────────
+
+describe("searchProductSpecs — both Brave and Google fail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getCloudflareContext.mockResolvedValue(BOTH);
+  });
+
+  it("returns empty string when both APIs fail", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: false, status: 500 });
     expect(await searchProductSpecs("query")).toBe("");
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
   });
 
-  it("returns empty string when results array is absent", async () => {
-    mockFetchOk({ web: {} });
-    expect(await searchProductSpecs("query")).toBe("");
-  });
-
-  it("returns empty string when results array is empty", async () => {
-    mockFetchOk({ web: { results: [] } });
+  it("returns empty string when both throw", async () => {
+    mocks.fetch.mockRejectedValue(new TypeError("network down"));
     expect(await searchProductSpecs("query")).toBe("");
   });
 });
@@ -109,27 +231,7 @@ describe("searchProductSpecs — empty results", () => {
 describe("searchProductSpecs — snippet formatting", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCloudflareContext.mockResolvedValue(withKey);
-  });
-
-  it("joins title and description with em-dash separator", async () => {
-    mockFetchOk({
-      web: {
-        results: [{ title: "Samsung Galaxy S24", description: "Snapdragon 8 Gen 3" }],
-      },
-    });
-    const result = await searchProductSpecs("query");
-    expect(result).toBe("Samsung Galaxy S24 — Snapdragon 8 Gen 3");
-  });
-
-  it("includes result with only a title when description is absent", async () => {
-    mockFetchOk({ web: { results: [{ title: "Galaxy S24" }] } });
-    expect(await searchProductSpecs("query")).toBe("Galaxy S24");
-  });
-
-  it("includes result with only a description when title is absent", async () => {
-    mockFetchOk({ web: { results: [{ description: "Snapdragon chip" }] } });
-    expect(await searchProductSpecs("query")).toBe("Snapdragon chip");
+    mocks.getCloudflareContext.mockResolvedValue(BRAVE_ONLY);
   });
 
   it("slices results to a maximum of 3", async () => {
@@ -140,7 +242,6 @@ describe("searchProductSpecs — snippet formatting", () => {
           { title: "B", description: "2" },
           { title: "C", description: "3" },
           { title: "D", description: "4" },
-          { title: "E", description: "5" },
         ],
       },
     });
@@ -162,25 +263,9 @@ describe("searchProductSpecs — snippet formatting", () => {
     const result = await searchProductSpecs("query");
     expect(result.length).toBeLessThanOrEqual(1000);
   });
-});
 
-// ─── Fetch error propagation ──────────────────────────────────────────────────
-
-describe("searchProductSpecs — fetch errors", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.getCloudflareContext.mockResolvedValue(withKey);
-  });
-
-  it("propagates network errors to the caller", async () => {
-    mocks.fetch.mockRejectedValue(new TypeError("fetch failed"));
-    await expect(searchProductSpecs("query")).rejects.toThrow("fetch failed");
-  });
-
-  it("propagates AbortError on timeout to the caller", async () => {
-    mocks.fetch.mockRejectedValue(
-      new DOMException("The operation was aborted", "AbortError")
-    );
-    await expect(searchProductSpecs("query")).rejects.toThrow("The operation was aborted");
+  it("includes result with only a title when description is absent", async () => {
+    mockFetchOk({ web: { results: [{ title: "Galaxy S24" }] } });
+    expect(await searchProductSpecs("query")).toBe("Galaxy S24");
   });
 });
