@@ -9,20 +9,23 @@ import {
   bannerTextPrompt,
   categorySuggestionPrompt,
   bannerImagePrompt,
+  productBlueprintPrompt,
 } from "@/lib/ai/prompts";
 import { uploadToR2 } from "@/lib/storage/images";
 import {
   productTextSchema,
   bannerTextSchema,
   categorySuggestionSchema,
+  productBlueprintSchema,
 } from "@/lib/ai/schemas";
 import type {
   ProductTextResult,
   BannerTextResult,
   CategorySuggestionResult,
+  ProductBlueprint,
 } from "@/lib/ai/schemas";
 import { getCategoryTree } from "@/lib/db/categories";
-import { searchProductSpecs } from "@/lib/ai/search";
+import { searchProductSpecs, searchProductImages } from "@/lib/ai/search";
 import type { CategoryNode } from "@/lib/db/types";
 
 interface AiResult<T> {
@@ -51,6 +54,11 @@ const suggestCategoryInputSchema = z.object({
 const bannerImageInputSchema = z.object({
   prompt: z.string().min(1, "Décrivez l'image souhaitée"),
   style: z.enum(["product", "abstract", "lifestyle"]).optional(),
+});
+
+const generateBlueprintInputSchema = z.object({
+  name: z.string().min(1, "Le nom du produit est requis"),
+  brand: z.string().optional(),
 });
 
 async function runTextModel(
@@ -265,6 +273,75 @@ export async function generateBannerImage(
     return {
       success: false,
       error: "Impossible de générer l'image. Réessayez.",
+    };
+  }
+}
+
+export async function generateProductBlueprint(
+  input: z.input<typeof generateBlueprintInputSchema>
+): Promise<AiResult<{ blueprint: ProductBlueprint; categoryName: string; imageUrls: string[] }>> {
+  await requireAdmin();
+
+  const parsed = generateBlueprintInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: "Le nom du produit est requis." };
+  }
+
+  try {
+    const searchQuery = [parsed.data.brand, parsed.data.name]
+      .filter(Boolean)
+      .join(" ");
+
+    const [specs, imageUrls] = await Promise.all([
+      searchProductSpecs(searchQuery).catch((err) => {
+        console.error("[admin/ai] searchProductSpecs failed:", err);
+        return "";
+      }),
+      searchProductImages(searchQuery).catch((err) => {
+        console.error("[admin/ai] searchProductImages failed:", err);
+        return [] as string[];
+      }),
+    ]);
+
+    const tree = await getCategoryTree();
+    const categories = flattenCategories(tree);
+
+    if (categories.length === 0) {
+      return { success: false, error: "Aucune catégorie disponible." };
+    }
+
+    const validIds = new Set(categories.map((c) => c.id));
+    const prompt = productBlueprintPrompt({ ...parsed.data, specs, categories });
+    const jsonStr = await runTextModel(prompt.system, prompt.user);
+    const raw = productBlueprintSchema.parse(JSON.parse(jsonStr));
+
+    if (!validIds.has(raw.categoryId)) {
+      return {
+        success: false,
+        error: "L'IA n'a pas identifié de catégorie valide. Réessayez ou sélectionnez manuellement.",
+      };
+    }
+
+    const cat = categories.find((c) => c.id === raw.categoryId);
+    const categoryName = cat
+      ? (cat.parentName ? `${cat.parentName} > ${cat.name}` : cat.name)
+      : raw.categoryId;
+
+    return {
+      success: true,
+      data: { blueprint: raw, categoryName, imageUrls },
+    };
+  } catch (error) {
+    console.error("[admin/ai] generateProductBlueprint error:", error);
+    if (error instanceof Error && error.message.includes("429")) {
+      return {
+        success: false,
+        error: "Limite IA quotidienne atteinte. Réessayez demain.",
+      };
+    }
+    return {
+      success: false,
+      error: "Impossible de générer le produit. Réessayez.",
     };
   }
 }
