@@ -5,7 +5,7 @@ export const IMAGE_MODEL =
   "@cf/stabilityai/stable-diffusion-xl-base-1.0" as const;
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const OPENROUTER_TIMEOUT_MS = 30_000;
+const OPENROUTER_TIMEOUT_MS = 90_000;
 
 export class OpenRouterApiError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -46,6 +46,7 @@ export async function callTextModel(system: string, user: string): Promise<strin
         { role: "user", content: user },
       ],
       response_format: { type: "json_object" },
+      provider: { require_parameters: true },
     }),
   });
 
