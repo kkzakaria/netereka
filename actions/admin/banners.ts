@@ -189,7 +189,7 @@ export async function uploadBannerImage(
 
     await uploadToR2(file, key);
 
-    const url = `/images/${key}`;
+    const url = key;
     await db.update(banners).set({
       image_url: url,
       updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
@@ -211,7 +211,11 @@ export async function setBannerImageUrl(
   await requireAdmin();
 
   if (!bannerId || bannerId <= 0) return { success: false, error: "ID bannière invalide" };
-  if (!imageUrl.startsWith("/images/")) return { success: false, error: "URL d'image invalide" };
+  // Accept both "banners/key.png" (new) and legacy "/images/banners/key.png" format
+  const imageKey = imageUrl.startsWith("/images/") ? imageUrl.slice("/images/".length) : imageUrl;
+  if (!imageKey || imageKey.startsWith("/") || imageKey.includes("..")) {
+    return { success: false, error: "URL d'image invalide" };
+  }
 
   try {
     const db = await getDrizzle();
@@ -235,7 +239,7 @@ export async function setBannerImageUrl(
     }
 
     await db.update(banners).set({
-      image_url: imageUrl,
+      image_url: imageKey,
       updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
     }).where(eq(banners.id, bannerId));
 

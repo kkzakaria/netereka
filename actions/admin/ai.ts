@@ -272,7 +272,7 @@ export async function generateBannerImage(
     const file = new File([bytes] as BlobPart[], "generated.png", { type: "image/png" });
     await uploadToR2(file, key);
 
-    return { success: true, data: { imageUrl: `/images/${key}` } };
+    return { success: true, data: { imageUrl: key } };
   } catch (error) {
     console.error("[admin/ai] generateBannerImage error:", error);
     if (error instanceof Error && error.message.includes("429")) {
