@@ -439,7 +439,7 @@ export async function createProductFromBlueprint(
              attributes, is_active, sort_order)
            VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?)`
         )
-        .bind(nanoid(), id, v.name, v.price, v.stock_quantity, JSON.stringify(v.attributes), i)
+        .bind(nanoid(), id, v.name, blueprint.base_price, v.stock_quantity, JSON.stringify(v.attributes), i)
     );
 
     await db.batch([productStmt, ...variantStmts]);
