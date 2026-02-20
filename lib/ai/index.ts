@@ -5,11 +5,13 @@ export const IMAGE_MODEL =
   "@cf/stabilityai/stable-diffusion-xl-base-1.0" as const;
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const OPENROUTER_TIMEOUT_MS = 30_000;
 
 export class OpenRouterApiError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
     this.name = "OpenRouterApiError";
+    Object.setPrototypeOf(this, OpenRouterApiError.prototype); // required for ES2017 target
   }
 }
 
@@ -30,7 +32,7 @@ export async function callTextModel(system: string, user: string): Promise<strin
 
   const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -59,17 +61,16 @@ export async function callTextModel(system: string, user: string): Promise<strin
   try {
     data = await response.json();
   } catch (parseErr) {
-    throw new OpenRouterApiError(0, `OpenRouter returned non-JSON body: ${parseErr}`);
+    throw new Error(`OpenRouter returned non-JSON response body (model=${TEXT_MODEL}): ${parseErr}`);
   }
 
   if (!data.choices?.length) {
-    throw new OpenRouterApiError(0, `OpenRouter returned empty choices array (model=${TEXT_MODEL})`);
+    throw new Error(`OpenRouter returned empty choices (model=${TEXT_MODEL}). This may indicate a content filter hit.`);
   }
 
   const content = data.choices[0]?.message?.content;
   if (content == null) {
-    throw new OpenRouterApiError(
-      0,
+    throw new Error(
       `OpenRouter returned null content (model=${TEXT_MODEL}, finish_reason=${data.choices[0]?.finish_reason ?? "unknown"})`
     );
   }
