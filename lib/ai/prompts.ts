@@ -142,7 +142,6 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ou après. Le JS
 - "categoryId": id de la catégorie la plus pertinente parmi la liste ci-dessus (string)
 - "variants": tableau de variantes typiques pour ce produit (max 20). Chaque variante a:
   - "name": nom de la variante (ex: "128Go / Noir Titanium")
-  - "price": prix en XOF (nombre entier)
   - "stock_quantity": quantité en stock (nombre entier, généralement 3-10)
   - "attributes": objet JSON avec les attributs (ex: {"stockage": "128Go", "couleur": "Noir Titanium"})
 
