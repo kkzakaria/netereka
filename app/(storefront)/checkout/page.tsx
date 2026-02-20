@@ -17,11 +17,14 @@ interface SessionUser {
 }
 
 export default async function CheckoutPage() {
+  // Start zones fetch immediately — doesn't need the session
+  const zonesPromise = getActiveDeliveryZones();
+
   const session = await requireAuth();
   const user = session.user as SessionUser;
 
   const [zones, addresses] = await Promise.all([
-    getActiveDeliveryZones(),
+    zonesPromise,
     getUserAddresses(user.id),
   ]);
 

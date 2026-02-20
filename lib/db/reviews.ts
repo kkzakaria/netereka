@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { query, queryFirst, execute } from "@/lib/db";
 import { nanoid } from "nanoid";
 import type { Review } from "@/lib/db/types";
@@ -20,7 +21,7 @@ export async function getProductReviews(
   );
 }
 
-export async function getProductRatingStats(
+export const getProductRatingStats = cache(async function getProductRatingStats(
   productId: string
 ): Promise<{ average: number; count: number }> {
   const row = await queryFirst<{ average: number; count: number }>(
@@ -29,7 +30,7 @@ export async function getProductRatingStats(
     [productId]
   );
   return { average: row?.average ?? 0, count: row?.count ?? 0 };
-}
+});
 
 export async function getUserReviews(userId: string): Promise<Review[]> {
   return query<Review>(

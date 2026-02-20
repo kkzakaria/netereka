@@ -105,16 +105,12 @@ function RelatedProductsSkeleton() {
   );
 }
 
-async function ProductReviews({
-  productId,
-  ratingStats,
-}: {
-  productId: string;
-  ratingStats: { average: number; count: number };
-}) {
+async function ProductReviews({ productId }: { productId: string }) {
+  const [ratingStats, reviews] = await Promise.all([
+    getProductRatingStats(productId),
+    getProductReviews(productId, 10),
+  ]);
   if (ratingStats.count === 0) return null;
-
-  const reviews = await getProductReviews(productId, 10);
   const stats = ratingStats;
 
   return (
@@ -155,8 +151,6 @@ export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
   const product = await getProductCached(slug);
   if (!product) notFound();
-
-  const ratingStats = await getProductRatingStats(product.id);
 
   const validUntil = new Date();
   validUntil.setDate(validUntil.getDate() + 60);
@@ -206,15 +200,6 @@ export default async function ProductPage({ params }: Props) {
         },
       },
     },
-    ...(ratingStats.count > 0 && {
-      aggregateRating: {
-        "@type": "AggregateRating",
-        ratingValue: ratingStats.average.toFixed(1),
-        reviewCount: ratingStats.count,
-        bestRating: 5,
-        worstRating: 1,
-      },
-    }),
   };
 
   const comparePrice = product.compare_price;
@@ -344,7 +329,7 @@ export default async function ProductPage({ params }: Props) {
 
       {/* Reviews */}
       <Suspense fallback={null}>
-        <ProductReviews productId={product.id} ratingStats={ratingStats} />
+        <ProductReviews productId={product.id} />
       </Suspense>
 
       {/* Related */}
