@@ -37,7 +37,6 @@ export type CategorySuggestionResult = z.infer<
 
 export const productVariantBlueprintSchema = z.object({
   name: z.string().min(1),
-  price: z.coerce.number().int().min(0),
   stock_quantity: z.coerce.number().int().min(0).default(5),
   attributes: z.record(z.string(), z.string()).default({}),
 });

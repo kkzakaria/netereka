@@ -427,7 +427,6 @@ describe("generateProductBlueprint", () => {
     variants: [
       {
         name: "128Go / Noir",
-        price: 1049000,
         stock_quantity: 5,
         attributes: { stockage: "128Go", couleur: "Noir" },
       },
@@ -508,7 +507,6 @@ describe("createProductFromBlueprint", () => {
     variants: [
       {
         name: "128Go / Noir",
-        price: 1049000,
         stock_quantity: 5,
         attributes: { stockage: "128Go", couleur: "Noir" },
       },
