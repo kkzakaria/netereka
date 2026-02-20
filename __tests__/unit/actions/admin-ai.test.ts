@@ -166,6 +166,24 @@ describe("generateProductText", () => {
     expect(mocks.callTextModel).toHaveBeenCalledTimes(2);
   });
 
+  it("extracts JSON from prose-wrapped response (regex fallback)", async () => {
+    const mockResponse = {
+      description: "Un smartphone premium.",
+      shortDescription: "iPhone 15",
+      metaTitle: "iPhone 15 - NETEREKA",
+      metaDescription: "Achetez l'iPhone 15.",
+    };
+    // Simulate Qwen returning a <think> preamble before the JSON object
+    const preamble = `<think>\nLet me generate the product text...\n</think>\nHere is the JSON:\n`;
+    mocks.callTextModel.mockResolvedValue(preamble + JSON.stringify(mockResponse));
+
+    const result = await generateProductText({ name: "iPhone 15" });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(mockResponse);
+    // Should succeed on first attempt — no retry needed
+    expect(mocks.callTextModel).toHaveBeenCalledTimes(1);
+  });
+
   it("returns rate-limit error on 429", async () => {
     mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(429, "Too Many Requests"));
 
