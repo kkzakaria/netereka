@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockAdminSession, mockCustomerSession } from "../../helpers/mocks";
+import { OpenRouterApiError } from "@/lib/ai";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -32,12 +33,14 @@ vi.mock("@/lib/auth", () => ({
     .fn()
     .mockResolvedValue({ api: { getSession: mocks.getSession } }),
 }));
-vi.mock("@/lib/ai", () => ({
-  getAI: vi.fn().mockResolvedValue({ run: mocks.aiRun }),
-  TEXT_MODEL: "qwen/qwen3.5-397b-a17b",
-  IMAGE_MODEL: "@cf/stabilityai/stable-diffusion-xl-base-1.0",
-  callTextModel: mocks.callTextModel,
-}));
+vi.mock("@/lib/ai", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/ai")>();
+  return {
+    ...actual,
+    getAI: vi.fn().mockResolvedValue({ run: mocks.aiRun }),
+    callTextModel: mocks.callTextModel,
+  };
+});
 vi.mock("@/lib/db/categories", () => ({
   getCategoryTree: mocks.getCategoryTree,
 }));
@@ -164,11 +167,11 @@ describe("generateProductText", () => {
   });
 
   it("returns rate-limit error on 429", async () => {
-    mocks.callTextModel.mockRejectedValue(new Error("OpenRouter API error 429: Too Many Requests"));
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(429, "Too Many Requests"));
 
     const result = await generateProductText({ name: "iPhone 15" });
     expect(result.success).toBe(false);
-    expect(result.error).toContain("Limite IA quotidienne");
+    expect(result.error).toContain("Limite de requêtes IA atteinte");
   });
 
   it("passes real specs from search into the prompt user content", async () => {
@@ -479,7 +482,7 @@ describe("generateProductBlueprint", () => {
   });
 
   it("returns error on LLM 429", async () => {
-    mocks.callTextModel.mockRejectedValue(new Error("OpenRouter API error 429: Too Many Requests"));
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(429, "Too Many Requests"));
     const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Limite");

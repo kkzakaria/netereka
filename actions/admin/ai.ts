@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
-import { getAI, IMAGE_MODEL, callTextModel } from "@/lib/ai";
+import { getAI, IMAGE_MODEL, callTextModel, OpenRouterApiError } from "@/lib/ai";
 import {
   productTextPrompt,
   bannerTextPrompt,
@@ -77,23 +77,33 @@ async function runTextModel(
 ): Promise<string> {
   const raw = await callTextModel(system, user);
 
-  // Qwen avec response_format json_object retourne du JSON pur,
-  // mais on garde l'extraction regex comme filet de sécurité.
+  // response_format: json_object asks the model to output valid JSON, but some
+  // Qwen configurations (e.g. extended thinking) prepend prose or a <think> block
+  // before the JSON. The regex fallback extracts the object in those cases.
   try {
     JSON.parse(raw);
     return raw;
   } catch {
+    console.error(
+      "[runTextModel] Initial JSON.parse failed. Raw response (first 500 chars):",
+      raw?.slice(0, 500)
+    );
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
         JSON.parse(jsonMatch[0]);
         return jsonMatch[0];
       } catch {
+        console.error(
+          "[runTextModel] Regex-extracted JSON also invalid. Extracted (first 300 chars):",
+          jsonMatch[0]?.slice(0, 300)
+        );
         // fall through to retry
       }
     }
 
     if (retryCount < 1) {
+      console.warn("[runTextModel] Triggering retry due to invalid JSON response (attempt 1).");
       return runTextModel(
         system +
           "\n\nIMPORTANT: Retourne UNIQUEMENT du JSON valide. Pas de texte, pas de markdown, juste l'objet JSON.",
@@ -144,11 +154,19 @@ export async function generateProductText(
     return { success: true, data };
   } catch (error) {
     console.error("[admin/ai] generateProductText error:", error);
-    if (error instanceof Error && error.message.includes("429")) {
-      return {
-        success: false,
-        error: "Limite IA quotidienne atteinte. Réessayez demain.",
-      };
+    if (error instanceof OpenRouterApiError) {
+      if (error.status === 429) {
+        return {
+          success: false,
+          error: "Limite de requêtes IA atteinte. Attendez quelques minutes et réessayez.",
+        };
+      }
+      if (error.status === 402) {
+        return {
+          success: false,
+          error: "Quota IA épuisé. Contactez l'administrateur.",
+        };
+      }
     }
     return {
       success: false,
@@ -174,11 +192,19 @@ export async function generateBannerText(
     return { success: true, data };
   } catch (error) {
     console.error("[admin/ai] generateBannerText error:", error);
-    if (error instanceof Error && error.message.includes("429")) {
-      return {
-        success: false,
-        error: "Limite IA quotidienne atteinte. Réessayez demain.",
-      };
+    if (error instanceof OpenRouterApiError) {
+      if (error.status === 429) {
+        return {
+          success: false,
+          error: "Limite de requêtes IA atteinte. Attendez quelques minutes et réessayez.",
+        };
+      }
+      if (error.status === 402) {
+        return {
+          success: false,
+          error: "Quota IA épuisé. Contactez l'administrateur.",
+        };
+      }
     }
     return {
       success: false,
@@ -223,11 +249,19 @@ export async function suggestCategory(
     return { success: true, data: { suggestions: filtered } };
   } catch (error) {
     console.error("[admin/ai] suggestCategory error:", error);
-    if (error instanceof Error && error.message.includes("429")) {
-      return {
-        success: false,
-        error: "Limite IA quotidienne atteinte. Réessayez demain.",
-      };
+    if (error instanceof OpenRouterApiError) {
+      if (error.status === 429) {
+        return {
+          success: false,
+          error: "Limite de requêtes IA atteinte. Attendez quelques minutes et réessayez.",
+        };
+      }
+      if (error.status === 402) {
+        return {
+          success: false,
+          error: "Quota IA épuisé. Contactez l'administrateur.",
+        };
+      }
     }
     return {
       success: false,
@@ -275,11 +309,19 @@ export async function generateBannerImage(
     return { success: true, data: { imageUrl: `/images/${key}` } };
   } catch (error) {
     console.error("[admin/ai] generateBannerImage error:", error);
-    if (error instanceof Error && error.message.includes("429")) {
-      return {
-        success: false,
-        error: "Limite IA quotidienne atteinte. Réessayez demain.",
-      };
+    if (error instanceof OpenRouterApiError) {
+      if (error.status === 429) {
+        return {
+          success: false,
+          error: "Limite de requêtes IA atteinte. Attendez quelques minutes et réessayez.",
+        };
+      }
+      if (error.status === 402) {
+        return {
+          success: false,
+          error: "Quota IA épuisé. Contactez l'administrateur.",
+        };
+      }
     }
     return {
       success: false,
@@ -345,11 +387,19 @@ export async function generateProductBlueprint(
     };
   } catch (error) {
     console.error("[admin/ai] generateProductBlueprint error:", error);
-    if (error instanceof Error && error.message.includes("429")) {
-      return {
-        success: false,
-        error: "Limite IA quotidienne atteinte. Réessayez demain.",
-      };
+    if (error instanceof OpenRouterApiError) {
+      if (error.status === 429) {
+        return {
+          success: false,
+          error: "Limite de requêtes IA atteinte. Attendez quelques minutes et réessayez.",
+        };
+      }
+      if (error.status === 402) {
+        return {
+          success: false,
+          error: "Quota IA épuisé. Contactez l'administrateur.",
+        };
+      }
     }
     return {
       success: false,
