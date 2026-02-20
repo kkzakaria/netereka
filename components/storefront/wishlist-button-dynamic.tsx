@@ -11,7 +11,17 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
 
   useEffect(() => {
     if (session.data?.user) {
-      checkWishlist(productId).then(setIsWishlisted).catch(console.error);
+      checkWishlist(productId)
+        .then(setIsWishlisted)
+        .catch((error) => {
+          console.error(
+            "[WishlistButtonDynamic] checkWishlist failed for product",
+            productId,
+            error
+          );
+          // Degrade gracefully: show button as unchecked rather than hiding it
+          setIsWishlisted(false);
+        });
     } else {
       setIsWishlisted(undefined);
     }
