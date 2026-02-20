@@ -19,10 +19,9 @@ interface Props {
 const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 
 export default async function CustomerDetailPage({ params }: Props) {
-  // Start data fetch as soon as id is available — no need to wait for requireAdmin
-  const customerPromise = params.then(({ id }) => getAdminCustomerById(id));
   const session = await requireAdmin();
-  const customer = await customerPromise;
+  const { id } = await params;
+  const customer = await getAdminCustomerById(id);
 
   if (!customer) notFound();
 

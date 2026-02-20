@@ -3,7 +3,7 @@ import { query, queryFirst, execute } from "@/lib/db";
 import { nanoid } from "nanoid";
 import type { Review } from "@/lib/db/types";
 
-export async function getProductReviews(
+export const getProductReviews = cache(async function getProductReviews(
   productId: string,
   limit = 20,
   offset = 0
@@ -19,7 +19,7 @@ export async function getProductReviews(
      LIMIT ? OFFSET ?`,
     [productId, limit, offset]
   );
-}
+});
 
 export const getProductRatingStats = cache(async function getProductRatingStats(
   productId: string
