@@ -116,16 +116,23 @@ export function CheckoutForm({
     );
   }, [items, setValue]);
 
-  // Sync address mode
-  useEffect(() => {
-    if (addressMode === "saved" && selectedAddressId) {
+  function handleAddressMode(mode: "saved" | "new") {
+    setAddressMode(mode);
+    if (mode === "saved" && selectedAddressId) {
       setValue("savedAddressId", selectedAddressId);
       const addr = savedAddresses.find((a) => a.id === selectedAddressId);
       if (addr) setValue("commune", addr.commune);
     } else {
       setValue("savedAddressId", undefined);
     }
-  }, [addressMode, selectedAddressId, savedAddresses, setValue]);
+  }
+
+  function handleSelectAddress(id: string) {
+    setSelectedAddressId(id);
+    setValue("savedAddressId", id);
+    const addr = savedAddresses.find((a) => a.id === id);
+    if (addr) setValue("commune", addr.commune);
+  }
 
   const handlePromoApply = useCallback(() => {
     if (!promoInput.trim()) return;
@@ -211,7 +218,7 @@ export function CheckoutForm({
               <div className="flex gap-4">
                 <button
                   type="button"
-                  onClick={() => setAddressMode("saved")}
+                  onClick={() => handleAddressMode("saved")}
                   className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                     addressMode === "saved"
                       ? "border-primary bg-primary/5 text-primary"
@@ -222,7 +229,7 @@ export function CheckoutForm({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAddressMode("new")}
+                  onClick={() => handleAddressMode("new")}
                   className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                     addressMode === "new"
                       ? "border-primary bg-primary/5 text-primary"
@@ -249,7 +256,7 @@ export function CheckoutForm({
                         name="savedAddr"
                         value={addr.id}
                         checked={selectedAddressId === addr.id}
-                        onChange={() => setSelectedAddressId(addr.id)}
+                        onChange={() => handleSelectAddress(addr.id)}
                         className="mt-1"
                       />
                       <div className="text-sm">

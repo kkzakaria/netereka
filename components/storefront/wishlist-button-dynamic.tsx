@@ -7,15 +7,17 @@ import { checkWishlist } from "@/actions/wishlist";
 
 export function WishlistButtonDynamic({ productId }: { productId: string }) {
   const session = authClient.useSession();
-  const [isWishlisted, setIsWishlisted] = useState(false);
+  const [isWishlisted, setIsWishlisted] = useState<boolean | undefined>(undefined);
 
   useEffect(() => {
     if (session.data?.user) {
       checkWishlist(productId).then(setIsWishlisted).catch(console.error);
+    } else {
+      setIsWishlisted(undefined);
     }
   }, [session.data?.user, productId]);
 
-  if (!session.data?.user) return null;
+  if (!session.data?.user || isWishlisted === undefined) return null;
 
   return (
     <WishlistButton

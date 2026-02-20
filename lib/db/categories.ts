@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { query, queryFirst } from "@/lib/db";
 import type { Category, CategoryNode, SidebarCategoryNode } from "@/lib/db/types";
 import { MAX_CATEGORY_DEPTH } from "@/lib/db/types";
@@ -59,7 +60,7 @@ export async function getCategoryAncestors(categoryId: string): Promise<Category
   );
 }
 
-export async function getCategoryTree(): Promise<CategoryNode[]> {
+export const getCategoryTree = cache(async function getCategoryTree(): Promise<CategoryNode[]> {
   const all = await getCategories();
 
   // Use mutable children arrays during construction, returned as readonly via CategoryNode
@@ -93,7 +94,7 @@ export async function getCategoryTree(): Promise<CategoryNode[]> {
   }
 
   return roots;
-}
+});
 
 function countTreeNodes(nodes: readonly CategoryNode[]): number {
   let count = 0;
