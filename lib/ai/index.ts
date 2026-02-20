@@ -6,6 +6,13 @@ export const IMAGE_MODEL =
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+export class OpenRouterApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "OpenRouterApiError";
+  }
+}
+
 export async function getAI() {
   const { env } = await getCloudflareContext();
   if (!env.AI) {
@@ -23,6 +30,7 @@ export async function callTextModel(system: string, user: string): Promise<strin
 
   const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
+    signal: AbortSignal.timeout(30_000),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -41,12 +49,30 @@ export async function callTextModel(system: string, user: string): Promise<strin
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`OpenRouter API error ${response.status}: ${errorText}`);
+    throw new OpenRouterApiError(
+      response.status,
+      `OpenRouter API error ${response.status}: ${errorText}`
+    );
   }
 
-  const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>;
-  };
+  let data: { choices: Array<{ finish_reason?: string; message?: { content: string | null } }> };
+  try {
+    data = await response.json();
+  } catch (parseErr) {
+    throw new OpenRouterApiError(0, `OpenRouter returned non-JSON body: ${parseErr}`);
+  }
 
-  return data.choices[0].message.content;
+  if (!data.choices?.length) {
+    throw new OpenRouterApiError(0, `OpenRouter returned empty choices array (model=${TEXT_MODEL})`);
+  }
+
+  const content = data.choices[0]?.message?.content;
+  if (content == null) {
+    throw new OpenRouterApiError(
+      0,
+      `OpenRouter returned null content (model=${TEXT_MODEL}, finish_reason=${data.choices[0]?.finish_reason ?? "unknown"})`
+    );
+  }
+
+  return content;
 }
