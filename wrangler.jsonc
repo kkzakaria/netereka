@@ -36,5 +36,11 @@
   },
   "ai": {
     "binding": "AI"
+  },
+  "vars": {
+    "OPENROUTER_API_KEY": "",
+    "BRAVE_SEARCH_API_KEY": "",
+    "GOOGLE_SEARCH_API_KEY": "",
+    "GOOGLE_SEARCH_ENGINE_ID": ""
   }
 }
