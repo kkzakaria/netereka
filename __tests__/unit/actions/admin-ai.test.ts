@@ -372,7 +372,7 @@ describe("generateBannerImage", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data?.imageUrl).toBe("/images/banners/ai-mock-nano-id.png");
+    expect(result.data?.imageUrl).toBe("banners/ai-mock-nano-id.png");
     expect(mocks.aiRun).toHaveBeenCalledOnce();
     expect(mocks.uploadToR2).toHaveBeenCalledOnce();
   });
@@ -427,7 +427,6 @@ describe("generateProductBlueprint", () => {
     variants: [
       {
         name: "128Go / Noir",
-        price: 1049000,
         stock_quantity: 5,
         attributes: { stockage: "128Go", couleur: "Noir" },
       },

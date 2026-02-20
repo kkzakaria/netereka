@@ -272,7 +272,7 @@ export async function generateBannerImage(
     const file = new File([bytes] as BlobPart[], "generated.png", { type: "image/png" });
     await uploadToR2(file, key);
 
-    return { success: true, data: { imageUrl: `/images/${key}` } };
+    return { success: true, data: { imageUrl: key } };
   } catch (error) {
     console.error("[admin/ai] generateBannerImage error:", error);
     if (error instanceof Error && error.message.includes("429")) {
@@ -386,7 +386,7 @@ async function downloadImageToR2(
     const imgId = nanoid();
     const key = `products/${productId}/${imgId}.jpg`;
     await uploadToR2(new File([buffer], `${imgId}.jpg`, { type: "image/jpeg" }), key);
-    return `/images/${key}`;
+    return key;
   } catch (err) {
     console.error("[admin/ai] R2 upload failed for product", productId, err);
     return null;
