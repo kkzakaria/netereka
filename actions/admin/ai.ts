@@ -386,7 +386,7 @@ async function downloadImageToR2(
     const imgId = nanoid();
     const key = `products/${productId}/${imgId}.jpg`;
     await uploadToR2(new File([buffer], `${imgId}.jpg`, { type: "image/jpeg" }), key);
-    return `/images/${key}`;
+    return key;
   } catch (err) {
     console.error("[admin/ai] R2 upload failed for product", productId, err);
     return null;

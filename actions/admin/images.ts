@@ -45,7 +45,7 @@ export async function uploadProductImage(
   );
   const isPrimary = existing.length === 0 ? 1 : 0;
 
-  const url = `/images/${key}`;
+  const url = key;
   await execute(
     `INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary)
      VALUES (?, ?, ?, ?, ?, ?)`,

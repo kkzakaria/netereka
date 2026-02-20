@@ -212,7 +212,7 @@ export async function setBannerImageUrl(
 
   if (!bannerId || bannerId <= 0) return { success: false, error: "ID bannière invalide" };
   // Accept both "banners/key.png" (new) and legacy "/images/banners/key.png" format
-  const imageKey = imageUrl.startsWith("/images/") ? imageUrl.slice("/images/".length) : imageUrl;
+  const imageKey = (imageUrl.startsWith("/images/") ? imageUrl.slice("/images/".length) : imageUrl).trim();
   if (!imageKey || imageKey.startsWith("/") || imageKey.includes("..")) {
     return { success: false, error: "URL d'image invalide" };
   }
@@ -245,7 +245,7 @@ export async function setBannerImageUrl(
 
     revalidatePath("/banners");
     revalidatePath("/");
-    return { success: true, url: imageUrl };
+    return { success: true, url: imageKey };
   } catch (error) {
     console.error("[admin/banners] setBannerImageUrl error:", error);
     return { success: false, error: "Erreur lors de la mise à jour de l'image" };
