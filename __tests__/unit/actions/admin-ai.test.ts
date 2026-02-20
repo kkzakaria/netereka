@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     throw error;
   }),
   aiRun: vi.fn(),
+  callTextModel: vi.fn(),
   getCategoryTree: vi.fn(),
   uploadToR2: vi.fn(),
   searchProductSpecs: vi.fn(),
@@ -33,8 +34,9 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/ai", () => ({
   getAI: vi.fn().mockResolvedValue({ run: mocks.aiRun }),
-  TEXT_MODEL: "@cf/meta/llama-3.1-8b-instruct",
+  TEXT_MODEL: "qwen/qwen3.5-397b-a17b",
   IMAGE_MODEL: "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+  callTextModel: mocks.callTextModel,
 }));
 vi.mock("@/lib/db/categories", () => ({
   getCategoryTree: mocks.getCategoryTree,
@@ -140,31 +142,29 @@ describe("generateProductText", () => {
       metaTitle: "iPhone 15 - Achat en ligne",
       metaDescription: "Découvrez le iPhone 15 sur NETEREKA.",
     };
-    mocks.aiRun.mockResolvedValue({
-      response: JSON.stringify(mockResponse),
-    });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockResponse));
 
     const result = await generateProductText({ name: "iPhone 15" });
     expect(result.success).toBe(true);
     expect(result.data).toEqual(mockResponse);
-    expect(mocks.aiRun).toHaveBeenCalledTimes(1);
+    expect(mocks.callTextModel).toHaveBeenCalledTimes(1);
   });
 
   it("retries once on malformed JSON, returns error if both fail", async () => {
-    mocks.aiRun
-      .mockResolvedValueOnce({ response: "no json here" })
-      .mockResolvedValueOnce({ response: "still no json" });
+    mocks.callTextModel
+      .mockResolvedValueOnce("no json here")
+      .mockResolvedValueOnce("still no json");
 
     const result = await generateProductText({ name: "iPhone 15" });
     expect(result.success).toBe(false);
     expect(result.error).toBe(
       "Impossible de générer le texte. Réessayez."
     );
-    expect(mocks.aiRun).toHaveBeenCalledTimes(2);
+    expect(mocks.callTextModel).toHaveBeenCalledTimes(2);
   });
 
   it("returns rate-limit error on 429", async () => {
-    mocks.aiRun.mockRejectedValue(new Error("429 Too Many Requests"));
+    mocks.callTextModel.mockRejectedValue(new Error("OpenRouter API error 429: Too Many Requests"));
 
     const result = await generateProductText({ name: "iPhone 15" });
     expect(result.success).toBe(false);
@@ -181,7 +181,7 @@ describe("generateProductText", () => {
       metaTitle: "Samsung Galaxy S24 Ultra",
       metaDescription: "Achetez le Samsung Galaxy S24 Ultra sur NETEREKA.",
     };
-    mocks.aiRun.mockResolvedValue({ response: JSON.stringify(mockResponse) });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockResponse));
 
     const result = await generateProductText({
       name: "Galaxy S24 Ultra",
@@ -192,7 +192,8 @@ describe("generateProductText", () => {
     // The search was called with brand + name
     expect(mocks.searchProductSpecs).toHaveBeenCalledWith("Samsung Galaxy S24 Ultra");
     // The specs must appear in the user message sent to the AI
-    const userMessage = mocks.aiRun.mock.calls[0][1].messages[1].content as string;
+    // callTextModel(system, user) — second argument is the user message
+    const userMessage = mocks.callTextModel.mock.calls[0][1] as string;
     expect(userMessage).toContain(fakeSpecs);
     expect(userMessage).toContain("---");
   });
@@ -205,16 +206,17 @@ describe("generateProductText", () => {
       metaTitle: "Produit test",
       metaDescription: "Description meta.",
     };
-    mocks.aiRun.mockResolvedValue({ response: JSON.stringify(mockResponse) });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockResponse));
 
     const result = await generateProductText({ name: "Produit inconnu" });
     expect(result.success).toBe(true);
     // AI was still called despite search failure
-    expect(mocks.aiRun).toHaveBeenCalledTimes(1);
+    expect(mocks.callTextModel).toHaveBeenCalledTimes(1);
     // Search was called with just the name (no brand)
     expect(mocks.searchProductSpecs).toHaveBeenCalledWith("Produit inconnu");
     // Specs section must not appear in the AI prompt
-    const userMessage = mocks.aiRun.mock.calls[0][1].messages[1].content as string;
+    // callTextModel(system, user) — second argument is the user message
+    const userMessage = mocks.callTextModel.mock.calls[0][1] as string;
     expect(userMessage).not.toContain("Informations trouvées en ligne");
   });
 });
@@ -241,9 +243,7 @@ describe("generateBannerText", () => {
       ctaText: "Découvrir",
       badgeText: "Nouveau",
     };
-    mocks.aiRun.mockResolvedValue({
-      response: JSON.stringify(mockResponse),
-    });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockResponse));
 
     const result = await generateBannerText({ productName: "iPhone 15" });
     expect(result.success).toBe(true);
@@ -283,9 +283,7 @@ describe("suggestCategory", () => {
         },
       ],
     };
-    mocks.aiRun.mockResolvedValue({
-      response: JSON.stringify(mockResponse),
-    });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockResponse));
 
     const result = await suggestCategory({ productName: "iPhone 15 Pro" });
     expect(result.success).toBe(true);
@@ -309,9 +307,7 @@ describe("suggestCategory", () => {
         },
       ],
     };
-    mocks.aiRun.mockResolvedValue({
-      response: JSON.stringify(mockResponse),
-    });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockResponse));
 
     const result = await suggestCategory({
       productName: "iPhone 15 Pro Max",
@@ -329,9 +325,7 @@ describe("suggestCategory", () => {
         { categoryId: "fake-2", categoryName: "Fake B", confidence: 0.7 },
       ],
     };
-    mocks.aiRun.mockResolvedValue({
-      response: JSON.stringify(mockResponse),
-    });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockResponse));
 
     const result = await suggestCategory({ productName: "Produit inconnu" });
     expect(result.success).toBe(false);
@@ -448,9 +442,7 @@ describe("generateProductBlueprint", () => {
       "https://example.com/img1.jpg",
     ]);
     mocks.getCategoryTree.mockResolvedValue(mockCategoryTree);
-    mocks.aiRun.mockResolvedValue({
-      response: JSON.stringify(mockBlueprint),
-    });
+    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockBlueprint));
   });
 
   it("requires admin auth", async () => {
@@ -478,16 +470,16 @@ describe("generateProductBlueprint", () => {
   });
 
   it("filters out hallucinated categoryId not in category tree", async () => {
-    mocks.aiRun.mockResolvedValue({
-      response: JSON.stringify({ ...mockBlueprint, categoryId: "cat-fake-999" }),
-    });
+    mocks.callTextModel.mockResolvedValue(
+      JSON.stringify({ ...mockBlueprint, categoryId: "cat-fake-999" })
+    );
     const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("catégorie");
   });
 
   it("returns error on LLM 429", async () => {
-    mocks.aiRun.mockRejectedValue(new Error("429 Too Many Requests"));
+    mocks.callTextModel.mockRejectedValue(new Error("OpenRouter API error 429: Too Many Requests"));
     const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Limite");

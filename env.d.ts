@@ -27,4 +27,7 @@ interface CloudflareEnv {
   BRAVE_SEARCH_API_KEY?: string;
   GOOGLE_SEARCH_API_KEY?: string;    // Google Custom Search JSON API key
   GOOGLE_SEARCH_ENGINE_ID?: string;  // Programmable Search Engine cx identifier
+
+  // OpenRouter (AI text generation)
+  OPENROUTER_API_KEY?: string;
 }

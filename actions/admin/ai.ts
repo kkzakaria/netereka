@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
-import { getAI, TEXT_MODEL, IMAGE_MODEL } from "@/lib/ai";
+import { getAI, IMAGE_MODEL, callTextModel } from "@/lib/ai";
 import {
   productTextPrompt,
   bannerTextPrompt,
@@ -75,20 +75,24 @@ async function runTextModel(
   user: string,
   retryCount = 0
 ): Promise<string> {
-  const ai = await getAI();
-  // Cast needed: Workers AI types don't include all available model strings
-  const result = await ai.run(TEXT_MODEL as keyof AiModels, {
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
+  const raw = await callTextModel(system, user);
 
-  const raw = (result as { response?: string }).response ?? "";
+  // Qwen avec response_format json_object retourne du JSON pur,
+  // mais on garde l'extraction regex comme filet de sécurité.
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        JSON.parse(jsonMatch[0]);
+        return jsonMatch[0];
+      } catch {
+        // fall through to retry
+      }
+    }
 
-  // Try to extract JSON from the response (LLM may wrap in markdown code blocks)
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
     if (retryCount < 1) {
       return runTextModel(
         system +
@@ -99,8 +103,6 @@ async function runTextModel(
     }
     throw new Error("Le modèle n'a pas retourné de JSON valide.");
   }
-
-  return jsonMatch[0];
 }
 
 function flattenCategories(
