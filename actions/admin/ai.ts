@@ -103,7 +103,7 @@ async function runTextModel(
     }
 
     if (retryCount < 1) {
-      console.warn("[runTextModel] Triggering retry due to invalid JSON response (attempt 1).");
+      console.warn(`[runTextModel] Triggering retry due to invalid JSON response (attempt ${retryCount + 1}).`);
       return runTextModel(
         system +
           "\n\nIMPORTANT: Retourne UNIQUEMENT du JSON valide. Pas de texte, pas de markdown, juste l'objet JSON.",

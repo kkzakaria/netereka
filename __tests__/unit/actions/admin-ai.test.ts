@@ -174,6 +174,14 @@ describe("generateProductText", () => {
     expect(result.error).toContain("Limite de requêtes IA atteinte");
   });
 
+  it("returns quota error on 402", async () => {
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(402, "Payment Required"));
+
+    const result = await generateProductText({ name: "iPhone 15" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Quota IA épuisé");
+  });
+
   it("passes real specs from search into the prompt user content", async () => {
     const fakeSpecs =
       "Samsung Galaxy S24 Ultra — Snapdragon 8 Gen 3, 12 Go RAM, écran 6.8 pouces";
@@ -251,6 +259,22 @@ describe("generateBannerText", () => {
     const result = await generateBannerText({ productName: "iPhone 15" });
     expect(result.success).toBe(true);
     expect(result.data).toEqual(mockResponse);
+  });
+
+  it("returns rate-limit error on 429", async () => {
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(429, "Too Many Requests"));
+
+    const result = await generateBannerText({ productName: "iPhone 15" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Limite de requêtes IA atteinte");
+  });
+
+  it("returns quota error on 402", async () => {
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(402, "Payment Required"));
+
+    const result = await generateBannerText({ productName: "iPhone 15" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Quota IA épuisé");
   });
 });
 
@@ -342,6 +366,22 @@ describe("suggestCategory", () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe("Aucune catégorie disponible.");
   });
+
+  it("returns rate-limit error on 429", async () => {
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(429, "Too Many Requests"));
+
+    const result = await suggestCategory({ productName: "iPhone 15" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Limite de requêtes IA atteinte");
+  });
+
+  it("returns quota error on 402", async () => {
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(402, "Payment Required"));
+
+    const result = await suggestCategory({ productName: "iPhone 15" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Quota IA épuisé");
+  });
 });
 
 // ─── generateBannerImage ──────────────────────────────────────────────────────
@@ -412,6 +452,22 @@ describe("generateBannerImage", () => {
     const result = await generateBannerImage({ prompt: "Upload fail" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("générer l'image");
+  });
+
+  it("returns rate-limit error on 429", async () => {
+    mocks.aiRun.mockRejectedValue(new OpenRouterApiError(429, "Too Many Requests"));
+
+    const result = await generateBannerImage({ prompt: "Rate limited banner" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Limite de requêtes IA atteinte");
+  });
+
+  it("returns quota error on 402", async () => {
+    mocks.aiRun.mockRejectedValue(new OpenRouterApiError(402, "Payment Required"));
+
+    const result = await generateBannerImage({ prompt: "Quota exceeded banner" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Quota IA épuisé");
   });
 });
 
@@ -486,6 +542,13 @@ describe("generateProductBlueprint", () => {
     const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Limite");
+  });
+
+  it("returns quota error on 402", async () => {
+    mocks.callTextModel.mockRejectedValue(new OpenRouterApiError(402, "Payment Required"));
+    const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Quota IA épuisé");
   });
 
   it("continues when searchProductImages rejects (catch path returns empty imageUrls)", async () => {
