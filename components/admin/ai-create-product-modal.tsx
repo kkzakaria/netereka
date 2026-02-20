@@ -214,7 +214,6 @@ export function AiCreateProductModal({
                     <thead>
                       <tr className="border-b bg-muted/50">
                         <th className="text-left px-3 py-2 font-medium">Nom</th>
-                        <th className="text-right px-3 py-2 font-medium">Prix XOF</th>
                         <th className="text-right px-3 py-2 font-medium">Stock</th>
                       </tr>
                     </thead>
@@ -222,9 +221,6 @@ export function AiCreateProductModal({
                       {bp.variants.map((v, i) => (
                         <tr key={i} className="border-b last:border-0">
                           <td className="px-3 py-2">{v.name}</td>
-                          <td className="px-3 py-2 text-right">
-                            {v.price.toLocaleString("fr-FR")}
-                          </td>
                           <td className="px-3 py-2 text-right">{v.stock_quantity}</td>
                         </tr>
                       ))}
