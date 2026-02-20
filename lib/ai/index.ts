@@ -46,7 +46,6 @@ export async function callTextModel(system: string, user: string): Promise<strin
         { role: "user", content: user },
       ],
       response_format: { type: "json_object" },
-      provider: { require_parameters: true },
     }),
   });
 
