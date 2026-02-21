@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -23,14 +23,12 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createProductFromBlueprint } from "@/actions/admin/ai";
+import { productBlueprintSchema } from "@/lib/ai/schemas";
 import type { ProductBlueprint } from "@/lib/ai/schemas";
+import type { SSEEvent } from "@/lib/ai/stream";
+import type { CategoryOption } from "@/lib/db/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-interface CategoryOption {
-  id: string;
-  name: string;
-}
 
 interface AiCreateProductModalProps {
   open: boolean;
@@ -48,7 +46,9 @@ interface GeneratedData {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function* readSSEStream(response: Response) {
+async function* readSSEStream(
+  response: Response
+): AsyncGenerator<SSEEvent, void, unknown> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -62,9 +62,9 @@ async function* readSSEStream(response: Response) {
     for (const part of parts) {
       if (part.startsWith("data: ")) {
         try {
-          yield JSON.parse(part.slice(6));
-        } catch {
-          /* skip malformed events */
+          yield JSON.parse(part.slice(6)) as SSEEvent;
+        } catch (err) {
+          console.warn("[ai-modal] Malformed SSE event:", part, err);
         }
       }
     }
@@ -79,6 +79,7 @@ export function AiCreateProductModal({
   categories,
 }: AiCreateProductModalProps) {
   const router = useRouter();
+  const abortRef = useRef<AbortController | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -98,6 +99,8 @@ export function AiCreateProductModal({
 
   function handleClose(open: boolean) {
     if (!open) {
+      abortRef.current?.abort();
+      abortRef.current = null;
       setStep("form");
       setName("");
       setBrand("");
@@ -106,6 +109,7 @@ export function AiCreateProductModal({
       setSelectedCategoryId("");
       setSelectedImages(new Set());
       setStatusMsg("");
+      setIsGenerating(false);
     }
     onOpenChange(open);
   }
@@ -115,6 +119,9 @@ export function AiCreateProductModal({
       toast.error("Le nom du produit est requis");
       return;
     }
+
+    const ac = new AbortController();
+    abortRef.current = ac;
     setIsGenerating(true);
     setStatusMsg("Démarrage...");
 
@@ -126,29 +133,54 @@ export function AiCreateProductModal({
           name: name.trim(),
           brand: brand.trim() || undefined,
         }),
+        signal: ac.signal,
       });
 
       if (!response.ok) {
-        toast.error("Erreur d'authentification. Reconnectez-vous.");
+        if (response.status === 401) {
+          toast.error("Erreur d'authentification. Reconnectez-vous.");
+        } else {
+          toast.error("Erreur du serveur. Réessayez.");
+        }
+        return;
+      }
+
+      if (!response.body) {
+        toast.error("Réponse du serveur invalide. Réessayez.");
         return;
       }
 
       for await (const event of readSSEStream(response)) {
         if (event.type === "status") {
-          setStatusMsg(event.message as string);
+          setStatusMsg(event.message);
         } else if (event.type === "done") {
-          const data = event as unknown as GeneratedData;
+          const blueprintResult = productBlueprintSchema.safeParse(event.blueprint);
+          if (!blueprintResult.success) {
+            toast.error("Données générées invalides. Réessayez.");
+            break;
+          }
+          const data: GeneratedData = {
+            blueprint: blueprintResult.data,
+            categoryName: event.categoryName,
+            imageUrls: event.imageUrls,
+          };
           setGenerated(data);
-          setEditedBlueprint({ ...data.blueprint });
-          setSelectedCategoryId(data.blueprint.categoryId);
-          setSelectedImages(new Set(data.imageUrls));
+          setEditedBlueprint({ ...blueprintResult.data });
+          setSelectedCategoryId(blueprintResult.data.categoryId);
+          setSelectedImages(new Set(event.imageUrls));
           setStep("preview");
         } else if (event.type === "error") {
-          toast.error((event.message as string) || "Erreur lors de la génération");
+          toast.error(event.message || "Erreur lors de la génération");
+          break;
         }
       }
-    } catch {
-      toast.error("Erreur de connexion. Réessayez.");
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        // User closed modal — no toast needed
+      } else {
+        console.error("[ai-modal] handleGenerate error:", err);
+        toast.error("Erreur de connexion. Réessayez.");
+      }
     } finally {
       setIsGenerating(false);
       setStatusMsg("");

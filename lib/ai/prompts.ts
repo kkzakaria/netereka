@@ -134,7 +134,6 @@ ${categoryList}
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ou après. Le JSON doit avoir exactement ces clés :
 - "name": nom exact du produit (string)
 - "brand": marque du produit (string, peut être vide)
-- "base_price": prix de base en XOF, nombre entier (ex: 1049000)
 - "description": description détaillée (2-3 phrases, max 500 caractères)
 - "short_description": résumé accrocheur en une phrase (max 150 caractères)
 - "meta_title": titre SEO (max 60 caractères)

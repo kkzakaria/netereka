@@ -35,21 +35,31 @@ export type CategorySuggestionResult = z.infer<
   typeof categorySuggestionSchema
 >;
 
+/**
+ * price is intentionally absent from variant blueprints —
+ * prices are set manually in the product editor after creation.
+ */
 export const productVariantBlueprintSchema = z.object({
-  name: z.string().min(1),
-  stock_quantity: z.coerce.number().int().min(0).default(5),
+  name: z.string().min(1).max(100),
+  stock_quantity: z.coerce.number().int().min(0).max(9999).default(5),
   attributes: z.record(z.string(), z.string()).default({}),
 });
 
+/**
+ * base_price is intentionally absent from product blueprints —
+ * prices are set manually in the product editor after creation.
+ */
 export const productBlueprintSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).max(200),
   brand: z.string().optional().default(""),
-  description: z.string().max(500),
-  short_description: z.string().max(150),
+  description: z.string().min(1).max(500),
+  short_description: z.string().min(1).max(150),
   meta_title: z.string().max(60),
   meta_description: z.string().max(160),
-  categoryId: z.string(),
-  variants: z.array(productVariantBlueprintSchema).min(0).max(20),
+  // Must be a non-empty ID from the injected category list
+  categoryId: z.string().min(1),
+  // 0 variants is valid — variants can be added in the product editor
+  variants: z.array(productVariantBlueprintSchema).max(20),
 });
 
 export type ProductVariantBlueprint = z.infer<

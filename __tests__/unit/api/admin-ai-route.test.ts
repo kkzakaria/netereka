@@ -67,11 +67,20 @@ beforeEach(() => {
 
 describe("POST /api/admin/ai/generate-product", () => {
   it("returns 401 when not authenticated", async () => {
-    mocks.requireAdmin.mockRejectedValue(
-      Object.assign(new Error("NEXT_REDIRECT: /"), { digest: "NEXT_REDIRECT;/" })
-    );
+    mocks.requireAdmin.mockRejectedValue(new Error("Unauthorized"));
     const res = await POST(makeRequest({ name: "iPhone 16" }));
     expect(res.status).toBe(401);
+  });
+
+  it("re-throws NEXT_REDIRECT from requireAdmin", async () => {
+    const redirectError = Object.assign(
+      new Error("NEXT_REDIRECT: /"),
+      { digest: "NEXT_REDIRECT;/" }
+    );
+    mocks.requireAdmin.mockRejectedValue(redirectError);
+    await expect(POST(makeRequest({ name: "iPhone 16" }))).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;/",
+    });
   });
 
   it("returns 400 when name is missing", async () => {
@@ -93,7 +102,12 @@ describe("POST /api/admin/ai/generate-product", () => {
     expect(types[types.length - 1]).toBe("done");
 
     const doneEvent = events.find((e) => e.type === "done");
-    expect(doneEvent?.blueprint).toMatchObject({ name: "iPhone 16 Pro" });
+    expect(doneEvent?.blueprint).toMatchObject({
+      name: "iPhone 16 Pro",
+      brand: "Apple",
+      categoryId: "cat-1a",
+    });
+    expect(doneEvent?.categoryName).toBe("Smartphones > iPhone");
     expect(doneEvent?.imageUrls).toEqual(["https://cdn.example.com/img.jpg"]);
   });
 
@@ -134,5 +148,47 @@ describe("POST /api/admin/ai/generate-product", () => {
     const events = await collectSSEEvents(res);
     const done = events.find((e) => e.type === "done");
     expect(done?.imageUrls).toEqual([]);
+  });
+
+  it("returns 400 on invalid JSON body", async () => {
+    mocks.requireAdmin.mockResolvedValue(undefined);
+    const req = new Request("http://localhost/api/admin/ai/generate-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not json",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("streams error event when category tree is empty", async () => {
+    mocks.requireAdmin.mockResolvedValue(undefined);
+    mocks.getCategoryTree.mockResolvedValue([]);
+    const res = await POST(makeRequest({ name: "iPhone 16 Pro" }));
+    const events = await collectSSEEvents(res);
+    const last = events[events.length - 1];
+    expect(last.type).toBe("error");
+    expect(last.message).toContain("catégorie");
+  });
+
+  it("streams error event when LLM returns invalid JSON after retry", async () => {
+    mocks.requireAdmin.mockResolvedValue(undefined);
+    mocks.callTextModel.mockResolvedValue("not valid json at all");
+    const res = await POST(makeRequest({ name: "iPhone" }));
+    const events = await collectSSEEvents(res);
+    const last = events[events.length - 1];
+    expect(last.type).toBe("error");
+  });
+
+  it("streams error event when blueprint fails schema validation", async () => {
+    mocks.requireAdmin.mockResolvedValue(undefined);
+    // Blueprint with empty name fails z.string().min(1)
+    mocks.callTextModel.mockResolvedValue(
+      JSON.stringify({ ...mockBlueprint, name: "" })
+    );
+    const res = await POST(makeRequest({ name: "Test" }));
+    const events = await collectSSEEvents(res);
+    const last = events[events.length - 1];
+    expect(last.type).toBe("error");
   });
 });

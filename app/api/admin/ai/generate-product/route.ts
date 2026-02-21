@@ -1,68 +1,31 @@
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
-import { callTextModel } from "@/lib/ai";
-import { productBlueprintPrompt } from "@/lib/ai/prompts";
 import { productBlueprintSchema } from "@/lib/ai/schemas";
 import { getCategoryTree } from "@/lib/db/categories";
 import { searchProductSpecs, searchProductImages } from "@/lib/ai/search";
-import { encodeSSE } from "@/lib/ai/stream";
-import type { CategoryNode } from "@/lib/db/types";
+import { encodeSSE, type SSEEvent } from "@/lib/ai/stream";
+import { runTextModel, flattenCategories } from "@/lib/ai/helpers";
+import { productBlueprintPrompt } from "@/lib/ai/prompts";
 
 const requestSchema = z.object({
   name: z.string().min(1, "Le nom du produit est requis"),
   brand: z.string().optional(),
 });
 
-function flattenCategories(
-  nodes: readonly CategoryNode[],
-  parentName?: string
-): Array<{ id: string; name: string; parentName?: string }> {
-  const result: Array<{ id: string; name: string; parentName?: string }> = [];
-  for (const node of nodes) {
-    result.push({ id: node.id, name: node.name, parentName });
-    if (node.children.length > 0) {
-      result.push(...flattenCategories(node.children, node.name));
-    }
-  }
-  return result;
-}
-
-async function runTextModel(
-  system: string,
-  user: string,
-  retryCount = 0
-): Promise<string> {
-  const raw = await callTextModel(system, user);
-  try {
-    JSON.parse(raw);
-    return raw;
-  } catch {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        JSON.parse(jsonMatch[0]);
-        return jsonMatch[0];
-      } catch {
-        // fall through to retry
-      }
-    }
-    if (retryCount < 1) {
-      return runTextModel(
-        system +
-          "\n\nIMPORTANT: Retourne UNIQUEMENT du JSON valide. Pas de texte, pas de markdown, juste l'objet JSON.",
-        user,
-        retryCount + 1
-      );
-    }
-    throw new Error("Le modèle n'a pas retourné de JSON valide.");
-  }
-}
-
 export async function POST(request: Request): Promise<Response> {
-  // Auth check
+  // Auth check — requireAdmin() calls redirect() on auth failure, which throws NEXT_REDIRECT.
+  // Re-throw NEXT_REDIRECT so Next.js can handle it; convert other throws to 401.
   try {
     await requireAdmin();
-  } catch {
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      "digest" in err &&
+      String((err as Error & { digest: unknown }).digest).startsWith("NEXT_REDIRECT")
+    ) {
+      throw err;
+    }
+    console.error("[route/generate-product] requireAdmin threw unexpectedly:", err);
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -81,7 +44,8 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     parsed = result.data;
-  } catch {
+  } catch (err) {
+    console.error("[route/generate-product] Failed to parse request body:", err);
     return new Response(
       JSON.stringify({ error: "Corps de requête invalide." }),
       { status: 400, headers: { "Content-Type": "application/json" } }
@@ -91,8 +55,17 @@ export async function POST(request: Request): Promise<Response> {
   // SSE stream
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (payload: Record<string, unknown>) => {
+      const send = (payload: SSEEvent) => {
         controller.enqueue(encodeSSE(payload));
+      };
+
+      // Guarantee controller.close() is called exactly once, even if send() throws
+      let closed = false;
+      const closeOnce = () => {
+        if (!closed) {
+          closed = true;
+          controller.close();
+        }
       };
 
       try {
@@ -109,14 +82,16 @@ export async function POST(request: Request): Promise<Response> {
             console.error("[route/generate-product] searchProductImages failed:", err);
             return [] as string[];
           }),
-          getCategoryTree(),
+          getCategoryTree().catch((err) => {
+            console.error("[route/generate-product] getCategoryTree failed:", err);
+            throw new Error("Impossible de charger les catégories. Réessayez.");
+          }),
         ]);
 
         const categories = flattenCategories(tree);
 
         if (categories.length === 0) {
           send({ type: "error", message: "Aucune catégorie disponible." });
-          controller.close();
           return;
         }
 
@@ -133,7 +108,6 @@ export async function POST(request: Request): Promise<Response> {
             message:
               "L'IA n'a pas identifié de catégorie valide. Réessayez ou sélectionnez manuellement.",
           });
-          controller.close();
           return;
         }
 
@@ -155,12 +129,15 @@ export async function POST(request: Request): Promise<Response> {
         } else {
           send({
             type: "error",
-            message: "Impossible de générer le produit. Réessayez.",
+            message:
+              error instanceof Error && error.message.startsWith("Impossible de charger")
+                ? error.message
+                : "Impossible de générer le produit. Réessayez.",
           });
         }
+      } finally {
+        closeOnce();
       }
-
-      controller.close();
     },
   });
 
@@ -169,7 +146,6 @@ export async function POST(request: Request): Promise<Response> {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      Connection: "keep-alive",
     },
   });
 }

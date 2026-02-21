@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
-import { getAI, IMAGE_MODEL, callTextModel } from "@/lib/ai";
+import { getAI, IMAGE_MODEL } from "@/lib/ai";
 import {
   productTextPrompt,
   bannerTextPrompt,
@@ -27,7 +27,7 @@ import { execute } from "@/lib/db";
 import { getDB } from "@/lib/cloudflare/context";
 import { getCategoryTree } from "@/lib/db/categories";
 import { searchProductSpecs } from "@/lib/ai/search";
-import type { CategoryNode } from "@/lib/db/types";
+import { runTextModel, flattenCategories } from "@/lib/ai/helpers";
 import { slugify } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 
@@ -63,55 +63,6 @@ const createFromBlueprintInputSchema = z.object({
   blueprint: productBlueprintSchema,
   imageUrls: z.array(z.string().url()).default([]),
 });
-
-async function runTextModel(
-  system: string,
-  user: string,
-  retryCount = 0
-): Promise<string> {
-  const raw = await callTextModel(system, user);
-
-  // Qwen avec response_format json_object retourne du JSON pur,
-  // mais on garde l'extraction regex comme filet de sécurité.
-  try {
-    JSON.parse(raw);
-    return raw;
-  } catch {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        JSON.parse(jsonMatch[0]);
-        return jsonMatch[0];
-      } catch {
-        // fall through to retry
-      }
-    }
-
-    if (retryCount < 1) {
-      return runTextModel(
-        system +
-          "\n\nIMPORTANT: Retourne UNIQUEMENT du JSON valide. Pas de texte, pas de markdown, juste l'objet JSON.",
-        user,
-        retryCount + 1
-      );
-    }
-    throw new Error("Le modèle n'a pas retourné de JSON valide.");
-  }
-}
-
-function flattenCategories(
-  nodes: readonly CategoryNode[],
-  parentName?: string
-): Array<{ id: string; name: string; parentName?: string }> {
-  const result: Array<{ id: string; name: string; parentName?: string }> = [];
-  for (const node of nodes) {
-    result.push({ id: node.id, name: node.name, parentName });
-    if (node.children.length > 0) {
-      result.push(...flattenCategories(node.children, node.name));
-    }
-  }
-  return result;
-}
 
 export async function generateProductText(
   input: z.input<typeof productTextInputSchema>
@@ -300,7 +251,8 @@ async function downloadImageToR2(
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
     buffer = buf.byteLength > 0 ? buf : null;
-  } catch {
+  } catch (err) {
+    console.warn("[admin/ai] downloadImageToR2: fetch failed for", imageUrl, err);
     return null;
   }
   if (!buffer) return null;
@@ -373,7 +325,8 @@ export async function createProductFromBlueprint(
       await Promise.all(imageUrls.map((url) => downloadImageToR2(url, id)))
     ).filter((u): u is string => u !== null);
 
-    // 3. Insert image records; first successful download gets is_primary = 1
+    // 3. Insert image records; first successful download gets is_primary = 1.
+    // Individual failures are non-fatal — the product was already created.
     await Promise.all(
       downloadedUrls.map((storedUrl, i) => {
         const iid = nanoid();
@@ -381,7 +334,9 @@ export async function createProductFromBlueprint(
           `INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary)
            VALUES (?, ?, ?, NULL, ?, ?)`,
           [iid, id, storedUrl, i, i === 0 ? 1 : 0]
-        );
+        ).catch((err) => {
+          console.error("[admin/ai] Failed to insert image record for product", id, err);
+        });
       })
     );
 

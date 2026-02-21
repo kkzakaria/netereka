@@ -9,7 +9,13 @@ describe("encodeSSE", () => {
   });
 
   it("formats a done event with blueprint data", () => {
-    const payload = { type: "done", blueprint: { name: "Test" }, imageUrls: [] };
+    const payload = {
+      type: "done" as const,
+      blueprint: { name: "Test", brand: "", description: "d", short_description: "s",
+        meta_title: "t", meta_description: "m", categoryId: "cat-1", variants: [] },
+      categoryName: "Smartphones",
+      imageUrls: [],
+    };
     const text = new TextDecoder().decode(encodeSSE(payload));
     expect(text).toContain('"type":"done"');
     expect(text).toContain('"name":"Test"');

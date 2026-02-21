@@ -497,4 +497,50 @@ describe("createProductFromBlueprint", () => {
     expect(result.success).toBe(false);
     expect(result.error).toBeDefined();
   });
+
+  it("skips http:// images (SSRF guard)", async () => {
+    const result = await createProductFromBlueprint({
+      blueprint,
+      imageUrls: ["http://attacker.com/evil.jpg"],
+    });
+    expect(result.success).toBe(true);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it("succeeds even when image DB insert fails (non-fatal)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+    mocks.uploadToR2.mockResolvedValue("products/mock-nano-id/mock-nano-id.jpg");
+    mocks.execute.mockRejectedValue(new Error("D1 constraint failed"));
+    const result = await createProductFromBlueprint({
+      blueprint,
+      imageUrls: ["https://example.com/img.jpg"],
+    });
+    expect(result.success).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it("sets is_primary=1 for first image and is_primary=0 for others", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+    mocks.uploadToR2.mockResolvedValue("products/mock-nano-id/mock-nano-id.jpg");
+    await createProductFromBlueprint({
+      blueprint,
+      imageUrls: [
+        "https://example.com/img1.jpg",
+        "https://example.com/img2.jpg",
+      ],
+    });
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    const firstArgs = mocks.execute.mock.calls[0][1] as unknown[];
+    const secondArgs = mocks.execute.mock.calls[1][1] as unknown[];
+    expect(firstArgs[4]).toBe(1);  // is_primary = 1
+    expect(secondArgs[4]).toBe(0); // is_primary = 0
+    vi.unstubAllGlobals();
+  });
 });
