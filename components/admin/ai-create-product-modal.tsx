@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -94,7 +94,7 @@ export function AiCreateProductModal({
   const [editedBlueprint, setEditedBlueprint] = useState<ProductBlueprint | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
-  const [isCreating, setIsCreating] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   function handleClose(open: boolean) {
     if (!open) {
@@ -155,10 +155,9 @@ export function AiCreateProductModal({
     }
   }
 
-  async function handleConfirm() {
+  function handleConfirm() {
     if (!editedBlueprint) return;
-    setIsCreating(true);
-    try {
+    startTransition(async () => {
       const result = await createProductFromBlueprint({
         blueprint: { ...editedBlueprint, categoryId: selectedCategoryId },
         imageUrls: Array.from(selectedImages),
@@ -170,9 +169,7 @@ export function AiCreateProductModal({
       } else {
         toast.error(result.error || "Erreur lors de la création");
       }
-    } finally {
-      setIsCreating(false);
-    }
+    });
   }
 
   function updateVariant(
@@ -457,17 +454,17 @@ export function AiCreateProductModal({
               <Button
                 variant="outline"
                 onClick={() => setStep("form")}
-                disabled={isCreating}
+                disabled={isPending}
                 className="flex-1"
               >
                 ← Regénérer
               </Button>
               <Button
                 onClick={handleConfirm}
-                disabled={isCreating || !selectedCategoryId}
+                disabled={isPending || !selectedCategoryId}
                 className="flex-1 gap-2"
               >
-                {isCreating ? (
+                {isPending ? (
                   <>
                     <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                     Création...

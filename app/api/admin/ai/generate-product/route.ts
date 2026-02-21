@@ -100,17 +100,15 @@ export async function POST(request: Request): Promise<Response> {
 
         const searchQuery = [parsed.brand, parsed.name].filter(Boolean).join(" ");
 
-        const [[specs, imageUrls], tree] = await Promise.all([
-          Promise.all([
-            searchProductSpecs(searchQuery).catch((err) => {
-              console.error("[route/generate-product] searchProductSpecs failed:", err);
-              return "";
-            }),
-            searchProductImages(searchQuery).catch((err) => {
-              console.error("[route/generate-product] searchProductImages failed:", err);
-              return [] as string[];
-            }),
-          ]),
+        const [specs, imageUrls, tree] = await Promise.all([
+          searchProductSpecs(searchQuery).catch((err) => {
+            console.error("[route/generate-product] searchProductSpecs failed:", err);
+            return "";
+          }),
+          searchProductImages(searchQuery).catch((err) => {
+            console.error("[route/generate-product] searchProductImages failed:", err);
+            return [] as string[];
+          }),
           getCategoryTree(),
         ]);
 

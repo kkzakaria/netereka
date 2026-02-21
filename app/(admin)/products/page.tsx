@@ -46,6 +46,7 @@ export default async function ProductsPage({ searchParams }: Props) {
   ]);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
 
   const productData = products.map((p) => ({
     id: p.id,
@@ -72,17 +73,17 @@ export default async function ProductsPage({ searchParams }: Props) {
         {/* Desktop filters - instant filtering */}
         <div className="hidden items-center justify-between gap-3 lg:flex">
           <ProductFilters
-            categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+            categories={categoryOptions}
             className="flex-1"
           />
-          <ProductsPageActions categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
+          <ProductsPageActions categories={categoryOptions} />
         </div>
       </AdminPageHeader>
 
       {/* Mobile header with filter sheet and view switcher */}
       <ProductsPageClient
         products={productData}
-        categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+        categories={categoryOptions}
         totalCount={totalCount}
       />
 
