@@ -75,7 +75,7 @@ export default async function ProductsPage({ searchParams }: Props) {
             categories={categories.map((c) => ({ id: c.id, name: c.name }))}
             className="flex-1"
           />
-          <ProductsPageActions />
+          <ProductsPageActions categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
         </div>
       </AdminPageHeader>
 
