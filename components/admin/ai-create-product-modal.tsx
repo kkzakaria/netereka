@@ -103,6 +103,8 @@ export function AiCreateProductModal({
       setBrand("");
       setGenerated(null);
       setEditedBlueprint(null);
+      setSelectedCategoryId("");
+      setSelectedImages(new Set());
       setStatusMsg("");
     }
     onOpenChange(open);
