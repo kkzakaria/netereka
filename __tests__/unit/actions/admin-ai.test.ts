@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   getCategoryTree: vi.fn(),
   uploadToR2: vi.fn(),
   searchProductSpecs: vi.fn(),
-  searchProductImages: vi.fn(),
   execute: vi.fn(),
   query: vi.fn(),
   dbBatch: vi.fn().mockResolvedValue([]),
@@ -47,7 +46,6 @@ vi.mock("@/lib/storage/images", () => ({
 vi.mock("nanoid", () => ({ nanoid: vi.fn().mockReturnValue("mock-nano-id") }));
 vi.mock("@/lib/ai/search", () => ({
   searchProductSpecs: mocks.searchProductSpecs,
-  searchProductImages: mocks.searchProductImages,
 }));
 vi.mock("@/lib/db", () => ({
   execute: mocks.execute,
@@ -69,7 +67,6 @@ import {
   generateBannerText,
   suggestCategory,
   generateBannerImage,
-  generateProductBlueprint,
   createProductFromBlueprint,
 } from "@/actions/admin/ai";
 
@@ -372,7 +369,7 @@ describe("generateBannerImage", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data?.imageUrl).toBe("/images/banners/ai-mock-nano-id.png");
+    expect(result.data?.imageUrl).toBe("banners/ai-mock-nano-id.png");
     expect(mocks.aiRun).toHaveBeenCalledOnce();
     expect(mocks.uploadToR2).toHaveBeenCalledOnce();
   });
@@ -412,93 +409,12 @@ describe("generateBannerImage", () => {
   });
 });
 
-// ─── generateProductBlueprint ─────────────────────────────────────────────────
-
-describe("generateProductBlueprint", () => {
-  const mockBlueprint = {
-    name: "iPhone 16 Pro",
-    brand: "Apple",
-    base_price: 1049000,
-    description: "Un smartphone haut de gamme.",
-    short_description: "Le meilleur iPhone.",
-    meta_title: "iPhone 16 Pro - Achat",
-    meta_description: "Achetez l'iPhone 16 Pro sur NETEREKA.",
-    categoryId: "cat-1a",
-    variants: [
-      {
-        name: "128Go / Noir",
-        stock_quantity: 5,
-        attributes: { stockage: "128Go", couleur: "Noir" },
-      },
-    ],
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.getSession.mockResolvedValue(mockAdminSession);
-    mocks.searchProductSpecs.mockResolvedValue("iPhone 16 Pro specs...");
-    mocks.searchProductImages.mockResolvedValue([
-      "https://example.com/img1.jpg",
-    ]);
-    mocks.getCategoryTree.mockResolvedValue(mockCategoryTree);
-    mocks.callTextModel.mockResolvedValue(JSON.stringify(mockBlueprint));
-  });
-
-  it("requires admin auth", async () => {
-    mocks.getSession.mockResolvedValue(mockCustomerSession);
-    await expect(
-      generateProductBlueprint({ name: "iPhone 16 Pro" })
-    ).rejects.toThrow("NEXT_REDIRECT");
-  });
-
-  it("returns error when name is empty", async () => {
-    const result = await generateProductBlueprint({ name: "" });
-    expect(result.success).toBe(false);
-    expect(result.error).toBeDefined();
-  });
-
-  it("returns blueprint and imageUrls on success", async () => {
-    const result = await generateProductBlueprint({
-      name: "iPhone 16 Pro",
-      brand: "Apple",
-    });
-    expect(result.success).toBe(true);
-    expect(result.data?.blueprint.name).toBe("iPhone 16 Pro");
-    expect(result.data?.blueprint.variants).toHaveLength(1);
-    expect(result.data?.imageUrls).toEqual(["https://example.com/img1.jpg"]);
-  });
-
-  it("filters out hallucinated categoryId not in category tree", async () => {
-    mocks.callTextModel.mockResolvedValue(
-      JSON.stringify({ ...mockBlueprint, categoryId: "cat-fake-999" })
-    );
-    const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("catégorie");
-  });
-
-  it("returns error on LLM 429", async () => {
-    mocks.callTextModel.mockRejectedValue(new Error("OpenRouter API error 429: Too Many Requests"));
-    const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("Limite");
-  });
-
-  it("continues when searchProductImages rejects (catch path returns empty imageUrls)", async () => {
-    mocks.searchProductImages.mockRejectedValue(new Error("network timeout"));
-    const result = await generateProductBlueprint({ name: "iPhone 16 Pro" });
-    expect(result.success).toBe(true);
-    expect(result.data?.imageUrls).toEqual([]);
-  });
-});
-
 // ─── createProductFromBlueprint ───────────────────────────────────────────────
 
 describe("createProductFromBlueprint", () => {
   const blueprint = {
     name: "iPhone 16 Pro",
     brand: "Apple",
-    base_price: 1049000,
     description: "Description produit.",
     short_description: "Résumé.",
     meta_title: "iPhone 16 Pro",

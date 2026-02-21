@@ -44,7 +44,6 @@ export const productVariantBlueprintSchema = z.object({
 export const productBlueprintSchema = z.object({
   name: z.string().min(1),
   brand: z.string().optional().default(""),
-  base_price: z.coerce.number().int().min(0),
   description: z.string().max(500),
   short_description: z.string().max(150),
   meta_title: z.string().max(60),
