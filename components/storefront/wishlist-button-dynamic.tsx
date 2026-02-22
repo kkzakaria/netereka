@@ -12,8 +12,6 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
   useEffect(() => {
     if (session.data?.user) {
       checkWishlist(productId).then(setIsWishlisted).catch(console.error);
-    } else {
-      setIsWishlisted(undefined);
     }
   }, [session.data?.user, productId]);
 
