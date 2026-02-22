@@ -3,13 +3,12 @@
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
-import { getAI, IMAGE_MODEL, callTextModel } from "@/lib/ai";
+import { getAI, IMAGE_MODEL } from "@/lib/ai";
 import {
   productTextPrompt,
   bannerTextPrompt,
   categorySuggestionPrompt,
   bannerImagePrompt,
-  productBlueprintPrompt,
 } from "@/lib/ai/prompts";
 import { uploadToR2 } from "@/lib/storage/images";
 import {
@@ -27,8 +26,8 @@ import type {
 import { execute } from "@/lib/db";
 import { getDB } from "@/lib/cloudflare/context";
 import { getCategoryTree } from "@/lib/db/categories";
-import { searchProductSpecs, searchProductImages } from "@/lib/ai/search";
-import type { CategoryNode } from "@/lib/db/types";
+import { searchProductSpecs } from "@/lib/ai/search";
+import { runTextModel, flattenCategories } from "@/lib/ai/helpers";
 import { slugify } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 
@@ -60,64 +59,10 @@ const bannerImageInputSchema = z.object({
   style: z.enum(["product", "abstract", "lifestyle"]).optional(),
 });
 
-const generateBlueprintInputSchema = z.object({
-  name: z.string().min(1, "Le nom du produit est requis"),
-  brand: z.string().optional(),
-});
-
 const createFromBlueprintInputSchema = z.object({
   blueprint: productBlueprintSchema,
   imageUrls: z.array(z.string().url()).default([]),
 });
-
-async function runTextModel(
-  system: string,
-  user: string,
-  retryCount = 0
-): Promise<string> {
-  const raw = await callTextModel(system, user);
-
-  // Qwen avec response_format json_object retourne du JSON pur,
-  // mais on garde l'extraction regex comme filet de sécurité.
-  try {
-    JSON.parse(raw);
-    return raw;
-  } catch {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        JSON.parse(jsonMatch[0]);
-        return jsonMatch[0];
-      } catch {
-        // fall through to retry
-      }
-    }
-
-    if (retryCount < 1) {
-      return runTextModel(
-        system +
-          "\n\nIMPORTANT: Retourne UNIQUEMENT du JSON valide. Pas de texte, pas de markdown, juste l'objet JSON.",
-        user,
-        retryCount + 1
-      );
-    }
-    throw new Error("Le modèle n'a pas retourné de JSON valide.");
-  }
-}
-
-function flattenCategories(
-  nodes: readonly CategoryNode[],
-  parentName?: string
-): Array<{ id: string; name: string; parentName?: string }> {
-  const result: Array<{ id: string; name: string; parentName?: string }> = [];
-  for (const node of nodes) {
-    result.push({ id: node.id, name: node.name, parentName });
-    if (node.children.length > 0) {
-      result.push(...flattenCategories(node.children, node.name));
-    }
-  }
-  return result;
-}
 
 export async function generateProductText(
   input: z.input<typeof productTextInputSchema>
@@ -288,76 +233,6 @@ export async function generateBannerImage(
   }
 }
 
-export async function generateProductBlueprint(
-  input: z.input<typeof generateBlueprintInputSchema>
-): Promise<AiResult<{ blueprint: ProductBlueprint; categoryName: string; imageUrls: string[] }>> {
-  await requireAdmin();
-
-  const parsed = generateBlueprintInputSchema.safeParse(input);
-  if (!parsed.success) {
-    return { success: false, error: "Le nom du produit est requis." };
-  }
-
-  try {
-    const searchQuery = [parsed.data.brand, parsed.data.name]
-      .filter(Boolean)
-      .join(" ");
-
-    const [[specs, imageUrls], tree] = await Promise.all([
-      Promise.all([
-        searchProductSpecs(searchQuery).catch((err) => {
-          console.error("[admin/ai] searchProductSpecs failed:", err);
-          return "";
-        }),
-        searchProductImages(searchQuery).catch((err) => {
-          console.error("[admin/ai] searchProductImages failed:", err);
-          return [] as string[];
-        }),
-      ]),
-      getCategoryTree(),
-    ]);
-    const categories = flattenCategories(tree);
-
-    if (categories.length === 0) {
-      return { success: false, error: "Aucune catégorie disponible." };
-    }
-
-    const validIds = new Set(categories.map((c) => c.id));
-    const prompt = productBlueprintPrompt({ ...parsed.data, specs, categories });
-    const jsonStr = await runTextModel(prompt.system, prompt.user);
-    const raw = productBlueprintSchema.parse(JSON.parse(jsonStr));
-
-    if (!validIds.has(raw.categoryId)) {
-      return {
-        success: false,
-        error: "L'IA n'a pas identifié de catégorie valide. Réessayez ou sélectionnez manuellement.",
-      };
-    }
-
-    const cat = categories.find((c) => c.id === raw.categoryId);
-    const categoryName = cat
-      ? (cat.parentName ? `${cat.parentName} > ${cat.name}` : cat.name)
-      : raw.categoryId;
-
-    return {
-      success: true,
-      data: { blueprint: raw, categoryName, imageUrls },
-    };
-  } catch (error) {
-    console.error("[admin/ai] generateProductBlueprint error:", error);
-    if (error instanceof Error && error.message.includes("429")) {
-      return {
-        success: false,
-        error: "Limite IA quotidienne atteinte. Réessayez demain.",
-      };
-    }
-    return {
-      success: false,
-      error: "Impossible de générer le produit. Réessayez.",
-    };
-  }
-}
-
 async function downloadImageToR2(
   imageUrl: string,
   productId: string
@@ -376,7 +251,8 @@ async function downloadImageToR2(
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
     buffer = buf.byteLength > 0 ? buf : null;
-  } catch {
+  } catch (err) {
+    console.warn("[admin/ai] downloadImageToR2: fetch failed for", imageUrl, err);
     return null;
   }
   if (!buffer) return null;
@@ -426,7 +302,7 @@ export async function createProductFromBlueprint(
         slug,
         blueprint.description || null,
         blueprint.short_description || null,
-        blueprint.base_price,
+        0,
         blueprint.brand || null,
         blueprint.meta_title || null,
         blueprint.meta_description || null
@@ -439,7 +315,7 @@ export async function createProductFromBlueprint(
              attributes, is_active, sort_order)
            VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?)`
         )
-        .bind(nanoid(), id, v.name, blueprint.base_price, v.stock_quantity, JSON.stringify(v.attributes), i)
+        .bind(nanoid(), id, v.name, 0, v.stock_quantity, JSON.stringify(v.attributes), i)
     );
 
     await db.batch([productStmt, ...variantStmts]);
@@ -449,7 +325,8 @@ export async function createProductFromBlueprint(
       await Promise.all(imageUrls.map((url) => downloadImageToR2(url, id)))
     ).filter((u): u is string => u !== null);
 
-    // 3. Insert image records; first successful download gets is_primary = 1
+    // 3. Insert image records; first successful download gets is_primary = 1.
+    // Individual failures are non-fatal — the product was already created.
     await Promise.all(
       downloadedUrls.map((storedUrl, i) => {
         const iid = nanoid();
@@ -457,7 +334,9 @@ export async function createProductFromBlueprint(
           `INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary)
            VALUES (?, ?, ?, NULL, ?, ?)`,
           [iid, id, storedUrl, i, i === 0 ? 1 : 0]
-        );
+        ).catch((err) => {
+          console.error("[admin/ai] Failed to insert image record for product", id, err);
+        });
       })
     );
 

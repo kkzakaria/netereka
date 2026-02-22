@@ -49,6 +49,7 @@ export function ProductsPageClient({
       <AiCreateProductModal
         open={aiModalOpen}
         onOpenChange={setAiModalOpen}
+        categories={categories}
       />
 
       {/* Mobile toolbar */}
@@ -89,7 +90,11 @@ export function ProductsPageClient({
   );
 }
 
-export function ProductsPageActions() {
+interface ProductsPageActionsProps {
+  categories: { id: string; name: string }[];
+}
+
+export function ProductsPageActions({ categories }: ProductsPageActionsProps) {
   const [aiModalOpen, setAiModalOpen] = useState(false);
 
   return (
@@ -97,6 +102,7 @@ export function ProductsPageActions() {
       <AiCreateProductModal
         open={aiModalOpen}
         onOpenChange={setAiModalOpen}
+        categories={categories}
       />
       <div className="flex items-center gap-2">
         <Button

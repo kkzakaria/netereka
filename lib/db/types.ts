@@ -356,3 +356,9 @@ export interface Banner {
   created_at: string;
   updated_at: string;
 }
+
+/** Minimal category option for UI selects — safe to pass across RSC→client boundary. */
+export interface CategoryOption {
+  id: string;
+  name: string;
+}
