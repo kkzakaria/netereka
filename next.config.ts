@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
-initOpenNextCloudflareForDev();
+initOpenNextCloudflareForDev({ configPath: "wrangler.dev.jsonc" });
 
 const nextConfig: NextConfig = {
   experimental: {

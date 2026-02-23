@@ -1,0 +1,28 @@
+// Dev-only wrangler config: excludes the AI binding (always-remote, requires Cloudflare auth)
+// so that getPlatformProxy can start in fully local mode.
+// Use for: npm run dev (Next.js local dev server)
+{
+  "name": "netereka",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": ".open-next/worker.js",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "netereka-db",
+      "database_id": "4f7ff29e-aa15-47a3-a01c-68792a90f9ba"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "35fe4cd4dd084a629f0ebe1a795064db"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "netereka"
+    }
+  ]
+}
