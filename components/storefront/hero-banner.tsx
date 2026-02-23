@@ -164,13 +164,13 @@ export function HeroBanner({
 
                 {/* Image */}
                 {slide.image_url && (
-                  <div className="relative mx-auto aspect-square w-full max-w-xs">
+                  <div className="relative mx-auto aspect-square w-full max-w-xs lg:max-w-sm">
                     <Image
                       src={getImageUrl(slide.image_url)}
                       alt={slide.title}
                       fill
                       className="object-contain"
-                      sizes="(max-width: 640px) 80vw, 320px"
+                      sizes="(max-width: 640px) 80vw, (max-width: 1024px) 320px, 384px"
                       {...(i === 0
                         ? { priority: true, fetchPriority: "high" as const }
                         : { loading: "lazy" as const })}
