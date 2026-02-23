@@ -3,7 +3,6 @@ interface CloudflareEnv {
   KV: KVNamespace;
   R2: R2Bucket;
   ASSETS: Fetcher;
-  IMAGES: ImagesBinding;
   AI: Ai;
 
   // Auth (Better Auth)
