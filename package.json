@@ -19,7 +19,8 @@
     "db:migrate:remote": "bash scripts/migrate.sh --remote",
     "db:seed": "npx wrangler d1 execute netereka-db --local --file=db/seeds/seed.sql",
     "db:seed-catalogue": "npx wrangler d1 execute netereka-db --local --file=db/seeds/catalogue.sql",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "node scripts/patch-opennext.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",
