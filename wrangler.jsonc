@@ -31,9 +31,6 @@
       "bucket_name": "netereka"
     }
   ],
-  "images": {
-    "binding": "IMAGES"
-  },
   "ai": {
     "binding": "AI"
   }
