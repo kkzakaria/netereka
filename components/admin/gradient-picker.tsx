@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -45,7 +46,7 @@ export function GradientPicker({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [gradientName, setGradientName] = useState("");
   const [isSaving, startSaveTransition] = useTransition();
-  const [isDeleting, startDeleteTransition] = useTransition();
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   function isActive(from: string, to: string) {
     return colorFrom.toLowerCase() === from.toLowerCase() &&
@@ -70,8 +71,9 @@ export function GradientPicker({
     });
   }
 
-  function handleDelete(id: number) {
-    startDeleteTransition(async () => {
+  async function handleDelete(id: number) {
+    setDeletingId(id);
+    try {
       const result = await deleteBannerGradient(id);
       if (result.success) {
         onGradientDeleted(id);
@@ -79,7 +81,9 @@ export function GradientPicker({
       } else {
         toast.error(result.error || "Erreur lors de la suppression");
       }
-    });
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   return (
@@ -142,7 +146,7 @@ export function GradientPicker({
                   type="button"
                   variant="ghost"
                   size="icon-xs"
-                  disabled={isDeleting}
+                  disabled={deletingId === g.id}
                   onClick={() => handleDelete(g.id)}
                   aria-label={`Supprimer ${g.name}`}
                   className="shrink-0 text-muted-foreground hover:text-destructive"
@@ -199,6 +203,9 @@ export function GradientPicker({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nommer ce dégradé</DialogTitle>
+            <DialogDescription>
+              Choisissez un nom pour réutiliser ce dégradé
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div
