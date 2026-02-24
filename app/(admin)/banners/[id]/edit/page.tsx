@@ -5,7 +5,7 @@ import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { BannerForm } from "@/components/admin/banner-form";
-import { getBannerById } from "@/lib/db/admin/banners";
+import { getBannerById, getSavedGradients } from "@/lib/db/admin/banners";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -13,7 +13,10 @@ interface Props {
 
 export default async function EditBannerPage({ params }: Props) {
   const { id } = await params;
-  const banner = await getBannerById(Number(id));
+  const [banner, savedGradients] = await Promise.all([
+    getBannerById(Number(id)),
+    getSavedGradients(),
+  ]);
 
   if (!banner) notFound();
 
@@ -42,7 +45,7 @@ export default async function EditBannerPage({ params }: Props) {
           </div>
         </header>
       </AdminPageHeader>
-      <BannerForm banner={banner} />
+      <BannerForm banner={banner} savedGradients={savedGradients} />
     </div>
   );
 }
