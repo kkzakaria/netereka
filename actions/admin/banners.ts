@@ -6,9 +6,10 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
-import { banners } from "@/lib/db/schema";
+import { banners, bannerGradients } from "@/lib/db/schema";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
 import type { ActionResult } from "@/lib/utils";
+import type { BannerGradient } from "@/lib/db/types";
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "avif"]);
 
@@ -317,5 +318,71 @@ export async function deleteBanner(id: number): Promise<ActionResult> {
   } catch (error) {
     console.error("[admin/banners] deleteBanner error:", error);
     return { success: false, error: "Erreur lors de la suppression de la bannière" };
+  }
+}
+
+const gradientSchema = z.object({
+  name: z.string().min(1, "Le nom est requis").max(100),
+  color_from: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide (format: #RRGGBB)"),
+  color_to: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide (format: #RRGGBB)"),
+});
+
+export async function createBannerGradient(
+  input: { name: string; color_from: string; color_to: string }
+): Promise<ActionResult & { gradient?: BannerGradient }> {
+  await requireAdmin();
+
+  const parsed = gradientSchema.safeParse(input);
+  if (!parsed.success) {
+    const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
+    return { success: false, error: msg };
+  }
+
+  try {
+    const db = await getDrizzle();
+    const rows = await db.insert(bannerGradients).values({
+      name: parsed.data.name,
+      color_from: parsed.data.color_from,
+      color_to: parsed.data.color_to,
+    }).returning({
+      id: bannerGradients.id,
+      name: bannerGradients.name,
+      color_from: bannerGradients.color_from,
+      color_to: bannerGradients.color_to,
+      created_at: bannerGradients.created_at,
+    });
+
+    const gradient = rows[0];
+    if (!gradient) {
+      return { success: false, error: "Échec de la création du dégradé" };
+    }
+
+    revalidatePath("/banners");
+    return { success: true, gradient: gradient as BannerGradient };
+  } catch (error) {
+    console.error("[admin/banners] createBannerGradient error:", error);
+    return { success: false, error: "Erreur lors de la création du dégradé" };
+  }
+}
+
+export async function deleteBannerGradient(id: number): Promise<ActionResult> {
+  await requireAdmin();
+
+  if (!id || id <= 0) return { success: false, error: "ID de dégradé invalide" };
+
+  try {
+    const db = await getDrizzle();
+    const deleted = await db.delete(bannerGradients)
+      .where(eq(bannerGradients.id, id))
+      .returning({ id: bannerGradients.id });
+
+    if (deleted.length === 0) {
+      return { success: false, error: "Dégradé introuvable" };
+    }
+    revalidatePath("/banners");
+    return { success: true };
+  } catch (error) {
+    console.error("[admin/banners] deleteBannerGradient error:", error);
+    return { success: false, error: "Erreur lors de la suppression du dégradé" };
   }
 }

@@ -370,3 +370,14 @@ export const banners = sqliteTable("banners", {
 }, (table) => [
   index("idx_banners_active_order").on(table.is_active, table.display_order),
 ]);
+
+// =============================================================================
+// Banner Gradients (saved presets)
+// =============================================================================
+export const bannerGradients = sqliteTable("banner_gradients", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  color_from: text("color_from").notNull(),
+  color_to: text("color_to").notNull(),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+});

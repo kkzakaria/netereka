@@ -357,6 +357,14 @@ export interface Banner {
   updated_at: string;
 }
 
+export interface BannerGradient {
+  id: number;
+  name: string;
+  color_from: string;
+  color_to: string;
+  created_at: string;
+}
+
 /** Minimal category option for UI selects — safe to pass across RSC→client boundary. */
 export interface CategoryOption {
   id: string;

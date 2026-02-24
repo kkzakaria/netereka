@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Banner } from "@/lib/db/types";
+import type { BadgeColor, Banner, BannerGradient } from "@/lib/db/types";
 import { getImageUrl } from "@/lib/utils/images";
 import {
   createBanner,
@@ -26,29 +26,39 @@ import {
   setBannerImageUrl,
 } from "@/actions/admin/banners";
 import dynamic from "next/dynamic";
+import type { BannerTextResult } from "@/lib/ai/schemas";
 import { AiGenerateButton } from "./ai-generate-button";
 import { generateBannerText } from "@/actions/admin/ai";
+import { GradientPicker } from "./gradient-picker";
+import { BannerPreview } from "./banner-preview";
 
 const AiImageDialog = dynamic(() => import("./ai-image-dialog").then((m) => m.AiImageDialog));
-import type { BannerTextResult } from "@/lib/ai/schemas";
 
 interface BannerFormProps {
   banner?: Banner | null;
+  savedGradients?: BannerGradient[];
 }
 
-export function BannerForm({ banner }: BannerFormProps) {
+export function BannerForm({ banner, savedGradients: initialGradients = [] }: BannerFormProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const isEdit = !!banner;
   const isActiveRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const titleRef = useRef<HTMLInputElement>(null);
-  const subtitleRef = useRef<HTMLTextAreaElement>(null);
-  const ctaTextRef = useRef<HTMLInputElement>(null);
-  const badgeTextRef = useRef<HTMLInputElement>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(
-    banner?.image_url ?? null
-  );
+
+  // Controlled visual state (feeds the live preview)
+  const [title, setTitle] = useState(banner?.title ?? "");
+  const [subtitle, setSubtitle] = useState(banner?.subtitle ?? "");
+  const [ctaText, setCtaText] = useState(banner?.cta_text ?? "Découvrir");
+  const [badgeText, setBadgeText] = useState(banner?.badge_text ?? "");
+  const [badgeColor, setBadgeColor] = useState<BadgeColor>(banner?.badge_color ?? "mint");
+  const [bgFrom, setBgFrom] = useState(banner?.bg_gradient_from ?? "#183C78");
+  const [bgTo, setBgTo] = useState(banner?.bg_gradient_to ?? "#1E4A8F");
+  const [price, setPrice] = useState<string>(banner?.price != null ? String(banner.price) : "");
+  const [imagePreview, setImagePreview] = useState<string | null>(banner?.image_url ?? null);
+
+  // Saved gradients with optimistic updates
+  const [savedGradients, setSavedGradients] = useState<BannerGradient[]>(initialGradients);
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -103,17 +113,14 @@ export function BannerForm({ banner }: BannerFormProps) {
               <CardTitle>Informations</CardTitle>
               <AiGenerateButton<BannerTextResult>
                 label="Générer les textes"
-                onGenerate={() => {
-                  const title = titleRef.current?.value;
-                  return generateBannerText({
-                    productName: title || undefined,
-                  });
-                }}
+                onGenerate={() =>
+                  generateBannerText({ productName: title || undefined })
+                }
                 onResult={(data) => {
-                  if (titleRef.current) titleRef.current.value = data.title;
-                  if (subtitleRef.current) subtitleRef.current.value = data.subtitle;
-                  if (ctaTextRef.current) ctaTextRef.current.value = data.ctaText;
-                  if (badgeTextRef.current) badgeTextRef.current.value = data.badgeText ?? "";
+                  setTitle(data.title);
+                  setSubtitle(data.subtitle);
+                  setCtaText(data.ctaText);
+                  setBadgeText(data.badgeText ?? "");
                 }}
               />
             </CardHeader>
@@ -123,9 +130,9 @@ export function BannerForm({ banner }: BannerFormProps) {
                 <Input
                   id="title"
                   name="title"
-                  ref={titleRef}
                   required
-                  defaultValue={banner?.title ?? ""}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                   placeholder="Ex: PlayStation 5 - Offre spéciale"
                 />
               </div>
@@ -134,9 +141,9 @@ export function BannerForm({ banner }: BannerFormProps) {
                 <Textarea
                   id="subtitle"
                   name="subtitle"
-                  ref={subtitleRef}
                   rows={2}
-                  defaultValue={banner?.subtitle ?? ""}
+                  value={subtitle}
+                  onChange={(e) => setSubtitle(e.target.value)}
                   placeholder="Description courte de la bannière"
                 />
               </div>
@@ -156,8 +163,8 @@ export function BannerForm({ banner }: BannerFormProps) {
                   <Input
                     id="cta_text"
                     name="cta_text"
-                    ref={ctaTextRef}
-                    defaultValue={banner?.cta_text ?? "Découvrir"}
+                    value={ctaText}
+                    onChange={(e) => setCtaText(e.target.value)}
                     placeholder="Découvrir"
                   />
                 </div>
@@ -177,8 +184,8 @@ export function BannerForm({ banner }: BannerFormProps) {
                   <Input
                     id="badge_text"
                     name="badge_text"
-                    ref={badgeTextRef}
-                    defaultValue={banner?.badge_text ?? ""}
+                    value={badgeText}
+                    onChange={(e) => setBadgeText(e.target.value)}
                     placeholder="Ex: Nouveau, Promo"
                   />
                 </div>
@@ -186,7 +193,8 @@ export function BannerForm({ banner }: BannerFormProps) {
                   <Label htmlFor="badge_color">Couleur du badge</Label>
                   <Select
                     name="badge_color"
-                    defaultValue={banner?.badge_color ?? "mint"}
+                    value={badgeColor}
+                    onValueChange={(v) => setBadgeColor(v as BadgeColor)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Choisir..." />
@@ -200,28 +208,21 @@ export function BannerForm({ banner }: BannerFormProps) {
                   </Select>
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="bg_gradient_from">Dégradé - Début</Label>
-                  <input
-                    type="color"
-                    id="bg_gradient_from"
-                    name="bg_gradient_from"
-                    defaultValue={banner?.bg_gradient_from ?? "#183C78"}
-                    className="h-10 w-full cursor-pointer rounded-md border"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bg_gradient_to">Dégradé - Fin</Label>
-                  <input
-                    type="color"
-                    id="bg_gradient_to"
-                    name="bg_gradient_to"
-                    defaultValue={banner?.bg_gradient_to ?? "#1E4A8F"}
-                    className="h-10 w-full cursor-pointer rounded-md border"
-                  />
-                </div>
-              </div>
+
+              <GradientPicker
+                colorFrom={bgFrom}
+                colorTo={bgTo}
+                savedGradients={savedGradients}
+                onChange={(from, to) => {
+                  setBgFrom(from);
+                  setBgTo(to);
+                }}
+                onGradientSaved={(g) => setSavedGradients((prev) => [...prev, g])}
+                onGradientDeleted={(id) =>
+                  setSavedGradients((prev) => prev.filter((g) => g.id !== id))
+                }
+              />
+
               <div className="space-y-2">
                 <Label htmlFor="price">Prix (FCFA)</Label>
                 <Input
@@ -229,7 +230,8 @@ export function BannerForm({ banner }: BannerFormProps) {
                   name="price"
                   type="number"
                   min={0}
-                  defaultValue={banner?.price ?? ""}
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
                   placeholder="Optionnel"
                 />
               </div>
@@ -273,12 +275,16 @@ export function BannerForm({ banner }: BannerFormProps) {
                     <AiImageDialog
                       onImageGenerated={(url) => {
                         startTransition(async () => {
-                          const result = await setBannerImageUrl(banner!.id, url);
-                          if (result.success) {
-                            setImagePreview(url);
-                            toast.success("Image IA enregistrée");
-                          } else {
-                            toast.error(result.error || "Erreur lors de l'enregistrement de l'image");
+                          try {
+                            const result = await setBannerImageUrl(banner!.id, url);
+                            if (result.success) {
+                              setImagePreview(url);
+                              toast.success("Image IA enregistrée");
+                            } else {
+                              toast.error(result.error || "Erreur lors de l'enregistrement de l'image");
+                            }
+                          } catch {
+                            toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
                           }
                         });
                       }}
@@ -360,6 +366,21 @@ export function BannerForm({ banner }: BannerFormProps) {
               </div>
             </CardContent>
           </Card>
+
+          {/* Live preview — sticky */}
+          <div className="lg:sticky lg:top-6">
+            <BannerPreview
+              title={title}
+              subtitle={subtitle}
+              badgeText={badgeText}
+              badgeColor={badgeColor}
+              price={price !== "" ? Number(price) : null}
+              imageUrl={imagePreview}
+              bgFrom={bgFrom}
+              bgTo={bgTo}
+              ctaText={ctaText}
+            />
+          </div>
 
           <Button type="submit" className="w-full" disabled={isPending}>
             {isPending

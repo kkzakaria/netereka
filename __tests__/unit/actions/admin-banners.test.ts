@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   deleteFromR2: vi.fn(),
   findFirst: vi.fn(),
   dbUpdate: vi.fn(),
+  dbInsert: vi.fn(),
+  dbDelete: vi.fn(),
   getDrizzle: vi.fn(),
 }));
 
@@ -30,7 +32,12 @@ vi.mock("@/lib/storage/images", () => ({
 vi.mock("nanoid", () => ({ nanoid: vi.fn().mockReturnValue("mockuid8") }));
 vi.mock("@/lib/db/drizzle", () => ({ getDrizzle: mocks.getDrizzle }));
 
-import { uploadBannerImage, setBannerImageUrl } from "@/actions/admin/banners";
+import {
+  uploadBannerImage,
+  setBannerImageUrl,
+  createBannerGradient,
+  deleteBannerGradient,
+} from "@/actions/admin/banners";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -376,5 +383,158 @@ describe("setBannerImageUrl", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("mise à jour de l'image");
+  });
+});
+
+// ─── createBannerGradient ─────────────────────────────────────────────────────
+
+describe("createBannerGradient", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+  });
+
+  function mockInsertSuccess(overrides: Partial<{ id: number; name: string; color_from: string; color_to: string }> = {}) {
+    const row = {
+      id: 1,
+      name: "Mon dégradé",
+      color_from: "#7C3AED",
+      color_to: "#EC4899",
+      created_at: "2026-02-24 00:00:00",
+      ...overrides,
+    };
+    const returningMock = vi.fn().mockResolvedValue([row]);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+    mocks.getDrizzle.mockResolvedValue({ insert: mocks.dbInsert });
+    return { row, valuesMock };
+  }
+
+  it("redirige si non admin", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(
+      createBannerGradient({ name: "Test", color_from: "#000000", color_to: "#ffffff" })
+    ).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("rejette un name vide", async () => {
+    const result = await createBannerGradient({ name: "", color_from: "#000000", color_to: "#ffffff" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("nom");
+  });
+
+  it("rejette une couleur invalide (color_from)", async () => {
+    const result = await createBannerGradient({ name: "Test", color_from: "not-a-color", color_to: "#ffffff" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Couleur");
+  });
+
+  it("rejette une couleur invalide (color_to)", async () => {
+    const result = await createBannerGradient({ name: "Test", color_from: "#000000", color_to: "rgb(0,0,0)" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Couleur");
+  });
+
+  it("crée le gradient et retourne l'objet créé", async () => {
+    const { row, valuesMock } = mockInsertSuccess({ name: "Violet Coucher", color_from: "#7C3AED", color_to: "#EC4899" });
+    const result = await createBannerGradient({
+      name: "Violet Coucher",
+      color_from: "#7C3AED",
+      color_to: "#EC4899",
+    });
+    expect(result.success).toBe(true);
+    expect(valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Violet Coucher", color_from: "#7C3AED", color_to: "#EC4899" })
+    );
+    expect(result.gradient).toMatchObject({
+      id: row.id,
+      name: row.name,
+      color_from: row.color_from,
+      color_to: row.color_to,
+    });
+  });
+
+  it("retourne une erreur si l'insertion retourne un tableau vide", async () => {
+    const returningMock = vi.fn().mockResolvedValue([]);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+    mocks.getDrizzle.mockResolvedValue({ insert: mocks.dbInsert });
+    const result = await createBannerGradient({ name: "Test", color_from: "#000000", color_to: "#ffffff" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Échec");
+  });
+
+  it("retourne une erreur si l'insertion DB échoue", async () => {
+    mocks.getDrizzle.mockResolvedValue({
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockRejectedValue(new Error("D1 error")),
+        }),
+      }),
+    });
+    const result = await createBannerGradient({ name: "Test", color_from: "#000000", color_to: "#ffffff" });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+});
+
+// ─── deleteBannerGradient ─────────────────────────────────────────────────────
+
+describe("deleteBannerGradient", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+  });
+
+  function mockDeleteSuccess(returning: object[] = [{ id: 5 }]) {
+    const returningMock = vi.fn().mockResolvedValue(returning);
+    const whereMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbDelete.mockReturnValue({ where: whereMock });
+    mocks.getDrizzle.mockResolvedValue({ delete: mocks.dbDelete });
+    return { whereMock, returningMock };
+  }
+
+  it("redirige si non admin", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(deleteBannerGradient(1)).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("rejette id = 0", async () => {
+    const result = await deleteBannerGradient(0);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("ID");
+  });
+
+  it("rejette id négatif", async () => {
+    const result = await deleteBannerGradient(-3);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("ID");
+  });
+
+  it("supprime le gradient avec succès", async () => {
+    const { whereMock } = mockDeleteSuccess();
+    const result = await deleteBannerGradient(5);
+    expect(result.success).toBe(true);
+    expect(mocks.dbDelete).toHaveBeenCalled();
+    expect(whereMock).toHaveBeenCalled();
+  });
+
+  it("retourne une erreur si le gradient est introuvable (returning vide)", async () => {
+    mockDeleteSuccess([]);
+    const result = await deleteBannerGradient(99);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("introuvable");
+  });
+
+  it("retourne une erreur si la suppression DB échoue", async () => {
+    mocks.dbDelete.mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockRejectedValue(new Error("D1 delete error")),
+      }),
+    });
+    mocks.getDrizzle.mockResolvedValue({ delete: mocks.dbDelete });
+    const result = await deleteBannerGradient(5);
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
   });
 });

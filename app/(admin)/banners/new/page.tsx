@@ -4,8 +4,11 @@ import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { BannerForm } from "@/components/admin/banner-form";
+import { getSavedGradients } from "@/lib/db/admin/banners";
 
-export default function NewBannerPage() {
+export default async function NewBannerPage() {
+  const savedGradients = await getSavedGradients();
+
   return (
     <div>
       <AdminPageHeader>
@@ -31,7 +34,7 @@ export default function NewBannerPage() {
           </div>
         </header>
       </AdminPageHeader>
-      <BannerForm />
+      <BannerForm savedGradients={savedGradients} />
     </div>
   );
 }
