@@ -52,28 +52,32 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  const [categories, products] = await Promise.all([
-    query<{ slug: string; updated_at: string }>(
-      "SELECT slug, updated_at FROM categories WHERE is_active = 1"
-    ),
-    query<{ slug: string; updated_at: string }>(
-      "SELECT slug, updated_at FROM products WHERE is_active = 1"
-    ),
-  ]);
+  try {
+    const [categories, products] = await Promise.all([
+      query<{ slug: string; updated_at: string }>(
+        "SELECT slug, updated_at FROM categories WHERE is_active = 1"
+      ),
+      query<{ slug: string; updated_at: string }>(
+        "SELECT slug, updated_at FROM products WHERE is_active = 1"
+      ),
+    ]);
 
-  const categoryPages: MetadataRoute.Sitemap = categories.map((cat) => ({
-    url: `${SITE_URL}/c/${cat.slug}`,
-    lastModified: new Date(cat.updated_at),
-    changeFrequency: "weekly" as const,
-    priority: 0.8,
-  }));
+    const categoryPages: MetadataRoute.Sitemap = categories.map((cat) => ({
+      url: `${SITE_URL}/c/${cat.slug}`,
+      lastModified: new Date(cat.updated_at),
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    }));
 
-  const productPages: MetadataRoute.Sitemap = products.map((product) => ({
-    url: `${SITE_URL}/p/${product.slug}`,
-    lastModified: new Date(product.updated_at),
-    changeFrequency: "weekly" as const,
-    priority: 0.9,
-  }));
+    const productPages: MetadataRoute.Sitemap = products.map((product) => ({
+      url: `${SITE_URL}/p/${product.slug}`,
+      lastModified: new Date(product.updated_at),
+      changeFrequency: "weekly" as const,
+      priority: 0.9,
+    }));
 
-  return [...staticPages, ...categoryPages, ...productPages];
+    return [...staticPages, ...categoryPages, ...productPages];
+  } catch {
+    return staticPages;
+  }
 }
