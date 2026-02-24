@@ -47,40 +47,40 @@ export function BannerPreview({
         Prévisualisation
       </p>
       <div
-        className="relative h-[170px] overflow-hidden rounded-xl"
+        className="relative mx-auto h-[240px] w-[624px] max-w-full overflow-hidden rounded-2xl"
         style={{ background: `linear-gradient(135deg, ${bgFrom}, ${bgTo})` }}
       >
         {/* Decorative orbs */}
         {decorativeOrbs}
 
-        <div className="grid h-full grid-cols-2 items-center gap-2 px-3 py-3">
+        <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-4">
           {/* Text glass card */}
-          <div className="rounded-lg border border-white/20 bg-white/10 p-2 shadow-xl backdrop-blur-xl">
+          <div className="rounded-lg border border-white/20 bg-white/10 p-3 shadow-xl backdrop-blur-xl">
             {badgeText && (
               <span
                 className={cn(
-                  "mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                  "mb-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide",
                   badgeColorMap[badgeColor]
                 )}
               >
                 {badgeText}
               </span>
             )}
-            <p className="text-xs font-bold leading-tight text-white line-clamp-2">
+            <p className="text-sm font-bold leading-tight text-white line-clamp-2">
               {title || "Titre de la bannière"}
             </p>
             {subtitle && (
-              <p className="mt-0.5 text-[10px] text-white/70 line-clamp-1">
+              <p className="mt-1 text-xs text-white/70 line-clamp-2">
                 {subtitle}
               </p>
             )}
             {price != null && (
-              <p className="mt-0.5 text-[10px] font-semibold text-emerald-300">
+              <p className="mt-1 text-xs font-semibold text-emerald-300">
                 {formatPrice(price)}
               </p>
             )}
             <span
-              className="mt-1 inline-block rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold"
+              className="mt-2 inline-block rounded-full bg-white px-3 py-1 text-xs font-semibold"
               style={{ color: bgFrom }}
             >
               {ctaText || "Découvrir"}
@@ -89,18 +89,18 @@ export function BannerPreview({
 
           {/* Product image */}
           {imageUrl ? (
-            <div className="relative h-[120px] w-full">
+            <div className="relative mx-auto h-[168px] w-full">
               <Image
                 src={getImageUrl(imageUrl)}
                 alt={title || "Bannière"}
                 fill
                 className="object-contain"
-                sizes="120px"
+                sizes="300px"
               />
             </div>
           ) : (
-            <div className="flex h-[120px] items-center justify-center rounded-lg border border-white/10 bg-white/5">
-              <span className="text-[10px] text-white/40">Image produit</span>
+            <div className="mx-auto flex h-[168px] w-full items-center justify-center rounded-lg border border-white/10 bg-white/5">
+              <span className="text-xs text-white/40">Image produit</span>
             </div>
           )}
         </div>
