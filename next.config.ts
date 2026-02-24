@@ -12,26 +12,8 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
-    formats: ["image/avif", "image/webp"],
-    minimumCacheTTL: 2592000,
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "*.r2.cloudflarestorage.com",
-      },
-      {
-        protocol: "https",
-        hostname: "netereka.ci",
-      },
-      {
-        protocol: "https",
-        hostname: "*.netereka.ci",
-      },
-      {
-        protocol: "https",
-        hostname: "pub-*.r2.dev",
-      },
-    ],
+    loader: "custom",
+    loaderFile: "./lib/utils/cloudflare-image-loader.ts",
   },
 };
 
