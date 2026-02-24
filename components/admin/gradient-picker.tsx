@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { createBannerGradient, deleteBannerGradient } from "@/actions/admin/banners";
 import type { BannerGradient } from "@/lib/db/types";
+import { ColorPicker } from "./color-picker";
 
 interface GradientPickerProps {
   colorFrom: string;
@@ -176,24 +177,20 @@ export function GradientPicker({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <label htmlFor="color-from" className="text-xs text-muted-foreground">Début</label>
-            <input
+            <ColorPicker
               id="color-from"
-              type="color"
               name="bg_gradient_from"
               value={colorFrom}
-              onChange={(e) => onChange(e.target.value, colorTo)}
-              className="h-10 w-full cursor-pointer rounded-md border"
+              onChange={(v) => onChange(v, colorTo)}
             />
           </div>
           <div className="space-y-1">
             <label htmlFor="color-to" className="text-xs text-muted-foreground">Fin</label>
-            <input
+            <ColorPicker
               id="color-to"
-              type="color"
               name="bg_gradient_to"
               value={colorTo}
-              onChange={(e) => onChange(colorFrom, e.target.value)}
-              className="h-10 w-full cursor-pointer rounded-md border"
+              onChange={(v) => onChange(colorFrom, v)}
             />
           </div>
         </div>
