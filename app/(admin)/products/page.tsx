@@ -76,7 +76,7 @@ export default async function ProductsPage({ searchParams }: Props) {
             categories={categoryOptions}
             className="flex-1"
           />
-          <ProductsPageActions categories={categoryOptions} />
+          <ProductsPageActions />
         </div>
       </AdminPageHeader>
 
