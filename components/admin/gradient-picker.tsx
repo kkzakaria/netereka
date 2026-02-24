@@ -58,18 +58,22 @@ export function GradientPicker({
 
   function handleSave() {
     startSaveTransition(async () => {
-      const result = await createBannerGradient({
-        name: gradientName.trim(),
-        color_from: colorFrom,
-        color_to: colorTo,
-      });
-      if (result.success && result.gradient) {
-        onGradientSaved(result.gradient);
-        toast.success("Dégradé sauvegardé");
-        setSaveDialogOpen(false);
-        setGradientName("");
-      } else {
-        toast.error(result.error || "Erreur lors de la sauvegarde");
+      try {
+        const result = await createBannerGradient({
+          name: gradientName.trim(),
+          color_from: colorFrom,
+          color_to: colorTo,
+        });
+        if (result.success && result.gradient) {
+          onGradientSaved(result.gradient);
+          toast.success("Dégradé sauvegardé");
+          setSaveDialogOpen(false);
+          setGradientName("");
+        } else {
+          toast.error(result.error || "Erreur lors de la sauvegarde");
+        }
+      } catch {
+        toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
       }
     });
   }
@@ -85,6 +89,8 @@ export function GradientPicker({
         } else {
           toast.error(result.error || "Erreur lors de la suppression");
         }
+      } catch {
+        toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
       } finally {
         setDeletingId(null);
       }

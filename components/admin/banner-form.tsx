@@ -275,12 +275,16 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
                     <AiImageDialog
                       onImageGenerated={(url) => {
                         startTransition(async () => {
-                          const result = await setBannerImageUrl(banner!.id, url);
-                          if (result.success) {
-                            setImagePreview(url);
-                            toast.success("Image IA enregistrée");
-                          } else {
-                            toast.error(result.error || "Erreur lors de l'enregistrement de l'image");
+                          try {
+                            const result = await setBannerImageUrl(banner!.id, url);
+                            if (result.success) {
+                              setImagePreview(url);
+                              toast.success("Image IA enregistrée");
+                            } else {
+                              toast.error(result.error || "Erreur lors de l'enregistrement de l'image");
+                            }
+                          } catch {
+                            toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
                           }
                         });
                       }}

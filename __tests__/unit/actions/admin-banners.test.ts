@@ -407,7 +407,7 @@ describe("createBannerGradient", () => {
     const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
     mocks.dbInsert.mockReturnValue({ values: valuesMock });
     mocks.getDrizzle.mockResolvedValue({ insert: mocks.dbInsert });
-    return row;
+    return { row, valuesMock };
   }
 
   it("redirige si non admin", async () => {
@@ -436,13 +436,16 @@ describe("createBannerGradient", () => {
   });
 
   it("crée le gradient et retourne l'objet créé", async () => {
-    const row = mockInsertSuccess({ name: "Violet Coucher", color_from: "#7C3AED", color_to: "#EC4899" });
+    const { row, valuesMock } = mockInsertSuccess({ name: "Violet Coucher", color_from: "#7C3AED", color_to: "#EC4899" });
     const result = await createBannerGradient({
       name: "Violet Coucher",
       color_from: "#7C3AED",
       color_to: "#EC4899",
     });
     expect(result.success).toBe(true);
+    expect(valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Violet Coucher", color_from: "#7C3AED", color_to: "#EC4899" })
+    );
     expect(result.gradient).toMatchObject({
       id: row.id,
       name: row.name,
@@ -509,10 +512,11 @@ describe("deleteBannerGradient", () => {
   });
 
   it("supprime le gradient avec succès", async () => {
-    mockDeleteSuccess();
+    const { whereMock } = mockDeleteSuccess();
     const result = await deleteBannerGradient(5);
     expect(result.success).toBe(true);
     expect(mocks.dbDelete).toHaveBeenCalled();
+    expect(whereMock).toHaveBeenCalled();
   });
 
   it("retourne une erreur si le gradient est introuvable (returning vide)", async () => {
