@@ -426,13 +426,13 @@ describe("createBannerGradient", () => {
   it("rejette une couleur invalide (color_from)", async () => {
     const result = await createBannerGradient({ name: "Test", color_from: "not-a-color", color_to: "#ffffff" });
     expect(result.success).toBe(false);
-    expect(result.error).toContain("couleur");
+    expect(result.error).toContain("Couleur");
   });
 
   it("rejette une couleur invalide (color_to)", async () => {
     const result = await createBannerGradient({ name: "Test", color_from: "#000000", color_to: "rgb(0,0,0)" });
     expect(result.success).toBe(false);
-    expect(result.error).toContain("couleur");
+    expect(result.error).toContain("Couleur");
   });
 
   it("crée le gradient et retourne l'objet créé", async () => {
@@ -449,6 +449,16 @@ describe("createBannerGradient", () => {
       color_from: row.color_from,
       color_to: row.color_to,
     });
+  });
+
+  it("retourne une erreur si l'insertion retourne un tableau vide", async () => {
+    const returningMock = vi.fn().mockResolvedValue([]);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+    mocks.getDrizzle.mockResolvedValue({ insert: mocks.dbInsert });
+    const result = await createBannerGradient({ name: "Test", color_from: "#000000", color_to: "#ffffff" });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Échec");
   });
 
   it("retourne une erreur si l'insertion DB échoue", async () => {

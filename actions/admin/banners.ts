@@ -323,8 +323,8 @@ export async function deleteBanner(id: number): Promise<ActionResult> {
 
 const gradientSchema = z.object({
   name: z.string().min(1, "Le nom est requis").max(100),
-  color_from: z.string().regex(/^#[0-9a-fA-F]{6}$/, "couleur invalide (format: #RRGGBB)"),
-  color_to: z.string().regex(/^#[0-9a-fA-F]{6}$/, "couleur invalide (format: #RRGGBB)"),
+  color_from: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide (format: #RRGGBB)"),
+  color_to: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide (format: #RRGGBB)"),
 });
 
 export async function createBannerGradient(
@@ -334,7 +334,7 @@ export async function createBannerGradient(
 
   const parsed = gradientSchema.safeParse(input);
   if (!parsed.success) {
-    const msg = parsed.error.issues.map((e) => e.message).join(", ");
+    const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
     return { success: false, error: msg };
   }
 
@@ -357,6 +357,7 @@ export async function createBannerGradient(
       return { success: false, error: "Échec de la création du dégradé" };
     }
 
+    revalidatePath("/banners");
     return { success: true, gradient: gradient as BannerGradient };
   } catch (error) {
     console.error("[admin/banners] createBannerGradient error:", error);
@@ -372,6 +373,7 @@ export async function deleteBannerGradient(id: number): Promise<ActionResult> {
   try {
     const db = await getDrizzle();
     await db.delete(bannerGradients).where(eq(bannerGradients.id, id));
+    revalidatePath("/banners");
     return { success: true };
   } catch (error) {
     console.error("[admin/banners] deleteBannerGradient error:", error);
