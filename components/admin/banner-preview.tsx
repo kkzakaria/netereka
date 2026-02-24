@@ -86,10 +86,10 @@ export function BannerPreview({
             <div className="relative h-[120px] w-full">
               <Image
                 src={getImageUrl(imageUrl)}
-                alt={title}
+                alt={title || "Bannière"}
                 fill
                 className="object-contain"
-                sizes="100px"
+                sizes="120px"
               />
             </div>
           ) : (
