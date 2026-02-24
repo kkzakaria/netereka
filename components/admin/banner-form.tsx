@@ -23,16 +23,9 @@ import {
   createBanner,
   updateBanner,
   uploadBannerImage,
-  setBannerImageUrl,
 } from "@/actions/admin/banners";
-import dynamic from "next/dynamic";
-import type { BannerTextResult } from "@/lib/ai/schemas";
-import { AiGenerateButton } from "./ai-generate-button";
-import { generateBannerText } from "@/actions/admin/ai";
 import { GradientPicker } from "./gradient-picker";
 import { BannerPreview } from "./banner-preview";
-
-const AiImageDialog = dynamic(() => import("./ai-image-dialog").then((m) => m.AiImageDialog));
 
 interface BannerFormProps {
   banner?: Banner | null;
@@ -109,20 +102,8 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
         <div className="lg:col-span-2 space-y-6">
           {/* Informations */}
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader>
               <CardTitle>Informations</CardTitle>
-              <AiGenerateButton<BannerTextResult>
-                label="Générer les textes"
-                onGenerate={() =>
-                  generateBannerText({ productName: title || undefined })
-                }
-                onResult={(data) => {
-                  setTitle(data.title);
-                  setSubtitle(data.subtitle);
-                  setCtaText(data.ctaText);
-                  setBadgeText(data.badgeText ?? "");
-                }}
-              />
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -263,33 +244,14 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
                     className="hidden"
                     onChange={handleImageUpload}
                   />
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={isPending}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {imagePreview ? "Changer l'image" : "Ajouter une image"}
-                    </Button>
-                    <AiImageDialog
-                      onImageGenerated={(url) => {
-                        startTransition(async () => {
-                          try {
-                            const result = await setBannerImageUrl(banner!.id, url);
-                            if (result.success) {
-                              setImagePreview(url);
-                              toast.success("Image IA enregistrée");
-                            } else {
-                              toast.error(result.error || "Erreur lors de l'enregistrement de l'image");
-                            }
-                          } catch {
-                            toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
-                          }
-                        });
-                      }}
-                    />
-                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isPending}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {imagePreview ? "Changer l'image" : "Ajouter une image"}
+                  </Button>
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
