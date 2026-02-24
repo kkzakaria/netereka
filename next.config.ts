@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   experimental: {
     inlineCss: true,
     optimizePackageImports: ["@hugeicons/core-free-icons"],
+    serverActions: {
+      bodySizeLimit: "6mb",
+    },
   },
   images: {
     formats: ["image/avif", "image/webp"],
