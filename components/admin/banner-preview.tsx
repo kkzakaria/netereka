@@ -1,7 +1,6 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/utils/format";
-import { getImageUrl } from "@/lib/utils/images";
 import type { BadgeColor } from "@/lib/db/types";
 
 interface BannerPreviewProps {
@@ -91,7 +90,7 @@ export function BannerPreview({
           {imageUrl ? (
             <div className="relative mx-auto h-[168px] w-full">
               <Image
-                src={getImageUrl(imageUrl)}
+                src={imageUrl}
                 alt={title || "Bannière"}
                 fill
                 className="object-contain"
