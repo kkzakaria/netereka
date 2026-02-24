@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +48,7 @@ export function GradientPicker({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [gradientName, setGradientName] = useState("");
   const [isSaving, startSaveTransition] = useTransition();
+  const [, startDeleteTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   function isActive(from: string, to: string) {
@@ -71,19 +74,21 @@ export function GradientPicker({
     });
   }
 
-  async function handleDelete(id: number) {
+  function handleDelete(id: number) {
     setDeletingId(id);
-    try {
-      const result = await deleteBannerGradient(id);
-      if (result.success) {
-        onGradientDeleted(id);
-        toast.success("Dégradé supprimé");
-      } else {
-        toast.error(result.error || "Erreur lors de la suppression");
+    startDeleteTransition(async () => {
+      try {
+        const result = await deleteBannerGradient(id);
+        if (result.success) {
+          onGradientDeleted(id);
+          toast.success("Dégradé supprimé");
+        } else {
+          toast.error(result.error || "Erreur lors de la suppression");
+        }
+      } finally {
+        setDeletingId(null);
       }
-    } finally {
-      setDeletingId(null);
-    }
+    });
   }
 
   return (
@@ -151,7 +156,7 @@ export function GradientPicker({
                   aria-label={`Supprimer ${g.name}`}
                   className="shrink-0 text-muted-foreground hover:text-destructive"
                 >
-                  ×
+                  <HugeiconsIcon icon={Cancel01Icon} size={12} />
                 </Button>
               </div>
             ))}
