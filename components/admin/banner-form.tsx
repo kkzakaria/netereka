@@ -98,6 +98,21 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
 
   return (
     <form action={handleSubmit}>
+      {/* Full-width sticky preview */}
+      <div className="sticky top-0 z-10 bg-background pb-4">
+        <BannerPreview
+          title={title}
+          subtitle={subtitle}
+          badgeText={badgeText}
+          badgeColor={badgeColor}
+          price={price !== "" ? Number(price) : null}
+          imageUrl={imagePreview}
+          bgFrom={bgFrom}
+          bgTo={bgTo}
+          ctaText={ctaText}
+        />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           {/* Informations */}
@@ -328,21 +343,6 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
               </div>
             </CardContent>
           </Card>
-
-          {/* Live preview — sticky */}
-          <div className="lg:sticky lg:top-6">
-            <BannerPreview
-              title={title}
-              subtitle={subtitle}
-              badgeText={badgeText}
-              badgeColor={badgeColor}
-              price={price !== "" ? Number(price) : null}
-              imageUrl={imagePreview}
-              bgFrom={bgFrom}
-              bgTo={bgTo}
-              ctaText={ctaText}
-            />
-          </div>
 
           <Button type="submit" className="w-full" disabled={isPending}>
             {isPending
