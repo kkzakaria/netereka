@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +17,7 @@ interface SectionNavProps {
 
 export function SectionNav({ sections, submitLabel, isPending }: SectionNavProps) {
   const [activeSection, setActiveSection] = useState(sections[0]?.id ?? "");
+  const intersectingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const elements = sections
@@ -25,16 +26,23 @@ export function SectionNav({ sections, submitLabel, isPending }: SectionNavProps
 
     if (elements.length === 0) return;
 
+    const scrollContainer = document.querySelector("main");
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            setActiveSection(entry.target.id);
-            break;
+            intersectingRef.current.add(entry.target.id);
+          } else {
+            intersectingRef.current.delete(entry.target.id);
           }
         }
+        // Among all visible sections, pick the last one in document order
+        // (the one furthest down = most recently scrolled into view)
+        const last = sections.findLast((s) => intersectingRef.current.has(s.id));
+        if (last) setActiveSection(last.id);
       },
-      { rootMargin: "-80px 0px -60% 0px", threshold: 0 }
+      { root: scrollContainer, rootMargin: "-80px 0px -20% 0px", threshold: 0 }
     );
 
     for (const el of elements) observer.observe(el);
@@ -42,6 +50,7 @@ export function SectionNav({ sections, submitLabel, isPending }: SectionNavProps
   }, [sections]);
 
   function scrollToSection(id: string) {
+    setActiveSection(id);
     const el = document.getElementById(id);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
