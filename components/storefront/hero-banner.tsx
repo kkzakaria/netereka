@@ -164,7 +164,7 @@ export function HeroBanner({
 
                 {/* Image */}
                 {slide.image_url && (
-                  <div className="relative mx-auto h-[180px] w-full sm:h-[280px] lg:h-[360px]">
+                  <div className="relative mx-auto aspect-square h-[180px] sm:h-[280px] lg:h-[360px]">
                     <Image
                       src={getImageUrl(slide.image_url)}
                       alt={slide.title}
