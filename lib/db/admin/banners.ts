@@ -16,5 +16,5 @@ export async function getBannerById(id: number): Promise<Banner | undefined> {
 
 export async function getSavedGradients(): Promise<BannerGradient[]> {
   const db = await getDrizzle();
-  return db.select().from(bannerGradients).orderBy(asc(bannerGradients.id)) as unknown as BannerGradient[];
+  return db.select().from(bannerGradients).orderBy(asc(bannerGradients.id)).limit(50) as unknown as BannerGradient[];
 }

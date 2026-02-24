@@ -169,8 +169,9 @@ export function GradientPicker({
         <Label>Couleur libre</Label>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <span className="text-xs text-muted-foreground">Début</span>
+            <label htmlFor="color-from" className="text-xs text-muted-foreground">Début</label>
             <input
+              id="color-from"
               type="color"
               name="bg_gradient_from"
               value={colorFrom}
@@ -179,8 +180,9 @@ export function GradientPicker({
             />
           </div>
           <div className="space-y-1">
-            <span className="text-xs text-muted-foreground">Fin</span>
+            <label htmlFor="color-to" className="text-xs text-muted-foreground">Fin</label>
             <input
+              id="color-to"
               type="color"
               name="bg_gradient_to"
               value={colorTo}

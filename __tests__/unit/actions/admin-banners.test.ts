@@ -483,11 +483,12 @@ describe("deleteBannerGradient", () => {
     mocks.getSession.mockResolvedValue(mockAdminSession);
   });
 
-  function mockDeleteSuccess() {
-    const whereMock = vi.fn().mockResolvedValue(undefined);
+  function mockDeleteSuccess(returning: object[] = [{ id: 5 }]) {
+    const returningMock = vi.fn().mockResolvedValue(returning);
+    const whereMock = vi.fn().mockReturnValue({ returning: returningMock });
     mocks.dbDelete.mockReturnValue({ where: whereMock });
     mocks.getDrizzle.mockResolvedValue({ delete: mocks.dbDelete });
-    return whereMock;
+    return { whereMock, returningMock };
   }
 
   it("redirige si non admin", async () => {
@@ -514,9 +515,18 @@ describe("deleteBannerGradient", () => {
     expect(mocks.dbDelete).toHaveBeenCalled();
   });
 
+  it("retourne une erreur si le gradient est introuvable (returning vide)", async () => {
+    mockDeleteSuccess([]);
+    const result = await deleteBannerGradient(99);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("introuvable");
+  });
+
   it("retourne une erreur si la suppression DB échoue", async () => {
     mocks.dbDelete.mockReturnValue({
-      where: vi.fn().mockRejectedValue(new Error("D1 delete error")),
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockRejectedValue(new Error("D1 delete error")),
+      }),
     });
     mocks.getDrizzle.mockResolvedValue({ delete: mocks.dbDelete });
     const result = await deleteBannerGradient(5);

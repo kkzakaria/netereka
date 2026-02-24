@@ -372,7 +372,13 @@ export async function deleteBannerGradient(id: number): Promise<ActionResult> {
 
   try {
     const db = await getDrizzle();
-    await db.delete(bannerGradients).where(eq(bannerGradients.id, id));
+    const deleted = await db.delete(bannerGradients)
+      .where(eq(bannerGradients.id, id))
+      .returning({ id: bannerGradients.id });
+
+    if (deleted.length === 0) {
+      return { success: false, error: "Dégradé introuvable" };
+    }
     revalidatePath("/banners");
     return { success: true };
   } catch (error) {
