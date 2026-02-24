@@ -26,13 +26,13 @@ import {
   setBannerImageUrl,
 } from "@/actions/admin/banners";
 import dynamic from "next/dynamic";
+import type { BannerTextResult } from "@/lib/ai/schemas";
 import { AiGenerateButton } from "./ai-generate-button";
 import { generateBannerText } from "@/actions/admin/ai";
 import { GradientPicker } from "./gradient-picker";
 import { BannerPreview } from "./banner-preview";
 
 const AiImageDialog = dynamic(() => import("./ai-image-dialog").then((m) => m.AiImageDialog));
-import type { BannerTextResult } from "@/lib/ai/schemas";
 
 interface BannerFormProps {
   banner?: Banner | null;

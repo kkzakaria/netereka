@@ -16,6 +16,13 @@ interface BannerPreviewProps {
   ctaText: string;
 }
 
+const decorativeOrbs = (
+  <>
+    <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#00FF9C]/10 blur-2xl" />
+    <div className="pointer-events-none absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-white/5 blur-xl" />
+  </>
+);
+
 const badgeColorMap: Record<BadgeColor, string> = {
   mint: "bg-emerald-500/20 text-emerald-300",
   red: "bg-red-500/20 text-red-300",
@@ -44,8 +51,7 @@ export function BannerPreview({
         style={{ background: `linear-gradient(135deg, ${bgFrom}, ${bgTo})` }}
       >
         {/* Decorative orbs */}
-        <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#00FF9C]/10 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-white/5 blur-xl" />
+        {decorativeOrbs}
 
         <div className="grid h-full grid-cols-2 items-center gap-2 px-3 py-3">
           {/* Text glass card */}

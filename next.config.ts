@@ -6,7 +6,7 @@ initOpenNextCloudflareForDev({ configPath: "wrangler.dev.jsonc" });
 const nextConfig: NextConfig = {
   experimental: {
     inlineCss: true,
-    optimizePackageImports: ["@hugeicons/core-free-icons"],
+    optimizePackageImports: ["@hugeicons/core-free-icons", "@hugeicons/react"],
     serverActions: {
       bodySizeLimit: "6mb",
     },
