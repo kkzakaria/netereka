@@ -123,13 +123,13 @@ export function HeroBanner({
               <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#00FF9C]/10 blur-3xl" />
               <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
 
-              <div className="grid h-full items-center gap-6 px-6 py-8 sm:grid-cols-2 sm:py-12">
+              <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
                 {/* Text content with glass card */}
-                <div className="rounded-2xl border border-white/20 bg-white/10 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
+                <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
                   {slide.badge_text && (
                     <span
                       className={cn(
-                        "mb-3 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide",
+                        "mb-2 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide sm:mb-3",
                         badgeColorMap[slide.badge_color]
                       )}
                     >
@@ -137,25 +137,25 @@ export function HeroBanner({
                     </span>
                   )}
 
-                  <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
+                  <h2 className="text-lg font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
                     {slide.title}
                   </h2>
 
                   {slide.subtitle && (
-                    <p className="mt-2 text-sm text-white/70 sm:text-base">
+                    <p className="mt-2 hidden text-sm text-white/70 sm:block sm:text-base">
                       {slide.subtitle}
                     </p>
                   )}
 
                   {slide.price != null && (
-                    <p className="mt-3 text-lg font-semibold text-emerald-300">
+                    <p className="mt-2 text-sm font-semibold text-emerald-300 sm:mt-3 sm:text-lg">
                       {formatPrice(slide.price)}
                     </p>
                   )}
 
                   <Link
                     href={slide.link_url}
-                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold transition-opacity hover:opacity-90"
+                    className="mt-2 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 sm:mt-4 sm:px-6 sm:py-3 sm:text-sm"
                     style={{ color: slide.bg_from }}
                   >
                     {slide.cta_text}
@@ -164,13 +164,13 @@ export function HeroBanner({
 
                 {/* Image */}
                 {slide.image_url && (
-                  <div className="relative mx-auto aspect-square h-[180px] sm:h-[280px] lg:h-[360px]">
+                  <div className="relative mx-auto h-[160px] w-full sm:aspect-square sm:h-[280px] lg:h-[360px]">
                     <Image
                       src={getImageUrl(slide.image_url)}
                       alt={slide.title}
                       fill
                       className="object-contain"
-                      sizes="(max-width: 640px) 80vw, (max-width: 1024px) 45vw, 40vw"
+                      sizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
                       {...(i === 0
                         ? { priority: true, fetchPriority: "high" as const }
                         : { loading: "lazy" as const })}
