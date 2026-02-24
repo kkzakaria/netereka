@@ -49,6 +49,7 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
   const [bgTo, setBgTo] = useState(banner?.bg_gradient_to ?? "#1E4A8F");
   const [price, setPrice] = useState<string>(banner?.price != null ? String(banner.price) : "");
   const [imagePreview, setImagePreview] = useState<string | null>(banner?.image_url ?? null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   // Saved gradients with optimistic updates
   const [savedGradients, setSavedGradients] = useState<BannerGradient[]>(initialGradients);
@@ -61,6 +62,11 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
           : await createBanner(formData);
 
         if (result.success) {
+          if (!isEdit && result.id && pendingFile) {
+            const fileFormData = new FormData();
+            fileFormData.append("file", pendingFile);
+            await uploadBannerImage(Number(result.id), fileFormData);
+          }
           toast.success(isEdit ? "Bannière mise à jour" : "Bannière créée");
           if (!isEdit && result.id) {
             router.push(`/banners/${result.id}/edit`);
@@ -72,6 +78,13 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
         toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
       }
     });
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPendingFile(file);
+    setImagePreview(URL.createObjectURL(file));
   }
 
   function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -106,7 +119,7 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
           badgeText={badgeText}
           badgeColor={badgeColor}
           price={price !== "" ? Number(price) : null}
-          imageUrl={imagePreview}
+          imageUrl={imagePreview ? (imagePreview.startsWith("blob:") ? imagePreview : getImageUrl(imagePreview)) : null}
           bgFrom={bgFrom}
           bgTo={bgTo}
           ctaText={ctaText}
@@ -240,39 +253,31 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
               <CardTitle>Image</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {isEdit ? (
-                <>
-                  {imagePreview && (
-                    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-lg border">
-                      <Image
-                        src={getImageUrl(imagePreview)}
-                        alt={banner?.title ?? "Banner"}
-                        fill
-                        className="object-contain"
-                      />
-                    </div>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageUpload}
+              {imagePreview && (
+                <div className="relative aspect-[16/9] w-full overflow-hidden rounded-lg border">
+                  <Image
+                    src={isEdit ? getImageUrl(imagePreview) : imagePreview}
+                    alt={title || "Banner"}
+                    fill
+                    className="object-contain"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isPending}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {imagePreview ? "Changer l'image" : "Ajouter une image"}
-                  </Button>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Enregistrez d&apos;abord la bannière pour ajouter une image.
-                </p>
+                </div>
               )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={isEdit ? handleImageUpload : handleFileSelect}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {imagePreview ? "Changer l'image" : "Ajouter une image"}
+              </Button>
             </CardContent>
           </Card>
 
