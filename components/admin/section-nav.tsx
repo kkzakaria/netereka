@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -15,46 +15,56 @@ interface SectionNavProps {
   isPending: boolean;
 }
 
+// How far from the top of <main> a section header must be to become active
+const HEADER_OFFSET = 120;
+// How many px from max scroll is considered "near bottom"
+const NEAR_BOTTOM_PX = 50;
+
 export function SectionNav({ sections, submitLabel, isPending }: SectionNavProps) {
   const [activeSection, setActiveSection] = useState(sections[0]?.id ?? "");
-  const intersectingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const elements = sections
-      .map((s) => document.getElementById(s.id))
-      .filter(Boolean) as HTMLElement[];
+    const scrollEl = document.querySelector("main");
+    if (!scrollEl) return;
 
-    if (elements.length === 0) return;
+    function updateActive() {
+      const mainTop = scrollEl!.getBoundingClientRect().top;
+      const clientHeight = scrollEl!.clientHeight;
+      const isNearBottom =
+        scrollEl!.scrollTop >= scrollEl!.scrollHeight - clientHeight - NEAR_BOTTOM_PX;
 
-    const scrollContainer = document.querySelector("main");
+      // Default to first section so the nav always has an active item
+      let active = sections[0]?.id ?? "";
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            intersectingRef.current.add(entry.target.id);
-          } else {
-            intersectingRef.current.delete(entry.target.id);
-          }
+      for (const section of sections) {
+        const el = document.getElementById(section.id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const relTop = rect.top - mainTop;
+        const relBottom = rect.bottom - mainTop;
+
+        if (isNearBottom) {
+          // Near bottom: pick the last section still (partially) visible
+          if (relBottom > 0 && relTop < clientHeight) active = section.id;
+        } else {
+          // Normal: pick the last section whose top has passed the threshold
+          if (relTop <= HEADER_OFFSET) active = section.id;
         }
-        // Among all visible sections, pick the last one in document order
-        // (the one furthest down = most recently scrolled into view)
-        const last = sections.findLast((s) => intersectingRef.current.has(s.id));
-        if (last) setActiveSection(last.id);
-      },
-      { root: scrollContainer, rootMargin: "-80px 0px -20% 0px", threshold: 0 }
-    );
+      }
 
-    for (const el of elements) observer.observe(el);
-    return () => observer.disconnect();
+      setActiveSection(active);
+    }
+
+    scrollEl.addEventListener("scroll", updateActive, { passive: true });
+    updateActive(); // set correct state on mount
+
+    return () => scrollEl.removeEventListener("scroll", updateActive);
   }, [sections]);
 
   function scrollToSection(id: string) {
     setActiveSection(id);
     const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
