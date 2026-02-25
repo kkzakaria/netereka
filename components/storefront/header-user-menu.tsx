@@ -48,6 +48,7 @@ function UserAvatar({ user }: { user: NonNullable<User> }) {
         alt={user.name}
         width={32}
         height={32}
+        unoptimized
         className="size-8 rounded-full object-cover"
       />
     );
