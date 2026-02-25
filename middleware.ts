@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
 const AUTH_PATHS = ["/auth/"];
 const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
+const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { hostname, pathname } = request.nextUrl;
 
   // Redirect www → apex for SEO canonicalization
@@ -14,6 +16,21 @@ export function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.hostname = "netereka.ci";
     return NextResponse.redirect(url, 301);
+  }
+
+  // Add Link preload header for homepage LCP — browser starts hero image fetch at TTFB
+  if (pathname === "/") {
+    try {
+      const { env } = await getCloudflareContext();
+      const linkValue = await env.KV.get(KV_HERO_PRELOAD_KEY);
+      if (linkValue) {
+        const response = NextResponse.next();
+        response.headers.set("Link", linkValue);
+        return response;
+      }
+    } catch {
+      // KV unavailable (dev without wrangler bindings) — graceful degradation
+    }
   }
 
   const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
@@ -40,6 +57,7 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/account/:path*",
     "/checkout/:path*",
     "/auth/:path*",
