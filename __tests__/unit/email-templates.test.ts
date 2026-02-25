@@ -287,3 +287,28 @@ describe("orderStatusUpdateEmail", () => {
     expect(result!.html).not.toContain("<script>");
   });
 });
+
+// ─── otpEmail ───
+
+import { otpEmail } from "@/lib/notifications/templates";
+
+describe("otpEmail", () => {
+  it("retourne un sujet et un html pour email-verification", () => {
+    const { subject, html } = otpEmail({ otp: "123456", type: "email-verification" });
+    expect(subject).toBe("Vérifiez votre email - NETEREKA");
+    expect(html).toContain("123456");
+    expect(html).toContain("5 minutes");
+  });
+
+  it("retourne un sujet et un html pour forget-password", () => {
+    const { subject, html } = otpEmail({ otp: "654321", type: "forget-password" });
+    expect(subject).toBe("Réinitialisation de mot de passe - NETEREKA");
+    expect(html).toContain("654321");
+    expect(html).toContain("5 minutes");
+  });
+
+  it("échappe un OTP malformé", () => {
+    const { html } = otpEmail({ otp: "<xss>", type: "email-verification" });
+    expect(html).not.toContain("<xss>");
+  });
+});
