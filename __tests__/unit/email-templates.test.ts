@@ -3,6 +3,7 @@ import {
   escapeHtml,
   orderConfirmationEmail,
   orderStatusUpdateEmail,
+  otpEmail,
   type OrderEmailData,
   type StatusUpdateEmailData,
 } from "@/lib/notifications/templates";
@@ -289,8 +290,6 @@ describe("orderStatusUpdateEmail", () => {
 });
 
 // ─── otpEmail ───
-
-import { otpEmail } from "@/lib/notifications/templates";
 
 describe("otpEmail", () => {
   it("retourne un sujet et un html pour email-verification", () => {
