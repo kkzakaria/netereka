@@ -4,6 +4,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
 const AUTH_PATHS = ["/auth/"];
+// Auth paths accessible even when already signed in (post-signup/flow pages)
+const AUTH_NO_REDIRECT_PATHS = ["/auth/verify-email"];
 const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
@@ -48,7 +50,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // Has cookie on auth page → redirect to home (already signed in)
-  if (isAuthPath && hasCookie) {
+  // Exception: post-signup/flow pages that need to remain accessible with a session
+  const isNoRedirectAuthPath = AUTH_NO_REDIRECT_PATHS.some((p) => pathname.startsWith(p));
+  if (isAuthPath && hasCookie && !isNoRedirectAuthPath) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
