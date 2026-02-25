@@ -10,10 +10,18 @@ import {
 } from "@/lib/db/products";
 import type { Banner } from "@/lib/db/types";
 import { getActiveBanners } from "@/lib/db/storefront/banners";
+import { getImageUrl } from "@/lib/utils/images";
 import { CategoryNav } from "@/components/storefront/category-nav";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { TrustBadges } from "@/components/storefront/trust-badges";
+
+function heroCfSrcSet(src: string): string {
+  const path = src.startsWith("/") ? src.slice(1) : src;
+  return [256, 384, 640, 828, 1080]
+    .map((w) => `/cdn-cgi/image/width=${w},quality=75,format=auto/${path} ${w}w`)
+    .join(", ");
+}
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -51,33 +59,50 @@ export default async function HomePage() {
   const featuredCards = featured.map(toProductCardData);
   const latestCards = latest.map(toProductCardData);
 
+  const firstBannerSrc = activeBanners[0]?.image_url
+    ? getImageUrl(activeBanners[0].image_url)
+    : featuredCards[0]?.image_url
+      ? getImageUrl(featuredCards[0].image_url)
+      : null;
+
   return (
-    <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
-      <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
-      <HeroBanner banners={activeBanners} fallbackProducts={featuredCards.slice(0, 3)} />
-
-      <CategoryNav categories={categories} />
-
-      <HorizontalSection
-        title="Meilleures ventes"
-        products={featuredCards}
-      />
-
-      <HorizontalSection
-        title="Nouveautés"
-        products={latestCards}
-      />
-
-      {categorySections.map(({ category, products }) => (
-        <HorizontalSection
-          key={category.id}
-          title={category.name}
-          href={`/c/${category.slug}`}
-          products={products}
+    <>
+      {firstBannerSrc && (
+        <link
+          rel="preload"
+          as="image"
+          imageSrcSet={heroCfSrcSet(firstBannerSrc)}
+          imageSizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
+          fetchPriority="high"
         />
-      ))}
+      )}
+      <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
+        <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
+        <HeroBanner banners={activeBanners} fallbackProducts={featuredCards.slice(0, 3)} />
 
-      <TrustBadges />
-    </div>
+        <CategoryNav categories={categories} />
+
+        <HorizontalSection
+          title="Meilleures ventes"
+          products={featuredCards}
+        />
+
+        <HorizontalSection
+          title="Nouveautés"
+          products={latestCards}
+        />
+
+        {categorySections.map(({ category, products }) => (
+          <HorizontalSection
+            key={category.id}
+            title={category.name}
+            href={`/c/${category.slug}`}
+            products={products}
+          />
+        ))}
+
+        <TrustBadges />
+      </div>
+    </>
   );
 }
