@@ -82,7 +82,9 @@ export async function initAuth() {
           });
           const result = await sendEmail({ to: email, subject, html });
           if (!result.success) {
-            console.error(`[auth] Failed to send OTP email to ${email} (type=${type}): ${result.error}`);
+            // Throw so better-auth returns an error to the client — the OTP must not be
+            // considered sent if the email was not delivered (sendEmail already logs the error).
+            throw new Error(`Failed to send OTP email (type=${type}): ${result.error}`);
           }
         },
         otpLength: 6,

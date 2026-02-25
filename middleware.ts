@@ -27,8 +27,11 @@ export async function middleware(request: NextRequest) {
         response.headers.set("Link", linkValue);
         return response;
       }
-    } catch {
-      // KV unavailable (dev without wrangler bindings) — graceful degradation
+    } catch (err) {
+      // Expected in local dev without wrangler bindings; should not fire in production.
+      if (process.env.NODE_ENV === "production") {
+        console.error("[middleware] KV read failed for hero preload header:", err);
+      }
     }
   }
 
@@ -53,7 +56,6 @@ export const config = {
     "/",
     "/account/:path*",
     "/checkout/:path*",
-    "/auth/:path*",
     "/dashboard/:path*",
     "/products/:path*",
     "/orders/:path*",
