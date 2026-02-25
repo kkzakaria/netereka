@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "NETEREKA_Homepage_Concept.jsx",
+    "scripts/**",
   ]),
 ]);
 
