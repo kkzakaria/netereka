@@ -10,8 +10,8 @@ export async function sendEmail(params: {
     const env = await getEnv();
 
     if (!env.RESEND_API_KEY) {
-      console.warn("[email] RESEND_API_KEY not configured, skipping email");
-      return { success: true };
+      console.error("[email] RESEND_API_KEY not configured — email not sent");
+      return { success: false, error: "RESEND_API_KEY not configured" };
     }
 
     const resend = new Resend(env.RESEND_API_KEY);
