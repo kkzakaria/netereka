@@ -3,9 +3,8 @@ import type { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
-const AUTH_PATHS = ["/auth/"];
-// Auth paths accessible even when already signed in (post-signup/flow pages)
-const AUTH_NO_REDIRECT_PATHS = ["/auth/verify-email"];
+// Pages that redirect to / when already signed in (explicitly listed, not prefix-matched)
+const GUEST_ONLY_PATHS = ["/auth/sign-in", "/auth/sign-up", "/auth/forgot-password", "/auth/reset-password"];
 const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
@@ -35,10 +34,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
+  const isGuestOnlyPath = GUEST_ONLY_PATHS.some((p) => pathname.startsWith(p));
   const isProtectedPath = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
 
-  if (!isAuthPath && !isProtectedPath) return NextResponse.next();
+  if (!isGuestOnlyPath && !isProtectedPath) return NextResponse.next();
 
   const hasCookie = request.cookies.has(SESSION_COOKIE) || request.cookies.has(SECURE_SESSION_COOKIE);
 
@@ -49,10 +48,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(signInUrl);
   }
 
-  // Has cookie on auth page → redirect to home (already signed in)
-  // Exception: post-signup/flow pages that need to remain accessible with a session
-  const isNoRedirectAuthPath = AUTH_NO_REDIRECT_PATHS.some((p) => pathname.startsWith(p));
-  if (isAuthPath && hasCookie && !isNoRedirectAuthPath) {
+  // Already signed in on a guest-only page → redirect to home
+  if (isGuestOnlyPath && hasCookie) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
