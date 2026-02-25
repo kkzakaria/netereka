@@ -26,6 +26,14 @@ function VerifyEmailForm() {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
 
+  if (!email) {
+    return (
+      <p className="text-sm text-muted-foreground text-center py-4">
+        Lien invalide. Retournez à la page d&apos;inscription.
+      </p>
+    );
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");

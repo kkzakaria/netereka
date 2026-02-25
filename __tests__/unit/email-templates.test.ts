@@ -310,4 +310,11 @@ describe("otpEmail", () => {
     const { html } = otpEmail({ otp: "<xss>", type: "email-verification" });
     expect(html).not.toContain("<xss>");
   });
+
+  it("inclut le message de confidentialité pour email-verification uniquement", () => {
+    const { html: htmlVerif } = otpEmail({ otp: "111111", type: "email-verification" });
+    const { html: htmlReset } = otpEmail({ otp: "222222", type: "forget-password" });
+    expect(htmlVerif).toContain("Ne le partagez");
+    expect(htmlReset).not.toContain("Ne le partagez");
+  });
 });

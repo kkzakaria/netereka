@@ -54,7 +54,7 @@ export async function initAuth() {
       customRules: {
         "/sign-in/email": { window: 60, max: 5 },
         "/sign-up/email": { window: 60, max: 5 },
-        "/forgot-password": { window: 60, max: 3 },
+        "/email-otp/send-verification-otp": { window: 60, max: 3 },
       },
     },
     session: {

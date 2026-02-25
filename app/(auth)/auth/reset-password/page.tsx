@@ -60,6 +60,8 @@ function ResetPasswordForm() {
       } else {
         router.push("/auth/sign-in");
       }
+    } catch {
+      setError("Une erreur réseau est survenue. Réessayez.");
     } finally {
       setLoading(false);
     }
