@@ -1,8 +1,10 @@
 import { betterAuth } from "better-auth";
-import { captcha } from "better-auth/plugins";
+import { captcha, emailOTP } from "better-auth/plugins";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
+import { sendEmail } from "@/lib/notifications/email";
+import { otpEmail } from "@/lib/notifications/templates";
 
 export async function initAuth() {
   const { env } = await getCloudflareContext();
@@ -66,6 +68,21 @@ export async function initAuth() {
       captcha({
         provider: "cloudflare-turnstile",
         secretKey: cfEnv.TURNSTILE_SECRET_KEY,
+      }),
+      emailOTP({
+        sendVerificationOTP: async ({ email, otp, type }) => {
+          if (type === "sign-in") return;
+          const { subject, html } = otpEmail({
+            otp,
+            type: type as "email-verification" | "forget-password",
+          });
+          await sendEmail({ to: email, subject, html });
+        },
+        otpLength: 6,
+        expiresIn: 300,
+        allowedAttempts: 3,
+        sendVerificationOnSignUp: true,
+        overrideDefaultEmailVerification: true,
       }),
     ],
     trustedOrigins: [
