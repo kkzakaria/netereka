@@ -53,7 +53,8 @@ npm run db:seed-catalogue  # Seed product catalogue
 - `app/(storefront)/` — Public store: home, products (`/p/[slug]`), categories (`/c/[slug]`), cart, checkout, account, search, contact, static pages (`/a-propos`, `/faq`, `/livraison`, `/conditions-generales`)
 - `app/(admin)/` — Protected admin: dashboard, products CRUD, categories, orders, customers, users, audit-log
 - `app/(admin-auth)/` — Admin login page (separate layout, no admin sidebar)
-- `app/(auth)/` — Customer auth: sign-in, sign-up, forgot-password, reset-password (no header/footer)
+- `app/(auth)/` — Customer auth: sign-in, sign-up, forgot-password, reset-password (no header/footer); layout calls `requireGuest()` — guest-only
+- `app/(no-guard)/auth/` — Auth pages accessible to authenticated users (e.g. verify-email); no `requireGuest()` guard; must set `robots: noindex` + `force-dynamic`
 - `app/api/auth/[...all]/` — better-auth API routes
 
 ### Key Directories
@@ -146,6 +147,8 @@ Wrangler config: `wrangler.jsonc` (not `.toml`).
 ## Gotchas
 
 - **Pre-commit hook (Husky):** Runs `tsc --noEmit` + `eslint` + `vitest run` before every commit. Fix all type, lint, and test errors before committing — the hook blocks commits on failure.
+- **better-auth creates a session on sign-up** (before OTP email verification) — verify-email must live in `(no-guard)`, not `(auth)`, or authenticated users get 307-redirected to `/`.
+- **`sendVerificationOTP` must throw on email failure** — returning normally tells better-auth the OTP was sent; user reaches the OTP page but never receives a code.
 - **Bash and route groups:** Paths with parentheses like `app/(admin)/...` must be quoted in bash commands (e.g., `git add "app/(admin)/file.tsx"`), otherwise the shell interprets them as subshells.
 - **Local D1 bootstrap:** Before `npm run db:studio` works, you must initialize the local D1 SQLite file first: `npx wrangler d1 execute netereka-db --local --command "SELECT 1"`. Then run `npm run db:migrate` and the seed scripts.
 - **SEO files:** `app/robots.ts` and `app/sitemap.ts` generate SEO metadata dynamically.
@@ -162,6 +165,8 @@ Server config in `lib/auth/index.ts`, client in `lib/auth/client.ts`, guards in 
 - **Roles:** `"customer"`, `"admin"`, `"super_admin"` — checked in `requireAdmin()`
 - **Session:** 7-day expiry, 5-minute cookie cache
 - **Rate limiting:** 30 req/min general, 5/min for sign-in/sign-up, 3/min for forgot-password
+
+**Middleware scope:** Only enforces `PROTECTED_PATHS` (unauthenticated → redirect to sign-in). Does NOT redirect authenticated users away from auth pages — that is solely the responsibility of `requireGuest()` in the `(auth)` layout.
 
 **Auth guards** (use in Server Components and Server Actions):
 - `requireAuth()` — Redirects to `/auth/sign-in` if not authenticated
