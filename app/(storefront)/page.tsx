@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { preload } from "react-dom";
 import type { Metadata } from "next";
 import { getTopLevelCategories } from "@/lib/db/categories";
 import {
@@ -65,44 +66,44 @@ export default async function HomePage() {
       ? getImageUrl(featuredCards[0].image_url)
       : null;
 
+  // Preload first banner image — preload() injects into <head> in SSR HTML,
+  // unlike JSX <link> which renders inline in <body> (too late for browser discovery).
+  if (firstBannerSrc) {
+    preload(firstBannerSrc, {
+      as: "image",
+      imageSrcSet: heroCfSrcSet(firstBannerSrc),
+      imageSizes: "(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw",
+      fetchPriority: "high",
+    });
+  }
+
   return (
-    <>
-      {firstBannerSrc && (
-        <link
-          rel="preload"
-          as="image"
-          imageSrcSet={heroCfSrcSet(firstBannerSrc)}
-          imageSizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
-          fetchPriority="high"
-        />
-      )}
-      <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
-        <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
-        <HeroBanner banners={activeBanners} fallbackProducts={featuredCards.slice(0, 3)} />
+    <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
+      <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
+      <HeroBanner banners={activeBanners} fallbackProducts={featuredCards.slice(0, 3)} />
 
-        <CategoryNav categories={categories} />
+      <CategoryNav categories={categories} />
 
+      <HorizontalSection
+        title="Meilleures ventes"
+        products={featuredCards}
+      />
+
+      <HorizontalSection
+        title="Nouveautés"
+        products={latestCards}
+      />
+
+      {categorySections.map(({ category, products }) => (
         <HorizontalSection
-          title="Meilleures ventes"
-          products={featuredCards}
+          key={category.id}
+          title={category.name}
+          href={`/c/${category.slug}`}
+          products={products}
         />
+      ))}
 
-        <HorizontalSection
-          title="Nouveautés"
-          products={latestCards}
-        />
-
-        {categorySections.map(({ category, products }) => (
-          <HorizontalSection
-            key={category.id}
-            title={category.name}
-            href={`/c/${category.slug}`}
-            products={products}
-          />
-        ))}
-
-        <TrustBadges />
-      </div>
-    </>
+      <TrustBadges />
+    </div>
   );
 }
