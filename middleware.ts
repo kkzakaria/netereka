@@ -3,8 +3,6 @@ import type { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
-// Pages that redirect to / when already signed in (explicitly listed, not prefix-matched)
-const GUEST_ONLY_PATHS = ["/auth/sign-in", "/auth/sign-up", "/auth/forgot-password", "/auth/reset-password"];
 const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
@@ -34,23 +32,17 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const isGuestOnlyPath = GUEST_ONLY_PATHS.some((p) => pathname.startsWith(p));
   const isProtectedPath = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
 
-  if (!isGuestOnlyPath && !isProtectedPath) return NextResponse.next();
+  if (!isProtectedPath) return NextResponse.next();
 
   const hasCookie = request.cookies.has(SESSION_COOKIE) || request.cookies.has(SECURE_SESSION_COOKIE);
 
   // No cookie on protected page → redirect to sign-in
-  if (isProtectedPath && !hasCookie) {
+  if (!hasCookie) {
     const signInUrl = new URL("/auth/sign-in", request.url);
     signInUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(signInUrl);
-  }
-
-  // Already signed in on a guest-only page → redirect to home
-  if (isGuestOnlyPath && hasCookie) {
-    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();
