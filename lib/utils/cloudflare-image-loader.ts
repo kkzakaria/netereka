@@ -7,7 +7,7 @@ export default function cloudflareImageLoader({
   width: number;
   quality?: number;
 }): string {
-  if (process.env.NODE_ENV === "development" || src.startsWith("http://") || src.startsWith("https://")) {
+  if (process.env.NODE_ENV === "development") {
     return src;
   }
 
