@@ -5,6 +5,7 @@ export async function sendEmail(params: {
   to: string;
   subject: string;
   html: string;
+  from?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const env = await getEnv();
@@ -15,7 +16,7 @@ export async function sendEmail(params: {
     }
 
     const resend = new Resend(env.RESEND_API_KEY);
-    const from = env.RESEND_FROM_EMAIL || "NETEREKA <commandes@netereka.ci>";
+    const from = params.from ?? env.RESEND_FROM_EMAIL ?? "NETEREKA <commandes@netereka.ci>";
 
     const { error } = await resend.emails.send({
       from,

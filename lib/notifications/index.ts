@@ -15,7 +15,7 @@ export async function notifyOrderConfirmation(
   data: OrderEmailData
 ): Promise<void> {
   const { subject, html } = orderConfirmationEmail(data);
-  const result = await sendEmail({ to: customerEmail, subject, html });
+  const result = await sendEmail({ to: customerEmail, subject, html, from: "NETEREKA <commandes@netereka.ci>" });
   if (!result.success) {
     console.error(
       `[notifications] Failed to send order confirmation for ${data.orderNumber}:`,
@@ -39,6 +39,7 @@ export async function notifyOrderStatusUpdate(
     to: customerEmail,
     subject: email.subject,
     html: email.html,
+    from: "NETEREKA <commandes@netereka.ci>",
   });
   if (!result.success) {
     console.error(

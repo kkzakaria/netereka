@@ -80,7 +80,7 @@ export async function initAuth() {
             otp,
             type: type as "email-verification" | "forget-password",
           });
-          const result = await sendEmail({ to: email, subject, html });
+          const result = await sendEmail({ to: email, subject, html, from: "NETEREKA <noreply@netereka.ci>" });
           if (!result.success) {
             // Throw so better-auth returns an error to the client — the OTP must not be
             // considered sent if the email was not delivered (sendEmail already logs the error).
