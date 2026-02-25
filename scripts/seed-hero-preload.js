@@ -45,7 +45,7 @@ const linkValue = `<${cfUrl(384)}>; rel=preload; as=image; fetchpriority=high; i
 try {
   execFileSync(
     wrangler,
-    ["kv", "key", "put", "--binding", "KV", "hero:lcp:preload-url", linkValue],
+    ["kv", "key", "put", "--remote", "--binding", "KV", "hero:lcp:preload-url", linkValue],
     { stdio: "inherit" }
   );
   console.log("[seed-hero-preload] KV seeded:", cfUrl(384).slice(0, 80) + "...");
