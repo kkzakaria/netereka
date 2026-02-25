@@ -59,7 +59,14 @@ export function TurnstileCaptcha({ onVerify, onExpire, onError }: TurnstileCaptc
     };
   }, []);
 
-  if (!TURNSTILE_SITE_KEY) return null;
+  if (!TURNSTILE_SITE_KEY) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error(
+        "[TurnstileCaptcha] NEXT_PUBLIC_TURNSTILE_SITE_KEY is not set. Auth forms will not work."
+      );
+    }
+    return null;
+  }
 
   return (
     <>

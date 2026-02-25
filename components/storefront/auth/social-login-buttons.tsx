@@ -53,31 +53,45 @@ const providers: { id: Provider; label: string; icon: React.ReactNode }[] = [
 
 export function SocialLoginButtons() {
   const [loading, setLoading] = useState<Provider | null>(null);
+  const [serverError, setServerError] = useState("");
 
   const handleSocial = async (provider: Provider) => {
     setLoading(provider);
+    setServerError("");
     try {
-      await authClient.signIn.social({ provider, callbackURL: "/" });
-    } catch {
+      const { error } = await authClient.signIn.social({ provider, callbackURL: "/" });
+      if (error) {
+        console.error("[social-login] provider error:", provider, error);
+        setServerError("La connexion avec ce service a échoué. Veuillez réessayer.");
+        setLoading(null);
+      }
+    } catch (err) {
+      console.error("[social-login] unexpected error:", provider, err);
+      setServerError("Une erreur réseau est survenue. Réessayez.");
       setLoading(null);
     }
   };
 
   return (
-    <div className="flex gap-3">
-      {providers.map(({ id, label, icon }) => (
-        <Button
-          key={id}
-          type="button"
-          variant="outline"
-          className="flex-1 h-11"
-          disabled={loading !== null}
-          onClick={() => handleSocial(id)}
-        >
-          {icon}
-          <span className="sr-only">{label}</span>
-        </Button>
-      ))}
+    <div className="grid gap-2">
+      <div className="flex gap-3">
+        {providers.map(({ id, label, icon }) => (
+          <Button
+            key={id}
+            type="button"
+            variant="outline"
+            className="flex-1 h-11"
+            disabled={loading !== null}
+            onClick={() => handleSocial(id)}
+          >
+            {icon}
+            <span className="sr-only">{label}</span>
+          </Button>
+        ))}
+      </div>
+      {serverError ? (
+        <p className="text-sm text-destructive">{serverError}</p>
+      ) : null}
     </div>
   );
 }
