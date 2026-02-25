@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
@@ -23,14 +23,14 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   const resetCaptcha = () => {
     setCaptchaToken("");
     setCaptchaKey((k) => k + 1);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -39,31 +39,29 @@ export default function ForgotPasswordPage() {
       return;
     }
 
-    setLoading(true);
+    startTransition(async () => {
+      try {
+        const { error } = await authClient.emailOtp.sendVerificationOtp({
+          email,
+          type: "forget-password",
+          fetchOptions: {
+            headers: { "x-captcha-response": captchaToken },
+          },
+        });
 
-    try {
-      const { error } = await authClient.emailOtp.sendVerificationOtp({
-        email,
-        type: "forget-password",
-        fetchOptions: {
-          headers: { "x-captcha-response": captchaToken },
-        },
-      });
-
-      if (error) {
+        if (error) {
+          resetCaptcha();
+          setError(
+            errorTextMessages[error.message ?? ""] ?? "Une erreur est survenue."
+          );
+        } else {
+          router.push(`/auth/reset-password?email=${encodeURIComponent(email)}`);
+        }
+      } catch {
         resetCaptcha();
-        setError(
-          errorTextMessages[error.message ?? ""] ?? "Une erreur est survenue."
-        );
-      } else {
-        router.push(`/auth/reset-password?email=${encodeURIComponent(email)}`);
+        setError("Une erreur réseau est survenue. Réessayez.");
       }
-    } catch {
-      resetCaptcha();
-      setError("Une erreur réseau est survenue. Réessayez.");
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   return (
@@ -98,12 +96,12 @@ export default function ForgotPasswordPage() {
           onExpire={() => setCaptchaToken("")}
         />
 
-        {error && (
+        {error ? (
           <p className="text-sm text-destructive">{error}</p>
-        )}
+        ) : null}
 
-        <Button type="submit" className="h-11 w-full" disabled={loading}>
-          {loading ? "Envoi..." : "Envoyer le code"}
+        <Button type="submit" className="h-11 w-full" disabled={isPending}>
+          {isPending ? "Envoi..." : "Envoyer le code"}
         </Button>
       </form>
     </AuthCard>

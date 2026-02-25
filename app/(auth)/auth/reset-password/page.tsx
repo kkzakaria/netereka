@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { authClient } from "@/lib/auth/client";
+
+// rule 7.9: hoist RegExp outside component to avoid re-creation on every render
+const DIGITS_ONLY = /\D/g;
 
 const errorMessages: Record<string, string> = {
   INVALID_OTP: "Code incorrect. Vérifiez le code reçu.",
@@ -26,9 +29,9 @@ function ResetPasswordForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -42,29 +45,27 @@ function ResetPasswordForm() {
       return;
     }
 
-    setLoading(true);
+    startTransition(async () => {
+      try {
+        const { error } = await authClient.emailOtp.resetPassword({
+          email,
+          otp,
+          password,
+        });
 
-    try {
-      const { error } = await authClient.emailOtp.resetPassword({
-        email,
-        otp,
-        password,
-      });
-
-      if (error) {
-        setError(
-          errorMessages[error.code ?? ""] ??
-            errorMessages[error.message ?? ""] ??
-            "Une erreur est survenue. Veuillez réessayer."
-        );
-      } else {
-        router.push("/auth/sign-in");
+        if (error) {
+          setError(
+            errorMessages[error.code ?? ""] ??
+              errorMessages[error.message ?? ""] ??
+              "Une erreur est survenue. Veuillez réessayer."
+          );
+        } else {
+          router.push("/auth/sign-in");
+        }
+      } catch {
+        setError("Une erreur réseau est survenue. Réessayez.");
       }
-    } catch {
-      setError("Une erreur réseau est survenue. Réessayez.");
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   return (
@@ -80,7 +81,7 @@ function ResetPasswordForm() {
           className="h-9 text-center tracking-widest text-lg font-mono"
           required
           value={otp}
-          onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => setOtp(e.target.value.replace(DIGITS_ONLY, ""))}
         />
       </div>
 
@@ -108,12 +109,12 @@ function ResetPasswordForm() {
         />
       </div>
 
-      {error && (
+      {error ? (
         <p className="text-sm text-destructive">{error}</p>
-      )}
+      ) : null}
 
-      <Button type="submit" className="h-11 w-full" disabled={loading}>
-        {loading ? "Réinitialisation..." : "Réinitialiser"}
+      <Button type="submit" className="h-11 w-full" disabled={isPending}>
+        {isPending ? "Réinitialisation..." : "Réinitialiser"}
       </Button>
     </form>
   );
