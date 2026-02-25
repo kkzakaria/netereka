@@ -262,3 +262,40 @@ export function orderStatusUpdateEmail(data: StatusUpdateEmailData): {
     html: layout(config.title, body),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Template: OTP (email-verification | forget-password)
+// Note: sign-in OTPs are suppressed in lib/auth/index.ts before reaching this function.
+// ---------------------------------------------------------------------------
+
+export function otpEmail(data: {
+  otp: string;
+  type: "email-verification" | "forget-password";
+}): { subject: string; html: string } {
+  const isVerification = data.type === "email-verification";
+  const title = isVerification
+    ? "Vérifiez votre email"
+    : "Réinitialisation de mot de passe";
+  const subject = `${title} - NETEREKA`;
+  const escapedOtp = escapeHtml(data.otp);
+
+  const body = `
+    <h1 style="margin:0 0 8px;font-size:20px;color:${BRAND_NAVY};text-align:center;">${title}</h1>
+    <p style="margin:0 0 24px;font-size:14px;color:#52525b;text-align:center;">
+      ${isVerification
+        ? "Entrez ce code pour vérifier votre email :"
+        : "Entrez ce code pour réinitialiser votre mot de passe :"}
+    </p>
+    <div style="text-align:center;margin:0 0 24px;">
+      <span style="display:inline-block;padding:16px 32px;background-color:#f4f4f5;border-radius:8px;font-size:32px;font-weight:700;font-family:monospace;letter-spacing:8px;color:${BRAND_NAVY};">
+        ${escapedOtp}
+      </span>
+    </div>
+    <p style="margin:0;font-size:13px;color:#71717a;text-align:center;">
+      <!-- Expiry text must match emailOTP.expiresIn in lib/auth/index.ts (currently 300 s = 5 min). -->
+      Ce code expire dans <strong>5 minutes</strong>.${isVerification ? " Ne le partagez avec personne." : ""}
+    </p>
+  `;
+
+  return { subject, html: layout(title, body) };
+}

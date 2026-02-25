@@ -1,24 +1,41 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { authClient } from "@/lib/auth/client";
 
+// Hoisted to module scope — compiled once, not on every keystroke.
+// Safe with .replace(): String.prototype.replace resets lastIndex on global regexps.
+const DIGITS_ONLY = /\D/g;
+
+const errorMessages: Record<string, string> = {
+  INVALID_OTP: "Code incorrect. Vérifiez le code reçu.",
+  OTP_EXPIRED: "Code expiré. Retournez à la page précédente pour demander un nouveau code.",
+  TOO_MANY_ATTEMPTS: "Trop de tentatives. Demandez un nouveau code.",
+  USER_NOT_FOUND: "Aucun compte trouvé pour cet email. Recommencez depuis la page mot de passe oublié.",
+  PASSWORD_TOO_SHORT: "Le mot de passe doit contenir au moins 8 caractères.",
+  PASSWORD_TOO_LONG: "Le mot de passe est trop long.",
+  "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
+};
+
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get("token") ?? "";
+  const email = searchParams.get("email") ?? "";
 
+  const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -27,31 +44,52 @@ function ResetPasswordForm() {
       return;
     }
 
-    if (!token) {
-      setError("Lien de réinitialisation invalide.");
+    if (!email) {
+      setError("Lien de réinitialisation invalide. Recommencez depuis la page mot de passe oublié.");
       return;
     }
 
-    setLoading(true);
+    startTransition(async () => {
+      try {
+        const { error } = await authClient.emailOtp.resetPassword({
+          email,
+          otp,
+          password,
+        });
 
-    try {
-      const { error } = await authClient.resetPassword({
-        newPassword: password,
-        token,
-      });
-
-      if (error) {
-        setError(error.message ?? "Une erreur est survenue.");
-      } else {
-        router.push("/auth/sign-in");
+        if (error) {
+          setError(
+            errorMessages[error.code ?? ""] ??
+              errorMessages[error.message ?? ""] ??
+              "Une erreur est survenue. Veuillez réessayer."
+          );
+        } else {
+          router.push("/auth/sign-in");
+        }
+      } catch (err) {
+        console.error("[reset-password] unexpected error during resetPassword:", err);
+        setError("Une erreur réseau est survenue. Réessayez.");
       }
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-4">
+      <div className="grid gap-2">
+        <Label htmlFor="otp">Code de vérification</Label>
+        <Input
+          id="otp"
+          type="text"
+          inputMode="numeric"
+          maxLength={6}
+          placeholder="123456"
+          className="h-9 text-center tracking-widest text-lg font-mono"
+          required
+          value={otp}
+          onChange={(e) => setOtp(e.target.value.replace(DIGITS_ONLY, ""))}
+        />
+      </div>
+
       <div className="grid gap-2">
         <Label htmlFor="password">Nouveau mot de passe</Label>
         <PasswordInput
@@ -76,12 +114,12 @@ function ResetPasswordForm() {
         />
       </div>
 
-      {error && (
+      {error ? (
         <p className="text-sm text-destructive">{error}</p>
-      )}
+      ) : null}
 
-      <Button type="submit" className="h-11 w-full" disabled={loading}>
-        {loading ? "Réinitialisation..." : "Réinitialiser"}
+      <Button type="submit" className="h-11 w-full" disabled={isPending}>
+        {isPending ? "Réinitialisation..." : "Réinitialiser"}
       </Button>
     </form>
   );
@@ -91,7 +129,14 @@ export default function ResetPasswordPage() {
   return (
     <AuthCard
       title="Réinitialiser le mot de passe"
-      description="Choisissez un nouveau mot de passe"
+      description="Entrez le code reçu par email et choisissez un nouveau mot de passe"
+      footer={
+        <p className="text-sm text-muted-foreground">
+          <Link href="/auth/forgot-password" className="font-semibold text-primary hover:underline">
+            Demander un nouveau code
+          </Link>
+        </p>
+      }
     >
       <Suspense>
         <ResetPasswordForm />

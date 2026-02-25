@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
-const AUTH_PATHS = ["/auth/"];
 const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
@@ -28,28 +27,25 @@ export async function middleware(request: NextRequest) {
         response.headers.set("Link", linkValue);
         return response;
       }
-    } catch {
-      // KV unavailable (dev without wrangler bindings) — graceful degradation
+    } catch (err) {
+      // Expected in local dev without wrangler bindings; should not fire in production.
+      if (process.env.NODE_ENV === "production") {
+        console.error("[middleware] KV read failed for hero preload header:", err);
+      }
     }
   }
 
-  const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const isProtectedPath = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
 
-  if (!isAuthPath && !isProtectedPath) return NextResponse.next();
+  if (!isProtectedPath) return NextResponse.next();
 
   const hasCookie = request.cookies.has(SESSION_COOKIE) || request.cookies.has(SECURE_SESSION_COOKIE);
 
   // No cookie on protected page → redirect to sign-in
-  if (isProtectedPath && !hasCookie) {
+  if (!hasCookie) {
     const signInUrl = new URL("/auth/sign-in", request.url);
     signInUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(signInUrl);
-  }
-
-  // Has cookie on auth page → redirect to home (already signed in)
-  if (isAuthPath && hasCookie) {
-    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();
@@ -60,7 +56,6 @@ export const config = {
     "/",
     "/account/:path*",
     "/checkout/:path*",
-    "/auth/:path*",
     "/dashboard/:path*",
     "/products/:path*",
     "/orders/:path*",

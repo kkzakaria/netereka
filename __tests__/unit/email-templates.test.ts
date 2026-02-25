@@ -3,6 +3,7 @@ import {
   escapeHtml,
   orderConfirmationEmail,
   orderStatusUpdateEmail,
+  otpEmail,
   type OrderEmailData,
   type StatusUpdateEmailData,
 } from "@/lib/notifications/templates";
@@ -285,5 +286,44 @@ describe("orderStatusUpdateEmail", () => {
       reason: '<script>alert("xss")</script>',
     });
     expect(result!.html).not.toContain("<script>");
+  });
+});
+
+// ─── otpEmail ───
+
+describe("otpEmail", () => {
+  it("retourne un sujet et un html pour email-verification", () => {
+    const { subject, html } = otpEmail({ otp: "123456", type: "email-verification" });
+    expect(subject).toBe("Vérifiez votre email - NETEREKA");
+    expect(html).toContain("123456");
+    expect(html).toContain("5 minutes");
+  });
+
+  it("retourne un sujet et un html pour forget-password", () => {
+    const { subject, html } = otpEmail({ otp: "654321", type: "forget-password" });
+    expect(subject).toBe("Réinitialisation de mot de passe - NETEREKA");
+    expect(html).toContain("654321");
+    expect(html).toContain("5 minutes");
+  });
+
+  it("génère un html valide avec DOCTYPE et le header NETEREKA", () => {
+    const { html } = otpEmail({ otp: "123456", type: "email-verification" });
+    expect(html).toMatch(/^<!DOCTYPE html>/);
+    expect(html).toContain("</html>");
+    expect(html).toContain("NETEREKA");
+    expect(html).toContain("Electronic");
+  });
+
+  it("échappe un OTP malformé", () => {
+    const { html } = otpEmail({ otp: "<xss>", type: "email-verification" });
+    expect(html).not.toContain("<xss>");
+    expect(html).toContain("&lt;xss&gt;");
+  });
+
+  it("inclut le message de confidentialité pour email-verification uniquement", () => {
+    const { html: htmlVerif } = otpEmail({ otp: "111111", type: "email-verification" });
+    const { html: htmlReset } = otpEmail({ otp: "222222", type: "forget-password" });
+    expect(htmlVerif).toContain("Ne le partagez");
+    expect(htmlReset).not.toContain("Ne le partagez");
   });
 });
