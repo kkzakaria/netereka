@@ -306,9 +306,18 @@ describe("otpEmail", () => {
     expect(html).toContain("5 minutes");
   });
 
+  it("génère un html valide avec DOCTYPE et le header NETEREKA", () => {
+    const { html } = otpEmail({ otp: "123456", type: "email-verification" });
+    expect(html).toMatch(/^<!DOCTYPE html>/);
+    expect(html).toContain("</html>");
+    expect(html).toContain("NETEREKA");
+    expect(html).toContain("Electronic");
+  });
+
   it("échappe un OTP malformé", () => {
     const { html } = otpEmail({ otp: "<xss>", type: "email-verification" });
     expect(html).not.toContain("<xss>");
+    expect(html).toContain("&lt;xss&gt;");
   });
 
   it("inclut le message de confidentialité pour email-verification uniquement", () => {

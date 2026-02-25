@@ -10,13 +10,17 @@ import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { authClient } from "@/lib/auth/client";
 
-// rule 7.9: hoist RegExp outside component to avoid re-creation on every render
+// Hoisted to module scope — compiled once, not on every keystroke.
+// Safe with .replace(): String.prototype.replace resets lastIndex on global regexps.
 const DIGITS_ONLY = /\D/g;
 
 const errorMessages: Record<string, string> = {
   INVALID_OTP: "Code incorrect. Vérifiez le code reçu.",
   OTP_EXPIRED: "Code expiré. Retournez à la page précédente pour demander un nouveau code.",
   TOO_MANY_ATTEMPTS: "Trop de tentatives. Demandez un nouveau code.",
+  USER_NOT_FOUND: "Aucun compte trouvé pour cet email. Recommencez depuis la page mot de passe oublié.",
+  PASSWORD_TOO_SHORT: "Le mot de passe doit contenir au moins 8 caractères.",
+  PASSWORD_TOO_LONG: "Le mot de passe est trop long.",
   "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
 };
 
@@ -62,7 +66,8 @@ function ResetPasswordForm() {
         } else {
           router.push("/auth/sign-in");
         }
-      } catch {
+      } catch (err) {
+        console.error("[reset-password] unexpected error during resetPassword:", err);
         setError("Une erreur réseau est survenue. Réessayez.");
       }
     });

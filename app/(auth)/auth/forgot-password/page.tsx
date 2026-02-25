@@ -10,7 +10,8 @@ import { AuthCard } from "@/components/storefront/auth/auth-card";
 import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha";
 import { authClient } from "@/lib/auth/client";
 
-const errorTextMessages: Record<string, string> = {
+const errorMessages: Record<string, string> = {
+  INVALID_EMAIL: "Adresse email invalide.",
   "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
   "Captcha verification failed": "La vérification captcha a échoué. Veuillez réessayer.",
   "Missing CAPTCHA response": "Veuillez compléter la vérification de sécurité.",
@@ -52,12 +53,15 @@ export default function ForgotPasswordPage() {
         if (error) {
           resetCaptcha();
           setError(
-            errorTextMessages[error.message ?? ""] ?? "Une erreur est survenue."
+            errorMessages[error.code ?? ""] ??
+              errorMessages[error.message ?? ""] ??
+              "Une erreur est survenue."
           );
         } else {
           router.push(`/auth/reset-password?email=${encodeURIComponent(email)}`);
         }
-      } catch {
+      } catch (err) {
+        console.error("[forgot-password] unexpected error during sendVerificationOtp:", err);
         resetCaptcha();
         setError("Une erreur réseau est survenue. Réessayez.");
       }

@@ -265,6 +265,7 @@ export function orderStatusUpdateEmail(data: StatusUpdateEmailData): {
 
 // ---------------------------------------------------------------------------
 // Template: OTP (email-verification | forget-password)
+// Note: sign-in OTPs are suppressed in lib/auth/index.ts before reaching this function.
 // ---------------------------------------------------------------------------
 
 export function otpEmail(data: {
@@ -291,6 +292,7 @@ export function otpEmail(data: {
       </span>
     </div>
     <p style="margin:0;font-size:13px;color:#71717a;text-align:center;">
+      <!-- Expiry text must match emailOTP.expiresIn in lib/auth/index.ts (currently 300 s = 5 min). -->
       Ce code expire dans <strong>5 minutes</strong>.${isVerification ? " Ne le partagez avec personne." : ""}
     </p>
   `;

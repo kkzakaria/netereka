@@ -71,12 +71,19 @@ export async function initAuth() {
       }),
       emailOTP({
         sendVerificationOTP: async ({ email, otp, type }) => {
-          if (type === "sign-in") return;
+          if (type === "sign-in") {
+            // sign-in via OTP is not supported on NETEREKA — email/password only
+            console.warn(`[auth] sendVerificationOTP called with type="sign-in" — not supported, skipping`);
+            return;
+          }
           const { subject, html } = otpEmail({
             otp,
             type: type as "email-verification" | "forget-password",
           });
-          await sendEmail({ to: email, subject, html });
+          const result = await sendEmail({ to: email, subject, html });
+          if (!result.success) {
+            console.error(`[auth] Failed to send OTP email to ${email} (type=${type}): ${result.error}`);
+          }
         },
         otpLength: 6,
         expiresIn: 300,
