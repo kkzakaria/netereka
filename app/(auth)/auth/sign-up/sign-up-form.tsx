@@ -85,8 +85,7 @@ export function SignUpForm() {
             "Une erreur est survenue. Veuillez réessayer."
         );
       } else {
-        router.push("/");
-        router.refresh();
+        router.push(`/auth/verify-email?email=${encodeURIComponent(data.email)}`);
       }
     } catch (err) {
       console.error("[sign-up] unexpected error during authClient.signUp.email:", err);
