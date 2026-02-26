@@ -2,11 +2,8 @@ import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
-import { getImageUrl } from "@/lib/utils/images";
 import {
   getCategoryBySlug,
-  getCategoryChildren,
   getCategoryAncestors,
   getCategoryDescendantIds,
   getCategoryTree,
@@ -87,9 +84,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
-  // Fetch subcategories, ancestors, descendant IDs in parallel (+ await tree started above)
-  const [children, ancestors, descendantIds, categoryTree] = await Promise.all([
-    getCategoryChildren(category.id),
+  // Fetch ancestors, descendant IDs in parallel (+ await tree started above)
+  const [ancestors, descendantIds, categoryTree] = await Promise.all([
     getCategoryAncestors(category.id),
     getCategoryDescendantIds(category.id),
     categoryTreePromise,
@@ -177,30 +173,6 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             {total} produit{total !== 1 ? "s" : ""}
           </p>
         </div>
-
-        {/* Subcategories grid */}
-        {children.length > 0 && (
-          <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {children.map((child) => (
-              <Link
-                key={child.id}
-                href={`/c/${child.slug}`}
-                className="flex flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center transition-colors hover:bg-muted/50"
-              >
-                {child.image_url && (
-                  <Image
-                    src={getImageUrl(child.image_url)}
-                    alt={child.name}
-                    width={48}
-                    height={48}
-                    className="h-12 w-12 rounded-lg object-cover"
-                  />
-                )}
-                <span className="line-clamp-2 text-sm font-medium">{child.name}</span>
-              </Link>
-            ))}
-          </div>
-        )}
 
         {/* Active filters + sort */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
