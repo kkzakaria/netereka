@@ -10,20 +10,36 @@ describe("cloudflareImageLoader", () => {
       vi.unstubAllEnvs();
     });
 
-    it("retourne src inchangé pour une URL absolue", () => {
+    it("retourne src avec ?w= pour une URL absolue", () => {
       expect(
         cloudflareImageLoader({
           src: "https://r2.netereka.ci/products/iphone.jpg",
           width: 640,
           quality: 75,
         })
-      ).toBe("https://r2.netereka.ci/products/iphone.jpg");
+      ).toBe("https://r2.netereka.ci/products/iphone.jpg?w=640");
     });
 
-    it("retourne src inchangé pour un chemin relatif", () => {
+    it("retourne src avec ?w= pour un chemin relatif", () => {
       expect(
         cloudflareImageLoader({ src: "/images/placeholder.webp", width: 40 })
-      ).toBe("/images/placeholder.webp");
+      ).toBe("/images/placeholder.webp?w=40");
+    });
+
+    it("ajoute &w= si des query params existent déjà", () => {
+      expect(
+        cloudflareImageLoader({ src: "/images/img.webp?v=1", width: 80 })
+      ).toBe("/images/img.webp?v=1&w=80");
+    });
+
+    it("retourne src inchangé pour une blob URL", () => {
+      const blobUrl = "blob:http://localhost:3000/some-uuid";
+      expect(cloudflareImageLoader({ src: blobUrl, width: 200 })).toBe(blobUrl);
+    });
+
+    it("retourne src inchangé pour une data URL", () => {
+      const dataUrl = "data:image/png;base64,abc123";
+      expect(cloudflareImageLoader({ src: dataUrl, width: 200 })).toBe(dataUrl);
     });
   });
 

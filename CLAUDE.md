@@ -44,6 +44,7 @@ npm run db:migrate         # Run pending migrations locally (via scripts/migrate
 npm run db:migrate:remote  # Run all pending migrations on remote D1
 npm run db:seed            # Seed initial data
 npm run db:seed-catalogue  # Seed product catalogue
+npm run db:sync            # Sync local DB from production (recommended for realistic data)
 ```
 
 ## Architecture
@@ -151,6 +152,7 @@ Wrangler config: `wrangler.jsonc` (not `.toml`).
 - **`sendVerificationOTP` must throw on email failure** — returning normally tells better-auth the OTP was sent; user reaches the OTP page but never receives a code.
 - **Bash and route groups:** Paths with parentheses like `app/(admin)/...` must be quoted in bash commands (e.g., `git add "app/(admin)/file.tsx"`), otherwise the shell interprets them as subshells.
 - **Local D1 bootstrap:** Before `npm run db:studio` works, you must initialize the local D1 SQLite file first: `npx wrangler d1 execute netereka-db --local --command "SELECT 1"`. Then run `npm run db:migrate` and the seed scripts.
+- **Local DB data vs prod:** The seed catalogue (`db/seeds/catalogue.sql`) uses hardcoded image paths that don't exist on R2. For realistic local data (real product images), use `npm run db:sync` instead — it dumps the remote DB, reorders SQL for SQLite compatibility, then re-applies `seed.sql` to add dev test accounts on top. Use `npm run db:seed` only for dev accounts and base data on a fresh DB.
 - **SEO files:** `app/robots.ts` and `app/sitemap.ts` generate SEO metadata dynamically.
 - **Drizzle remote mode:** To use `drizzle-kit` against remote D1, set `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, and `CLOUDFLARE_D1_TOKEN` env vars.
 
