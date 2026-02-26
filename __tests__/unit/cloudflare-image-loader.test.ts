@@ -2,8 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import cloudflareImageLoader from "@/lib/utils/cloudflare-image-loader";
 
 describe("cloudflareImageLoader", () => {
-  // The blob:/data: guard fires before the NODE_ENV check, so these URLs
-  // are returned unchanged regardless of environment.
+  // The blob:/data: guard (line 10 of the loader) fires before the NODE_ENV
+  // branch, so these tests run without any env stub — NODE_ENV defaults to
+  // "test" in Vitest, which falls through to the production path, but the
+  // guard intercepts first. The dev-stubbed tests below confirm this holds
+  // when NODE_ENV is explicitly "development".
   describe("URLs spéciales (indépendant de l'environnement)", () => {
     it("retourne src inchangé pour une blob URL", () => {
       const blobUrl = "blob:http://localhost:3000/some-uuid";
@@ -44,6 +47,16 @@ describe("cloudflareImageLoader", () => {
       expect(
         cloudflareImageLoader({ src: "/images/img.webp?v=1", width: 80 })
       ).toBe("/images/img.webp?v=1&w=80");
+    });
+
+    it("retourne blob URL inchangée même quand NODE_ENV=development", () => {
+      const blobUrl = "blob:http://localhost:3000/some-uuid";
+      expect(cloudflareImageLoader({ src: blobUrl, width: 200 })).toBe(blobUrl);
+    });
+
+    it("retourne data URL inchangée même quand NODE_ENV=development", () => {
+      const dataUrl = "data:image/png;base64,abc123";
+      expect(cloudflareImageLoader({ src: dataUrl, width: 200 })).toBe(dataUrl);
     });
   });
 

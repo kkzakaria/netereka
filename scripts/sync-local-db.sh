@@ -3,16 +3,17 @@ set -euo pipefail
 
 # Sync local D1 database from production (remote).
 # Replaces local data with a fresh prod dump, then re-applies seed.sql
-# to restore dev test accounts, sample products, and base reference data
-# (categories, delivery zones). Existing rows in the dump take precedence —
-# conflicting seed rows are skipped silently via INSERT OR IGNORE.
+# to restore dev test accounts and all sample data (seed.sql seeds users,
+# products, variants, images, orders, order_items, categories, delivery zones).
+# Existing rows in the dump take precedence — conflicting seed rows are
+# skipped silently via INSERT OR IGNORE.
 #
-# Why the reorder step: wrangler exports rows interleaved by record — each
-# product INSERT is immediately followed by its product_images INSERT — rather
-# than grouping all INSERTs for a table together after its CREATE TABLE.
-# When foreign_keys are enabled, product_images INSERTs fail because the
-# products table does not exist yet at that point in the dump.
-# We sort to: other (PRAGMA/DROP/etc) → CREATE → INSERT.
+# Why the reorder step: wrangler exports each table's DDL and DML together,
+# ordered by schema declaration. This means CREATE TABLE product_images and
+# its INSERT statements can appear in the dump before CREATE TABLE products.
+# With foreign_keys=ON, inserting into product_images before products exists
+# raises a FK violation. We reorder: other (PRAGMA/DROP/etc) → CREATE → INSERT,
+# so all parent tables are defined before any child inserts run.
 #
 # NOTE: The SQL splitter uses /;[ \t]*\n/ as a statement boundary. This works
 # for standard wrangler dumps but would break if a text column value contains
@@ -45,8 +46,18 @@ if [[ ! -f "db/seeds/seed.sql" ]]; then
 fi
 
 # Check Cloudflare credentials.
-# If neither env var is set, fall back to checking for a stored wrangler login.
-# If one var is set but not the other, wrangler will emit a specific error during export.
+# If neither env var is set, fall back to checking for a stored wrangler login session.
+# Both vars must be set together — setting only one is not enough for API token auth.
+if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] && [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+  echo "ERROR: CLOUDFLARE_API_TOKEN is set but CLOUDFLARE_ACCOUNT_ID is missing."
+  echo "  Both must be set together for API token authentication."
+  exit 1
+fi
+if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] && [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+  echo "ERROR: CLOUDFLARE_ACCOUNT_ID is set but CLOUDFLARE_API_TOKEN is missing."
+  echo "  Both must be set together for API token authentication."
+  exit 1
+fi
 if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] && [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
   WHOAMI_ERROR="$(npx wrangler whoami 2>&1 >/dev/null)" || {
     echo "ERROR: No Cloudflare credentials found."
@@ -108,8 +119,20 @@ fi
 # ── 3. Back up and replace local DB ──────────────────────────────────────────
 echo "==> [3/5] Replacing local DB..."
 if [[ -d "$LOCAL_D1_DIR" ]]; then
-  # Back up existing sqlite files so we can restore on import failure
-  cp "$LOCAL_D1_DIR"/*.sqlite* "$BACKUP_DIR"/ 2>/dev/null || true
+  # Back up existing sqlite files so we can restore on import failure.
+  # Only attempt copy if files actually exist; fail explicitly if cp errors
+  # (e.g. disk full) to avoid silently losing the only copy of local data.
+  SQLITE_FILES=()
+  while IFS= read -r -d '' f; do
+    SQLITE_FILES+=("$f")
+  done < <(find "$LOCAL_D1_DIR" -name "*.sqlite*" -print0 2>/dev/null)
+  if [[ ${#SQLITE_FILES[@]} -gt 0 ]]; then
+    cp "${SQLITE_FILES[@]}" "$BACKUP_DIR"/ || {
+      echo "ERROR: Failed to back up local DB (disk full or permissions error?)."
+      echo "  Aborting to protect your data. Check: $LOCAL_D1_DIR"
+      exit 1
+    }
+  fi
   find "$LOCAL_D1_DIR" -name "*.sqlite*" -delete
 else
   echo "    Warning: local D1 dir not found at $LOCAL_D1_DIR (will be created on first run)"
@@ -130,7 +153,13 @@ npx wrangler d1 execute "$DB_NAME" --local --file="$SORTED_FILE" || {
 
 # ── 4. Re-apply seed (test accounts + sample data) ───────────────────────────
 echo "==> [4/5] Re-applying seed (test accounts + sample data)..."
-npx wrangler d1 execute "$DB_NAME" --local --file=db/seeds/seed.sql
+npx wrangler d1 execute "$DB_NAME" --local --file=db/seeds/seed.sql || {
+  echo "ERROR: Seed step failed."
+  echo "  The prod data import succeeded — your local DB has production data."
+  echo "  Only the test accounts and sample data are missing. To add them manually:"
+  echo "    npm run db:seed"
+  exit 1
+}
 
 echo ""
 echo "==> [5/5] Done."
