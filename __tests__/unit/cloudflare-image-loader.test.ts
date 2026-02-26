@@ -2,6 +2,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import cloudflareImageLoader from "@/lib/utils/cloudflare-image-loader";
 
 describe("cloudflareImageLoader", () => {
+  // The blob:/data: guard fires before the NODE_ENV check, so these URLs
+  // are returned unchanged regardless of environment.
+  describe("URLs spéciales (indépendant de l'environnement)", () => {
+    it("retourne src inchangé pour une blob URL", () => {
+      const blobUrl = "blob:http://localhost:3000/some-uuid";
+      expect(cloudflareImageLoader({ src: blobUrl, width: 200 })).toBe(blobUrl);
+    });
+
+    it("retourne src inchangé pour une data URL", () => {
+      const dataUrl = "data:image/png;base64,abc123";
+      expect(cloudflareImageLoader({ src: dataUrl, width: 200 })).toBe(dataUrl);
+    });
+  });
+
   describe("en développement (NODE_ENV=development)", () => {
     beforeEach(() => {
       vi.stubEnv("NODE_ENV", "development");
@@ -31,16 +45,6 @@ describe("cloudflareImageLoader", () => {
         cloudflareImageLoader({ src: "/images/img.webp?v=1", width: 80 })
       ).toBe("/images/img.webp?v=1&w=80");
     });
-
-    it("retourne src inchangé pour une blob URL", () => {
-      const blobUrl = "blob:http://localhost:3000/some-uuid";
-      expect(cloudflareImageLoader({ src: blobUrl, width: 200 })).toBe(blobUrl);
-    });
-
-    it("retourne src inchangé pour une data URL", () => {
-      const dataUrl = "data:image/png;base64,abc123";
-      expect(cloudflareImageLoader({ src: dataUrl, width: 200 })).toBe(dataUrl);
-    });
   });
 
   describe("en production (NODE_ENV=production)", () => {
@@ -49,16 +53,6 @@ describe("cloudflareImageLoader", () => {
     });
     afterEach(() => {
       vi.unstubAllEnvs();
-    });
-
-    it("retourne src inchangé pour une blob URL", () => {
-      const blobUrl = "blob:http://localhost:3000/some-uuid";
-      expect(cloudflareImageLoader({ src: blobUrl, width: 200 })).toBe(blobUrl);
-    });
-
-    it("retourne src inchangé pour une data URL", () => {
-      const dataUrl = "data:image/png;base64,abc123";
-      expect(cloudflareImageLoader({ src: dataUrl, width: 200 })).toBe(dataUrl);
     });
 
     it("génère une URL CF pour une URL R2 absolue", () => {
@@ -114,6 +108,12 @@ describe("cloudflareImageLoader", () => {
           quality: 75,
         })
       ).toBe("/cdn-cgi/image/width=140,quality=75,format=auto/images/logo.png");
+    });
+
+    it("intègre les query params existants tels quels dans le chemin CF", () => {
+      expect(
+        cloudflareImageLoader({ src: "/images/img.webp?v=1", width: 80 })
+      ).toBe("/cdn-cgi/image/width=80,quality=75,format=auto/images/img.webp?v=1");
     });
   });
 });
