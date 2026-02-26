@@ -1,12 +1,11 @@
 "use client";
 
+import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { formatPrice } from "@/lib/utils/format";
 import { CategorySidebar } from "@/components/storefront/category-sidebar";
 import { useFilterData } from "./filter-context";
 import { BrandFilter } from "./brand-filter";
+import { PriceFilter } from "./price-filter";
 
 export function SearchFilters() {
   const { categoryTree, activeCategorySlug, brands, priceRange, basePath } = useFilterData();
@@ -16,17 +15,6 @@ export function SearchFilters() {
   const activeBrands = searchParams.get("brand")?.split(",").filter(Boolean) ?? [];
   const activeMinPrice = searchParams.get("min_price") ?? "";
   const activeMaxPrice = searchParams.get("max_price") ?? "";
-
-  const [priceState, setPriceState] = useState({ min: activeMinPrice, max: activeMaxPrice, urlMin: activeMinPrice, urlMax: activeMaxPrice });
-  const priceTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // Sync local price state when URL changes externally (e.g. "Tout effacer")
-  let { min: minPrice, max: maxPrice } = priceState;
-  if (priceState.urlMin !== activeMinPrice || priceState.urlMax !== activeMaxPrice) {
-    minPrice = activeMinPrice;
-    maxPrice = activeMaxPrice;
-    setPriceState({ min: activeMinPrice, max: activeMaxPrice, urlMin: activeMinPrice, urlMax: activeMaxPrice });
-  }
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -49,18 +37,6 @@ export function SearchFilters() {
       ? activeBrands.filter((b) => b !== brand)
       : [...activeBrands, brand];
     updateParams({ brand: next.length > 0 ? next.join(",") : null });
-  };
-
-  const handlePriceChange = (field: "min_price" | "max_price", value: string) => {
-    setPriceState((prev) => ({
-      ...prev,
-      [field === "min_price" ? "min" : "max"]: value,
-    }));
-
-    clearTimeout(priceTimerRef.current);
-    priceTimerRef.current = setTimeout(() => {
-      updateParams({ [field]: value || null });
-    }, 500);
   };
 
   const handleReset = () => {
@@ -88,37 +64,17 @@ export function SearchFilters() {
       />
 
       {/* Price range */}
-      <fieldset>
-        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Prix
-        </legend>
-        <p className="mb-2 text-[10px] text-muted-foreground">
-          {formatPrice(priceRange.min)} — {formatPrice(priceRange.max)}
-        </p>
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            placeholder="Min…"
-            aria-label="Prix minimum"
-            value={minPrice}
-            onChange={(e) => handlePriceChange("min_price", e.target.value)}
-            className="h-8 text-xs"
-          />
-          <span className="text-muted-foreground" aria-hidden="true">—</span>
-          <Input
-            type="number"
-            placeholder="Max…"
-            aria-label="Prix maximum"
-            value={maxPrice}
-            onChange={(e) => handlePriceChange("max_price", e.target.value)}
-            className="h-8 text-xs"
-          />
-        </div>
-      </fieldset>
+      <PriceFilter
+        priceRange={priceRange}
+        activeMin={activeMinPrice}
+        activeMax={activeMaxPrice}
+        onUpdate={(min, max) => updateParams({ min_price: min, max_price: max })}
+      />
 
       {/* Reset */}
       {hasFilters && (
         <button
+          type="button"
           onClick={handleReset}
           className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
         >
