@@ -9,6 +9,7 @@ import type { SidebarCategoryNode } from "@/lib/db/types";
 interface CategorySidebarProps {
   categoryTree: SidebarCategoryNode[];
   activeCategorySlug?: string;
+  label?: string;
 }
 
 function isActiveOrAncestor(node: SidebarCategoryNode, activeSlug: string): boolean {
@@ -78,13 +79,14 @@ function CategoryTreeNode({
 export function CategorySidebar({
   categoryTree,
   activeCategorySlug,
+  label = "Catégories",
 }: CategorySidebarProps) {
   if (categoryTree.length === 0) return null;
 
   return (
-    <nav aria-label="Catégories">
+    <nav aria-label={label}>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Catégories
+        {label}
       </p>
       <div className="space-y-0.5">
         {categoryTree.map((node) => (
