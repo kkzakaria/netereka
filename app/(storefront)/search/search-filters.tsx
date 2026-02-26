@@ -48,13 +48,17 @@ export function SearchFilters() {
 
   const hasFilters = activeBrands.length > 0 || activeMinPrice || activeMaxPrice;
 
+  const isCategoryPage = basePath.startsWith("/c/");
+
   return (
     <div className="space-y-6">
-      {/* Category tree sidebar */}
-      <CategorySidebar
-        categoryTree={categoryTree}
-        activeCategorySlug={activeCategorySlug}
-      />
+      {/* Category tree sidebar — search page only */}
+      {!isCategoryPage && (
+        <CategorySidebar
+          categoryTree={categoryTree}
+          activeCategorySlug={activeCategorySlug}
+        />
+      )}
 
       {/* Brands */}
       <BrandFilter
