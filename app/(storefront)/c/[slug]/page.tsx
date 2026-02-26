@@ -6,8 +6,6 @@ import {
   getCategoryBySlug,
   getCategoryAncestors,
   getCategoryDescendantIds,
-  getCategoryTree,
-  minifyCategoryTree,
 } from "@/lib/db/categories";
 import {
   searchProducts,
@@ -75,20 +73,15 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const sp = await searchParams;
-  // Start category tree fetch early (doesn't depend on category.id)
-  const categoryTreePromise = getCategoryTree();
-
   const category = await getCategoryCached(slug);
   if (!category) notFound();
 
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
-  // Fetch ancestors, descendant IDs in parallel (+ await tree started above)
-  const [ancestors, descendantIds, categoryTree] = await Promise.all([
+  const [ancestors, descendantIds] = await Promise.all([
     getCategoryAncestors(category.id),
     getCategoryDescendantIds(category.id),
-    categoryTreePromise,
   ]);
 
   // Aggregate category IDs: current + all descendants
@@ -122,7 +115,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   return (
     <FilterProvider
-      categoryTree={minifyCategoryTree(categoryTree)}
+      categoryTree={[]}
       activeCategorySlug={slug}
       brands={brands}
       priceRange={priceRange}
