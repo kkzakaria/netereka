@@ -25,8 +25,10 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
   const collapsedBrands = [...top5, ...activeOutsideTop5];
   const hiddenCount = brands.length - collapsedBrands.length;
 
+  const activeBrandSet = new Set(activeBrands);
+  const searchLower = search.toLowerCase();
   const filteredBrands = expanded
-    ? brands.filter((b) => b.toLowerCase().includes(search.toLowerCase()))
+    ? brands.filter((b) => b.toLowerCase().includes(searchLower))
     : collapsedBrands;
 
   const handleExpand = () => {
@@ -77,7 +79,7 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
             >
               <input
                 type="checkbox"
-                checked={activeBrands.includes(brand)}
+                checked={activeBrandSet.has(brand)}
                 onChange={() => onToggle(brand)}
                 className="size-3.5 rounded border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
               />
