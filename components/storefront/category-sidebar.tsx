@@ -16,6 +16,18 @@ function isActiveOrAncestor(node: SidebarCategoryNode, activeSlug: string): bool
   return node.children.some((child) => isActiveOrAncestor(child, activeSlug));
 }
 
+function findNode(
+  nodes: readonly SidebarCategoryNode[],
+  slug: string
+): SidebarCategoryNode | null {
+  for (const node of nodes) {
+    if (node.slug === slug) return node;
+    const found = findNode(node.children, slug);
+    if (found) return found;
+  }
+  return null;
+}
+
 function CategoryTreeNode({
   node,
   activeCategorySlug,
@@ -79,15 +91,23 @@ export function CategorySidebar({
   categoryTree,
   activeCategorySlug,
 }: CategorySidebarProps) {
-  if (categoryTree.length === 0) return null;
+  const activeNode = activeCategorySlug
+    ? findNode(categoryTree, activeCategorySlug)
+    : null;
+  const subcategories = activeNode?.children ?? [];
+
+  const nodesToRender = subcategories.length > 0 ? subcategories : categoryTree;
+  const label = subcategories.length > 0 ? "Sous-catégories" : "Catégories";
+
+  if (nodesToRender.length === 0) return null;
 
   return (
-    <nav aria-label="Catégories">
+    <nav aria-label={label}>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Catégories
+        {label}
       </p>
       <div className="space-y-0.5">
-        {categoryTree.map((node) => (
+        {nodesToRender.map((node) => (
           <CategoryTreeNode
             key={node.id}
             node={node}
