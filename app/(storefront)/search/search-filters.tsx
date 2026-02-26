@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { formatPrice } from "@/lib/utils/format";
 import { CategorySidebar } from "@/components/storefront/category-sidebar";
 import { useFilterData } from "./filter-context";
+import { BrandFilter } from "./brand-filter";
 
 export function SearchFilters() {
   const { categoryTree, activeCategorySlug, brands, priceRange, basePath } = useFilterData();
@@ -80,29 +81,11 @@ export function SearchFilters() {
       />
 
       {/* Brands */}
-      {brands.length > 0 && (
-        <fieldset>
-          <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Marque
-          </legend>
-          <div className="space-y-1">
-            {brands.map((brand) => (
-              <label
-                key={brand}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-              >
-                <input
-                  type="checkbox"
-                  checked={activeBrands.includes(brand)}
-                  onChange={() => handleBrandToggle(brand)}
-                  className="size-3.5 rounded border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
-                />
-                {brand}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      )}
+      <BrandFilter
+        brands={brands}
+        activeBrands={activeBrands}
+        onToggle={handleBrandToggle}
+      />
 
       {/* Price range */}
       <fieldset>
