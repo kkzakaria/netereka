@@ -6,6 +6,9 @@ import { Search01Icon } from "@hugeicons/core-free-icons";
 
 const INITIAL_VISIBLE = 5;
 
+const toggleBtnClass =
+  "mt-1.5 px-2 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30";
+
 interface BrandFilterProps {
   brands: string[];
   activeBrands: string[];
@@ -20,11 +23,13 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
   if (brands.length === 0) return null;
 
   const initialBrands = brands.slice(0, INITIAL_VISIBLE);
+  const initialBrandSet = new Set(initialBrands);
   // Always show active brands that fall outside the first INITIAL_VISIBLE, so
   // users can see and deselect their selections even while the list is collapsed.
-  const activeOutsideInitial = activeBrands.filter((b) => !initialBrands.includes(b));
-
-  const collapsedBrands = [...initialBrands, ...activeOutsideInitial];
+  const collapsedBrands = [
+    ...initialBrands,
+    ...activeBrands.filter((b) => !initialBrandSet.has(b)),
+  ];
   const hiddenCount = brands.length - collapsedBrands.length;
 
   const activeBrandSet = new Set(activeBrands);
@@ -33,17 +38,16 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
     ? brands.filter((b) => b.toLowerCase().includes(searchLower))
     : collapsedBrands;
 
-  const handleExpand = () => {
+  function handleExpand(): void {
     setExpanded(true);
-    // The input is conditionally mounted; setTimeout defers focus until after
-    // React has flushed the new render into the DOM (ref is null before that).
+    // Defer focus until React flushes the search input into the DOM.
     setTimeout(() => searchRef.current?.focus(), 0);
-  };
+  }
 
-  const handleCollapse = () => {
+  function handleCollapse(): void {
     setExpanded(false);
     setSearch("");
-  };
+  }
 
   return (
     <fieldset>
@@ -93,20 +97,12 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
       </div>
 
       {!expanded && hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={handleExpand}
-          className="mt-1.5 px-2 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-        >
+        <button type="button" onClick={handleExpand} className={toggleBtnClass}>
           + {hiddenCount} marque{hiddenCount > 1 ? "s" : ""}
         </button>
       )}
       {expanded && (
-        <button
-          type="button"
-          onClick={handleCollapse}
-          className="mt-1.5 px-2 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-        >
+        <button type="button" onClick={handleCollapse} className={toggleBtnClass}>
           Voir moins
         </button>
       )}
