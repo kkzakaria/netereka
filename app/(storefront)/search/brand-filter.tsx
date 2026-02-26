@@ -19,10 +19,12 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
 
   if (brands.length === 0) return null;
 
-  const top5 = brands.slice(0, INITIAL_VISIBLE);
-  const activeOutsideTop5 = activeBrands.filter((b) => !top5.includes(b));
+  const initialBrands = brands.slice(0, INITIAL_VISIBLE);
+  // Always show active brands that fall outside the first INITIAL_VISIBLE, so
+  // users can see and deselect their selections even while the list is collapsed.
+  const activeOutsideInitial = activeBrands.filter((b) => !initialBrands.includes(b));
 
-  const collapsedBrands = [...top5, ...activeOutsideTop5];
+  const collapsedBrands = [...initialBrands, ...activeOutsideInitial];
   const hiddenCount = brands.length - collapsedBrands.length;
 
   const activeBrandSet = new Set(activeBrands);
@@ -33,7 +35,8 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
 
   const handleExpand = () => {
     setExpanded(true);
-    // Focus l'input après le rendu
+    // The input is conditionally mounted; setTimeout defers focus until after
+    // React has flushed the new render into the DOM (ref is null before that).
     setTimeout(() => searchRef.current?.focus(), 0);
   };
 
@@ -48,7 +51,6 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
         Marque
       </legend>
 
-      {/* Input de recherche (visible uniquement déplié) */}
       {expanded && (
         <div className="relative mb-2">
           <HugeiconsIcon
@@ -69,7 +71,6 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
         </div>
       )}
 
-      {/* Liste des marques */}
       <div className="space-y-1">
         {filteredBrands.length > 0 ? (
           filteredBrands.map((brand) => (
@@ -91,7 +92,6 @@ export function BrandFilter({ brands, activeBrands, onToggle }: BrandFilterProps
         )}
       </div>
 
-      {/* Bouton expand / collapse */}
       {!expanded && hiddenCount > 0 && (
         <button
           type="button"
