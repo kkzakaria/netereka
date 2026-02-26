@@ -51,6 +51,16 @@ describe("cloudflareImageLoader", () => {
       vi.unstubAllEnvs();
     });
 
+    it("retourne src inchangé pour une blob URL", () => {
+      const blobUrl = "blob:http://localhost:3000/some-uuid";
+      expect(cloudflareImageLoader({ src: blobUrl, width: 200 })).toBe(blobUrl);
+    });
+
+    it("retourne src inchangé pour une data URL", () => {
+      const dataUrl = "data:image/png;base64,abc123";
+      expect(cloudflareImageLoader({ src: dataUrl, width: 200 })).toBe(dataUrl);
+    });
+
     it("génère une URL CF pour une URL R2 absolue", () => {
       expect(
         cloudflareImageLoader({

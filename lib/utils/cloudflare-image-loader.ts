@@ -7,8 +7,9 @@ export default function cloudflareImageLoader({
   width: number;
   quality?: number;
 }): string {
+  if (src.startsWith("blob:") || src.startsWith("data:")) return src;
+
   if (process.env.NODE_ENV === "development") {
-    if (src.startsWith("blob:") || src.startsWith("data:")) return src;
     const separator = src.includes("?") ? "&" : "?";
     return `${src}${separator}w=${width}`;
   }
