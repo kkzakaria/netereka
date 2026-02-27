@@ -91,6 +91,9 @@ export function VariantPickerDialog({ open, onOpenChange, product }: Props) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              {state.selected ? "Variante sélectionnée" : "Veuillez choisir une variante"}
+            </p>
             <div className="flex flex-wrap gap-2">
               {state.variants.map((v) => {
                 const outOfStock = v.stock_quantity <= 0;

@@ -54,13 +54,11 @@ export function ProductCardActions({ product }: Props) {
           aria-label={
             isOutOfStock
               ? "Rupture de stock"
-              : hasVariants
-              ? "Choisir une variante"
               : `Ajouter ${product.name} au panier`
           }
         >
           <HugeiconsIcon icon={ShoppingCart02Icon} size={16} />
-          {isOutOfStock ? "Rupture de stock" : hasVariants ? "Choisir" : "Ajouter"}
+          {isOutOfStock ? "Rupture de stock" : "Ajouter"}
         </Button>
 
         <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
