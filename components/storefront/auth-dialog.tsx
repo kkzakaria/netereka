@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignInForm } from "@/app/(auth)/auth/sign-in/sign-in-form";
 import { SignUpForm } from "@/app/(auth)/auth/sign-up/sign-up-form";
@@ -30,18 +31,13 @@ export function AuthDialog({ open, onOpenChange, productId }: Props) {
       if (result.success) {
         toast.success(result.added ? "Ajouté aux favoris" : "Retiré des favoris");
       } else {
-        toast.error("Impossible de mettre à jour les favoris.");
+        console.error("[auth-dialog] toggleWishlist returned success:false for productId:", productId);
+        toast.error("Impossible de mettre à jour les favoris. Réessayez en cliquant à nouveau.");
       }
     } catch (err) {
-      // Re-throw Next.js redirect errors — these must propagate
-      if (
-        err instanceof Error &&
-        typeof (err as { digest?: string }).digest === "string" &&
-        (err as { digest?: string }).digest!.startsWith("NEXT_REDIRECT")
-      ) {
-        throw err;
-      }
-      toast.error("Impossible de mettre à jour les favoris.");
+      if (isRedirectError(err)) throw err;
+      console.error("[auth-dialog] toggleWishlist failed for productId:", productId, err);
+      toast.error("Impossible de mettre à jour les favoris. Réessayez en cliquant à nouveau.");
     }
   }
 

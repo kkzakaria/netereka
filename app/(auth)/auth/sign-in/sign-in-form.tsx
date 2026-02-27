@@ -37,7 +37,7 @@ const errorTextMessages: Record<string, string> = {
 };
 
 interface SignInFormProps {
-  onSuccess?: () => void;
+  onSuccess?: () => Promise<void>;
 }
 
 export function SignInForm({ onSuccess }: SignInFormProps = {}) {
@@ -86,7 +86,7 @@ export function SignInForm({ onSuccess }: SignInFormProps = {}) {
         );
       } else {
         if (onSuccess) {
-          onSuccess();
+          await onSuccess();
         } else {
           router.push("/");
           router.refresh();

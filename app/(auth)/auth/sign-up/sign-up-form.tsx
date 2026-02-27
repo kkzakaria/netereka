@@ -39,7 +39,7 @@ const errorTextMessages: Record<string, string> = {
 };
 
 interface SignUpFormProps {
-  onSuccess?: () => void;
+  onSuccess?: () => Promise<void>;
 }
 
 export function SignUpForm({ onSuccess }: SignUpFormProps = {}) {
@@ -89,8 +89,11 @@ export function SignUpForm({ onSuccess }: SignUpFormProps = {}) {
             "Une erreur est survenue. Veuillez réessayer."
         );
       } else {
-        onSuccess?.();
-        router.push(`/auth/verify-email?email=${encodeURIComponent(data.email)}`);
+        if (onSuccess) {
+          await onSuccess();
+        } else {
+          router.push(`/auth/verify-email?email=${encodeURIComponent(data.email)}`);
+        }
       }
     } catch (err) {
       console.error("[sign-up] unexpected error during authClient.signUp.email:", err);

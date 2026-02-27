@@ -30,7 +30,8 @@ export async function toggleWishlist(productId: string): Promise<{ success: bool
     const added = await atomicToggleWishlist(userId, parsed.data);
     revalidatePath("/account/wishlist");
     return { success: true, added };
-  } catch {
+  } catch (err) {
+    console.error("[wishlist] atomicToggleWishlist failed for userId:", userId, "productId:", parsed.data, err);
     return { success: false, added: false };
   }
 }

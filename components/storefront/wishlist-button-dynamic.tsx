@@ -25,7 +25,12 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
 
   useEffect(() => {
     if (session.data?.user) {
-      checkWishlist(productId).then(setIsWishlisted).catch(console.error);
+      checkWishlist(productId)
+        .then(setIsWishlisted)
+        .catch((err) => {
+          console.error("[wishlist-button-dynamic] checkWishlist failed for productId:", productId, err);
+          setIsWishlisted(false);
+        });
     }
   }, [session.data?.user, productId]);
 
@@ -70,11 +75,13 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
           </svg>
         </button>
 
-        <AuthDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          productId={productId}
-        />
+        {dialogOpen && (
+          <AuthDialog
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            productId={productId}
+          />
+        )}
       </>
     );
   }
