@@ -38,7 +38,11 @@ const errorTextMessages: Record<string, string> = {
   "Something went wrong": "Une erreur est survenue. Veuillez réessayer.",
 };
 
-export function SignUpForm() {
+interface SignUpFormProps {
+  onSuccess?: () => Promise<void>;
+}
+
+export function SignUpForm({ onSuccess }: SignUpFormProps) {
   const router = useRouter();
   const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaToken, setCaptchaToken] = useState("");
@@ -84,6 +88,8 @@ export function SignUpForm() {
             errorTextMessages[error.message ?? ""] ??
             "Une erreur est survenue. Veuillez réessayer."
         );
+      } else if (onSuccess) {
+        await onSuccess();
       } else {
         router.push(`/auth/verify-email?email=${encodeURIComponent(data.email)}`);
       }
