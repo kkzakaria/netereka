@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { authClient } from "@/lib/auth/client";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { checkWishlist } from "@/actions/wishlist";
-import { cn } from "@/lib/utils";
 
 const AuthDialog = dynamic(
   () =>
@@ -18,24 +17,29 @@ const AuthDialog = dynamic(
   { ssr: false }
 );
 
+function prefetchAuthDialog(): void {
+  void import("@/components/storefront/auth-dialog");
+}
+
 export function WishlistButtonDynamic({ productId }: { productId: string }) {
   const session = authClient.useSession();
   const [isWishlisted, setIsWishlisted] = useState<boolean | undefined>(undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  const isAuthenticated = !!session.data?.user;
+
   useEffect(() => {
-    if (session.data?.user) {
-      checkWishlist(productId)
-        .then(setIsWishlisted)
-        .catch((err) => {
-          console.error("[wishlist-button-dynamic] checkWishlist failed for productId:", productId, err);
-          setIsWishlisted(false);
-        });
-    }
-  }, [session.data?.user, productId]);
+    if (!isAuthenticated) return;
+    checkWishlist(productId)
+      .then(setIsWishlisted)
+      .catch((err) => {
+        console.error("[wishlist-button-dynamic] checkWishlist failed for productId:", productId, err);
+        setIsWishlisted(false);
+      });
+  }, [isAuthenticated, productId]);
 
   // Authenticated and wishlist status known
-  if (session.data?.user && isWishlisted !== undefined) {
+  if (isAuthenticated && isWishlisted !== undefined) {
     return (
       <WishlistButton
         productId={productId}
@@ -45,22 +49,20 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
     );
   }
 
-  // Not authenticated — show ghost button that opens auth dialog
-  if (!session.data?.user) {
+  // Not authenticated -- show ghost button that opens auth dialog
+  if (!isAuthenticated) {
     return (
       <>
         <button
           type="button"
-          onMouseEnter={() => { void import("@/components/storefront/auth-dialog"); }}
-          onFocus={() => { void import("@/components/storefront/auth-dialog"); }}
+          onMouseEnter={prefetchAuthDialog}
+          onFocus={prefetchAuthDialog}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
             setDialogOpen(true);
           }}
-          className={cn(
-            "flex size-8 items-center justify-center rounded-full bg-background/80 text-muted-foreground backdrop-blur-sm transition-colors hover:text-destructive"
-          )}
+          className="flex size-8 items-center justify-center rounded-full bg-background/80 text-muted-foreground backdrop-blur-sm transition-colors hover:text-destructive"
           aria-label="Ajouter aux favoris"
         >
           <svg
@@ -86,6 +88,6 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
     );
   }
 
-  // Authenticated but wishlist status still loading — brief, avoid ghost flash
+  // Authenticated but wishlist status still loading
   return null;
 }

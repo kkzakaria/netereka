@@ -42,7 +42,7 @@ interface SignUpFormProps {
   onSuccess?: () => Promise<void>;
 }
 
-export function SignUpForm({ onSuccess }: SignUpFormProps = {}) {
+export function SignUpForm({ onSuccess }: SignUpFormProps) {
   const router = useRouter();
   const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaToken, setCaptchaToken] = useState("");
@@ -88,12 +88,10 @@ export function SignUpForm({ onSuccess }: SignUpFormProps = {}) {
             errorTextMessages[error.message ?? ""] ??
             "Une erreur est survenue. Veuillez réessayer."
         );
+      } else if (onSuccess) {
+        await onSuccess();
       } else {
-        if (onSuccess) {
-          await onSuccess();
-        } else {
-          router.push(`/auth/verify-email?email=${encodeURIComponent(data.email)}`);
-        }
+        router.push(`/auth/verify-email?email=${encodeURIComponent(data.email)}`);
       }
     } catch (err) {
       console.error("[sign-up] unexpected error during authClient.signUp.email:", err);
