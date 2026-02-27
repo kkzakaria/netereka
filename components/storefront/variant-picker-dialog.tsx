@@ -9,8 +9,7 @@ import { getProductVariants } from "@/actions/variants";
 import { useCartStore } from "@/stores/cart-store";
 import { formatPrice } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
-import type { ProductVariant } from "@/lib/db/types";
-import type { ProductCardData } from "@/lib/db/types";
+import type { ProductCardData, ProductVariant } from "@/lib/db/types";
 
 interface Props {
   open: boolean;
@@ -50,9 +49,13 @@ export function VariantPickerDialog({ open, onOpenChange, product }: Props) {
     if (!open) return;
     dispatch({ type: "FETCH_START" });
     let cancelled = false;
-    getProductVariants(product.id).then((variants) => {
-      if (!cancelled) dispatch({ type: "FETCH_DONE", variants });
-    });
+    getProductVariants(product.id)
+      .then((variants) => {
+        if (!cancelled) dispatch({ type: "FETCH_DONE", variants });
+      })
+      .catch(() => {
+        if (!cancelled) dispatch({ type: "FETCH_DONE", variants: [] });
+      });
     return () => {
       cancelled = true;
     };
@@ -95,9 +98,11 @@ export function VariantPickerDialog({ open, onOpenChange, product }: Props) {
                   <button
                     key={v.id}
                     disabled={outOfStock}
+                    aria-pressed={state.selected === v.id}
+                    aria-label={outOfStock ? `${v.name} — épuisé` : v.name}
                     onClick={() => dispatch({ type: "SELECT", id: v.id })}
                     className={cn(
-                      "rounded-md border px-3 py-1.5 text-sm transition-colors",
+                      "rounded-md border px-3 py-2 text-sm transition-colors min-h-11",
                       "disabled:pointer-events-none disabled:opacity-40",
                       state.selected === v.id
                         ? "border-primary bg-primary text-primary-foreground"
@@ -105,7 +110,6 @@ export function VariantPickerDialog({ open, onOpenChange, product }: Props) {
                     )}
                   >
                     {v.name}
-                    {outOfStock && <span className="ml-1 text-[10px]">(épuisé)</span>}
                   </button>
                 );
               })}
