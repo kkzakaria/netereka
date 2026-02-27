@@ -52,12 +52,14 @@ export function SearchFilters() {
 
   return (
     <div className="space-y-6">
-      {/* Category/subcategory sidebar */}
-      <CategorySidebar
-        categoryTree={categoryTree}
-        activeCategorySlug={activeCategorySlug}
-        label={isCategoryPage ? "Sous-catégories" : "Catégories"}
-      />
+      {/* Category sidebar — search page only */}
+      {!isCategoryPage && (
+        <CategorySidebar
+          categoryTree={categoryTree}
+          activeCategorySlug={activeCategorySlug}
+          label="Catégories"
+        />
+      )}
 
       {/* Brands */}
       <BrandFilter

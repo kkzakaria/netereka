@@ -6,7 +6,6 @@ import {
   getCategoryBySlug,
   getCategoryAncestors,
   getCategoryDescendantIds,
-  getCategoryChildren,
 } from "@/lib/db/categories";
 import {
   searchProducts,
@@ -80,10 +79,9 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
-  const [ancestors, descendantIds, children] = await Promise.all([
+  const [ancestors, descendantIds] = await Promise.all([
     getCategoryAncestors(category.id),
     getCategoryDescendantIds(category.id),
-    getCategoryChildren(category.id),
   ]);
 
   // Aggregate category IDs: current + all descendants
@@ -117,7 +115,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   return (
     <FilterProvider
-      categoryTree={children.map((c) => ({ id: c.id, slug: c.slug, name: c.name, children: [] }))}
+      categoryTree={[]}
       activeCategorySlug={slug}
       brands={brands}
       priceRange={priceRange}
