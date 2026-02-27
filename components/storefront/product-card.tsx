@@ -3,16 +3,14 @@ import Image from "next/image";
 import type { ProductCardData } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
-import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { cn } from "@/lib/utils";
+import { ProductCardActions } from "@/components/storefront/product-card-actions";
 
 interface Props {
   product: ProductCardData;
-  isWishlisted?: boolean;
-  showWishlist?: boolean;
 }
 
-export function ProductCard({ product, isWishlisted = false, showWishlist = false }: Props) {
+export function ProductCard({ product }: Props) {
   const hasVariants = (product.variant_count ?? 0) > 1;
   const isOutOfStock = product.stock_quantity <= 0;
   const comparePrice = product.compare_price;
@@ -46,28 +44,12 @@ export function ProductCard({ product, isWishlisted = false, showWishlist = fals
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
         />
 
-        {/* Top row: category + discount + wishlist */}
-        <div className="absolute inset-x-0 top-0 flex items-start justify-between p-2">
-          <div className="flex items-center gap-1.5">
-            {product.category_name && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                {product.category_name}
-              </span>
-            )}
-            {hasDiscount && (
-              <span className="rounded-md bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-tight text-white">
-                -{discountPercent}%
-              </span>
-            )}
-          </div>
-          {showWishlist && (
-            <WishlistButton
-              productId={product.id}
-              isWishlisted={isWishlisted}
-              className="size-11"
-            />
-          )}
-        </div>
+        {/* Discount badge */}
+        {hasDiscount && (
+          <span className="absolute right-2 top-2 rounded-md bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-tight text-white">
+            -{discountPercent}%
+          </span>
+        )}
 
         {/* Out of stock overlay */}
         {isOutOfStock && (
@@ -102,6 +84,8 @@ export function ProductCard({ product, isWishlisted = false, showWishlist = fals
           </p>
         </div>
       </div>
+
+      <ProductCardActions product={product} />
     </Link>
   );
 }
