@@ -18,6 +18,11 @@ type View = "sign-in" | "sign-up";
 export function AuthDialog({ open, onOpenChange, productId }: Props) {
   const [view, setView] = useState<View>("sign-in");
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) setView("sign-in");
+    onOpenChange(nextOpen);
+  }
+
   async function handleAuthSuccess() {
     onOpenChange(false);
     try {
@@ -27,13 +32,21 @@ export function AuthDialog({ open, onOpenChange, productId }: Props) {
       } else {
         toast.error("Impossible de mettre à jour les favoris.");
       }
-    } catch {
+    } catch (err) {
+      // Re-throw Next.js redirect errors — these must propagate
+      if (
+        err instanceof Error &&
+        typeof (err as { digest?: string }).digest === "string" &&
+        (err as { digest?: string }).digest!.startsWith("NEXT_REDIRECT")
+      ) {
+        throw err;
+      }
       toast.error("Impossible de mettre à jour les favoris.");
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-sm overflow-y-auto max-h-[90svh]">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
