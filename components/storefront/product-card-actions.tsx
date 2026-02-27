@@ -4,9 +4,14 @@ import { useState } from "react";
 import { ShoppingCart02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
 import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
-import { VariantPickerDialog } from "@/components/storefront/variant-picker-dialog";
 import { useCartStore } from "@/stores/cart-store";
+
+const VariantPickerDialog = dynamic(
+  () => import("@/components/storefront/variant-picker-dialog").then((m) => m.VariantPickerDialog),
+  { ssr: false }
+);
 import type { ProductCardData } from "@/lib/db/types";
 
 interface Props {
