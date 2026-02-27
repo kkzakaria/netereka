@@ -46,6 +46,8 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
       <>
         <button
           type="button"
+          onMouseEnter={() => { void import("@/components/storefront/auth-dialog"); }}
+          onFocus={() => { void import("@/components/storefront/auth-dialog"); }}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
