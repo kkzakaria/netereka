@@ -57,7 +57,7 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
       <>
         <Button
           type="button"
-          size="icon-touch"
+          size="icon-lg"
           variant="outline"
           className="hover:text-destructive hover:border-destructive/50"
           onMouseEnter={prefetchAuthDialog}
