@@ -32,6 +32,10 @@ describe("getProductVariants", () => {
       expect.stringContaining("product_id = ?"),
       ["prod-1"]
     );
+    expect(mocks.query).toHaveBeenCalledWith(
+      expect.stringContaining("AND is_active = 1"),
+      ["prod-1"]
+    );
   });
 
   it("retourne un tableau vide si aucune variante", async () => {
@@ -44,5 +48,16 @@ describe("getProductVariants", () => {
     const result = await getProductVariants("");
     expect(result).toEqual([]);
     expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("retourne un tableau vide si productId dépasse 50 caractères", async () => {
+    const result = await getProductVariants("a".repeat(51));
+    expect(result).toEqual([]);
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("propage l'erreur si la base de données échoue", async () => {
+    mocks.query.mockRejectedValue(new Error("D1 unavailable"));
+    await expect(getProductVariants("prod-1")).rejects.toThrow("D1 unavailable");
   });
 });

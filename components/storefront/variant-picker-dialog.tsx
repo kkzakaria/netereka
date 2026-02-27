@@ -21,25 +21,29 @@ interface State {
   variants: ProductVariant[];
   loading: boolean;
   selected: string | null;
+  error: string | null;
 }
 
 type Action =
   | { type: "FETCH_START" }
   | { type: "FETCH_DONE"; variants: ProductVariant[] }
+  | { type: "FETCH_ERROR" }
   | { type: "SELECT"; id: string };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "FETCH_START":
-      return { variants: [], loading: true, selected: null };
+      return { variants: [], loading: true, selected: null, error: null };
     case "FETCH_DONE":
-      return { ...state, loading: false, variants: action.variants };
+      return { variants: action.variants, loading: false, selected: null, error: null };
+    case "FETCH_ERROR":
+      return { variants: [], loading: false, selected: null, error: "Impossible de charger les variantes. Veuillez réessayer." };
     case "SELECT":
       return { ...state, selected: action.id };
   }
 }
 
-const initial: State = { variants: [], loading: false, selected: null };
+const initial: State = { variants: [], loading: false, selected: null, error: null };
 
 export function VariantPickerDialog({ open, onOpenChange, product }: Props) {
   const [state, dispatch] = useReducer(reducer, initial);
@@ -53,8 +57,9 @@ export function VariantPickerDialog({ open, onOpenChange, product }: Props) {
       .then((variants) => {
         if (!cancelled) dispatch({ type: "FETCH_DONE", variants });
       })
-      .catch(() => {
-        if (!cancelled) dispatch({ type: "FETCH_DONE", variants: [] });
+      .catch((err) => {
+        console.error("[variant-picker] getProductVariants failed for product", product.id, err);
+        if (!cancelled) dispatch({ type: "FETCH_ERROR" });
       });
     return () => {
       cancelled = true;
@@ -88,6 +93,13 @@ export function VariantPickerDialog({ open, onOpenChange, product }: Props) {
         {state.loading ? (
           <div className="flex justify-center py-6">
             <span className="text-sm text-muted-foreground">Chargement…</span>
+          </div>
+        ) : state.error ? (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <p className="text-sm text-destructive">{state.error}</p>
+            <Button variant="outline" size="sm" onClick={() => dispatch({ type: "FETCH_START" })}>
+              Réessayer
+            </Button>
           </div>
         ) : (
           <div className="flex flex-col gap-3">

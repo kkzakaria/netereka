@@ -9,7 +9,13 @@ import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-d
 import { useCartStore } from "@/stores/cart-store";
 
 const VariantPickerDialog = dynamic(
-  () => import("@/components/storefront/variant-picker-dialog").then((m) => m.VariantPickerDialog),
+  () =>
+    import("@/components/storefront/variant-picker-dialog")
+      .then((m) => m.VariantPickerDialog)
+      .catch((err) => {
+        console.error("[product-card-actions] Failed to load VariantPickerDialog chunk", err);
+        throw err;
+      }),
   { ssr: false }
 );
 import type { ProductCardData } from "@/lib/db/types";
