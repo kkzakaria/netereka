@@ -36,7 +36,7 @@ export function WishlistButton({ productId, isWishlisted, onToggled, className }
     <Button
       onClick={handleClick}
       disabled={pending}
-      size="icon-touch"
+      size="icon-lg"
       variant={optimistic ? "destructive" : "outline"}
       className={cn(!optimistic && "hover:text-destructive hover:border-destructive/50", className)}
       aria-label={optimistic ? "Retirer des favoris" : "Ajouter aux favoris"}

@@ -57,7 +57,7 @@ export function ProductCardActions({ product }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <Button
-          size="touch"
+          size="lg"
           variant={isOutOfStock ? "outline" : "default"}
           disabled={isOutOfStock}
           className="flex-1"
