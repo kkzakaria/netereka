@@ -18,7 +18,8 @@ const AuthDialog = dynamic(
 );
 
 function prefetchAuthDialog(): void {
-  void import("@/components/storefront/auth-dialog");
+  // Prefetch failure is non-critical; click will retry via dynamic()
+  void import("@/components/storefront/auth-dialog").catch(() => {});
 }
 
 export function WishlistButtonDynamic({ productId }: { productId: string }) {

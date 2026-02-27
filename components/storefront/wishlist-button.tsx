@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition, useOptimistic } from "react";
+import { toast } from "sonner";
 import { toggleWishlist } from "@/actions/wishlist";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,11 @@ export function WishlistButton({ productId, isWishlisted, onToggled, className }
     startTransition(async () => {
       setOptimistic(!optimistic);
       const result = await toggleWishlist(productId);
+      if (!result.success) {
+        setOptimistic(optimistic);
+        toast.error("Impossible de mettre à jour les favoris. Réessayez.");
+        return;
+      }
       onToggled?.(result.added);
     });
   }

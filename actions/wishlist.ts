@@ -14,6 +14,7 @@ export async function toggleWishlist(productId: string): Promise<{ success: bool
 
   const parsed = productIdSchema.safeParse(productId);
   if (!parsed.success) {
+    console.error("[wishlist] toggleWishlist received invalid productId:", productId);
     return { success: false, added: false };
   }
 
@@ -23,6 +24,7 @@ export async function toggleWishlist(productId: string): Promise<{ success: bool
     [parsed.data]
   );
   if (!product) {
+    console.error("[wishlist] toggleWishlist product not found:", parsed.data);
     return { success: false, added: false };
   }
 
