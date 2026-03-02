@@ -277,7 +277,10 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
 
     const oldIndex = items.findIndex((b) => b.id === active.id);
     const newIndex = items.findIndex((b) => b.id === over.id);
-    const newItems = arrayMove(items, oldIndex, newIndex);
+    const newItems = arrayMove(items, oldIndex, newIndex).map((item, idx) => ({
+      ...item,
+      display_order: idx,
+    }));
 
     setItems(newItems);
 
