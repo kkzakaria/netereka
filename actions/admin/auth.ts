@@ -19,12 +19,12 @@ export async function verifyAdminRole(): Promise<ActionResult> {
   }
 
   const role = session.user.role;
-  if (role !== "admin" && role !== "super_admin") {
+  if (role !== "agent" && role !== "admin" && role !== "super_admin") {
     // Sign out non-admin user server-side
     await auth.api.signOut({ headers: await headers() });
     return {
       success: false,
-      error: "Accès refusé. Ce portail est réservé aux administrateurs.",
+      error: "Accès refusé. Ce portail est réservé à l'équipe NETEREKA.",
     };
   }
 
