@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireAnyAdmin } from "@/lib/auth/guards";
 import { Sidebar } from "@/components/admin/sidebar";
 import { ViewProvider } from "@/components/admin/view-context";
 import { AdminUserProvider, type AdminUser } from "@/components/admin/admin-user-context";
@@ -11,7 +11,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await requireAdmin();
+  const session = await requireAnyAdmin();
 
   return (
     <AdminUserProvider user={session.user as AdminUser}>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,8 @@ import { BannerTable } from "@/components/admin/banner-table";
 import { getAllBanners } from "@/lib/db/admin/banners";
 
 export default async function BannersPage() {
+  await requireAdmin();
+
   const banners = await getAllBanners();
 
   const bannerData = banners.map((b) => ({

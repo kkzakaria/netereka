@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { UsersClientWrapper } from "./_components/users-client-wrapper";
@@ -22,6 +23,8 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function UsersPage({ searchParams }: Props) {
+  await requireAdmin();
+
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
 
