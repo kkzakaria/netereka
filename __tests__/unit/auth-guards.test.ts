@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mockCustomerSession, mockAdminSession, mockSuperAdminSession } from "../helpers/mocks";
+import { mockCustomerSession, mockAdminSession, mockSuperAdminSession, mockAgentSession } from "../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("@/lib/auth", () => ({
   initAuth: vi.fn().mockResolvedValue({ api: { getSession: mocks.getSession } }),
 }));
 
-import { requireAuth, requireAdmin, requireGuest, getOptionalSession } from "@/lib/auth/guards";
+import { requireAuth, requireAdmin, requireAnyAdmin, requireSuperAdmin, requireGuest, getOptionalSession } from "@/lib/auth/guards";
 
 describe("requireAuth", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -47,6 +47,12 @@ describe("requireAdmin", () => {
     mocks.getSession.mockResolvedValue(mockSuperAdminSession);
     const session = await requireAdmin();
     expect(session.user.role).toBe("super_admin");
+  });
+
+  it("redirige vers / pour un agent", async () => {
+    mocks.getSession.mockResolvedValue(mockAgentSession);
+    await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
   });
 
   it("redirige vers / pour un customer", async () => {
@@ -90,5 +96,73 @@ describe("getOptionalSession", () => {
     mocks.getSession.mockResolvedValue(null);
     const session = await getOptionalSession();
     expect(session).toBeNull();
+  });
+});
+
+describe("requireAnyAdmin", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retourne la session pour un agent", async () => {
+    mocks.getSession.mockResolvedValue(mockAgentSession);
+    const session = await requireAnyAdmin();
+    expect(session.user.role).toBe("agent");
+  });
+
+  it("retourne la session pour un admin", async () => {
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+    const session = await requireAnyAdmin();
+    expect(session.user.role).toBe("admin");
+  });
+
+  it("retourne la session pour un super_admin", async () => {
+    mocks.getSession.mockResolvedValue(mockSuperAdminSession);
+    const session = await requireAnyAdmin();
+    expect(session.user.role).toBe("super_admin");
+  });
+
+  it("redirige vers / pour un customer", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(requireAnyAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("redirige vers /auth/sign-in si non authentifié", async () => {
+    mocks.getSession.mockResolvedValue(null);
+    await expect(requireAnyAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/auth/sign-in");
+  });
+});
+
+describe("requireSuperAdmin", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retourne la session pour un super_admin", async () => {
+    mocks.getSession.mockResolvedValue(mockSuperAdminSession);
+    const session = await requireSuperAdmin();
+    expect(session.user.role).toBe("super_admin");
+  });
+
+  it("redirige vers / pour un admin", async () => {
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+    await expect(requireSuperAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("redirige vers / pour un agent", async () => {
+    mocks.getSession.mockResolvedValue(mockAgentSession);
+    await expect(requireSuperAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("redirige vers / pour un customer", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(requireSuperAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("redirige vers /auth/sign-in si non authentifié", async () => {
+    mocks.getSession.mockResolvedValue(null);
+    await expect(requireSuperAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/auth/sign-in");
   });
 });

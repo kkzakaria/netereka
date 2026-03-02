@@ -42,7 +42,7 @@ export function CustomerInfo({ customer }: CustomerInfoProps) {
             <div>
               <h3 className="text-lg font-semibold truncate">{customer.name}</h3>
               <div className="flex flex-wrap items-center gap-2 mt-1">
-                {customer.is_active === 0 && (
+                {customer.banned === 1 && (
                   <Badge variant="destructive">Inactif</Badge>
                 )}
                 {customer.emailVerified ? (

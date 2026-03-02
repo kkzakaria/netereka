@@ -7,13 +7,15 @@ import { UserTable } from "@/components/admin/user-table";
 import { UserCardMobile } from "@/components/admin/user-card-mobile";
 import { UserFilters } from "@/components/admin/user-filters";
 import { UserFilterSheet } from "@/components/admin/user-filter-sheet";
+import { CreateAdminUserDialog } from "./create-admin-user-dialog";
 import type { AdminUser } from "@/lib/db/admin/users";
 
 interface UsersClientWrapperProps {
   users: AdminUser[];
+  isSuperAdmin: boolean;
 }
 
-export function UsersClientWrapper({ users }: UsersClientWrapperProps) {
+export function UsersClientWrapper({ users, isSuperAdmin }: UsersClientWrapperProps) {
   return (
     <ViewProvider>
       <div className="w-full space-y-4">
@@ -29,6 +31,13 @@ export function UsersClientWrapper({ users }: UsersClientWrapperProps) {
 
           {/* View switcher - show on larger mobile screens */}
           <ViewSwitcher className="ml-auto hidden sm:flex lg:hidden" />
+
+          {/* Create admin user button — super_admin only */}
+          {isSuperAdmin && (
+            <div className="ml-auto lg:ml-0">
+              <CreateAdminUserDialog />
+            </div>
+          )}
         </div>
 
         {/* Data list */}

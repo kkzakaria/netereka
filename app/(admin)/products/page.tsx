@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,8 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function ProductsPage({ searchParams }: Props) {
+  await requireAdmin();
+
   // Remove draft products abandoned for 24+ hours after response is sent
   after(() =>
     cleanupDraftProducts().catch((err) => {

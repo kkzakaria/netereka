@@ -34,9 +34,12 @@ export const user = sqliteTable("user", {
   emailVerified: integer("emailVerified").notNull().default(0),
   image: text("image"),
   phone: text("phone"),
-  role: text("role", { enum: ["customer", "admin", "super_admin"] }).notNull().default("customer"),
+  role: text("role", { enum: ["customer", "agent", "admin", "super_admin"] }).notNull().default("customer"),
   createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
+  banned: integer("banned").notNull().default(0),
+  banReason: text("banReason"),
+  banExpires: text("banExpires"),
 });
 
 export const session = sqliteTable("session", {

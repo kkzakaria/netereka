@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -11,8 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDateLong } from "@/lib/utils";
-import { ADMIN_ROLE_OPTIONS } from "@/lib/constants/customers";
-import { updateCustomerRole } from "@/actions/admin/customers";
+import { STAFF_ROLE_OPTIONS } from "@/lib/constants/customers";
+import { updateUserRole, banCustomer, unbanCustomer } from "@/actions/admin/customers";
 import type { AdminUser } from "@/lib/db/admin/users";
 import type { UserRole } from "@/lib/db/types";
 
@@ -24,16 +26,53 @@ interface UserSidebarProps {
 export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
 
   async function handleRoleChange(newRole: UserRole) {
-    setError(null);
+    setRoleError(null);
     startTransition(async () => {
-      const result = await updateCustomerRole(user.id, newRole);
-      if (!result.success) {
-        setError(result.error || "Erreur lors du changement de rôle");
-      } else {
-        router.refresh();
+      try {
+        const result = await updateUserRole(user.id, newRole as "agent" | "admin" | "super_admin");
+        if (!result.success) {
+          setRoleError(result.error || "Erreur lors du changement de rôle");
+        } else {
+          toast.success("Rôle mis à jour avec succès");
+          router.refresh();
+        }
+      } catch {
+        setRoleError("Une erreur inattendue s'est produite");
+      }
+    });
+  }
+
+  function handleBan() {
+    startTransition(async () => {
+      try {
+        const result = await banCustomer(user.id);
+        if (!result.success) {
+          toast.error(result.error || "Erreur lors du bannissement de l'utilisateur");
+        } else {
+          toast.success("Utilisateur banni avec succès");
+          router.refresh();
+        }
+      } catch {
+        toast.error("Une erreur inattendue s'est produite");
+      }
+    });
+  }
+
+  function handleUnban() {
+    startTransition(async () => {
+      try {
+        const result = await unbanCustomer(user.id);
+        if (!result.success) {
+          toast.error(result.error || "Erreur lors du débannissement de l'utilisateur");
+        } else {
+          toast.success("Utilisateur débanni avec succès");
+          router.refresh();
+        }
+      } catch {
+        toast.error("Une erreur inattendue s'est produite");
       }
     });
   }
@@ -54,17 +93,17 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
       </Card>
 
       {/* Admin Actions */}
-      {isSuperAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Actions administrateur</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Actions administrateur</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {roleError && (
+            <p className="text-sm text-destructive">{roleError}</p>
+          )}
 
-            {/* Role change - only for super_admin */}
+          {/* Role change - only for super_admin */}
+          {isSuperAdmin && (
             <div>
               <label className="text-sm text-muted-foreground mb-2 block">
                 Changer le rôle
@@ -78,7 +117,7 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ADMIN_ROLE_OPTIONS.map((option) => (
+                  {STAFF_ROLE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -86,9 +125,42 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
                 </SelectContent>
               </Select>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+
+          {/* Ban / Unban */}
+          <div>
+            <label className="text-sm text-muted-foreground mb-2 block">
+              Statut du compte
+            </label>
+            {user.banned !== 1 ? (
+              <Button
+                variant="destructive"
+                className="w-full"
+                onClick={handleBan}
+                disabled={isPending}
+              >
+                {isPending ? "Mise à jour..." : "Bannir"}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleUnban}
+                  disabled={isPending}
+                >
+                  {isPending ? "Mise à jour..." : "Débannir"}
+                </Button>
+                {user.banReason && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Raison : {user.banReason}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

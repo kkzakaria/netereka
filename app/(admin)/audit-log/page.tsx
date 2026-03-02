@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
@@ -58,10 +59,10 @@ function ActionDescription({
       }
       return <span>Rôle modifié</span>;
     }
-    case "user.activated":
-      return <span>Compte activé</span>;
-    case "user.deactivated":
-      return <span>Compte désactivé</span>;
+    case "user.banned":
+      return <span>Compte banni</span>;
+    case "user.unbanned":
+      return <span>Compte débanni</span>;
     default:
       return <span>{action}</span>;
   }
@@ -80,6 +81,8 @@ function getTargetHref(targetType: string, targetId: string): string {
 }
 
 export default async function AuditLogPage({ searchParams }: Props) {
+  await requireAdmin();
+
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
 

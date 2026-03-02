@@ -76,7 +76,8 @@ export async function getAdminCustomers(
        u.role,
        u.emailVerified,
        u.image,
-       1 as is_active,
+       u.banned,
+       u.banReason,
        u.createdAt,
        COALESCE(stats.order_count, 0) as order_count,
        COALESCE(stats.total_spent, 0) as total_spent
@@ -121,7 +122,8 @@ export async function getAdminCustomerById(
        u.role,
        u.emailVerified,
        u.image,
-       1 as is_active,
+       u.banned,
+       u.banReason,
        u.createdAt,
        COALESCE(stats.order_count, 0) as order_count,
        COALESCE(stats.total_spent, 0) as total_spent

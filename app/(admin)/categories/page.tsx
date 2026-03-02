@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { CategoryCreateButton } from "./category-create-button";
@@ -6,6 +7,8 @@ import { getCategories } from "@/lib/db/categories";
 import { CategoriesPageClient } from "./categories-page-client";
 
 export default async function CategoriesPage() {
+  await requireAdmin();
+
   const [categories, allCategories] = await Promise.all([
     getAllCategories(),
     getCategories(),

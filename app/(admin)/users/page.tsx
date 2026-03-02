@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireSuperAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { UsersClientWrapper } from "./_components/users-client-wrapper";
@@ -22,11 +23,13 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function UsersPage({ searchParams }: Props) {
+  const session = await requireSuperAdmin();
+
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
 
-  const role: "admin" | "super_admin" | undefined =
-    params.role === "admin" || params.role === "super_admin"
+  const role: "agent" | "admin" | "super_admin" | undefined =
+    params.role === "agent" || params.role === "admin" || params.role === "super_admin"
       ? params.role
       : undefined;
 
@@ -60,6 +63,7 @@ export default async function UsersPage({ searchParams }: Props) {
   };
 
   const users = await getAdminUsers(filters);
+  const isSuperAdmin = session.user.role === "super_admin";
 
   return (
     <div>
@@ -67,7 +71,7 @@ export default async function UsersPage({ searchParams }: Props) {
         <AdminHeader title="Utilisateurs" />
       </AdminPageHeader>
 
-      <UsersClientWrapper users={users} />
+      <UsersClientWrapper users={users} isSuperAdmin={isSuperAdmin} />
 
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">

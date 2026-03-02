@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useInstantFilters } from "@/hooks/use-instant-filters";
-import { ADMIN_ROLE_FILTER_OPTIONS } from "@/lib/constants/customers";
+import { STAFF_ROLE_FILTER_OPTIONS } from "@/lib/constants/customers";
 
 interface UserFiltersProps {
   className?: string;
@@ -81,7 +81,7 @@ export function UserFilters({ className }: UserFiltersProps) {
               <SelectValue placeholder="Tous" />
             </SelectTrigger>
             <SelectContent>
-              {ADMIN_ROLE_FILTER_OPTIONS.map((option) => (
+              {STAFF_ROLE_FILTER_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

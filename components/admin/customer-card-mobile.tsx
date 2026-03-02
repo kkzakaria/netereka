@@ -84,7 +84,7 @@ export function CustomerCardMobile({ customer }: CustomerCardMobileProps) {
             <Badge variant="outline" className="text-[10px]">
               {customer.order_count} cmd.
             </Badge>
-            {customer.is_active === 0 && (
+            {customer.banned === 1 && (
               <Badge variant="destructive" className="text-[10px]">
                 Inactif
               </Badge>
