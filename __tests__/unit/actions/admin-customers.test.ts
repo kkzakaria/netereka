@@ -118,14 +118,30 @@ describe("banCustomer", () => {
   it("banne un utilisateur", async () => {
     const result = await banCustomer("user-target");
     expect(result.success).toBe(true);
-    expect(mocks.banUser).toHaveBeenCalled();
+    expect(mocks.banUser).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ userId: "user-target" }) })
+    );
+  });
+
+  it("transmet la raison de bannissement à banUser", async () => {
+    await banCustomer("user-target", "Comportement abusif");
+    expect(mocks.banUser).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ banReason: "Comportement abusif" }) })
+    );
   });
 
   it("crée un log d'audit", async () => {
     await banCustomer("user-target");
     expect(mocks.prepareAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "user.banned", targetId: "user-target" })
+      expect.objectContaining({ action: "user.banned", targetId: "user-target", targetType: "user" })
     );
+  });
+
+  it("retourne une erreur si banUser lève une exception", async () => {
+    mocks.banUser.mockRejectedValue(new Error("Plugin error"));
+    const result = await banCustomer("user-target");
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 
   it("rejette si l'utilisateur n'existe pas", async () => {
@@ -163,13 +179,15 @@ describe("unbanCustomer", () => {
   it("débanne un utilisateur", async () => {
     const result = await unbanCustomer("user-target");
     expect(result.success).toBe(true);
-    expect(mocks.unbanUser).toHaveBeenCalled();
+    expect(mocks.unbanUser).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ userId: "user-target" }) })
+    );
   });
 
   it("crée un log d'audit", async () => {
     await unbanCustomer("user-target");
     expect(mocks.prepareAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "user.unbanned", targetId: "user-target" })
+      expect.objectContaining({ action: "user.unbanned", targetId: "user-target", targetType: "user" })
     );
   });
 
@@ -177,5 +195,22 @@ describe("unbanCustomer", () => {
     mocks.queryFirst.mockResolvedValue(null);
     const result = await unbanCustomer("user-x");
     expect(result.success).toBe(false);
+  });
+
+  it("rejette un ID vide", async () => {
+    const result = await unbanCustomer("");
+    expect(result.success).toBe(false);
+  });
+
+  it("redirige si agent (droits insuffisants)", async () => {
+    mocks.getSession.mockResolvedValue(mockAgentSession);
+    await expect(unbanCustomer("user-target")).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("retourne une erreur si unbanUser lève une exception", async () => {
+    mocks.unbanUser.mockRejectedValue(new Error("Plugin error"));
+    const result = await unbanCustomer("user-target");
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 });

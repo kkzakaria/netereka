@@ -38,7 +38,8 @@ export async function createAdminUser(input: CreateAdminUserInput): Promise<Acti
       body: createUserBody as never, // better-auth createUser body type is overly strict
       headers: await headers(),
     });
-  } catch {
+  } catch (error) {
+    console.error("[admin/users] createUser failed:", error);
     return { success: false, error: "Erreur lors de la création du compte" };
   }
 

@@ -35,6 +35,7 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
       if (!result.success) {
         setRoleError(result.error || "Erreur lors du changement de rôle");
       } else {
+        toast.success("Rôle mis à jour avec succès");
         router.refresh();
       }
     });

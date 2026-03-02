@@ -42,7 +42,11 @@ describe("createAdminUser", () => {
     expect(result.success).toBe(true);
     expect(mocks.createUser).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({ name: "Jean Dupont", role: "admin" }),
+        body: expect.objectContaining({
+          name: "Jean Dupont",
+          role: "admin",
+          data: expect.objectContaining({ emailVerified: true }),
+        }),
       })
     );
   });

@@ -49,6 +49,12 @@ describe("requireAdmin", () => {
     expect(session.user.role).toBe("super_admin");
   });
 
+  it("redirige vers / pour un agent", async () => {
+    mocks.getSession.mockResolvedValue(mockAgentSession);
+    await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
   it("redirige vers / pour un customer", async () => {
     mocks.getSession.mockResolvedValue(mockCustomerSession);
     await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT");

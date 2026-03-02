@@ -51,11 +51,16 @@ export async function updateUserRole(
   const oldRole = user.role as UserRole;
 
   const auth = await initAuth();
-  await auth.api.setRole({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    body: { userId, role: roleResult.data as any },
-    headers: await headers(),
-  });
+  try {
+    await auth.api.setRole({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      body: { userId, role: roleResult.data as any },
+      headers: await headers(),
+    });
+  } catch (error) {
+    console.error("[admin/customers] setRole failed for userId:", userId, error);
+    return { success: false, error: "Erreur lors du changement de rôle" };
+  }
 
   const auditStmt = await prepareAuditLog({
     actorId: session.user.id,
@@ -90,10 +95,15 @@ export async function banCustomer(userId: string, reason?: string): Promise<Acti
   if (!user) return { success: false, error: "Utilisateur introuvable" };
 
   const auth = await initAuth();
-  await auth.api.banUser({
-    body: { userId, banReason: reason },
-    headers: await headers(),
-  });
+  try {
+    await auth.api.banUser({
+      body: { userId, banReason: reason },
+      headers: await headers(),
+    });
+  } catch (error) {
+    console.error("[admin/customers] banUser failed for userId:", userId, error);
+    return { success: false, error: "Erreur lors du bannissement de l'utilisateur" };
+  }
 
   const auditStmt = await prepareAuditLog({
     actorId: session.user.id,
@@ -125,10 +135,15 @@ export async function unbanCustomer(userId: string): Promise<ActionResult> {
   if (!user) return { success: false, error: "Utilisateur introuvable" };
 
   const auth = await initAuth();
-  await auth.api.unbanUser({
-    body: { userId },
-    headers: await headers(),
-  });
+  try {
+    await auth.api.unbanUser({
+      body: { userId },
+      headers: await headers(),
+    });
+  } catch (error) {
+    console.error("[admin/customers] unbanUser failed for userId:", userId, error);
+    return { success: false, error: "Erreur lors du débannissement de l'utilisateur" };
+  }
 
   const auditStmt = await prepareAuditLog({
     actorId: session.user.id,
