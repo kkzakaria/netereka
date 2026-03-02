@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { initAuth, type Session } from "@/lib/auth";
+import type { StaffRole } from "@/lib/db/types";
 
 export type AdminSession = Omit<Session, "user"> & {
   user: Omit<Session["user"], "role"> & { role: "admin" | "super_admin" };
 };
 
 export type AnyAdminSession = Omit<Session, "user"> & {
-  user: Omit<Session["user"], "role"> & { role: "agent" | "admin" | "super_admin" };
+  user: Omit<Session["user"], "role"> & { role: StaffRole };
 };
 
 export type SuperAdminSession = Omit<Session, "user"> & {

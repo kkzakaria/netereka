@@ -16,7 +16,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { SidebarUserMenu } from "./sidebar-user-menu";
-import { useAdminUser } from "./admin-user-context";
+import { useAdminSessionUser } from "./admin-user-context";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: DashboardSquare01Icon, minRole: "agent" as const },
@@ -33,7 +33,7 @@ const ROLE_RANK = { agent: 0, admin: 1, super_admin: 2 } as const;
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { role } = useAdminUser();
+  const { role } = useAdminSessionUser();
 
   return (
     <div className="flex h-full flex-col">

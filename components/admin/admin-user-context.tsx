@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 
-export type AdminUser = {
+export type AdminSessionUser = {
   id: string;
   name: string;
   email: string;
@@ -10,26 +10,26 @@ export type AdminUser = {
   role: "agent" | "admin" | "super_admin";
 };
 
-const AdminUserContext = createContext<AdminUser | null>(null);
+const AdminSessionUserContext = createContext<AdminSessionUser | null>(null);
 
-export function AdminUserProvider({
+export function AdminSessionUserProvider({
   user,
   children,
 }: {
-  user: AdminUser;
+  user: AdminSessionUser;
   children: ReactNode;
 }) {
   return (
-    <AdminUserContext.Provider value={user}>
+    <AdminSessionUserContext.Provider value={user}>
       {children}
-    </AdminUserContext.Provider>
+    </AdminSessionUserContext.Provider>
   );
 }
 
-export function useAdminUser(): AdminUser {
-  const ctx = useContext(AdminUserContext);
+export function useAdminSessionUser(): AdminSessionUser {
+  const ctx = useContext(AdminSessionUserContext);
   if (!ctx) {
-    throw new Error("useAdminUser must be used within an AdminUserProvider");
+    throw new Error("useAdminSessionUser must be used within an AdminSessionUserProvider");
   }
   return ctx;
 }

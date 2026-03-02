@@ -1,4 +1,4 @@
-import type { UserRole } from "@/lib/db/types";
+import type { UserRole, StaffRole } from "@/lib/db/types";
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   customer: "Client",
@@ -25,7 +25,7 @@ export const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 ];
 
 // Options for staff management only (no customer)
-export const STAFF_ROLE_OPTIONS: { value: "agent" | "admin" | "super_admin"; label: string }[] = [
+export const STAFF_ROLE_OPTIONS: { value: StaffRole; label: string }[] = [
   { value: "agent", label: "Agent" },
   { value: "admin", label: "Administrateur" },
   { value: "super_admin", label: "Super Administrateur" },

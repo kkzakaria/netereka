@@ -285,6 +285,7 @@ export interface AdminOrderDetail extends Order {
 
 // Customer Management Types
 export type UserRole = "customer" | "agent" | "admin" | "super_admin";
+export type StaffRole = Exclude<UserRole, "customer">;
 
 export interface AdminCustomer {
   id: string;

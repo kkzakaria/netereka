@@ -1,11 +1,11 @@
 import { query, queryFirst } from "@/lib/db";
-import type { AdminCustomer } from "@/lib/db/types";
+import type { AdminCustomer, StaffRole } from "@/lib/db/types";
 
 export type AdminUser = Omit<AdminCustomer, "order_count" | "total_spent">;
 
 export interface AdminUserFilters {
   search?: string;
-  role?: "agent" | "admin" | "super_admin";
+  role?: StaffRole;
   dateFrom?: string;
   dateTo?: string;
   sort?: "newest" | "oldest" | "name_asc" | "name_desc";

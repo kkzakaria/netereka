@@ -22,8 +22,9 @@ import {
 } from "@/components/ui/select";
 import { createAdminUser } from "@/actions/admin/users";
 import { STAFF_ROLE_OPTIONS } from "@/lib/constants/customers";
+import type { StaffRole } from "@/lib/db/types";
 
-type Role = "agent" | "admin" | "super_admin";
+type Role = StaffRole;
 
 interface FormValues {
   name: string;

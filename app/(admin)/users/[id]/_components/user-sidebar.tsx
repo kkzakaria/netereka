@@ -16,7 +16,7 @@ import { formatDateLong } from "@/lib/utils";
 import { STAFF_ROLE_OPTIONS } from "@/lib/constants/customers";
 import { updateUserRole, banCustomer, unbanCustomer } from "@/actions/admin/customers";
 import type { AdminUser } from "@/lib/db/admin/users";
-import type { UserRole } from "@/lib/db/types";
+import type { UserRole, StaffRole } from "@/lib/db/types";
 
 interface UserSidebarProps {
   user: AdminUser;
@@ -32,7 +32,7 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
     setRoleError(null);
     startTransition(async () => {
       try {
-        const result = await updateUserRole(user.id, newRole as "agent" | "admin" | "super_admin");
+        const result = await updateUserRole(user.id, newRole as StaffRole);
         if (!result.success) {
           setRoleError(result.error || "Erreur lors du changement de rôle");
         } else {
