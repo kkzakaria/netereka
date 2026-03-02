@@ -45,7 +45,7 @@ async function refreshHeroPreload(): Promise<void> {
     const r2Url = getImageUrl(banner.image_url);
     const path = r2Url.startsWith("/") ? r2Url.slice(1) : r2Url;
     const cfUrl = (w: number) => `/cdn-cgi/image/width=${w},quality=75,format=auto/${path}`;
-    const srcset = [256, 384, 640, 828, 1080].map((w) => `${cfUrl(w)} ${w}w`).join(", ");
+    const srcset = [256, 384, 640, 750, 828, 1080, 1200].map((w) => `${cfUrl(w)} ${w}w`).join(", ");
     const sizes = "(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw";
     const linkValue = `<${cfUrl(384)}>; rel=preload; as=image; fetchpriority=high; imagesrcset="${srcset}"; imagesizes="${sizes}"`;
 

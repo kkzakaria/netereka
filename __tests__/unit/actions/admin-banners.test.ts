@@ -809,3 +809,37 @@ describe("reorderBanners", () => {
     expect(mocks.getDrizzle).not.toHaveBeenCalled();
   });
 });
+
+// ─── refreshHeroPreload (via reorderBanners) ──────────────────────────────────
+
+describe("refreshHeroPreload: Link header srcset widths", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+  });
+
+  it("inclut 750w et 1200w dans le srcset du header Link", async () => {
+    // Set up findFirst to return a banner with an image so refreshHeroPreload
+    // writes to KV rather than deleting the key.
+    const whereMock = vi.fn().mockResolvedValue(undefined);
+    const setMock = vi.fn().mockReturnValue({ where: whereMock });
+    mocks.dbUpdate.mockReturnValue({ set: setMock });
+
+    mocks.findFirst.mockResolvedValue({ image_url: "banners/hero.jpg" });
+    mocks.getDrizzle.mockResolvedValue({
+      update: mocks.dbUpdate,
+      query: {
+        banners: { findFirst: mocks.findFirst },
+      },
+    });
+
+    await reorderBanners([1]);
+
+    // kvPut should have been called with the Link header value
+    expect(mocks.kvPut).toHaveBeenCalledTimes(1);
+    const [key, value] = mocks.kvPut.mock.calls[0] as [string, string];
+    expect(key).toBe("hero:lcp:preload-url");
+    expect(value).toContain("750w");
+    expect(value).toContain("1200w");
+  });
+});
