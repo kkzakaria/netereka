@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, FilterIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
-import { ADMIN_ROLE_FILTER_OPTIONS } from "@/lib/constants/customers";
+import { STAFF_ROLE_FILTER_OPTIONS } from "@/lib/constants/customers";
 
 interface UserFilterSheetProps {
   className?: string;
@@ -167,7 +167,7 @@ export function UserFilterSheet({ className }: UserFilterSheetProps) {
           <div className="mb-6">
             <label className="mb-2 block text-sm font-medium">Rôle</label>
             <div className="flex flex-wrap gap-2">
-              {ADMIN_ROLE_FILTER_OPTIONS.map((opt) => (
+              {STAFF_ROLE_FILTER_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => updateFilter("role", opt.value)}

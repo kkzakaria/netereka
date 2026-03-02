@@ -58,10 +58,10 @@ function ActionDescription({
       }
       return <span>Rôle modifié</span>;
     }
-    case "user.activated":
-      return <span>Compte activé</span>;
-    case "user.deactivated":
-      return <span>Compte désactivé</span>;
+    case "user.banned":
+      return <span>Compte banni</span>;
+    case "user.unbanned":
+      return <span>Compte débanni</span>;
     default:
       return <span>{action}</span>;
   }

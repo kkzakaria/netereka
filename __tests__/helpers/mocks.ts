@@ -32,3 +32,14 @@ export const mockSuperAdminSession = {
   },
   session: { id: "sess-3", expiresAt: new Date("2099-01-01") },
 };
+
+export const mockAgentSession = {
+  user: {
+    id: "agent-1",
+    name: "Agent User",
+    email: "agent@netereka.ci",
+    role: "agent",
+    phone: "0102030405",
+  },
+  session: { id: "sess-4", expiresAt: new Date("2099-01-01") },
+};

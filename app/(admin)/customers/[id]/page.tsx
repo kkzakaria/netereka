@@ -69,6 +69,8 @@ export default async function CustomerDetailPage({ params }: Props) {
             createdAt: customer.createdAt,
             role: customer.role,
             is_active: customer.is_active,
+            banned: customer.banned,
+            banReason: customer.banReason,
           } satisfies CustomerSidebarData}
           isSuperAdmin={isSuperAdmin}
         />

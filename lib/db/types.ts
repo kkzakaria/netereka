@@ -284,7 +284,7 @@ export interface AdminOrderDetail extends Order {
 }
 
 // Customer Management Types
-export type UserRole = "customer" | "admin" | "super_admin";
+export type UserRole = "customer" | "agent" | "admin" | "super_admin";
 
 export interface AdminCustomer {
   id: string;
@@ -295,6 +295,8 @@ export interface AdminCustomer {
   emailVerified: number;
   image: string | null;
   is_active: number;
+  banned: number;
+  banReason: string | null;
   createdAt: string;
   order_count: number;
   total_spent: number;
@@ -315,14 +317,14 @@ export type OrderListItem = Pick<
 /** Customer data for admin sidebar actions. */
 export type CustomerSidebarData = Pick<
   AdminCustomerDetail,
-  'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'is_active'
+  'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'is_active' | 'banned' | 'banReason'
 >;
 
 // Audit Log Types
 export type AuditAction =
   | "user.role_changed"
-  | "user.activated"
-  | "user.deactivated";
+  | "user.banned"
+  | "user.unbanned";
 
 export interface AuditLog {
   id: string;

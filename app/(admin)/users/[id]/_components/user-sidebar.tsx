@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDateLong } from "@/lib/utils";
-import { ADMIN_ROLE_OPTIONS } from "@/lib/constants/customers";
+import { STAFF_ROLE_OPTIONS } from "@/lib/constants/customers";
 import { updateCustomerRole } from "@/actions/admin/customers";
 import type { AdminUser } from "@/lib/db/admin/users";
 import type { UserRole } from "@/lib/db/types";
@@ -78,7 +78,7 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ADMIN_ROLE_OPTIONS.map((option) => (
+                  {STAFF_ROLE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>

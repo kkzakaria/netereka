@@ -125,7 +125,7 @@ export async function toggleCustomerActive(
   const auditStmt = await prepareAuditLog({
     actorId: session.user.id,
     actorName: session.user.name,
-    action: newActive === 1 ? "user.activated" : "user.deactivated",
+    action: newActive === 1 ? "user.unbanned" : "user.banned",
     targetType: "user",
     targetId: customerId,
   });
