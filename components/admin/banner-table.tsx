@@ -273,6 +273,10 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
     setActiveId(event.active.id as number);
   }, []);
 
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
+
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
@@ -365,6 +369,7 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="rounded-lg border touch-manipulation" data-pending={isPending || undefined}>
         <Table>

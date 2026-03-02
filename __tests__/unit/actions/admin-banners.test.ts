@@ -718,9 +718,17 @@ describe("reorderBanners", () => {
     expect(mocks.getDrizzle).not.toHaveBeenCalled();
   });
 
+  it("valeur non-tableau (null) → succès sans appel DB", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await reorderBanners(null as any);
+    expect(result.success).toBe(true);
+    expect(mocks.getDrizzle).not.toHaveBeenCalled();
+  });
+
   it("met à jour display_order pour chaque ID dans le bon ordre", async () => {
     const { setMock } = makeReorderMock();
     const { revalidatePath } = await import("next/cache");
+    const { getKV } = await import("@/lib/cloudflare/context");
 
     const result = await reorderBanners([3, 1, 2]);
 
@@ -731,6 +739,7 @@ describe("reorderBanners", () => {
     expect(setMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ display_order: 2 }));
     expect(revalidatePath).toHaveBeenCalledWith("/banners");
     expect(revalidatePath).toHaveBeenCalledWith("/");
+    expect(getKV).toHaveBeenCalled();
   });
 
   it("passe l'updated_at avec chaque mise à jour", async () => {
