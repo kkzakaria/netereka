@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { formatDateLong } from "@/lib/utils";
 import { STAFF_ROLE_OPTIONS } from "@/lib/constants/customers";
-import { updateCustomerRole } from "@/actions/admin/customers";
+import { updateUserRole } from "@/actions/admin/customers";
 import type { AdminUser } from "@/lib/db/admin/users";
 import type { UserRole } from "@/lib/db/types";
 
@@ -29,7 +29,7 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
   async function handleRoleChange(newRole: UserRole) {
     setError(null);
     startTransition(async () => {
-      const result = await updateCustomerRole(user.id, newRole);
+      const result = await updateUserRole(user.id, newRole as "agent" | "admin" | "super_admin");
       if (!result.success) {
         setError(result.error || "Erreur lors du changement de rôle");
       } else {

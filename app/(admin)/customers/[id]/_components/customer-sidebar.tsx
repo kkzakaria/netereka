@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { formatPrice, formatDateLong } from "@/lib/utils";
 import { ROLE_OPTIONS } from "@/lib/constants/customers";
-import { updateCustomerRole, toggleCustomerActive } from "@/actions/admin/customers";
+import { updateUserRole, banCustomer } from "@/actions/admin/customers";
 import type { CustomerSidebarData, UserRole } from "@/lib/db/types";
 
 interface CustomerSidebarProps {
@@ -29,7 +29,7 @@ export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps
   async function handleRoleChange(newRole: UserRole) {
     setError(null);
     startTransition(async () => {
-      const result = await updateCustomerRole(customer.id, newRole);
+      const result = await updateUserRole(customer.id, newRole as "agent" | "admin" | "super_admin");
       if (!result.success) {
         setError(result.error || "Erreur lors du changement de rôle");
       } else {
@@ -41,7 +41,7 @@ export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps
   async function handleToggleActive() {
     setError(null);
     startTransition(async () => {
-      const result = await toggleCustomerActive(customer.id);
+      const result = await banCustomer(customer.id);
       if (!result.success) {
         setError(result.error || "Erreur lors du changement de statut");
       } else {
