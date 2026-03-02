@@ -275,30 +275,26 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
     setActiveId(null);
     if (!over || active.id === over.id) return;
 
-    setItems((current) => {
-      const oldIndex = current.findIndex((b) => b.id === active.id);
-      const newIndex = current.findIndex((b) => b.id === over.id);
-      return arrayMove(current, oldIndex, newIndex);
-    });
+    const oldIndex = items.findIndex((b) => b.id === active.id);
+    const newIndex = items.findIndex((b) => b.id === over.id);
+    const newItems = arrayMove(items, oldIndex, newIndex);
 
-    // Capture new order after state update via functional update
-    setItems((current) => {
-      const newOrder = current.map((b) => b.id);
-      startTransition(async () => {
-        try {
-          const result = await reorderBanners(newOrder);
-          if (!result.success) {
-            toast.error(result.error || "Erreur lors de la sauvegarde de l'ordre");
-          } else {
-            toast.success("Ordre sauvegardé");
-          }
-        } catch {
-          toast.error("Erreur de connexion au serveur");
+    setItems(newItems);
+
+    const newOrder = newItems.map((b) => b.id);
+    startTransition(async () => {
+      try {
+        const result = await reorderBanners(newOrder);
+        if (!result.success) {
+          toast.error(result.error || "Erreur lors de la sauvegarde de l'ordre");
+        } else {
+          toast.success("Ordre sauvegardé");
         }
-      });
-      return current; // no additional state change
+      } catch {
+        toast.error("Erreur de connexion au serveur");
+      }
     });
-  }, []);
+  }, [items]);
 
   const handleToggleActive = useCallback((id: number) => {
     startTransition(async () => {
