@@ -17,12 +17,10 @@ const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 
 export default async function UserDetailPage({ params }: Props) {
   const userPromise = params.then(({ id }) => getAdminUserById(id));
-  const session = await requireSuperAdmin();
+  await requireSuperAdmin();
   const user = await userPromise;
 
   if (!user) notFound();
-
-  const isSuperAdmin = session.user.role === "super_admin";
 
   return (
     <div>
@@ -57,7 +55,7 @@ export default async function UserDetailPage({ params }: Props) {
         {/* Sidebar */}
         <UserSidebar
           user={user}
-          isSuperAdmin={isSuperAdmin}
+          isSuperAdmin={true}
         />
       </div>
     </div>
