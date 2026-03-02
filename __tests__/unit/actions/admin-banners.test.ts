@@ -33,6 +33,7 @@ vi.mock("nanoid", () => ({ nanoid: vi.fn().mockReturnValue("mockuid8") }));
 vi.mock("@/lib/db/drizzle", () => ({ getDrizzle: mocks.getDrizzle }));
 
 import {
+  createBanner,
   uploadBannerImage,
   setBannerImageUrl,
   createBannerGradient,
@@ -71,6 +72,146 @@ function makeDrizzleMock(findFirstResult: unknown) {
 
   return { whereMock, setMock };
 }
+
+// ─── createBanner ────────────────────────────────────────────────────────────
+
+describe("createBanner", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+  });
+
+  /** Stub select().from() for max() and insert().values().returning() */
+  function makeCreateBannerMock(
+    maxOrder: number | null,
+    insertResult: object[] = [{ id: 42 }]
+  ) {
+    const fromMock = vi.fn().mockResolvedValue([{ maxOrder }]);
+    const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+
+    const returningMock = vi.fn().mockResolvedValue(insertResult);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+
+    mocks.getDrizzle.mockResolvedValue({
+      select: selectMock,
+      insert: mocks.dbInsert,
+    });
+
+    return { selectMock, fromMock, valuesMock, returningMock };
+  }
+
+  function makeCreateBannerFormData(overrides: Record<string, string> = {}): FormData {
+    const fd = new FormData();
+    fd.append("title", overrides.title ?? "Bannière Test");
+    fd.append("link_url", overrides.link_url ?? "/p/test-produit");
+    for (const [key, value] of Object.entries(overrides)) {
+      if (!fd.has(key)) fd.append(key, value);
+    }
+    return fd;
+  }
+
+  // ── Auth ─────────────────────────────────────────────────────────────────
+
+  it("redirige si non admin (customer session)", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(createBanner(makeCreateBannerFormData())).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  // ── Validation ───────────────────────────────────────────────────────────
+
+  it("rejette si le titre est manquant", async () => {
+    const fd = new FormData();
+    fd.append("link_url", "/p/test");
+    const result = await createBanner(fd);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejette si link_url ne commence pas par /", async () => {
+    const result = await createBanner(makeCreateBannerFormData({ link_url: "http://example.com" }));
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("chemin relatif");
+  });
+
+  // ── Calcul automatique de display_order ──────────────────────────────────
+
+  it("table vide : max() retourne null → display_order = 0", async () => {
+    const { valuesMock } = makeCreateBannerMock(null);
+
+    const result = await createBanner(makeCreateBannerFormData());
+
+    expect(result.success).toBe(true);
+    expect(valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ display_order: 0 })
+    );
+  });
+
+  it("table non-vide : max() = 5 → display_order = 6", async () => {
+    const { valuesMock } = makeCreateBannerMock(5);
+
+    const result = await createBanner(makeCreateBannerFormData());
+
+    expect(result.success).toBe(true);
+    expect(valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ display_order: 6 })
+    );
+  });
+
+  it("la valeur display_order du formulaire est ignorée même si fournie", async () => {
+    const { valuesMock } = makeCreateBannerMock(3);
+
+    // Simule un submit manuel avec display_order=99 dans le formulaire
+    const result = await createBanner(makeCreateBannerFormData({ display_order: "99" }));
+
+    expect(result.success).toBe(true);
+    // Doit utiliser max+1=4, pas 99
+    expect(valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ display_order: 4 })
+    );
+  });
+
+  // ── Erreurs DB ───────────────────────────────────────────────────────────
+
+  it("retourne une erreur distincte si la requête max() échoue (avant l'insert)", async () => {
+    const fromMock = vi.fn().mockRejectedValue(new Error("D1 select failed"));
+    const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+    mocks.getDrizzle.mockResolvedValue({ select: selectMock, insert: mocks.dbInsert });
+
+    const result = await createBanner(makeCreateBannerFormData());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("ordre d'affichage");
+    // L'insert ne doit pas être tenté après l'échec du max()
+    expect(mocks.dbInsert).not.toHaveBeenCalled();
+  });
+
+  it("retourne une erreur si l'insertion échoue (le max() a réussi)", async () => {
+    const fromMock = vi.fn().mockResolvedValue([{ maxOrder: 2 }]);
+    const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+    mocks.getDrizzle.mockResolvedValue({
+      select: selectMock,
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockRejectedValue(new Error("D1 insert failed")),
+        }),
+      }),
+    });
+
+    const result = await createBanner(makeCreateBannerFormData());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("création de la bannière");
+  });
+
+  it("retourne une erreur si l'insert retourne un tableau vide", async () => {
+    makeCreateBannerMock(0, []);
+
+    const result = await createBanner(makeCreateBannerFormData());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Échec");
+  });
+});
 
 // ─── uploadBannerImage ───────────────────────────────────────────────────────
 

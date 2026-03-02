@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, and, or, isNull, isNotNull, lte, gt, asc } from "drizzle-orm";
+import { eq, and, or, isNull, isNotNull, lte, gt, asc, max } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
@@ -68,6 +68,7 @@ const bannerSchema = z.object({
   price: z.coerce.number().int().min(0).optional(),
   bg_gradient_from: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide").default("#183C78"),
   bg_gradient_to: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide").default("#1E4A8F"),
+  // Only consumed by updateBanner — createBanner ignores this and computes display_order from max().
   display_order: z.coerce.number().int().min(0).default(0),
   is_active: z.coerce.number().min(0).max(1).default(1),
   starts_at: z.string().optional().default(""),
@@ -96,6 +97,17 @@ export async function createBanner(formData: FormData): Promise<ActionResult> {
     const data = parsed.data;
     const db = await getDrizzle();
 
+    // SQL MAX() on an empty table returns one row with NULL — not an empty array.
+    // maxRow is always defined; maxRow.maxOrder is null when the table is empty.
+    let nextOrder: number;
+    try {
+      const [maxRow] = await db.select({ maxOrder: max(banners.display_order) }).from(banners);
+      nextOrder = (maxRow.maxOrder ?? -1) + 1; // null when table is empty → start at 0
+    } catch (orderError) {
+      console.error("[admin/banners] createBanner: failed to compute max display_order:", orderError);
+      return { success: false, error: "Impossible de calculer l'ordre d'affichage. Veuillez réessayer." };
+    }
+
     const rows = await db.insert(banners).values({
       title: data.title,
       subtitle: data.subtitle || null,
@@ -106,7 +118,7 @@ export async function createBanner(formData: FormData): Promise<ActionResult> {
       price: data.price ?? null,
       bg_gradient_from: data.bg_gradient_from,
       bg_gradient_to: data.bg_gradient_to,
-      display_order: data.display_order,
+      display_order: nextOrder,
       is_active: data.is_active,
       starts_at: data.starts_at || null,
       ends_at: data.ends_at || null,
