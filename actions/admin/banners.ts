@@ -454,15 +454,32 @@ export async function reorderBanners(orderedIds: number[]): Promise<ActionResult
     return { success: true };
   }
 
+  if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    return { success: false, error: "Données de réorganisation invalides" };
+  }
+
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    return { success: false, error: "Données de réorganisation invalides (doublons)" };
+  }
+
   try {
     const db = await getDrizzle();
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
-    await Promise.all(
+    const results = await Promise.allSettled(
       orderedIds.map((id, index) =>
         db.update(banners).set({ display_order: index, updated_at: now }).where(eq(banners.id, id))
       )
     );
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      console.error(
+        `[admin/banners] reorderBanners: ${failures.length}/${results.length} updates failed:`,
+        failures.map((f) => (f as PromiseRejectedResult).reason)
+      );
+      return { success: false, error: "Erreur lors de la mise à jour de l'ordre" };
+    }
 
     revalidatePath("/banners");
     revalidatePath("/");

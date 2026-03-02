@@ -748,4 +748,18 @@ describe("reorderBanners", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("ordre");
   });
+
+  it("rejette si un ID n'est pas un entier positif", async () => {
+    const result = await reorderBanners([1, -1, 3]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("invalide");
+    expect(mocks.getDrizzle).not.toHaveBeenCalled();
+  });
+
+  it("rejette si des IDs sont en double", async () => {
+    const result = await reorderBanners([1, 2, 1]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("doublons");
+    expect(mocks.getDrizzle).not.toHaveBeenCalled();
+  });
 });
