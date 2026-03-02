@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { captcha, emailOTP } from "better-auth/plugins";
+import { captcha, emailOTP, admin } from "better-auth/plugins";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
@@ -37,14 +37,8 @@ export async function initAuth() {
       additionalFields: {
         phone: {
           type: "string",
-          required: true,
-          input: true,
-        },
-        role: {
-          type: "string",
           required: false,
-          input: false,
-          defaultValue: "customer",
+          input: true,
         },
       },
     },
@@ -65,6 +59,10 @@ export async function initAuth() {
       },
     },
     plugins: [
+      admin({
+        defaultRole: "customer",
+        adminRole: ["admin", "super_admin"],
+      }),
       captcha({
         provider: "cloudflare-turnstile",
         secretKey: cfEnv.TURNSTILE_SECRET_KEY,
