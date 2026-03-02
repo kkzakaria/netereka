@@ -321,6 +321,7 @@ export type CustomerSidebarData = Pick<
 
 // Audit Log Types
 export type AuditAction =
+  | "user.created"
   | "user.role_changed"
   | "user.banned"
   | "user.unbanned";

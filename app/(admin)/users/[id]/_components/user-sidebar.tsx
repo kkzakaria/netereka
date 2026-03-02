@@ -31,36 +31,48 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
   async function handleRoleChange(newRole: UserRole) {
     setRoleError(null);
     startTransition(async () => {
-      const result = await updateUserRole(user.id, newRole as "agent" | "admin" | "super_admin");
-      if (!result.success) {
-        setRoleError(result.error || "Erreur lors du changement de rôle");
-      } else {
-        toast.success("Rôle mis à jour avec succès");
-        router.refresh();
+      try {
+        const result = await updateUserRole(user.id, newRole as "agent" | "admin" | "super_admin");
+        if (!result.success) {
+          setRoleError(result.error || "Erreur lors du changement de rôle");
+        } else {
+          toast.success("Rôle mis à jour avec succès");
+          router.refresh();
+        }
+      } catch {
+        setRoleError("Une erreur inattendue s'est produite");
       }
     });
   }
 
   function handleBan() {
     startTransition(async () => {
-      const result = await banCustomer(user.id);
-      if (!result.success) {
-        toast.error(result.error || "Erreur lors du bannissement de l'utilisateur");
-      } else {
-        toast.success("Utilisateur banni avec succès");
-        router.refresh();
+      try {
+        const result = await banCustomer(user.id);
+        if (!result.success) {
+          toast.error(result.error || "Erreur lors du bannissement de l'utilisateur");
+        } else {
+          toast.success("Utilisateur banni avec succès");
+          router.refresh();
+        }
+      } catch {
+        toast.error("Une erreur inattendue s'est produite");
       }
     });
   }
 
   function handleUnban() {
     startTransition(async () => {
-      const result = await unbanCustomer(user.id);
-      if (!result.success) {
-        toast.error(result.error || "Erreur lors du débannissement de l'utilisateur");
-      } else {
-        toast.success("Utilisateur débanni avec succès");
-        router.refresh();
+      try {
+        const result = await unbanCustomer(user.id);
+        if (!result.success) {
+          toast.error(result.error || "Erreur lors du débannissement de l'utilisateur");
+        } else {
+          toast.success("Utilisateur débanni avec succès");
+          router.refresh();
+        }
+      } catch {
+        toast.error("Une erreur inattendue s'est produite");
       }
     });
   }

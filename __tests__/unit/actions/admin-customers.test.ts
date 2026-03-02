@@ -98,6 +98,13 @@ describe("updateUserRole", () => {
     expect(result.success).toBe(false);
   });
 
+  it("retourne une erreur si setRole lève une exception", async () => {
+    mocks.setRole.mockRejectedValue(new Error("Plugin error"));
+    const result = await updateUserRole("user-target", "admin");
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+
   it("crée un log d'audit", async () => {
     await updateUserRole("user-target", "admin");
     expect(mocks.prepareAuditLog).toHaveBeenCalledWith(

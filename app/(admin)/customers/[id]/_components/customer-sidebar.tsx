@@ -19,24 +19,32 @@ export function CustomerSidebar({ customer }: CustomerSidebarProps) {
 
   function handleBan() {
     startTransition(async () => {
-      const result = await banCustomer(customer.id);
-      if (!result.success) {
-        toast.error(result.error || "Erreur lors du bannissement du client");
-      } else {
-        toast.success("Client banni avec succès");
-        router.refresh();
+      try {
+        const result = await banCustomer(customer.id);
+        if (!result.success) {
+          toast.error(result.error || "Erreur lors du bannissement du client");
+        } else {
+          toast.success("Client banni avec succès");
+          router.refresh();
+        }
+      } catch {
+        toast.error("Une erreur inattendue s'est produite");
       }
     });
   }
 
   function handleUnban() {
     startTransition(async () => {
-      const result = await unbanCustomer(customer.id);
-      if (!result.success) {
-        toast.error(result.error || "Erreur lors du débannissement du client");
-      } else {
-        toast.success("Client débanni avec succès");
-        router.refresh();
+      try {
+        const result = await unbanCustomer(customer.id);
+        if (!result.success) {
+          toast.error(result.error || "Erreur lors du débannissement du client");
+        } else {
+          toast.success("Client débanni avec succès");
+          router.refresh();
+        }
+      } catch {
+        toast.error("Une erreur inattendue s'est produite");
       }
     });
   }

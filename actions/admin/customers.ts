@@ -62,20 +62,24 @@ export async function updateUserRole(
     return { success: false, error: "Erreur lors du changement de rôle" };
   }
 
-  const auditStmt = await prepareAuditLog({
-    actorId: session.user.id,
-    actorName: session.user.name,
-    action: "user.role_changed",
-    targetType: "user",
-    targetId: userId,
-    details: JSON.stringify({
-      from: oldRole,
-      to: roleResult.data,
-      fromLabel: ROLE_LABELS[oldRole],
-      toLabel: ROLE_LABELS[roleResult.data],
-    }),
-  });
-  await batch([auditStmt]);
+  try {
+    const auditStmt = await prepareAuditLog({
+      actorId: session.user.id,
+      actorName: session.user.name,
+      action: "user.role_changed",
+      targetType: "user",
+      targetId: userId,
+      details: JSON.stringify({
+        from: oldRole,
+        to: roleResult.data,
+        fromLabel: ROLE_LABELS[oldRole],
+        toLabel: ROLE_LABELS[roleResult.data],
+      }),
+    });
+    await batch([auditStmt]);
+  } catch (auditError) {
+    console.error("[admin/customers] audit log failed after setRole for userId:", userId, auditError);
+  }
 
   revalidatePath("/users");
   revalidatePath(`/users/${userId}`);
@@ -105,15 +109,19 @@ export async function banCustomer(userId: string, reason?: string): Promise<Acti
     return { success: false, error: "Erreur lors du bannissement de l'utilisateur" };
   }
 
-  const auditStmt = await prepareAuditLog({
-    actorId: session.user.id,
-    actorName: session.user.name,
-    action: "user.banned",
-    targetType: "user",
-    targetId: userId,
-    details: reason ? JSON.stringify({ reason }) : undefined,
-  });
-  await batch([auditStmt]);
+  try {
+    const auditStmt = await prepareAuditLog({
+      actorId: session.user.id,
+      actorName: session.user.name,
+      action: "user.banned",
+      targetType: "user",
+      targetId: userId,
+      details: reason ? JSON.stringify({ reason }) : undefined,
+    });
+    await batch([auditStmt]);
+  } catch (auditError) {
+    console.error("[admin/customers] audit log failed after banUser for userId:", userId, auditError);
+  }
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${userId}`);
@@ -145,14 +153,18 @@ export async function unbanCustomer(userId: string): Promise<ActionResult> {
     return { success: false, error: "Erreur lors du débannissement de l'utilisateur" };
   }
 
-  const auditStmt = await prepareAuditLog({
-    actorId: session.user.id,
-    actorName: session.user.name,
-    action: "user.unbanned",
-    targetType: "user",
-    targetId: userId,
-  });
-  await batch([auditStmt]);
+  try {
+    const auditStmt = await prepareAuditLog({
+      actorId: session.user.id,
+      actorName: session.user.name,
+      action: "user.unbanned",
+      targetType: "user",
+      targetId: userId,
+    });
+    await batch([auditStmt]);
+  } catch (auditError) {
+    console.error("[admin/customers] audit log failed after unbanUser for userId:", userId, auditError);
+  }
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${userId}`);

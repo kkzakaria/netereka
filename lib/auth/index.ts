@@ -1,10 +1,22 @@
 import { betterAuth } from "better-auth";
 import { captcha, emailOTP, admin } from "better-auth/plugins";
+import { createAccessControl } from "better-auth/plugins/access";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 import { sendEmail } from "@/lib/notifications/email";
 import { otpEmail } from "@/lib/notifications/templates";
+
+// ACL for the better-auth admin plugin — mirrors the library's defaultStatements.
+// Required to declare super_admin, agent, and customer as known roles so the
+// plugin's hasPermission() check can resolve them (defaultRoles only knows "admin" + "user").
+const adminStatements = {
+  user: ["create", "list", "set-role", "ban", "impersonate", "delete", "set-password", "get", "update"],
+  session: ["list", "revoke", "delete"],
+} as const;
+const ac = createAccessControl(adminStatements);
+const staffRole = ac.newRole({ user: [...adminStatements.user], session: [...adminStatements.session] });
+const noPermsRole = ac.newRole({ user: [], session: [] });
 
 export async function initAuth() {
   const { env } = await getCloudflareContext();
@@ -61,7 +73,13 @@ export async function initAuth() {
     plugins: [
       admin({
         defaultRole: "customer",
-        adminRole: ["admin", "super_admin"],
+        adminRoles: ["admin", "super_admin"],
+        roles: {
+          admin: staffRole,
+          super_admin: staffRole,
+          agent: noPermsRole,
+          customer: noPermsRole,
+        },
       }),
       captcha({
         provider: "cloudflare-turnstile",

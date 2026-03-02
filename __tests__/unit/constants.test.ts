@@ -96,6 +96,7 @@ describe("getUserTypeLabel", () => {
 
 describe("AUDIT_ACTION_LABELS", () => {
   it("a un label pour chaque action d'audit", () => {
+    expect(AUDIT_ACTION_LABELS["user.created"]).toBe("Création de compte");
     expect(AUDIT_ACTION_LABELS["user.role_changed"]).toBe("Changement de rôle");
     expect(AUDIT_ACTION_LABELS["user.banned"]).toBe("Bannissement");
     expect(AUDIT_ACTION_LABELS["user.unbanned"]).toBe("Débannissement");
@@ -110,6 +111,7 @@ describe("AUDIT_ACTION_OPTIONS", () => {
 
   it("contient toutes les actions d'audit", () => {
     const values = AUDIT_ACTION_OPTIONS.map((o) => o.value);
+    expect(values).toContain("user.created");
     expect(values).toContain("user.role_changed");
     expect(values).toContain("user.banned");
     expect(values).toContain("user.unbanned");

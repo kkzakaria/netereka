@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
     throw error;
   }),
   createUser: vi.fn(),
+  prepareAuditLog: vi.fn(),
+  batch: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -22,6 +24,12 @@ vi.mock("@/lib/auth", () => ({
     },
   }),
 }));
+vi.mock("@/lib/db", () => ({
+  batch: mocks.batch,
+}));
+vi.mock("@/lib/db/admin/audit-log", () => ({
+  prepareAuditLog: mocks.prepareAuditLog.mockResolvedValue({ bind: vi.fn() }),
+}));
 
 import { createAdminUser } from "@/actions/admin/users";
 
@@ -30,6 +38,7 @@ describe("createAdminUser", () => {
     vi.clearAllMocks();
     mocks.getSession.mockResolvedValue(mockSuperAdminSession);
     mocks.createUser.mockResolvedValue({ user: { id: "new-user-123" } });
+    mocks.batch.mockResolvedValue([]);
   });
 
   it("crée un compte admin", async () => {
@@ -146,5 +155,17 @@ describe("createAdminUser", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toBeDefined();
+  });
+
+  it("crée un log d'audit avec l'action user.created", async () => {
+    await createAdminUser({
+      name: "Jean Dupont",
+      email: "jean@netereka.ci",
+      password: "TempPass123!",
+      role: "admin",
+    });
+    expect(mocks.prepareAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "user.created", targetId: "new-user-123" })
+    );
   });
 });

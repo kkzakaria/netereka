@@ -66,18 +66,22 @@ export function CreateAdminUserDialog() {
     setFieldErrors({});
 
     startTransition(async () => {
-      const result = await createAdminUser(values);
-      if (!result.success) {
-        if (result.fieldErrors) {
-          setFieldErrors(result.fieldErrors as FieldErrors);
-        } else {
-          toast.error(result.error ?? "Erreur lors de la création");
+      try {
+        const result = await createAdminUser(values);
+        if (!result.success) {
+          if (result.fieldErrors) {
+            setFieldErrors(result.fieldErrors as FieldErrors);
+          } else {
+            toast.error(result.error ?? "Erreur lors de la création");
+          }
+          return;
         }
-        return;
+        toast.success("Compte créé avec succès");
+        handleOpenChange(false);
+        router.refresh();
+      } catch {
+        toast.error("Une erreur inattendue s'est produite");
       }
-      toast.success("Compte créé avec succès");
-      handleOpenChange(false);
-      router.refresh();
     });
   }
 

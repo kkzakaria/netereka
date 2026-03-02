@@ -5,6 +5,8 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { requireSuperAdmin } from "@/lib/auth/guards";
 import { initAuth } from "@/lib/auth";
+import { batch } from "@/lib/db";
+import { prepareAuditLog } from "@/lib/db/admin/audit-log";
 import type { ActionResult } from "@/lib/types/actions";
 
 const createAdminUserSchema = z.object({
@@ -17,7 +19,7 @@ const createAdminUserSchema = z.object({
 export type CreateAdminUserInput = z.infer<typeof createAdminUserSchema>;
 
 export async function createAdminUser(input: CreateAdminUserInput): Promise<ActionResult> {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
 
   const parsed = createAdminUserSchema.safeParse(input);
   if (!parsed.success) {
@@ -45,6 +47,20 @@ export async function createAdminUser(input: CreateAdminUserInput): Promise<Acti
 
   if (!result?.user) {
     return { success: false, error: "Erreur lors de la création du compte" };
+  }
+
+  try {
+    const auditStmt = await prepareAuditLog({
+      actorId: session.user.id,
+      actorName: session.user.name,
+      action: "user.created",
+      targetType: "user",
+      targetId: result.user.id,
+      details: JSON.stringify({ role: parsed.data.role, email: parsed.data.email }),
+    });
+    await batch([auditStmt]);
+  } catch (auditError) {
+    console.error("[admin/users] audit log failed after createUser:", auditError);
   }
 
   revalidatePath("/users");
