@@ -25,8 +25,8 @@ export default async function UsersPage({ searchParams }: Props) {
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
 
-  const role: "admin" | "super_admin" | undefined =
-    params.role === "admin" || params.role === "super_admin"
+  const role: "agent" | "admin" | "super_admin" | undefined =
+    params.role === "agent" || params.role === "admin" || params.role === "super_admin"
       ? params.role
       : undefined;
 

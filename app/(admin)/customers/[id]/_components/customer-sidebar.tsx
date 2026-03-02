@@ -124,14 +124,14 @@ export function CustomerSidebar({ customer, isSuperAdmin }: CustomerSidebarProps
               Statut du compte
             </label>
             <Button
-              variant={customer.is_active === 1 ? "destructive" : "default"}
+              variant={customer.banned !== 1 ? "destructive" : "default"}
               className="w-full"
               onClick={handleToggleActive}
               disabled={isPending}
             >
               {isPending
                 ? "Mise à jour..."
-                : customer.is_active === 1
+                : customer.banned !== 1
                 ? "Désactiver le compte"
                 : "Activer le compte"}
             </Button>

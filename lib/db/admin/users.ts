@@ -5,7 +5,7 @@ export type AdminUser = Omit<AdminCustomer, "order_count" | "total_spent">;
 
 export interface AdminUserFilters {
   search?: string;
-  role?: "admin" | "super_admin";
+  role?: "agent" | "admin" | "super_admin";
   dateFrom?: string;
   dateTo?: string;
   sort?: "newest" | "oldest" | "name_asc" | "name_desc";
@@ -17,7 +17,7 @@ function buildFilterClause(opts: AdminUserFilters): {
   where: string;
   params: unknown[];
 } {
-  const conditions: string[] = ["u.role IN ('admin', 'super_admin')"];
+  const conditions: string[] = ["u.role IN ('agent', 'admin', 'super_admin')"];
   const params: unknown[] = [];
 
   if (opts.search) {
@@ -76,7 +76,8 @@ export async function getAdminUsers(
        u.role,
        u.emailVerified,
        u.image,
-       1 as is_active, -- TODO: hardcoded until is_active column exists
+       u.banned,
+       u.banReason,
        u.createdAt
      FROM user u
      ${where}
@@ -110,10 +111,11 @@ export async function getAdminUserById(
        u.role,
        u.emailVerified,
        u.image,
-       1 as is_active, -- TODO: hardcoded until is_active column exists
+       u.banned,
+       u.banReason,
        u.createdAt
      FROM user u
-     WHERE u.id = ? AND u.role IN ('admin', 'super_admin')`,
+     WHERE u.id = ? AND u.role IN ('agent', 'admin', 'super_admin')`,
     [id]
   );
 }

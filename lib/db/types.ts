@@ -294,7 +294,6 @@ export interface AdminCustomer {
   role: UserRole;
   emailVerified: number;
   image: string | null;
-  is_active: number;
   banned: number;
   banReason: string | null;
   createdAt: string;
@@ -317,7 +316,7 @@ export type OrderListItem = Pick<
 /** Customer data for admin sidebar actions. */
 export type CustomerSidebarData = Pick<
   AdminCustomerDetail,
-  'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'is_active' | 'banned' | 'banReason'
+  'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'banned' | 'banReason'
 >;
 
 // Audit Log Types

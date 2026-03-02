@@ -68,7 +68,6 @@ export default async function CustomerDetailPage({ params }: Props) {
             total_spent: customer.total_spent,
             createdAt: customer.createdAt,
             role: customer.role,
-            is_active: customer.is_active,
             banned: customer.banned,
             banReason: customer.banReason,
           } satisfies CustomerSidebarData}
