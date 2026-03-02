@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   dbInsert: vi.fn(),
   dbDelete: vi.fn(),
   getDrizzle: vi.fn(),
+  kvPut: vi.fn(),
+  kvDelete: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -31,6 +33,11 @@ vi.mock("@/lib/storage/images", () => ({
 }));
 vi.mock("nanoid", () => ({ nanoid: vi.fn().mockReturnValue("mockuid8") }));
 vi.mock("@/lib/db/drizzle", () => ({ getDrizzle: mocks.getDrizzle }));
+vi.mock("@/lib/cloudflare/context", () => ({
+  getKV: vi.fn().mockImplementation(() =>
+    Promise.resolve({ put: mocks.kvPut, delete: mocks.kvDelete })
+  ),
+}));
 
 import {
   createBanner,
@@ -693,7 +700,10 @@ describe("reorderBanners", () => {
     const whereMock = vi.fn().mockResolvedValue(undefined);
     const setMock = vi.fn().mockReturnValue({ where: whereMock });
     mocks.dbUpdate.mockReturnValue({ set: setMock });
-    mocks.getDrizzle.mockResolvedValue({ update: mocks.dbUpdate });
+    mocks.getDrizzle.mockResolvedValue({
+      update: mocks.dbUpdate,
+      query: { banners: { findFirst: vi.fn().mockResolvedValue(null) } },
+    });
     return { whereMock, setMock };
   }
 
@@ -710,6 +720,7 @@ describe("reorderBanners", () => {
 
   it("met à jour display_order pour chaque ID dans le bon ordre", async () => {
     const { setMock } = makeReorderMock();
+    const { revalidatePath } = await import("next/cache");
 
     const result = await reorderBanners([3, 1, 2]);
 
@@ -718,6 +729,8 @@ describe("reorderBanners", () => {
     expect(setMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ display_order: 0 }));
     expect(setMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ display_order: 1 }));
     expect(setMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ display_order: 2 }));
+    expect(revalidatePath).toHaveBeenCalledWith("/banners");
+    expect(revalidatePath).toHaveBeenCalledWith("/");
   });
 
   it("passe l'updated_at avec chaque mise à jour", async () => {
@@ -730,7 +743,7 @@ describe("reorderBanners", () => {
     );
   });
 
-  it("appelle where() avec l'ID correct pour chaque bannière", async () => {
+  it("appelle where() pour chaque bannière de la liste", async () => {
     const { whereMock } = makeReorderMock();
 
     await reorderBanners([10, 20]);
@@ -742,11 +755,13 @@ describe("reorderBanners", () => {
     const whereMock = vi.fn().mockRejectedValue(new Error("D1 error"));
     mocks.dbUpdate.mockReturnValue({ set: vi.fn().mockReturnValue({ where: whereMock }) });
     mocks.getDrizzle.mockResolvedValue({ update: mocks.dbUpdate });
+    const { revalidatePath } = await import("next/cache");
 
     const result = await reorderBanners([1, 2]);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("ordre");
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("rejette si un ID n'est pas un entier positif", async () => {
@@ -756,10 +771,32 @@ describe("reorderBanners", () => {
     expect(mocks.getDrizzle).not.toHaveBeenCalled();
   });
 
+  it("rejette si un ID est zéro", async () => {
+    const result = await reorderBanners([0, 1, 2]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("invalide");
+    expect(mocks.getDrizzle).not.toHaveBeenCalled();
+  });
+
+  it("rejette si un ID est un flottant", async () => {
+    const result = await reorderBanners([1, 1.5, 2]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("invalide");
+    expect(mocks.getDrizzle).not.toHaveBeenCalled();
+  });
+
   it("rejette si des IDs sont en double", async () => {
     const result = await reorderBanners([1, 2, 1]);
     expect(result.success).toBe(false);
     expect(result.error).toContain("doublons");
+    expect(mocks.getDrizzle).not.toHaveBeenCalled();
+  });
+
+  it("rejette si le tableau dépasse 100 éléments", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => i + 1);
+    const result = await reorderBanners(ids);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Trop");
     expect(mocks.getDrizzle).not.toHaveBeenCalled();
   });
 });

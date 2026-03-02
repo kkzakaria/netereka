@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useTransition, memo } from "react";
+import { useState, useCallback, useTransition, useRef, memo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -101,7 +101,8 @@ function formatDate(dateStr: string | null): string {
       month: "short",
       year: "numeric",
     }).format(new Date(dateStr));
-  } catch {
+  } catch (error) {
+    console.error("[BannerTable] formatDate: invalid date string:", dateStr, error);
     return "Date invalide";
   }
 }
@@ -260,6 +261,8 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
   const [items, setItems] = useState(initialBanners);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Tracks the last server-confirmed state so rollbacks don't undo unrelated confirmed mutations
+  const confirmedItemsRef = useRef(initialBanners);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -275,7 +278,6 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
     setActiveId(null);
     if (!over || active.id === over.id) return;
 
-    const previousItems = items;
     const oldIndex = items.findIndex((b) => b.id === active.id);
     const newIndex = items.findIndex((b) => b.id === over.id);
     const newItems = arrayMove(items, oldIndex, newIndex).map((item, idx) => ({
@@ -290,14 +292,15 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
       try {
         const result = await reorderBanners(newOrder);
         if (!result.success) {
-          setItems(previousItems);
+          setItems(confirmedItemsRef.current);
           toast.error(result.error || "Erreur lors de la sauvegarde de l'ordre");
         } else {
+          confirmedItemsRef.current = newItems;
           toast.success("Ordre sauvegardé");
         }
       } catch (error) {
         console.error("[BannerTable] reorderBanners failed:", error);
-        setItems(previousItems);
+        setItems(confirmedItemsRef.current);
         toast.error("Erreur de connexion au serveur");
       }
     });
@@ -308,9 +311,13 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
       try {
         const result = await toggleBannerActive(id);
         if (result.success) {
-          setItems((prev) =>
-            prev.map((b) => (b.id === id ? { ...b, is_active: b.is_active === 1 ? 0 : 1 } : b))
-          );
+          setItems((prev) => {
+            const next = prev.map((b) =>
+              b.id === id ? { ...b, is_active: b.is_active === 1 ? 0 : 1 } : b
+            );
+            confirmedItemsRef.current = next;
+            return next;
+          });
         } else {
           toast.error(result.error || "Une erreur est survenue");
         }
@@ -326,7 +333,11 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
       try {
         const result = await deleteBanner(id);
         if (result.success) {
-          setItems((prev) => prev.filter((b) => b.id !== id));
+          setItems((prev) => {
+            const next = prev.filter((b) => b.id !== id);
+            confirmedItemsRef.current = next;
+            return next;
+          });
           toast.success("Bannière supprimée");
         } else {
           toast.error(result.error || "Une erreur est survenue");

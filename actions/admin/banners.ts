@@ -454,6 +454,10 @@ export async function reorderBanners(orderedIds: number[]): Promise<ActionResult
     return { success: true };
   }
 
+  if (orderedIds.length > 100) {
+    return { success: false, error: "Trop de bannières" };
+  }
+
   if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) {
     return { success: false, error: "Données de réorganisation invalides" };
   }
@@ -466,19 +470,11 @@ export async function reorderBanners(orderedIds: number[]): Promise<ActionResult
     const db = await getDrizzle();
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
-    const results = await Promise.allSettled(
-      orderedIds.map((id, index) =>
-        db.update(banners).set({ display_order: index, updated_at: now }).where(eq(banners.id, id))
-      )
-    );
-
-    const failures = results.filter((r) => r.status === "rejected");
-    if (failures.length > 0) {
-      console.error(
-        `[admin/banners] reorderBanners: ${failures.length}/${results.length} updates failed:`,
-        failures.map((f) => (f as PromiseRejectedResult).reason)
-      );
-      return { success: false, error: "Erreur lors de la mise à jour de l'ordre" };
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db
+        .update(banners)
+        .set({ display_order: i, updated_at: now })
+        .where(eq(banners.id, orderedIds[i]));
     }
 
     revalidatePath("/banners");
