@@ -275,6 +275,7 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
     setActiveId(null);
     if (!over || active.id === over.id) return;
 
+    const previousItems = items;
     const oldIndex = items.findIndex((b) => b.id === active.id);
     const newIndex = items.findIndex((b) => b.id === over.id);
     const newItems = arrayMove(items, oldIndex, newIndex).map((item, idx) => ({
@@ -289,11 +290,14 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
       try {
         const result = await reorderBanners(newOrder);
         if (!result.success) {
+          setItems(previousItems);
           toast.error(result.error || "Erreur lors de la sauvegarde de l'ordre");
         } else {
           toast.success("Ordre sauvegardé");
         }
-      } catch {
+      } catch (error) {
+        console.error("[BannerTable] reorderBanners failed:", error);
+        setItems(previousItems);
         toast.error("Erreur de connexion au serveur");
       }
     });
@@ -303,8 +307,15 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
     startTransition(async () => {
       try {
         const result = await toggleBannerActive(id);
-        if (!result.success) toast.error(result.error || "Une erreur est survenue");
-      } catch {
+        if (result.success) {
+          setItems((prev) =>
+            prev.map((b) => (b.id === id ? { ...b, is_active: b.is_active === 1 ? 0 : 1 } : b))
+          );
+        } else {
+          toast.error(result.error || "Une erreur est survenue");
+        }
+      } catch (error) {
+        console.error("[BannerTable] toggleBannerActive failed:", error);
         toast.error("Erreur de connexion au serveur");
       }
     });
@@ -315,11 +326,13 @@ export function BannerTable({ banners: initialBanners }: { banners: BannerRowDat
       try {
         const result = await deleteBanner(id);
         if (result.success) {
+          setItems((prev) => prev.filter((b) => b.id !== id));
           toast.success("Bannière supprimée");
         } else {
           toast.error(result.error || "Une erreur est survenue");
         }
-      } catch {
+      } catch (error) {
+        console.error("[BannerTable] deleteBanner failed:", error);
         toast.error("Erreur de connexion au serveur");
       }
     });
