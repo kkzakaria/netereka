@@ -446,3 +446,43 @@ export async function deleteBannerGradient(id: number): Promise<ActionResult> {
     return { success: false, error: "Erreur lors de la suppression du dégradé" };
   }
 }
+
+export async function reorderBanners(orderedIds: number[]): Promise<ActionResult> {
+  await requireAdmin();
+
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return { success: true };
+  }
+
+  if (orderedIds.length > 100) {
+    return { success: false, error: "Trop de bannières" };
+  }
+
+  if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    return { success: false, error: "Données de réorganisation invalides" };
+  }
+
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    return { success: false, error: "Données de réorganisation invalides (doublons)" };
+  }
+
+  try {
+    const db = await getDrizzle();
+    const now = new Date().toISOString().replace("T", " ").slice(0, 19);
+
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db
+        .update(banners)
+        .set({ display_order: i, updated_at: now })
+        .where(eq(banners.id, orderedIds[i]));
+    }
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    await refreshHeroPreload();
+    return { success: true };
+  } catch (error) {
+    console.error("[admin/banners] reorderBanners error:", error);
+    return { success: false, error: "Erreur lors de la mise à jour de l'ordre" };
+  }
+}
