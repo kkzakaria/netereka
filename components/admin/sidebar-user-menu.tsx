@@ -13,11 +13,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAdminUser } from "./admin-user-context";
+import { useAdminSessionUser } from "./admin-user-context";
 import { authClient } from "@/lib/auth/client";
 
 export function SidebarUserMenu() {
-  const user = useAdminUser();
+  const user = useAdminSessionUser();
   const router = useRouter();
 
   const initials = (user.name || "?")

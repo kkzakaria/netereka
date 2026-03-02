@@ -1,7 +1,7 @@
 import { requireAnyAdmin } from "@/lib/auth/guards";
 import { Sidebar } from "@/components/admin/sidebar";
 import { ViewProvider } from "@/components/admin/view-context";
-import { AdminUserProvider, type AdminUser } from "@/components/admin/admin-user-context";
+import { AdminSessionUserProvider, type AdminSessionUser } from "@/components/admin/admin-user-context";
 import { Toaster } from "@/components/ui/sonner";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export default async function AdminLayout({
   const session = await requireAnyAdmin();
 
   return (
-    <AdminUserProvider user={session.user as AdminUser}>
+    <AdminSessionUserProvider user={session.user as AdminSessionUser}>
     <ViewProvider>
       <div className="flex h-dvh">
         <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 overflow-y-auto border-r bg-sidebar lg:block">
@@ -24,6 +24,6 @@ export default async function AdminLayout({
         <Toaster richColors position="top-right" />
       </div>
     </ViewProvider>
-    </AdminUserProvider>
+    </AdminSessionUserProvider>
   );
 }

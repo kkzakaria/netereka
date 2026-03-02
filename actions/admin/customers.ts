@@ -8,7 +8,7 @@ import { initAuth } from "@/lib/auth";
 import { queryFirst, batch } from "@/lib/db";
 import { prepareAuditLog } from "@/lib/db/admin/audit-log";
 import type { ActionResult } from "@/lib/utils";
-import type { UserRole } from "@/lib/db/types";
+import type { UserRole, StaffRole } from "@/lib/db/types";
 import { ROLE_LABELS } from "@/lib/constants/customers";
 
 const idSchema = z.string().min(1, "ID requis");
@@ -19,7 +19,7 @@ const staffRoleSchema = z.enum(["agent", "admin", "super_admin"], {
 
 export async function updateUserRole(
   userId: string,
-  newRole: "agent" | "admin" | "super_admin"
+  newRole: StaffRole
 ): Promise<ActionResult> {
   const session = await requireSuperAdmin();
 
@@ -92,11 +92,22 @@ export async function banCustomer(userId: string, reason?: string): Promise<Acti
   const idResult = idSchema.safeParse(userId);
   if (!idResult.success) return { success: false, error: "ID utilisateur invalide" };
 
-  const user = await queryFirst<{ id: string }>(
-    "SELECT id FROM user WHERE id = ?",
-    [userId]
-  );
+  let user: { id: string; role: string } | null;
+  try {
+    user = await queryFirst<{ id: string; role: string }>(
+      "SELECT id, role FROM user WHERE id = ?",
+      [userId]
+    );
+  } catch (dbError) {
+    console.error("[admin/customers] queryFirst failed in banCustomer for userId:", userId, dbError);
+    return { success: false, error: "Erreur lors de la récupération de l'utilisateur" };
+  }
   if (!user) return { success: false, error: "Utilisateur introuvable" };
+
+  // Prevent banning admin or super_admin (privilege escalation)
+  if (user.role === "admin" || user.role === "super_admin") {
+    return { success: false, error: "Impossible de bannir un administrateur" };
+  }
 
   const auth = await initAuth();
   try {

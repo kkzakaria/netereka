@@ -9,6 +9,7 @@ import {
   getAdminUsers,
   getAdminUserCount,
 } from "@/lib/db/admin/users";
+import type { StaffRole } from "@/lib/db/types";
 
 interface Props {
   searchParams: Promise<{
@@ -28,7 +29,7 @@ export default async function UsersPage({ searchParams }: Props) {
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
 
-  const role: "agent" | "admin" | "super_admin" | undefined =
+  const role: StaffRole | undefined =
     params.role === "agent" || params.role === "admin" || params.role === "super_admin"
       ? params.role
       : undefined;

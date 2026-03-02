@@ -117,7 +117,7 @@ describe("banCustomer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSession.mockResolvedValue(mockAdminSession);
-    mocks.queryFirst.mockResolvedValue({ id: "user-target" });
+    mocks.queryFirst.mockResolvedValue({ id: "user-target", role: "customer" });
     mocks.batch.mockResolvedValue([]);
     mocks.banUser.mockResolvedValue({ user: { id: "user-target" } });
   });
@@ -171,6 +171,30 @@ describe("banCustomer", () => {
   it("rejette si agent (droits insuffisants)", async () => {
     mocks.getSession.mockResolvedValue(mockAgentSession);
     await expect(banCustomer("user-target")).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("refuse de bannir un utilisateur avec le rôle admin", async () => {
+    mocks.queryFirst.mockResolvedValue({ id: "admin-target", role: "admin" });
+    const result = await banCustomer("admin-target");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("administrateur");
+    expect(mocks.banUser).not.toHaveBeenCalled();
+  });
+
+  it("refuse de bannir un utilisateur avec le rôle super_admin", async () => {
+    mocks.queryFirst.mockResolvedValue({ id: "super-target", role: "super_admin" });
+    const result = await banCustomer("super-target");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("administrateur");
+    expect(mocks.banUser).not.toHaveBeenCalled();
+  });
+
+  it("retourne une erreur si la requête DB échoue", async () => {
+    mocks.queryFirst.mockRejectedValue(new Error("D1 error"));
+    const result = await banCustomer("user-target");
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(mocks.banUser).not.toHaveBeenCalled();
   });
 });
 
