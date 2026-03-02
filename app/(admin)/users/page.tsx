@@ -23,7 +23,7 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function UsersPage({ searchParams }: Props) {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
@@ -63,6 +63,7 @@ export default async function UsersPage({ searchParams }: Props) {
   };
 
   const users = await getAdminUsers(filters);
+  const isSuperAdmin = session.user.role === "super_admin";
 
   return (
     <div>
@@ -70,7 +71,7 @@ export default async function UsersPage({ searchParams }: Props) {
         <AdminHeader title="Utilisateurs" />
       </AdminPageHeader>
 
-      <UsersClientWrapper users={users} />
+      <UsersClientWrapper users={users} isSuperAdmin={isSuperAdmin} />
 
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
