@@ -316,7 +316,7 @@ export type OrderListItem = Pick<
 /** Customer data for admin sidebar actions. */
 export type CustomerSidebarData = Pick<
   AdminCustomerDetail,
-  'id' | 'order_count' | 'total_spent' | 'createdAt' | 'role' | 'banned' | 'banReason'
+  'id' | 'order_count' | 'total_spent' | 'createdAt' | 'banned' | 'banReason'
 >;
 
 // Audit Log Types

@@ -21,12 +21,10 @@ const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 export default async function CustomerDetailPage({ params }: Props) {
   // Start data fetch as soon as id is available — no need to wait for requireAdmin
   const customerPromise = params.then(({ id }) => getAdminCustomerById(id));
-  const session = await requireAdmin();
+  await requireAdmin();
   const customer = await customerPromise;
 
   if (!customer) notFound();
-
-  const isSuperAdmin = session.user.role === "super_admin";
 
   return (
     <div>
@@ -67,11 +65,9 @@ export default async function CustomerDetailPage({ params }: Props) {
             order_count: customer.order_count,
             total_spent: customer.total_spent,
             createdAt: customer.createdAt,
-            role: customer.role,
             banned: customer.banned,
             banReason: customer.banReason,
           } satisfies CustomerSidebarData}
-          isSuperAdmin={isSuperAdmin}
         />
       </div>
     </div>
