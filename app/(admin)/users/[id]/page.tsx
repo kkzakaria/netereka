@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireSuperAdmin } from "@/lib/auth/guards";
 import { getAdminUserById } from "@/lib/db/admin/users";
 import { UserInfo } from "./_components/user-info";
 import { UserSidebar } from "./_components/user-sidebar";
@@ -17,7 +17,7 @@ const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 
 export default async function UserDetailPage({ params }: Props) {
   const userPromise = params.then(({ id }) => getAdminUserById(id));
-  const session = await requireAdmin();
+  const session = await requireSuperAdmin();
   const user = await userPromise;
 
   if (!user) notFound();
