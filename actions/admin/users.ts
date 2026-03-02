@@ -32,10 +32,15 @@ export async function createAdminUser(input: CreateAdminUserInput): Promise<Acti
     role: parsed.data.role,
     data: { emailVerified: true },
   };
-  const result = await auth.api.createUser({
-    body: createUserBody as never, // better-auth createUser body type is overly strict
-    headers: await headers(),
-  });
+  let result;
+  try {
+    result = await auth.api.createUser({
+      body: createUserBody as never, // better-auth createUser body type is overly strict
+      headers: await headers(),
+    });
+  } catch {
+    return { success: false, error: "Erreur lors de la création du compte" };
+  }
 
   if (!result?.user) {
     return { success: false, error: "Erreur lors de la création du compte" };

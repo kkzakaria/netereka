@@ -119,4 +119,28 @@ describe("createAdminUser", () => {
     const result = await createAdminUser({ name: "Xx", email: "x@x.ci", password: "Pass1234!", role: "customer" });
     expect(result.success).toBe(false);
   });
+
+  it("retourne une erreur si createUser retourne null", async () => {
+    mocks.createUser.mockResolvedValue({ user: null });
+    const result = await createAdminUser({
+      name: "Jean Dupont",
+      email: "jean@netereka.ci",
+      password: "TempPass123!",
+      role: "admin",
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+
+  it("retourne une erreur si createUser lève une exception", async () => {
+    mocks.createUser.mockRejectedValue(new Error("Email déjà utilisé"));
+    const result = await createAdminUser({
+      name: "Jean Dupont",
+      email: "jean@netereka.ci",
+      password: "TempPass123!",
+      role: "admin",
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
 });
