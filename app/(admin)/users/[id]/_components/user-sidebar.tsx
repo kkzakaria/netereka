@@ -16,7 +16,7 @@ import { formatDateLong } from "@/lib/utils";
 import { STAFF_ROLE_OPTIONS } from "@/lib/constants/customers";
 import { updateUserRole, banCustomer, unbanCustomer } from "@/actions/admin/customers";
 import type { AdminUser } from "@/lib/db/admin/users";
-import type { UserRole, StaffRole } from "@/lib/db/types";
+import type { StaffRole } from "@/lib/db/types";
 
 interface UserSidebarProps {
   user: AdminUser;
@@ -28,11 +28,11 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
   const [isPending, startTransition] = useTransition();
   const [roleError, setRoleError] = useState<string | null>(null);
 
-  async function handleRoleChange(newRole: UserRole) {
+  async function handleRoleChange(newRole: StaffRole) {
     setRoleError(null);
     startTransition(async () => {
       try {
-        const result = await updateUserRole(user.id, newRole as StaffRole);
+        const result = await updateUserRole(user.id, newRole);
         if (!result.success) {
           setRoleError(result.error || "Erreur lors du changement de rôle");
         } else {
@@ -110,7 +110,7 @@ export function UserSidebar({ user, isSuperAdmin }: UserSidebarProps) {
               </label>
               <Select
                 value={user.role}
-                onValueChange={(value) => handleRoleChange(value as UserRole)}
+                onValueChange={(value) => handleRoleChange(value as StaffRole)}
                 disabled={isPending}
               >
                 <SelectTrigger>

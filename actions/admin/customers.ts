@@ -92,10 +92,16 @@ export async function banCustomer(userId: string, reason?: string): Promise<Acti
   const idResult = idSchema.safeParse(userId);
   if (!idResult.success) return { success: false, error: "ID utilisateur invalide" };
 
-  const user = await queryFirst<{ id: string; role: string }>(
-    "SELECT id, role FROM user WHERE id = ?",
-    [userId]
-  );
+  let user: { id: string; role: string } | null;
+  try {
+    user = await queryFirst<{ id: string; role: string }>(
+      "SELECT id, role FROM user WHERE id = ?",
+      [userId]
+    );
+  } catch (dbError) {
+    console.error("[admin/customers] queryFirst failed in banCustomer for userId:", userId, dbError);
+    return { success: false, error: "Erreur lors de la récupération de l'utilisateur" };
+  }
   if (!user) return { success: false, error: "Utilisateur introuvable" };
 
   // Prevent banning admin or super_admin (privilege escalation)

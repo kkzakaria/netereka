@@ -1,13 +1,14 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
+import type { StaffRole } from "@/lib/db/types";
 
 export type AdminSessionUser = {
   id: string;
   name: string;
   email: string;
   image?: string | null;
-  role: "agent" | "admin" | "super_admin";
+  role: StaffRole;
 };
 
 const AdminSessionUserContext = createContext<AdminSessionUser | null>(null);
