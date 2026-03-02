@@ -446,3 +446,30 @@ export async function deleteBannerGradient(id: number): Promise<ActionResult> {
     return { success: false, error: "Erreur lors de la suppression du dégradé" };
   }
 }
+
+export async function reorderBanners(orderedIds: number[]): Promise<ActionResult> {
+  await requireAdmin();
+
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return { success: true };
+  }
+
+  try {
+    const db = await getDrizzle();
+    const now = new Date().toISOString().replace("T", " ").slice(0, 19);
+
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        db.update(banners).set({ display_order: index, updated_at: now }).where(eq(banners.id, id))
+      )
+    );
+
+    revalidatePath("/banners");
+    revalidatePath("/");
+    await refreshHeroPreload();
+    return { success: true };
+  } catch (error) {
+    console.error("[admin/banners] reorderBanners error:", error);
+    return { success: false, error: "Erreur lors de la mise à jour de l'ordre" };
+  }
+}

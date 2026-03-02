@@ -38,6 +38,7 @@ import {
   setBannerImageUrl,
   createBannerGradient,
   deleteBannerGradient,
+  reorderBanners,
 } from "@/actions/admin/banners";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -677,5 +678,74 @@ describe("deleteBannerGradient", () => {
     const result = await deleteBannerGradient(5);
     expect(result.success).toBe(false);
     expect(result.error).toBeTruthy();
+  });
+});
+
+// ─── reorderBanners ───────────────────────────────────────────────────────────
+
+describe("reorderBanners", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+  });
+
+  function makeReorderMock() {
+    const whereMock = vi.fn().mockResolvedValue(undefined);
+    const setMock = vi.fn().mockReturnValue({ where: whereMock });
+    mocks.dbUpdate.mockReturnValue({ set: setMock });
+    mocks.getDrizzle.mockResolvedValue({ update: mocks.dbUpdate });
+    return { whereMock, setMock };
+  }
+
+  it("redirige si non admin (customer session)", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(reorderBanners([1, 2])).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("tableau vide → succès sans appel DB", async () => {
+    const result = await reorderBanners([]);
+    expect(result.success).toBe(true);
+    expect(mocks.getDrizzle).not.toHaveBeenCalled();
+  });
+
+  it("met à jour display_order pour chaque ID dans le bon ordre", async () => {
+    const { setMock } = makeReorderMock();
+
+    const result = await reorderBanners([3, 1, 2]);
+
+    expect(result.success).toBe(true);
+    expect(mocks.dbUpdate).toHaveBeenCalledTimes(3);
+    expect(setMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ display_order: 0 }));
+    expect(setMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ display_order: 1 }));
+    expect(setMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ display_order: 2 }));
+  });
+
+  it("passe l'updated_at avec chaque mise à jour", async () => {
+    const { setMock } = makeReorderMock();
+
+    await reorderBanners([5]);
+
+    expect(setMock).toHaveBeenCalledWith(
+      expect.objectContaining({ updated_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/) })
+    );
+  });
+
+  it("appelle where() avec l'ID correct pour chaque bannière", async () => {
+    const { whereMock } = makeReorderMock();
+
+    await reorderBanners([10, 20]);
+
+    expect(whereMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retourne une erreur si une mise à jour DB échoue", async () => {
+    const whereMock = vi.fn().mockRejectedValue(new Error("D1 error"));
+    mocks.dbUpdate.mockReturnValue({ set: vi.fn().mockReturnValue({ where: whereMock }) });
+    mocks.getDrizzle.mockResolvedValue({ update: mocks.dbUpdate });
+
+    const result = await reorderBanners([1, 2]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("ordre");
   });
 });
