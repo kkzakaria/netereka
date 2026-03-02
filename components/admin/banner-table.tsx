@@ -1,8 +1,27 @@
 "use client";
 
-import { memo, useCallback, useTransition } from "react";
+import { useState, useCallback, useTransition, memo } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { getImageUrl } from "@/lib/utils/images";
 import { toast } from "sonner";
 import {
@@ -34,10 +53,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { MoreVerticalIcon } from "@hugeicons/core-free-icons";
+import { MoreVerticalIcon, DragDropVerticalIcon } from "@hugeicons/core-free-icons";
 import {
   toggleBannerActive,
   deleteBanner,
+  reorderBanners,
 } from "@/actions/admin/banners";
 import type { Banner } from "@/lib/db/types";
 
@@ -86,12 +106,13 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-// Hoisted static elements (rendering-hoist-jsx)
+// Hoisted static elements
 const imagePlaceholder = <div className="h-10 w-10 rounded bg-muted" />;
 const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={18} />;
+const dragIcon = <HugeiconsIcon icon={DragDropVerticalIcon} size={18} />;
 
-// Memoized row component for better performance (rerender-memo)
-const BannerRow = memo(function BannerRow({
+// Sortable row with drag handle
+const SortableBannerRow = memo(function SortableBannerRow({
   banner,
   onToggleActive,
   onDelete,
@@ -100,13 +121,37 @@ const BannerRow = memo(function BannerRow({
   onToggleActive: (id: number) => void;
   onDelete: (id: number) => void;
 }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: banner.id });
+
   const status = getBannerStatus(banner);
 
   return (
     <TableRow
-      style={{ contentVisibility: "auto", containIntrinsicSize: "0 56px" }}
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+      }}
       className="transition-colors hover:bg-muted/50"
     >
+      <TableCell className="w-10 px-2">
+        <button
+          {...attributes}
+          {...listeners}
+          className="flex cursor-grab items-center justify-center rounded p-1 text-muted-foreground hover:text-foreground active:cursor-grabbing touch-none"
+          aria-label="Réorganiser"
+        >
+          {dragIcon}
+        </button>
+      </TableCell>
       <TableCell>
         {banner.image_url ? (
           <Image
@@ -155,9 +200,7 @@ const BannerRow = memo(function BannerRow({
               <DropdownMenuItem asChild>
                 <Link href={`/banners/${banner.id}/edit`}>Modifier</Link>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onToggleActive(banner.id)}
-              >
+              <DropdownMenuItem onClick={() => onToggleActive(banner.id)}>
                 {banner.is_active === 1 ? "Désactiver" : "Activer"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -192,8 +235,70 @@ const BannerRow = memo(function BannerRow({
   );
 });
 
-export function BannerTable({ banners }: { banners: BannerRowData[] }) {
+// Lightweight overlay shown while dragging (renders outside the table in a portal)
+function DragOverlayRow({ banner }: { banner: BannerRowData }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3 shadow-xl">
+      <HugeiconsIcon icon={DragDropVerticalIcon} size={18} className="shrink-0 text-muted-foreground" />
+      {banner.image_url ? (
+        <Image
+          src={getImageUrl(banner.image_url)}
+          alt={banner.title}
+          width={32}
+          height={32}
+          className="rounded object-cover"
+        />
+      ) : (
+        <div className="h-8 w-8 rounded bg-muted" />
+      )}
+      <span className="font-medium">{banner.title}</span>
+    </div>
+  );
+}
+
+export function BannerTable({ banners: initialBanners }: { banners: BannerRowData[] }) {
+  const [items, setItems] = useState(initialBanners);
+  const [activeId, setActiveId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as number);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    if (!over || active.id === over.id) return;
+
+    setItems((current) => {
+      const oldIndex = current.findIndex((b) => b.id === active.id);
+      const newIndex = current.findIndex((b) => b.id === over.id);
+      return arrayMove(current, oldIndex, newIndex);
+    });
+
+    // Capture new order after state update via functional update
+    setItems((current) => {
+      const newOrder = current.map((b) => b.id);
+      startTransition(async () => {
+        try {
+          const result = await reorderBanners(newOrder);
+          if (!result.success) {
+            toast.error(result.error || "Erreur lors de la sauvegarde de l'ordre");
+          } else {
+            toast.success("Ordre sauvegardé");
+          }
+        } catch {
+          toast.error("Erreur de connexion au serveur");
+        }
+      });
+      return current; // no additional state change
+    });
+  }, []);
 
   const handleToggleActive = useCallback((id: number) => {
     startTransition(async () => {
@@ -221,7 +326,9 @@ export function BannerTable({ banners }: { banners: BannerRowData[] }) {
     });
   }, []);
 
-  if (banners.length === 0) {
+  const activeItem = activeId !== null ? items.find((b) => b.id === activeId) ?? null : null;
+
+  if (items.length === 0) {
     return (
       <div className="rounded-lg border p-8 text-center text-muted-foreground">
         Aucune bannière créée
@@ -230,30 +337,46 @@ export function BannerTable({ banners }: { banners: BannerRowData[] }) {
   }
 
   return (
-    <div className="rounded-lg border touch-manipulation" data-pending={isPending || undefined}>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-16">Image</TableHead>
-            <TableHead>Titre</TableHead>
-            <TableHead>Statut</TableHead>
-            <TableHead className="hidden sm:table-cell">Ordre</TableHead>
-            <TableHead className="hidden md:table-cell">Début</TableHead>
-            <TableHead className="hidden md:table-cell">Fin</TableHead>
-            <TableHead className="w-14"></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {banners.map((banner) => (
-            <BannerRow
-              key={banner.id}
-              banner={banner}
-              onToggleActive={handleToggleActive}
-              onDelete={handleDelete}
-            />
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="rounded-lg border touch-manipulation" data-pending={isPending || undefined}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10"></TableHead>
+              <TableHead className="w-16">Image</TableHead>
+              <TableHead>Titre</TableHead>
+              <TableHead>Statut</TableHead>
+              <TableHead className="hidden sm:table-cell">Ordre</TableHead>
+              <TableHead className="hidden md:table-cell">Début</TableHead>
+              <TableHead className="hidden md:table-cell">Fin</TableHead>
+              <TableHead className="w-14"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <SortableContext
+              items={items.map((b) => b.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {items.map((banner) => (
+                <SortableBannerRow
+                  key={banner.id}
+                  banner={banner}
+                  onToggleActive={handleToggleActive}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </SortableContext>
+          </TableBody>
+        </Table>
+      </div>
+      <DragOverlay>
+        {activeItem ? <DragOverlayRow banner={activeItem} /> : null}
+      </DragOverlay>
+    </DndContext>
   );
 }
