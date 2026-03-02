@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, and, or, isNull, isNotNull, lte, gt, asc } from "drizzle-orm";
+import { eq, and, or, isNull, isNotNull, lte, gt, asc, max } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
@@ -96,6 +96,9 @@ export async function createBanner(formData: FormData): Promise<ActionResult> {
     const data = parsed.data;
     const db = await getDrizzle();
 
+    const [maxRow] = await db.select({ maxOrder: max(banners.display_order) }).from(banners);
+    const nextOrder = (maxRow?.maxOrder ?? -1) + 1;
+
     const rows = await db.insert(banners).values({
       title: data.title,
       subtitle: data.subtitle || null,
@@ -106,7 +109,7 @@ export async function createBanner(formData: FormData): Promise<ActionResult> {
       price: data.price ?? null,
       bg_gradient_from: data.bg_gradient_from,
       bg_gradient_to: data.bg_gradient_to,
-      display_order: data.display_order,
+      display_order: nextOrder,
       is_active: data.is_active,
       starts_at: data.starts_at || null,
       ends_at: data.ends_at || null,

@@ -336,16 +336,18 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
                   }}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="display_order">Ordre d&apos;affichage</Label>
-                <Input
-                  id="display_order"
-                  name="display_order"
-                  type="number"
-                  min={0}
-                  defaultValue={banner?.display_order ?? 0}
-                />
-              </div>
+              {isEdit && (
+                <div className="space-y-2">
+                  <Label htmlFor="display_order">Ordre d&apos;affichage</Label>
+                  <Input
+                    id="display_order"
+                    name="display_order"
+                    type="number"
+                    min={0}
+                    defaultValue={banner?.display_order ?? 0}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 
