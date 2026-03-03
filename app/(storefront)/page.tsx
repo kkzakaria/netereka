@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import { preload } from "react-dom";
 import type { Metadata } from "next";
 import { getTopLevelCategories } from "@/lib/db/categories";
 import {
@@ -11,18 +10,10 @@ import {
 } from "@/lib/db/products";
 import type { Banner } from "@/lib/db/types";
 import { getActiveBanners } from "@/lib/db/storefront/banners";
-import { getImageUrl } from "@/lib/utils/images";
 import { CategoryNav } from "@/components/storefront/category-nav";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { TrustBadges } from "@/components/storefront/trust-badges";
-
-function heroCfSrcSet(src: string): string {
-  const path = src.startsWith("/") ? src.slice(1) : src;
-  return [256, 384, 640, 828, 1080]
-    .map((w) => `/cdn-cgi/image/width=${w},quality=75,format=auto/${path} ${w}w`)
-    .join(", ");
-}
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -59,23 +50,6 @@ export default async function HomePage() {
 
   const featuredCards = featured.map(toProductCardData);
   const latestCards = latest.map(toProductCardData);
-
-  const firstBannerSrc = activeBanners[0]?.image_url
-    ? getImageUrl(activeBanners[0].image_url)
-    : featuredCards[0]?.image_url
-      ? getImageUrl(featuredCards[0].image_url)
-      : null;
-
-  // Preload first banner image — preload() injects into <head> in SSR HTML,
-  // unlike JSX <link> which renders inline in <body> (too late for browser discovery).
-  if (firstBannerSrc) {
-    preload(firstBannerSrc, {
-      as: "image",
-      imageSrcSet: heroCfSrcSet(firstBannerSrc),
-      imageSizes: "(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw",
-      fetchPriority: "high",
-    });
-  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
