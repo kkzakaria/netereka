@@ -17,13 +17,26 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url, 301);
   }
 
-  // Add Link preload header for homepage LCP — browser starts hero image fetch at TTFB
+  // Add Link preload header for homepage LCP — browser starts hero image fetch at TTFB.
+  // Also forward the image key as a request header so the storefront layout can inject a
+  // responsive <link rel="preload" imagesrcset="..."> in the initial HTML head bytes,
+  // allowing the browser to pick the correct DPR variant before the Suspense resolves.
   if (pathname === "/") {
     try {
       const { env } = await getCloudflareContext();
       const linkValue = await env.KV.get(KV_HERO_PRELOAD_KEY);
       if (linkValue) {
-        const response = NextResponse.next();
+        // Extract image key from the stored Link header value, e.g.:
+        //   </cdn-cgi/image/width=640,...https://r2.netereka.ci/banners/foo.png>; rel=preload...
+        const urlMatch = linkValue.match(/<([^>]+)>/);
+        const imageUrl = urlMatch?.[1] ?? "";
+        const keyMatch = imageUrl.match(/format=auto\/https?:\/\/r2\.netereka\.ci\/(.+)/);
+        const imageKey = keyMatch?.[1];
+
+        const requestHeaders = new Headers(request.headers);
+        if (imageKey) requestHeaders.set("x-hero-image-key", imageKey);
+
+        const response = NextResponse.next({ request: { headers: requestHeaders } });
         response.headers.set("Link", linkValue);
         return response;
       }
