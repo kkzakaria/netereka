@@ -38,9 +38,10 @@ if (!imageKey) {
 
 const r2Url = `${R2_URL}/${imageKey}`;
 const cfUrl = (w) => `/cdn-cgi/image/width=${w},quality=75,format=auto/${r2Url}`;
-const srcset = [256, 384, 640, 828, 1080].map((w) => `${cfUrl(w)} ${w}w`).join(", ");
-const sizes = "(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw";
-const linkValue = `<${cfUrl(384)}>; rel=preload; as=image; fetchpriority=high; imagesrcset="${srcset}"; imagesizes="${sizes}"`;
+// Simple preload without imagesrcset/imagesizes — Cloudflare Early Hints garbles
+// multi-value imagesrcset, causing browsers to skip the preload entirely.
+// width=640 matches what mobile browsers (DPR ~2-3, 44vw) actually request.
+const linkValue = `<${cfUrl(640)}>; rel=preload; as=image; fetchpriority=high`;
 
 try {
   execFileSync(

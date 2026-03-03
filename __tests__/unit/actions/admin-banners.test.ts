@@ -812,13 +812,13 @@ describe("reorderBanners", () => {
 
 // ─── refreshHeroPreload (via reorderBanners) ──────────────────────────────────
 
-describe("refreshHeroPreload: Link header srcset widths", () => {
+describe("refreshHeroPreload: Link header format", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSession.mockResolvedValue(mockAdminSession);
   });
 
-  it("inclut 750w et 1200w dans le srcset du header Link", async () => {
+  it("génère un preload simple width=640 sans imagesrcset pour éviter le garbling CF Early Hints", async () => {
     // Set up findFirst to return a banner with an image so refreshHeroPreload
     // writes to KV rather than deleting the key.
     const whereMock = vi.fn().mockResolvedValue(undefined);
@@ -839,7 +839,8 @@ describe("refreshHeroPreload: Link header srcset widths", () => {
     expect(mocks.kvPut).toHaveBeenCalledTimes(1);
     const [key, value] = mocks.kvPut.mock.calls[0] as [string, string];
     expect(key).toBe("hero:lcp:preload-url");
-    expect(value).toContain("750w");
-    expect(value).toContain("1200w");
+    expect(value).toContain("width=640");
+    expect(value).toContain("rel=preload");
+    expect(value).not.toContain("imagesrcset");
   });
 });
