@@ -1,5 +1,7 @@
 import type { ProductAttribute } from "@/lib/db/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { lexicalJsonToHtml } from "@/lib/utils/lexical-to-html";
+import { escapeHtml, sanitizeLegacyHtml } from "@/lib/utils/html";
 
 interface ProductDetailsProps {
   description: string | null;
@@ -56,20 +58,41 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
   );
 }
 
+function descriptionToHtml(raw: string): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+
+  if (trimmed.startsWith("{")) {
+    try {
+      const state = JSON.parse(trimmed);
+      if (state?.root !== undefined) {
+        return lexicalJsonToHtml(state);
+      }
+    } catch {
+      // fall through to other formats
+    }
+  }
+
+  if (trimmed.startsWith("<")) {
+    return sanitizeLegacyHtml(trimmed);
+  }
+
+  // Plain text: escape then wrap in paragraphs
+  return trimmed
+    .split(/\n{2,}/)
+    .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
 function DescriptionContent({ description }: { description: string | null }) {
   if (!description) return null;
-
-  // Split by double newlines for paragraph breaks
-  const paragraphs = description.split(/\n{2,}/).filter(Boolean);
-
+  const html = descriptionToHtml(description);
+  if (!html) return null;
   return (
-    <div className="max-w-prose space-y-3">
-      {paragraphs.map((paragraph, i) => (
-        <p key={i} className="text-sm leading-relaxed text-muted-foreground">
-          {paragraph}
-        </p>
-      ))}
-    </div>
+    <div
+      className="prose prose-sm max-w-prose dark:prose-invert"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
 
