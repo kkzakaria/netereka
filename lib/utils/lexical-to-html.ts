@@ -95,12 +95,18 @@ function serializeNode(node: LexicalNode): string {
 
     default:
       if (node.children?.length) {
+        console.warn("[lexical-to-html] unknown container node type:", node.type, "— rendering children without wrapper");
         return node.children.map(serializeNode).join("");
       }
+      console.warn("[lexical-to-html] unknown leaf node type:", node.type, "— node dropped from output");
       return "";
   }
 }
 
 export function lexicalJsonToHtml(state: LexicalState): string {
+  if (!state?.root || typeof state.root !== "object" || Array.isArray(state.root)) {
+    console.error("[lexical-to-html] invalid LexicalState: root must be an object", state);
+    return "";
+  }
   return serializeNode(state.root as LexicalNode);
 }

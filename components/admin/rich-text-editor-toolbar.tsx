@@ -32,6 +32,25 @@ import { $getNearestNodeOfType, mergeRegister } from "@lexical/utils";
 import { $setBlocksType } from "@lexical/selection";
 import { INSERT_HORIZONTAL_RULE_COMMAND } from "@lexical/react/LexicalHorizontalRuleNode";
 import { TOGGLE_LINK_COMMAND } from "@lexical/link";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
+import {
+  Link01Icon,
+  Redo02Icon,
+  TextAlignCenterIcon,
+  TextAlignJustifyCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+  TextBoldIcon,
+  TextItalicIcon,
+  TextStrikethroughIcon,
+  TextUnderlineIcon,
+  Undo02Icon,
+} from "@hugeicons/core-free-icons";
+
+const Icon = ({ icon }: { icon: IconSvgElement }) => (
+  <HugeiconsIcon icon={icon} size={16} strokeWidth={2} />
+);
 import { cn } from "@/lib/utils";
 
 type BlockType =
@@ -142,10 +161,10 @@ export function ToolbarPlugin() {
     <div className="flex flex-wrap gap-0.5 border-b bg-muted/30 p-1.5">
       {/* Undo / Redo */}
       <Btn title="Annuler" disabled={!canUndo} onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}>
-        ↩
+        <Icon icon={Undo02Icon} />
       </Btn>
       <Btn title="Rétablir" disabled={!canRedo} onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}>
-        ↪
+        <Icon icon={Redo02Icon} />
       </Btn>
 
       <Divider />
@@ -170,45 +189,45 @@ export function ToolbarPlugin() {
 
       {/* Text formats */}
       <Btn active={isBold} title="Gras" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")}>
-        <strong>B</strong>
+        <Icon icon={TextBoldIcon} />
       </Btn>
       <Btn active={isItalic} title="Italique" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")}>
-        <em>I</em>
+        <Icon icon={TextItalicIcon} />
       </Btn>
       <Btn active={isUnderline} title="Souligné" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline")}>
-        <u>U</u>
+        <Icon icon={TextUnderlineIcon} />
       </Btn>
       <Btn active={isStrikethrough} title="Barré" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "strikethrough")}>
-        <s>S</s>
+        <Icon icon={TextStrikethroughIcon} />
       </Btn>
       <Btn active={isCode} title="Code inline" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "code")}>
-        {"</>"}
+        <span className="font-mono text-xs">{"</>"}</span>
       </Btn>
 
       <Divider />
 
       {/* Alignment */}
       <Btn title="Aligner à gauche" onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "left")}>
-        ≡
+        <Icon icon={TextAlignLeftIcon} />
       </Btn>
       <Btn title="Centrer" onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "center")}>
-        ≡
+        <Icon icon={TextAlignCenterIcon} />
       </Btn>
       <Btn title="Aligner à droite" onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "right")}>
-        ≡
+        <Icon icon={TextAlignRightIcon} />
       </Btn>
       <Btn title="Justifier" onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "justify")}>
-        ≡
+        <Icon icon={TextAlignJustifyCenterIcon} />
       </Btn>
 
       <Divider />
 
       {/* Insert */}
       <Btn title="Lien" onClick={insertLink}>
-        🔗
+        <Icon icon={Link01Icon} />
       </Btn>
       <Btn title="Séparateur horizontal" onClick={() => editor.dispatchCommand(INSERT_HORIZONTAL_RULE_COMMAND, undefined)}>
-        ─
+        <span className="text-xs font-medium">─</span>
       </Btn>
     </div>
   );
@@ -234,7 +253,7 @@ function Btn({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "min-w-7 rounded px-1.5 py-1 text-sm transition-colors",
+        "flex min-h-[44px] min-w-[44px] items-center justify-center rounded px-2 text-sm transition-colors",
         "hover:bg-accent hover:text-accent-foreground",
         "disabled:cursor-not-allowed disabled:opacity-40",
         active

@@ -16,7 +16,8 @@ import { ListNode, ListItemNode } from "@lexical/list";
 import { LinkNode, AutoLinkNode } from "@lexical/link";
 import { CodeNode, CodeHighlightNode } from "@lexical/code";
 import { HorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode";
-import type { EditorState, LexicalEditor } from "lexical";
+import { $createParagraphNode, $createTextNode, $getRoot, type EditorState, type LexicalEditor } from "lexical";
+import { toast } from "sonner";
 import { ToolbarPlugin } from "./rich-text-editor-toolbar";
 
 const EDITOR_NODES = [
@@ -44,27 +45,39 @@ export function RichTextEditor({
 }: RichTextEditorProps) {
   const [jsonValue, setJsonValue] = useState(defaultValue ?? "");
 
-  // Only use defaultValue as Lexical editor state if it looks like Lexical JSON.
-  // Must use a callback — passing a raw JSON string is not supported by LexicalComposer.
-  const initialEditorStateJson =
-    defaultValue?.trim().startsWith("{") ? defaultValue : undefined;
+  const isLexicalJson = defaultValue?.trim().startsWith("{") ?? false;
 
   const initialConfig = {
     namespace: "ProductDescription",
     nodes: EDITOR_NODES,
     onError: (error: Error) => {
-      console.error("[RichTextEditor]", error);
+      console.error("[RichTextEditor] Lexical runtime error:", error);
+      toast.error("Une erreur est survenue dans l'éditeur. Veuillez recharger la page.");
     },
-    editorState: initialEditorStateJson
-      ? (editor: LexicalEditor) => {
-          try {
-            const state = editor.parseEditorState(initialEditorStateJson);
-            editor.setEditorState(state);
-          } catch {
-            // Invalid JSON — start with empty editor
-          }
+    editorState: (editor: LexicalEditor) => {
+      if (isLexicalJson && defaultValue) {
+        try {
+          editor.setEditorState(editor.parseEditorState(defaultValue));
+          return;
+        } catch (err) {
+          console.error("[RichTextEditor] parseEditorState failed — initializing with plain text fallback", err);
+          // fall through to plain-text pre-population below
         }
-      : undefined,
+      }
+      // Pre-populate editor with existing plain-text / legacy HTML content so the
+      // admin sees what was previously saved and cannot accidentally overwrite it.
+      const raw = defaultValue?.trim();
+      if (!raw) return;
+      const root = $getRoot();
+      root.clear();
+      // Strip any HTML tags for legacy HTML descriptions (display as plain text in editor)
+      const plainText = raw.startsWith("<") ? raw.replace(/<[^>]*>/g, "") : raw;
+      plainText.split(/\n{2,}/).forEach((block) => {
+        const para = $createParagraphNode();
+        para.append($createTextNode(block.replace(/\n/g, " ")));
+        root.append(para);
+      });
+    },
   };
 
   const handleChange = useCallback((editorState: EditorState) => {

@@ -1,7 +1,6 @@
 import type { ProductAttribute } from "@/lib/db/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { lexicalJsonToHtml } from "@/lib/utils/lexical-to-html";
-import { escapeHtml, sanitizeLegacyHtml } from "@/lib/utils/html";
+import { descriptionToHtml } from "@/lib/utils/description-to-html";
 
 interface ProductDetailsProps {
   description: string | null;
@@ -58,31 +57,6 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
   );
 }
 
-function descriptionToHtml(raw: string): string {
-  if (!raw) return "";
-  const trimmed = raw.trim();
-
-  if (trimmed.startsWith("{")) {
-    try {
-      const state = JSON.parse(trimmed);
-      if (state?.root !== undefined) {
-        return lexicalJsonToHtml(state);
-      }
-    } catch {
-      // fall through to other formats
-    }
-  }
-
-  if (trimmed.startsWith("<")) {
-    return sanitizeLegacyHtml(trimmed);
-  }
-
-  // Plain text: escape then wrap in paragraphs
-  return trimmed
-    .split(/\n{2,}/)
-    .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
-    .join("");
-}
 
 function DescriptionContent({ description }: { description: string | null }) {
   if (!description) return null;
