@@ -1,0 +1,106 @@
+import { escapeHtml } from "./html";
+
+// Lexical text format bitmask (from lexical source)
+const IS_BOLD = 1;
+const IS_ITALIC = 2;
+const IS_STRIKETHROUGH = 4;
+const IS_UNDERLINE = 8;
+const IS_CODE = 16;
+
+interface LexicalNode {
+  type: string;
+  children?: LexicalNode[];
+  text?: string;
+  format?: number;
+  tag?: string;
+  listType?: string;
+  url?: string;
+}
+
+export interface LexicalState {
+  root: { type: string; children?: unknown[] };
+}
+
+function serializeNode(node: LexicalNode): string {
+  switch (node.type) {
+    case "root":
+      return (node.children ?? []).map(serializeNode).join("");
+
+    case "paragraph": {
+      const inner = (node.children ?? []).map(serializeNode).join("");
+      return inner ? `<p>${inner}</p>` : "<br>";
+    }
+
+    case "heading": {
+      const tag = node.tag ?? "h2";
+      if (!["h1", "h2", "h3", "h4", "h5", "h6"].includes(tag)) return "";
+      const inner = (node.children ?? []).map(serializeNode).join("");
+      return `<${tag}>${inner}</${tag}>`;
+    }
+
+    case "list": {
+      const tag = node.listType === "number" ? "ol" : "ul";
+      const inner = (node.children ?? []).map(serializeNode).join("");
+      return `<${tag}>${inner}</${tag}>`;
+    }
+
+    case "listitem": {
+      const inner = (node.children ?? []).map(serializeNode).join("");
+      return `<li>${inner}</li>`;
+    }
+
+    case "quote": {
+      const inner = (node.children ?? []).map(serializeNode).join("");
+      return `<blockquote>${inner}</blockquote>`;
+    }
+
+    case "code": {
+      const inner = (node.children ?? []).map(serializeNode).join("");
+      return `<pre><code>${inner}</code></pre>`;
+    }
+
+    // CodeHighlightNode — leaf node inside a code block, like TextNode but no format wrapping
+    case "code-highlight": {
+      const t = node.text ?? "";
+      return t ? escapeHtml(t) : "";
+    }
+
+    case "horizontalrule":
+      return "<hr>";
+
+    case "link": {
+      const url = node.url ?? "";
+      const inner = (node.children ?? []).map(serializeNode).join("");
+      if (!url || !/^(https?:|mailto:|\/)/i.test(url)) return inner;
+      return `<a href="${escapeHtml(url)}" rel="noopener noreferrer">${inner}</a>`;
+    }
+
+    case "text": {
+      const t = node.text ?? "";
+      if (!t) return "";
+      const escaped = escapeHtml(t);
+      const fmt = node.format ?? 0;
+      if (fmt === 0) return escaped;
+      let result = escaped;
+      if (fmt & IS_CODE) result = `<code>${result}</code>`;
+      if (fmt & IS_BOLD) result = `<strong>${result}</strong>`;
+      if (fmt & IS_ITALIC) result = `<em>${result}</em>`;
+      if (fmt & IS_UNDERLINE) result = `<u>${result}</u>`;
+      if (fmt & IS_STRIKETHROUGH) result = `<s>${result}</s>`;
+      return result;
+    }
+
+    case "linebreak":
+      return "<br>";
+
+    default:
+      if (node.children?.length) {
+        return node.children.map(serializeNode).join("");
+      }
+      return "";
+  }
+}
+
+export function lexicalJsonToHtml(state: LexicalState): string {
+  return serializeNode(state.root as LexicalNode);
+}
