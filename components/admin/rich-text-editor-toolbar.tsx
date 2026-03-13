@@ -133,7 +133,6 @@ export function ToolbarPlugin() {
   }
 
   function insertLink() {
-    // eslint-disable-next-line no-alert
     const url = window.prompt("URL du lien :");
     if (!url) return;
     editor.dispatchCommand(TOGGLE_LINK_COMMAND, { url });
