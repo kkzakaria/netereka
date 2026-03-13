@@ -60,8 +60,14 @@ export function RichTextEditor({
           editor.setEditorState(editor.parseEditorState(defaultValue));
           return;
         } catch (err) {
-          console.error("[RichTextEditor] parseEditorState failed — initializing with plain text fallback", err);
-          // fall through to plain-text pre-population below
+          console.error("[RichTextEditor] parseEditorState failed — editor left empty to prevent data loss", err);
+          toast.error(
+            "Impossible de charger la description existante. Rechargez la page avant de sauvegarder pour éviter toute perte de données.",
+            { duration: Infinity },
+          );
+          // Leave editor empty — do NOT pre-populate with raw JSON string as that
+          // would look like garbage and could be accidentally saved over the real content.
+          return;
         }
       }
       // Pre-populate editor with existing plain-text / legacy HTML content so the
@@ -81,7 +87,12 @@ export function RichTextEditor({
   };
 
   const handleChange = useCallback((editorState: EditorState) => {
-    setJsonValue(JSON.stringify(editorState.toJSON()));
+    try {
+      setJsonValue(JSON.stringify(editorState.toJSON()));
+    } catch (err) {
+      console.error("[RichTextEditor] Failed to serialize editor state", err);
+      toast.error("Erreur lors de la sauvegarde de l'état. Les dernières modifications peuvent ne pas être enregistrées.");
+    }
   }, []);
 
   return (

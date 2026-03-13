@@ -148,10 +148,16 @@ describe("lexicalJsonToHtml", () => {
     );
   });
 
-  it("ignores unknown node types gracefully", () => {
+  it("ignores unknown leaf node types gracefully", () => {
     expect(
       lexicalJsonToHtml(state([{ type: "unknown_node_type" }])),
     ).toBe("");
+  });
+
+  it("renders children of unknown container node types without a wrapper", () => {
+    expect(
+      lexicalJsonToHtml(state([{ type: "custom_container", children: [text("visible")] }])),
+    ).toBe("visible");
   });
 
   it("returns empty string for empty root", () => {

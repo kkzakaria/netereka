@@ -19,16 +19,18 @@ export function descriptionToHtml(raw: string): string {
   if (!trimmed) return "";
 
   if (trimmed.startsWith("{")) {
+    let state: unknown;
     try {
-      const state = JSON.parse(trimmed);
-      if (state?.root !== undefined) {
-        return lexicalJsonToHtml(state);
-      }
+      state = JSON.parse(trimmed);
     } catch (err) {
-      console.error(
-        "[description-to-html] Failed to parse/render Lexical JSON — falling back to plain text",
-        err,
-      );
+      console.error("[description-to-html] JSON.parse failed on Lexical state — falling back to plain text", err);
+    }
+    if (state != null && typeof state === "object" && "root" in state) {
+      try {
+        return lexicalJsonToHtml(state as Parameters<typeof lexicalJsonToHtml>[0]);
+      } catch (err) {
+        console.error("[description-to-html] lexicalJsonToHtml threw unexpectedly — falling back to plain text", err);
+      }
     }
   }
 

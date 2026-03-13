@@ -51,6 +51,7 @@ import {
 const Icon = ({ icon }: { icon: IconSvgElement }) => (
   <HugeiconsIcon icon={icon} size={16} strokeWidth={2} />
 );
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type BlockType =
@@ -154,7 +155,16 @@ export function ToolbarPlugin() {
   function insertLink() {
     const url = window.prompt("URL du lien :");
     if (!url) return;
-    editor.dispatchCommand(TOGGLE_LINK_COMMAND, { url });
+    if (!/^(https?:|mailto:|\/)/i.test(url)) {
+      toast.error("URL invalide. Utilisez http://, https://, mailto: ou un chemin relatif.");
+      return;
+    }
+    try {
+      editor.dispatchCommand(TOGGLE_LINK_COMMAND, { url });
+    } catch (err) {
+      console.error("[ToolbarPlugin] TOGGLE_LINK_COMMAND failed", err);
+      toast.error("Impossible d'insérer le lien.");
+    }
   }
 
   return (
