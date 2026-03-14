@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { ToolbarPlugin } from "./rich-text-editor-toolbar";
 import { ImageNode } from "./rich-text-editor-image-node";
 import { ImagePlugin } from "./rich-text-editor-image-plugin";
+import "./rich-text-editor.css";
 
 const EDITOR_NODES = [
   HeadingNode,
@@ -105,7 +106,7 @@ export function RichTextEditor({
         <div className="relative">
           <RichTextPlugin
             contentEditable={
-              <ContentEditable className="min-h-[200px] p-3 text-sm outline-none" />
+              <ContentEditable className="editor min-h-[200px] p-3 text-sm outline-none" />
             }
             placeholder={
               <div className="pointer-events-none absolute left-3 top-3 text-sm text-muted-foreground">
