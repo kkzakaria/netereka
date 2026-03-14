@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
   $createParagraphNode,
@@ -35,6 +35,9 @@ import { TOGGLE_LINK_COMMAND } from "@lexical/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import {
+  ImageAdd01Icon,
+  LeftToRightListBulletIcon,
+  LeftToRightListNumberIcon,
   Link01Icon,
   Redo02Icon,
   TextAlignCenterIcon,
@@ -47,12 +50,15 @@ import {
   TextUnderlineIcon,
   Undo02Icon,
 } from "@hugeicons/core-free-icons";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { INSERT_IMAGE_COMMAND } from "./rich-text-editor-image-plugin";
+import { uploadDescriptionImage } from "@/actions/admin/upload-description-image";
+import { getImageUrl } from "@/lib/utils/images";
 
 const Icon = ({ icon }: { icon: IconSvgElement }) => (
   <HugeiconsIcon icon={icon} size={16} strokeWidth={2} />
 );
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 
 type BlockType =
   | "paragraph"
@@ -75,6 +81,8 @@ export function ToolbarPlugin() {
   const [isStrikethrough, setIsStrikethrough] = useState(false);
   const [isCode, setIsCode] = useState(false);
   const [blockType, setBlockType] = useState<BlockType>("paragraph");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const updateToolbar = useCallback(() => {
     const selection = $getSelection();
@@ -167,6 +175,28 @@ export function ToolbarPlugin() {
     }
   }
 
+  async function handleImageFile(file: File) {
+    setIsUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadDescriptionImage(formData);
+      if (!result.success || !result.key) {
+        toast.error(result.error ?? "Échec de l'upload de l'image.");
+        return;
+      }
+      const src = getImageUrl(result.key);
+      const alt = file.name.replace(/\.[^.]+$/, "");
+      editor.dispatchCommand(INSERT_IMAGE_COMMAND, { src, alt });
+    } catch (err) {
+      console.error("[ToolbarPlugin] image upload failed", err);
+      toast.error("Impossible d'insérer l'image.");
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   return (
     <div className="flex flex-wrap gap-0.5 border-b bg-muted/30 p-1.5">
       {/* Undo / Redo */}
@@ -194,6 +224,22 @@ export function ToolbarPlugin() {
         <option value="check">Liste de tâches</option>
         <option value="quote">Citation</option>
       </select>
+
+      {/* Quick list buttons */}
+      <Btn
+        active={blockType === "bullet"}
+        title="Liste à puces"
+        onClick={() => setBlock(blockType === "bullet" ? "paragraph" : "bullet")}
+      >
+        <Icon icon={LeftToRightListBulletIcon} />
+      </Btn>
+      <Btn
+        active={blockType === "number"}
+        title="Liste numérotée"
+        onClick={() => setBlock(blockType === "number" ? "paragraph" : "number")}
+      >
+        <Icon icon={LeftToRightListNumberIcon} />
+      </Btn>
 
       <Divider />
 
@@ -239,6 +285,29 @@ export function ToolbarPlugin() {
       <Btn title="Séparateur horizontal" onClick={() => editor.dispatchCommand(INSERT_HORIZONTAL_RULE_COMMAND, undefined)}>
         <span className="text-xs font-medium">─</span>
       </Btn>
+      <Btn
+        title="Insérer une image"
+        disabled={isUploadingImage}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        {isUploadingImage ? (
+          <span className="text-xs">…</span>
+        ) : (
+          <Icon icon={ImageAdd01Icon} />
+        )}
+      </Btn>
+
+      {/* Hidden file input for image upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImageFile(file);
+        }}
+      />
     </div>
   );
 }

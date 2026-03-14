@@ -163,4 +163,29 @@ describe("lexicalJsonToHtml", () => {
   it("returns empty string for empty root", () => {
     expect(lexicalJsonToHtml(state([]))).toBe("");
   });
+
+  it("renders image node with absolute src", () => {
+    const html = lexicalJsonToHtml(
+      state([{ type: "image", src: "https://example.com/img.jpg", alt: "Test" }]),
+    );
+    expect(html).toBe('<img src="https://example.com/img.jpg" alt="Test" class="max-w-full h-auto rounded">');
+  });
+
+  it("renders image node with R2 key using /images base", () => {
+    const html = lexicalJsonToHtml(
+      state([{ type: "image", src: "description-images/abc123.jpg", alt: "Photo" }]),
+    );
+    expect(html).toBe('<img src="/images/description-images/abc123.jpg" alt="Photo" class="max-w-full h-auto rounded">');
+  });
+
+  it("returns empty string for image node with no src", () => {
+    expect(lexicalJsonToHtml(state([{ type: "image", src: "", alt: "" }]))).toBe("");
+  });
+
+  it("HTML-escapes image src and alt", () => {
+    const html = lexicalJsonToHtml(
+      state([{ type: "image", src: "https://example.com/img.jpg", alt: '<script>' }]),
+    );
+    expect(html).toContain('alt="&lt;script&gt;"');
+  });
 });

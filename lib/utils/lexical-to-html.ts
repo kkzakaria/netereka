@@ -15,6 +15,8 @@ interface LexicalNode {
   tag?: string;
   listType?: string;
   url?: string;
+  src?: string;
+  alt?: string;
 }
 
 export interface LexicalState {
@@ -88,6 +90,16 @@ function serializeNode(node: LexicalNode): string {
       if (fmt & IS_UNDERLINE) result = `<u>${result}</u>`;
       if (fmt & IS_STRIKETHROUGH) result = `<s>${result}</s>`;
       return result;
+    }
+
+    case "image": {
+      const src = node.src ?? "";
+      if (!src) return "";
+      // Resolve R2 key to URL (matches getImageUrl logic)
+      const base = process.env.NEXT_PUBLIC_R2_URL || "/images";
+      const resolvedSrc = src.startsWith("http") || src.startsWith("/") ? src : `${base}/${src}`;
+      const alt = escapeHtml(node.alt ?? "");
+      return `<img src="${escapeHtml(resolvedSrc)}" alt="${alt}" class="max-w-full h-auto rounded">`;
     }
 
     case "linebreak":

@@ -19,6 +19,8 @@ import { HorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode";
 import { $createParagraphNode, $createTextNode, $getRoot, type EditorState, type LexicalEditor } from "lexical";
 import { toast } from "sonner";
 import { ToolbarPlugin } from "./rich-text-editor-toolbar";
+import { ImageNode } from "./rich-text-editor-image-node";
+import { ImagePlugin } from "./rich-text-editor-image-plugin";
 
 const EDITOR_NODES = [
   HeadingNode,
@@ -30,6 +32,7 @@ const EDITOR_NODES = [
   CodeNode,
   CodeHighlightNode,
   HorizontalRuleNode,
+  ImageNode,
 ];
 
 interface RichTextEditorProps {
@@ -117,6 +120,7 @@ export function RichTextEditor({
         <CheckListPlugin />
         <LinkPlugin />
         <HorizontalRulePlugin />
+        <ImagePlugin />
         <OnChangePlugin onChange={handleChange} />
       </LexicalComposer>
       <input type="hidden" name={name} value={jsonValue} />
