@@ -8,14 +8,15 @@ import { execute, query, queryFirst } from "@/lib/db";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { deleteFromR2 } from "@/lib/storage/images";
 
+const DB_CONSTRAINT_SKU = "UNIQUE constraint failed: products.sku";
+const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
+
 const idSchema = z.string().min(1, "ID requis");
 
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
-  slug: z.string().min(1),
   category_id: z.string().min(1, "La catégorie est requise"),
   brand: z.string().optional().default(""),
-  sku: z.string().optional().default(""),
   description: z.string().optional().default(""),
   short_description: z.string().optional().default(""),
   base_price: z.coerce.number().int().min(0, "Le prix doit être positif"),
@@ -29,7 +30,9 @@ const productSchema = z.object({
   is_featured: z.coerce.number().int().min(0).max(1).default(0),
 });
 
+/** @deprecated Never called from the UI — product creation now goes through createDraftProduct() + updateProduct(). Scheduled for removal once the draft flow is confirmed stable in production. */
 export async function createProduct(formData: FormData): Promise<ActionResult> {
+  console.warn("[admin/products] createProduct is deprecated and not called from the UI. Use createDraftProduct + updateProduct.");
   await requireAdmin();
 
   const raw = Object.fromEntries(formData);
@@ -45,39 +48,47 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
 
   const data = parsed.data;
   const id = nanoid();
+  // slug and sku are not in productSchema (server-managed) — read them directly from raw
+  const slug = (raw.slug as string | undefined) ?? "";
+  const sku = (raw.sku as string | undefined) ?? "";
 
   // Ensure unique slug — return error like categories for consistency
   const existing = await queryFirst<{ id: string }>(
     "SELECT id FROM products WHERE slug = ?",
-    [data.slug]
+    [slug]
   );
   if (existing) {
-    return { success: false, error: `Un produit avec le slug "${data.slug}" existe déjà` };
+    return { success: false, error: `Un produit avec le slug "${slug}" existe déjà` };
   }
 
-  await execute(
-    `INSERT INTO products (id, category_id, name, slug, description, short_description, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity, low_stock_threshold, weight_grams, meta_title, meta_description, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-    [
-      id,
-      data.category_id,
-      data.name,
-      data.slug,
-      data.description || null,
-      data.short_description || null,
-      data.base_price,
-      data.compare_price ?? null,
-      data.sku || null,
-      data.brand || null,
-      data.is_active,
-      data.is_featured,
-      data.stock_quantity,
-      data.low_stock_threshold,
-      data.weight_grams ?? null,
-      data.meta_title || null,
-      data.meta_description || null,
-    ]
-  );
+  try {
+    await execute(
+      `INSERT INTO products (id, category_id, name, slug, description, short_description, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity, low_stock_threshold, weight_grams, meta_title, meta_description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+      [
+        id,
+        data.category_id,
+        data.name,
+        slug,
+        data.description || null,
+        data.short_description || null,
+        data.base_price,
+        data.compare_price ?? null,
+        sku || null,
+        data.brand || null,
+        data.is_active,
+        data.is_featured,
+        data.stock_quantity,
+        data.low_stock_threshold,
+        data.weight_grams ?? null,
+        data.meta_title || null,
+        data.meta_description || null,
+      ]
+    );
+  } catch (error) {
+    console.error("[admin/products] createProduct error:", error);
+    return { success: false, error: "Erreur lors de la création du produit" };
+  }
 
   revalidatePath("/products");
   revalidatePath("/dashboard");
@@ -94,9 +105,6 @@ export async function updateProduct(
   if (!idResult.success) return { success: false, error: "ID produit invalide" };
 
   const raw = Object.fromEntries(formData);
-  if (!raw.slug || (raw.slug as string).trim() === "") {
-    raw.slug = slugify(raw.name as string);
-  }
 
   const parsed = productSchema.safeParse(raw);
   if (!parsed.success) {
@@ -106,47 +114,121 @@ export async function updateProduct(
 
   const data = parsed.data;
 
-  // Ensure unique slug (excluding self) — return error for consistency
-  const existing = await queryFirst<{ id: string }>(
-    "SELECT id FROM products WHERE slug = ? AND id != ?",
-    [data.slug, id]
+  // Fetch existing product to preserve slug and SKU
+  const existing = await queryFirst<{ slug: string; sku: string | null; is_draft: number }>(
+    "SELECT slug, sku, is_draft FROM products WHERE id = ?",
+    [id]
   );
-  if (existing) {
-    return { success: false, error: `Un produit avec le slug "${data.slug}" existe déjà` };
+  if (!existing) {
+    console.error("[admin/products] updateProduct: product not found", { id });
+    return { success: false, error: "Produit introuvable" };
   }
 
-  await execute(
-    `UPDATE products SET
-       category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
-       base_price = ?, compare_price = ?, sku = ?, brand = ?,
-       is_active = ?, is_featured = ?, stock_quantity = ?,
-       low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
-       is_draft = 0, updated_at = datetime('now') -- Clear draft flag: saving "publishes" the product
-     WHERE id = ?`,
-    [
-      data.category_id,
-      data.name,
-      data.slug,
-      data.description || null,
-      data.short_description || null,
-      data.base_price,
-      data.compare_price ?? null,
-      data.sku || null,
-      data.brand || null,
-      data.is_active,
-      data.is_featured,
-      data.stock_quantity,
-      data.low_stock_threshold,
-      data.weight_grams ?? null,
-      data.meta_title || null,
-      data.meta_description || null,
-      id,
-    ]
-  );
+  // Slug: generate on first save (draft), preserve thereafter
+  let finalSlug: string;
+  if (existing.is_draft === 1) {
+    const base = slugify(data.name);
+    if (!base) {
+      console.warn("[admin/products] updateProduct: slugify returned empty string", { id, name: data.name });
+      return { success: false, error: "Le nom ne permet pas de générer un slug valide" };
+    }
+
+    let candidate = base;
+    let suffix = 1; // suffix=1 means "try bare slug first"; appended only after first collision → sequence: base, base-2, base-3, … (skips base-1 by convention)
+    while (suffix <= 100) {
+      const taken = await queryFirst<{ id: string }>(
+        "SELECT id FROM products WHERE slug = ? AND id != ? LIMIT 1",
+        [candidate, id]
+      );
+      if (!taken) break;
+      suffix++;
+      candidate = `${base}-${suffix}`;
+    }
+    if (suffix > 100) {
+      console.error("[admin/products] updateProduct: slug exhaustion after 100 attempts", { id, base });
+      return { success: false, error: "Impossible de générer un slug unique pour ce nom" };
+    }
+    finalSlug = candidate;
+  } else {
+    finalSlug = existing.slug;
+  }
+
+  const updateSql = `UPDATE products SET
+     category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
+     base_price = ?, compare_price = ?, sku = ?, brand = ?,
+     is_active = ?, is_featured = ?, stock_quantity = ?,
+     low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
+     is_draft = 0, -- Clear draft flag (product becomes live if is_active = 1)
+     updated_at = datetime('now')
+   WHERE id = ?`;
+
+  const buildParams = (sku: string) => [
+    data.category_id,
+    data.name,
+    finalSlug,
+    data.description || null,
+    data.short_description || null,
+    data.base_price,
+    data.compare_price ?? null,
+    sku,
+    data.brand || null,
+    data.is_active,
+    data.is_featured,
+    data.stock_quantity,
+    data.low_stock_threshold,
+    data.weight_grams ?? null,
+    data.meta_title || null,
+    data.meta_description || null,
+    id,
+  ];
+
+  // SKU: auto-generate when null (covers both draft-flow products and pre-existing rows that predate SKU auto-assignment)
+  const existingSku = existing.sku;
+  if (existingSku === null) {
+    let skuWritten = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const generatedSku = `NET-${nanoid(8).toUpperCase()}`;
+      try {
+        await execute(updateSql, buildParams(generatedSku));
+        skuWritten = true;
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes(DB_CONSTRAINT_SLUG)) {
+          console.error("[admin/products] updateProduct: slug race condition on UPDATE", { id, finalSlug });
+          return { success: false, error: "Un conflit de slug s'est produit (collision concurrente). Enregistrez à nouveau pour résoudre le conflit." };
+        }
+        if (!msg.includes(DB_CONSTRAINT_SKU)) {
+          console.error("[admin/products] updateProduct: unexpected DB error during SKU generation", { id, attempt }, err);
+          throw err;
+        }
+        // SKU collision — retry
+      }
+    }
+    if (!skuWritten) {
+      console.error("[admin/products] updateProduct: SKU generation exhausted after 3 attempts", { id });
+      return { success: false, error: "Impossible de générer un SKU unique. Veuillez contacter le support." };
+    }
+  } else {
+    try {
+      await execute(updateSql, buildParams(existingSku));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes(DB_CONSTRAINT_SLUG)) {
+        console.error("[admin/products] updateProduct: slug race condition on UPDATE", { id, finalSlug });
+        return { success: false, error: "Un conflit de slug s'est produit (collision concurrente). Enregistrez à nouveau pour résoudre le conflit." };
+      }
+      console.error("[admin/products] updateProduct: unexpected DB error on UPDATE", { id }, err);
+      throw err;
+    }
+  }
 
   revalidatePath("/products");
   revalidatePath(`/products/${id}/edit`);
   revalidatePath("/dashboard");
+  if (existing.is_draft === 1) {
+    revalidatePath("/p/" + finalSlug);
+  }
   return { success: true, id };
 }
 
