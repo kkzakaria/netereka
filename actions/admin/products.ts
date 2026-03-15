@@ -120,8 +120,8 @@ export async function updateProduct(
     let suffix = 1;
     while (suffix <= 100) {
       const taken = await queryFirst<{ id: string }>(
-        "SELECT id FROM products WHERE slug = ? LIMIT 1",
-        [candidate]
+        "SELECT id FROM products WHERE slug = ? AND id != ? LIMIT 1",
+        [candidate, id]
       );
       if (!taken) break;
       suffix++;
@@ -135,6 +135,35 @@ export async function updateProduct(
     finalSlug = existing.slug;
   }
 
+  const updateSql = `UPDATE products SET
+     category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
+     base_price = ?, compare_price = ?, sku = ?, brand = ?,
+     is_active = ?, is_featured = ?, stock_quantity = ?,
+     low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
+     is_draft = 0, -- Clear draft flag: saving "publishes" the product
+     updated_at = datetime('now')
+   WHERE id = ?`;
+
+  const buildParams = (sku: string) => [
+    data.category_id,
+    data.name,
+    finalSlug,
+    data.description || null,
+    data.short_description || null,
+    data.base_price,
+    data.compare_price ?? null,
+    sku,
+    data.brand || null,
+    data.is_active,
+    data.is_featured,
+    data.stock_quantity,
+    data.low_stock_threshold,
+    data.weight_grams ?? null,
+    data.meta_title || null,
+    data.meta_description || null,
+    id,
+  ];
+
   // SKU: generate if null (new or migrated product), preserve otherwise
   const existingSku = existing.sku;
   if (existingSku === null) {
@@ -142,34 +171,7 @@ export async function updateProduct(
     for (let attempt = 0; attempt < 3; attempt++) {
       const generatedSku = `NET-${nanoid(8).toUpperCase()}`;
       try {
-        await execute(
-          `UPDATE products SET
-             category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
-             base_price = ?, compare_price = ?, sku = ?, brand = ?,
-             is_active = ?, is_featured = ?, stock_quantity = ?,
-             low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
-             is_draft = 0, updated_at = datetime('now')
-           WHERE id = ?`,
-          [
-            data.category_id,
-            data.name,
-            finalSlug,
-            data.description || null,
-            data.short_description || null,
-            data.base_price,
-            data.compare_price ?? null,
-            generatedSku,
-            data.brand || null,
-            data.is_active,
-            data.is_featured,
-            data.stock_quantity,
-            data.low_stock_threshold,
-            data.weight_grams ?? null,
-            data.meta_title || null,
-            data.meta_description || null,
-            id,
-          ]
-        );
+        await execute(updateSql, buildParams(generatedSku));
         skuWritten = true;
         break;
       } catch (err) {
@@ -186,34 +188,7 @@ export async function updateProduct(
     }
   } else {
     try {
-      await execute(
-        `UPDATE products SET
-           category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
-           base_price = ?, compare_price = ?, sku = ?, brand = ?,
-           is_active = ?, is_featured = ?, stock_quantity = ?,
-           low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
-           is_draft = 0, updated_at = datetime('now')
-         WHERE id = ?`,
-        [
-          data.category_id,
-          data.name,
-          finalSlug,
-          data.description || null,
-          data.short_description || null,
-          data.base_price,
-          data.compare_price ?? null,
-          existingSku,
-          data.brand || null,
-          data.is_active,
-          data.is_featured,
-          data.stock_quantity,
-          data.low_stock_threshold,
-          data.weight_grams ?? null,
-          data.meta_title || null,
-          data.meta_description || null,
-          id,
-        ]
-      );
+      await execute(updateSql, buildParams(existingSku));
     } catch (err) {
       if ((err as Error).message.includes("UNIQUE constraint failed: products.slug")) {
         return { success: false, error: "Conflit de slug, veuillez réessayer" };

@@ -201,5 +201,20 @@ describe("updateProduct", () => {
       await updateProduct("prod-1", baseFormData());
       expect(mocks.revalidatePath).toHaveBeenCalledWith("/p/iphone-15-pro");
     });
+
+    it("préserve le SKU existant si is_draft = 1 mais sku déjà défini (re-draft)", async () => {
+      mocks.queryFirst
+        .mockResolvedValueOnce({ slug: "draft-abc", sku: "NET-EXISTING1", is_draft: 1 })
+        .mockResolvedValueOnce(null); // slug libre
+      mocks.slugify.mockReturnValue("iphone-15-pro");
+      mocks.execute.mockResolvedValueOnce(undefined);
+      const result = await updateProduct("prod-1", baseFormData());
+      expect(result.success).toBe(true);
+      expect(mocks.execute).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE products"),
+        expect.arrayContaining(["NET-EXISTING1"])
+      );
+      expect(mocks.nanoid).not.toHaveBeenCalled();
+    });
   });
 });
