@@ -42,6 +42,16 @@ describe("updateProduct", () => {
     mocks.requireAdmin.mockResolvedValue(undefined);
   });
 
+  describe("validation du formulaire", () => {
+    it("retourne une erreur si le nom est vide", async () => {
+      const result = await updateProduct("prod-1", baseFormData({ name: "" }));
+      expect(result.success).toBe(false);
+      expect(result.error).toBeTruthy();
+      expect(mocks.queryFirst).not.toHaveBeenCalled();
+      expect(mocks.execute).not.toHaveBeenCalled();
+    });
+  });
+
   describe("product introuvable", () => {
     it("retourne une erreur si le produit n'existe pas en base", async () => {
       mocks.queryFirst.mockResolvedValueOnce(null);
@@ -80,6 +90,19 @@ describe("updateProduct", () => {
       mocks.execute.mockResolvedValueOnce(undefined);
       await updateProduct("prod-1", baseFormData());
       expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/p/iphone-15-pro");
+    });
+
+    it("retourne une erreur de conflit slug si execute lève une contrainte slug (produit publié)", async () => {
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "iphone-15-pro", sku: "NET-ABCD1234", is_draft: 0 });
+      mocks.execute.mockRejectedValueOnce(new Error("UNIQUE constraint failed: products.slug"));
+      const result = await updateProduct("prod-1", baseFormData());
+      expect(result).toEqual({ success: false, error: "Un conflit de slug s'est produit (collision concurrente). Enregistrez à nouveau pour résoudre le conflit." });
+    });
+
+    it("propage une erreur DB inattendue pour un produit publié avec SKU existant", async () => {
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "iphone-15-pro", sku: "NET-ABCD1234", is_draft: 0 });
+      mocks.execute.mockRejectedValueOnce(new Error("D1 unavailable"));
+      await expect(updateProduct("prod-1", baseFormData())).rejects.toThrow("D1 unavailable");
     });
   });
 
@@ -188,7 +211,7 @@ describe("updateProduct", () => {
       mocks.nanoid.mockReturnValue("abcd1234");
       mocks.execute.mockRejectedValue(new Error("UNIQUE constraint failed: products.slug"));
       const result = await updateProduct("prod-1", baseFormData());
-      expect(result).toEqual({ success: false, error: "Un conflit de slug s'est produit. Modifiez légèrement le nom et réessayez." });
+      expect(result).toEqual({ success: false, error: "Un conflit de slug s'est produit (collision concurrente). Enregistrez à nouveau pour résoudre le conflit." });
     });
 
     it("appelle revalidatePath sur /p/{slug} lors de la première publication", async () => {
@@ -226,6 +249,8 @@ describe("updateProduct", () => {
       const result = await updateProduct("prod-1", baseFormData());
       expect(result).toEqual({ success: false, error: "Impossible de générer un slug unique pour ce nom" });
       expect(mocks.execute).not.toHaveBeenCalled();
+      // 1 fetch for existing product + 100 slug uniqueness checks = 101 total
+      expect(mocks.queryFirst).toHaveBeenCalledTimes(101);
     });
   });
 

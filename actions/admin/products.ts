@@ -15,10 +15,8 @@ const idSchema = z.string().min(1, "ID requis");
 
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
-  slug: z.string().optional().default(""),
   category_id: z.string().min(1, "La catégorie est requise"),
   brand: z.string().optional().default(""),
-  sku: z.string().optional().default(""),
   description: z.string().optional().default(""),
   short_description: z.string().optional().default(""),
   base_price: z.coerce.number().int().min(0, "Le prix doit être positif"),
@@ -50,39 +48,47 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
 
   const data = parsed.data;
   const id = nanoid();
+  // slug and sku are not in productSchema (server-managed) — read them directly from raw
+  const slug = (raw.slug as string | undefined) ?? "";
+  const sku = (raw.sku as string | undefined) ?? "";
 
   // Ensure unique slug — return error like categories for consistency
   const existing = await queryFirst<{ id: string }>(
     "SELECT id FROM products WHERE slug = ?",
-    [data.slug]
+    [slug]
   );
   if (existing) {
-    return { success: false, error: `Un produit avec le slug "${data.slug}" existe déjà` };
+    return { success: false, error: `Un produit avec le slug "${slug}" existe déjà` };
   }
 
-  await execute(
-    `INSERT INTO products (id, category_id, name, slug, description, short_description, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity, low_stock_threshold, weight_grams, meta_title, meta_description, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-    [
-      id,
-      data.category_id,
-      data.name,
-      data.slug,
-      data.description || null,
-      data.short_description || null,
-      data.base_price,
-      data.compare_price ?? null,
-      data.sku || null,
-      data.brand || null,
-      data.is_active,
-      data.is_featured,
-      data.stock_quantity,
-      data.low_stock_threshold,
-      data.weight_grams ?? null,
-      data.meta_title || null,
-      data.meta_description || null,
-    ]
-  );
+  try {
+    await execute(
+      `INSERT INTO products (id, category_id, name, slug, description, short_description, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity, low_stock_threshold, weight_grams, meta_title, meta_description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+      [
+        id,
+        data.category_id,
+        data.name,
+        slug,
+        data.description || null,
+        data.short_description || null,
+        data.base_price,
+        data.compare_price ?? null,
+        sku || null,
+        data.brand || null,
+        data.is_active,
+        data.is_featured,
+        data.stock_quantity,
+        data.low_stock_threshold,
+        data.weight_grams ?? null,
+        data.meta_title || null,
+        data.meta_description || null,
+      ]
+    );
+  } catch (error) {
+    console.error("[admin/products] createProduct error:", error);
+    return { success: false, error: "Erreur lors de la création du produit" };
+  }
 
   revalidatePath("/products");
   revalidatePath("/dashboard");
@@ -187,10 +193,10 @@ export async function updateProduct(
         skuWritten = true;
         break;
       } catch (err) {
-        const msg = (err as Error).message ?? "";
+        const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes(DB_CONSTRAINT_SLUG)) {
           console.error("[admin/products] updateProduct: slug race condition on UPDATE", { id, finalSlug });
-          return { success: false, error: "Un conflit de slug s'est produit. Modifiez légèrement le nom et réessayez." };
+          return { success: false, error: "Un conflit de slug s'est produit (collision concurrente). Enregistrez à nouveau pour résoudre le conflit." };
         }
         if (!msg.includes(DB_CONSTRAINT_SKU)) {
           console.error("[admin/products] updateProduct: unexpected DB error during SKU generation", { id, attempt }, err);
@@ -207,10 +213,10 @@ export async function updateProduct(
     try {
       await execute(updateSql, buildParams(existingSku));
     } catch (err) {
-      const msg = (err as Error).message ?? "";
+      const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes(DB_CONSTRAINT_SLUG)) {
         console.error("[admin/products] updateProduct: slug race condition on UPDATE", { id, finalSlug });
-        return { success: false, error: "Un conflit de slug s'est produit. Modifiez légèrement le nom et réessayez." };
+        return { success: false, error: "Un conflit de slug s'est produit (collision concurrente). Enregistrez à nouveau pour résoudre le conflit." };
       }
       console.error("[admin/products] updateProduct: unexpected DB error on UPDATE", { id }, err);
       throw err;
