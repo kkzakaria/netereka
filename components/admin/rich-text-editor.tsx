@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -47,8 +47,13 @@ export function RichTextEditor({
   defaultValue,
   placeholder = "Rédigez la description du produit…",
 }: RichTextEditorProps) {
+  const [mounted, setMounted] = useState(false);
   const [jsonValue, setJsonValue] = useState(defaultValue ?? "");
   const lastGoodRef = useRef(defaultValue ?? "");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isLexicalJson = defaultValue?.trim().startsWith("{") ?? false;
 
@@ -112,6 +117,15 @@ export function RichTextEditor({
       toast.error("Erreur de sérialisation. L'état précédent est conservé — ne sauvegardez pas encore.", { duration: Infinity });
     }
   }, []);
+
+  if (!mounted) {
+    return (
+      <div className="rounded-md border">
+        <div className="min-h-[200px] p-3" />
+        <input type="hidden" name={name} value={jsonValue} />
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-md border focus-within:ring-2 focus-within:ring-ring">
