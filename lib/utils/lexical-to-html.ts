@@ -24,44 +24,42 @@ export interface LexicalState {
   root: { type: string; children?: unknown[] };
 }
 
-function serializeNode(node: LexicalNode): string {
+function serializeNode(node: LexicalNode, depth = 0): string {
   if (!node) return "";
+  if (depth > 50) {
+    console.error("[lexical-to-html] max recursion depth exceeded — truncating output");
+    return "";
+  }
+  const next = (children: LexicalNode[]) => children.map((c) => serializeNode(c, depth + 1)).join("");
+
   switch (node.type) {
     case "root":
-      return (node.children ?? []).map(serializeNode).join("");
+      return next(node.children ?? []);
 
     case "paragraph": {
-      const inner = (node.children ?? []).map(serializeNode).join("");
+      const inner = next(node.children ?? []);
       return inner ? `<p>${inner}</p>` : "<br>";
     }
 
     case "heading": {
       const tag = node.tag ?? "h2";
       if (!["h1", "h2", "h3", "h4", "h5", "h6"].includes(tag)) return "";
-      const inner = (node.children ?? []).map(serializeNode).join("");
-      return `<${tag}>${inner}</${tag}>`;
+      return `<${tag}>${next(node.children ?? [])}</${tag}>`;
     }
 
     case "list": {
       const tag = node.listType === "number" ? "ol" : "ul";
-      const inner = (node.children ?? []).map(serializeNode).join("");
-      return `<${tag}>${inner}</${tag}>`;
+      return `<${tag}>${next(node.children ?? [])}</${tag}>`;
     }
 
-    case "listitem": {
-      const inner = (node.children ?? []).map(serializeNode).join("");
-      return `<li>${inner}</li>`;
-    }
+    case "listitem":
+      return `<li>${next(node.children ?? [])}</li>`;
 
-    case "quote": {
-      const inner = (node.children ?? []).map(serializeNode).join("");
-      return `<blockquote>${inner}</blockquote>`;
-    }
+    case "quote":
+      return `<blockquote>${next(node.children ?? [])}</blockquote>`;
 
-    case "code": {
-      const inner = (node.children ?? []).map(serializeNode).join("");
-      return `<pre><code>${inner}</code></pre>`;
-    }
+    case "code":
+      return `<pre><code>${next(node.children ?? [])}</code></pre>`;
 
     // CodeHighlightNode — leaf node inside a code block, like TextNode but no format wrapping
     case "code-highlight": {
@@ -74,7 +72,7 @@ function serializeNode(node: LexicalNode): string {
 
     case "link": {
       const url = node.url ?? "";
-      const inner = (node.children ?? []).map(serializeNode).join("");
+      const inner = next(node.children ?? []);
       if (!url || !/^(https?:|mailto:|\/)/i.test(url)) return inner;
       return `<a href="${escapeHtml(url)}" rel="noopener noreferrer">${inner}</a>`;
     }
@@ -97,6 +95,8 @@ function serializeNode(node: LexicalNode): string {
     case "image": {
       const src = node.src ?? "";
       if (!src) return "";
+      // Block dangerous URI schemes (data:, javascript:, vbscript:) — same rule as link nodes
+      if (/^(javascript:|vbscript:|data:)/i.test(src)) return "";
       const resolvedSrc = getImageUrl(src);
       const alt = escapeHtml(node.alt ?? "");
       return `<img src="${escapeHtml(resolvedSrc)}" alt="${alt}" class="max-w-full h-auto rounded">`;
@@ -108,7 +108,7 @@ function serializeNode(node: LexicalNode): string {
     default:
       if (node.children?.length) {
         console.warn("[lexical-to-html] unknown container node type:", node.type, "— rendering children without wrapper");
-        return node.children.map(serializeNode).join("");
+        return next(node.children);
       }
       console.warn("[lexical-to-html] unknown leaf node type:", node.type, "— node dropped from output");
       return "";

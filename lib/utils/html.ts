@@ -19,7 +19,7 @@ export function sanitizeLegacyHtml(html: string): string {
 
   // Process all HTML tags
   result = result.replace(
-    /<\/?[a-zA-Z][a-zA-Z0-9]*(?:\s[^>]*)?\/?>/g,
+    /<\/?[a-zA-Z][a-zA-Z0-9]*(?:[\s/][^>]*)?\/?>/g,
     (match) => {
       const isClosing = match.startsWith("</");
       const tagMatch = match.match(/^<\/?([a-zA-Z][a-zA-Z0-9]*)/);

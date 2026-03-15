@@ -13,15 +13,23 @@ export function ImagePlugin(): null {
 
   useEffect(() => {
     if (!editor.hasNodes([ImageNode])) {
-      throw new Error("ImagePlugin: ImageNode must be registered in the editor config");
+      // Log rather than throw — throwing inside useEffect bypasses React Error Boundaries
+      // and crashes the entire component tree. Degrading gracefully keeps the editor usable.
+      console.error("ImagePlugin: ImageNode must be registered in the editor config — image insertion disabled");
+      return;
     }
 
     return editor.registerCommand(
       INSERT_IMAGE_COMMAND,
       ({ src, alt }) => {
-        editor.update(() => {
-          $insertNodes([$createImageNode(src, alt)]);
-        });
+        try {
+          editor.update(() => {
+            $insertNodes([$createImageNode(src, alt)]);
+          });
+        } catch (err) {
+          console.error("[ImagePlugin] INSERT_IMAGE_COMMAND: editor.update failed", err);
+          return false;
+        }
         return true;
       },
       COMMAND_PRIORITY_EDITOR,

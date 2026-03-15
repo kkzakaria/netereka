@@ -188,4 +188,26 @@ describe("lexicalJsonToHtml", () => {
     );
     expect(html).toContain('alt="&lt;script&gt;"');
   });
+
+  it("blocks data: URI in image src", () => {
+    expect(
+      lexicalJsonToHtml(state([{ type: "image", src: "data:text/html,<script>alert(1)</script>", alt: "" }])),
+    ).toBe("");
+  });
+
+  it("blocks javascript: URI in image src", () => {
+    expect(
+      lexicalJsonToHtml(state([{ type: "image", src: "javascript:alert(1)", alt: "" }])),
+    ).toBe("");
+  });
+
+  it("renders empty paragraph as <br> (blank line spacer)", () => {
+    expect(lexicalJsonToHtml(state([para([])]))).toBe("<br>");
+  });
+
+  it("returns empty string for heading with invalid tag value", () => {
+    expect(
+      lexicalJsonToHtml(state([{ type: "heading", tag: "script", children: [text("x")] }])),
+    ).toBe("");
+  });
 });

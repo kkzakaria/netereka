@@ -170,7 +170,7 @@ export function ToolbarPlugin() {
     try {
       editor.dispatchCommand(TOGGLE_LINK_COMMAND, { url });
     } catch (err) {
-      console.error("[ToolbarPlugin] TOGGLE_LINK_COMMAND failed", err);
+      console.error("[ToolbarPlugin] TOGGLE_LINK_COMMAND failed for url:", url, err);
       toast.error("Impossible d'insérer le lien.");
     }
   }
@@ -303,9 +303,9 @@ export function ToolbarPlugin() {
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => {
+        onChange={async (e) => {
           const file = e.target.files?.[0];
-          if (file) handleImageFile(file);
+          if (file) await handleImageFile(file);
         }}
       />
     </div>

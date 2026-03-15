@@ -44,4 +44,15 @@ describe("sanitizeLegacyHtml", () => {
   it("keeps <br> and <hr> self-closing", () => {
     expect(sanitizeLegacyHtml("line1<br>line2<hr>")).toBe("line1<br>line2<hr>");
   });
+  it("strips <img> tags (not in allowlist)", () => {
+    const result = sanitizeLegacyHtml('<p>ok</p><img src="x" alt="y">');
+    expect(result).not.toContain("<img");
+    expect(result).toContain("<p>ok</p>");
+  });
+  it("strips slash-attribute injection <img/onerror=...>", () => {
+    const result = sanitizeLegacyHtml('<p>ok</p><img/onerror=alert(1) src=x>');
+    expect(result).not.toContain("onerror");
+    expect(result).not.toContain("<img");
+    expect(result).toContain("<p>ok</p>");
+  });
 });

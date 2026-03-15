@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -48,10 +48,12 @@ export function RichTextEditor({
   placeholder = "Rédigez la description du produit…",
 }: RichTextEditorProps) {
   const [jsonValue, setJsonValue] = useState(defaultValue ?? "");
+  const lastGoodRef = useRef(defaultValue ?? "");
 
   const isLexicalJson = defaultValue?.trim().startsWith("{") ?? false;
 
-  const initialConfig = {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialConfig = useMemo(() => ({
     namespace: "ProductDescription",
     nodes: EDITOR_NODES,
     onError: (error: Error) => {
@@ -81,22 +83,33 @@ export function RichTextEditor({
       const root = $getRoot();
       root.clear();
       // Strip any HTML tags for legacy HTML descriptions (display as plain text in editor)
-      const plainText = raw.startsWith("<") ? raw.replace(/<[^>]*>/g, "") : raw;
+      const isLegacyHtml = raw.startsWith("<");
+      const plainText = isLegacyHtml ? raw.replace(/<[^>]*>/g, "") : raw;
       plainText.split(/\n{2,}/).forEach((block) => {
         const para = $createParagraphNode();
         para.append($createTextNode(block.replace(/\n/g, " ")));
         root.append(para);
       });
+      if (isLegacyHtml) {
+        setTimeout(() => {
+          toast.info(
+            "La description existante a été convertie en texte brut. Reformatez avant de sauvegarder pour conserver la mise en forme.",
+            { duration: 10000 },
+          );
+        }, 0);
+      }
     },
-  };
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = useCallback((editorState: EditorState) => {
     try {
-      setJsonValue(JSON.stringify(editorState.toJSON()));
+      const serialized = JSON.stringify(editorState.toJSON());
+      lastGoodRef.current = serialized;
+      setJsonValue(serialized);
     } catch (err) {
       console.error("[RichTextEditor] Failed to serialize editor state", err);
-      setJsonValue("");
-      toast.error("Erreur lors de la sauvegarde de l'état. Ne sauvegardez pas pour éviter la perte de contenu.");
+      setJsonValue(lastGoodRef.current);
+      toast.error("Erreur de sérialisation. L'état précédent est conservé — ne sauvegardez pas encore.", { duration: Infinity });
     }
   }, []);
 
