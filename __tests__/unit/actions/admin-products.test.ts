@@ -166,7 +166,7 @@ describe("updateProduct", () => {
       mocks.nanoid.mockReturnValue("xxxxxxxx");
       mocks.execute.mockRejectedValue(new Error("UNIQUE constraint failed: products.sku"));
       const result = await updateProduct("prod-1", baseFormData());
-      expect(result).toEqual({ success: false, error: "Impossible de générer un SKU unique, veuillez réessayer" });
+      expect(result).toEqual({ success: false, error: "Impossible de générer un SKU unique. Veuillez contacter le support." });
       expect(mocks.execute).toHaveBeenCalledTimes(3);
     });
 
@@ -188,7 +188,7 @@ describe("updateProduct", () => {
       mocks.nanoid.mockReturnValue("abcd1234");
       mocks.execute.mockRejectedValue(new Error("UNIQUE constraint failed: products.slug"));
       const result = await updateProduct("prod-1", baseFormData());
-      expect(result).toEqual({ success: false, error: "Conflit de slug, veuillez réessayer" });
+      expect(result).toEqual({ success: false, error: "Un conflit de slug s'est produit. Modifiez légèrement le nom et réessayez." });
     });
 
     it("appelle revalidatePath sur /p/{slug} lors de la première publication", async () => {
@@ -215,6 +215,50 @@ describe("updateProduct", () => {
         expect.arrayContaining(["NET-EXISTING1"])
       );
       expect(mocks.nanoid).not.toHaveBeenCalled();
+    });
+
+    it("retourne une erreur si toutes les variantes de slug sont prises (épuisement)", async () => {
+      // First queryFirst is for the existing product, subsequent ones all return "taken"
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "draft-abc", sku: null, is_draft: 1 });
+      // All slug candidates are taken (simulate by always returning a row)
+      mocks.queryFirst.mockResolvedValue({ id: "other-prod" });
+      mocks.slugify.mockReturnValue("samsung-galaxy");
+      const result = await updateProduct("prod-1", baseFormData());
+      expect(result).toEqual({ success: false, error: "Impossible de générer un slug unique pour ce nom" });
+      expect(mocks.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("produit publié sans SKU (données migrées)", () => {
+    it("génère un SKU pour un produit publié sans SKU (données migrées)", async () => {
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "old-product", sku: null, is_draft: 0 });
+      mocks.nanoid.mockReturnValue("migrated1");
+      mocks.execute.mockResolvedValueOnce(undefined);
+      const result = await updateProduct("prod-1", baseFormData());
+      expect(result.success).toBe(true);
+      expect(mocks.execute).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE products"),
+        expect.arrayContaining(["NET-MIGRATED1"])
+      );
+      // slug preserved, no revalidatePath on /p/ since is_draft was already 0
+      expect(mocks.execute).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE products"),
+        expect.arrayContaining(["old-product"])
+      );
+      expect(mocks.revalidatePath).not.toHaveBeenCalledWith(expect.stringContaining("/p/"));
+      expect(mocks.slugify).not.toHaveBeenCalled();
+    });
+
+    it("ignore tout slug soumis manuellement dans le FormData", async () => {
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "existing-slug", sku: "NET-ABCD1234", is_draft: 0 });
+      mocks.execute.mockResolvedValueOnce(undefined);
+      const result = await updateProduct("prod-1", baseFormData({ slug: "my-manual-slug" }));
+      expect(result.success).toBe(true);
+      // The manually submitted slug must NOT appear in the UPDATE params
+      const executeCall = mocks.execute.mock.calls[0];
+      expect(executeCall[1]).not.toContain("my-manual-slug");
+      // The existing slug IS preserved
+      expect(executeCall[1]).toContain("existing-slug");
     });
   });
 });

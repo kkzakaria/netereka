@@ -56,7 +56,8 @@ export function ProductFormSections({
         } else {
           toast.error(result.error || "Une erreur est survenue");
         }
-      } catch {
+      } catch (err) {
+        console.error("[ProductFormSections] handleSubmit unexpected error:", err);
         toast.error("Une erreur inattendue est survenue. Veuillez réessayer.");
       }
     });

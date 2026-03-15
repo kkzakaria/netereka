@@ -8,6 +8,9 @@ import { execute, query, queryFirst } from "@/lib/db";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { deleteFromR2 } from "@/lib/storage/images";
 
+const DB_CONSTRAINT_SKU = "UNIQUE constraint failed: products.sku";
+const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
+
 const idSchema = z.string().min(1, "ID requis");
 
 const productSchema = z.object({
@@ -29,8 +32,9 @@ const productSchema = z.object({
   is_featured: z.coerce.number().int().min(0).max(1).default(0),
 });
 
-/** @deprecated The product form uses createDraftProduct + updateProduct. This function is kept as a reference until the draft flow is confirmed stable. */
+/** @deprecated Never called from the UI — product creation now goes through createDraftProduct() + updateProduct(). Scheduled for removal once the draft flow is confirmed stable in production. */
 export async function createProduct(formData: FormData): Promise<ActionResult> {
+  console.warn("[admin/products] createProduct is deprecated and not called from the UI. Use createDraftProduct + updateProduct.");
   await requireAdmin();
 
   const raw = Object.fromEntries(formData);
@@ -109,16 +113,22 @@ export async function updateProduct(
     "SELECT slug, sku, is_draft FROM products WHERE id = ?",
     [id]
   );
-  if (!existing) return { success: false, error: "Produit introuvable" };
+  if (!existing) {
+    console.error("[admin/products] updateProduct: product not found", { id });
+    return { success: false, error: "Produit introuvable" };
+  }
 
   // Slug: generate on first save (draft), preserve thereafter
   let finalSlug: string;
   if (existing.is_draft === 1) {
     const base = slugify(data.name);
-    if (!base) return { success: false, error: "Le nom ne permet pas de générer un slug valide" };
+    if (!base) {
+      console.warn("[admin/products] updateProduct: slugify returned empty string", { id, name: data.name });
+      return { success: false, error: "Le nom ne permet pas de générer un slug valide" };
+    }
 
     let candidate = base;
-    let suffix = 1; // sequence: base, base-2, base-3, … (no -1 by convention)
+    let suffix = 1; // suffix=1 means "try bare slug first"; appended only after first collision → sequence: base, base-2, base-3, … (skips base-1 by convention)
     while (suffix <= 100) {
       const taken = await queryFirst<{ id: string }>(
         "SELECT id FROM products WHERE slug = ? AND id != ? LIMIT 1",
@@ -129,6 +139,7 @@ export async function updateProduct(
       candidate = `${base}-${suffix}`;
     }
     if (suffix > 100) {
+      console.error("[admin/products] updateProduct: slug exhaustion after 100 attempts", { id, base });
       return { success: false, error: "Impossible de générer un slug unique pour ce nom" };
     }
     finalSlug = candidate;
@@ -141,7 +152,7 @@ export async function updateProduct(
      base_price = ?, compare_price = ?, sku = ?, brand = ?,
      is_active = ?, is_featured = ?, stock_quantity = ?,
      low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
-     is_draft = 0, -- Clear draft flag: saving "publishes" the product
+     is_draft = 0, -- Clear draft flag (product becomes live if is_active = 1)
      updated_at = datetime('now')
    WHERE id = ?`;
 
@@ -165,7 +176,7 @@ export async function updateProduct(
     id,
   ];
 
-  // SKU: generate if null (new or migrated product), preserve otherwise
+  // SKU: auto-generate when null (covers both draft-flow products and pre-existing rows that predate SKU auto-assignment)
   const existingSku = existing.sku;
   if (existingSku === null) {
     let skuWritten = false;
@@ -176,24 +187,32 @@ export async function updateProduct(
         skuWritten = true;
         break;
       } catch (err) {
-        const msg = (err as Error).message;
-        if (msg.includes("UNIQUE constraint failed: products.slug")) {
-          return { success: false, error: "Conflit de slug, veuillez réessayer" };
+        const msg = (err as Error).message ?? "";
+        if (msg.includes(DB_CONSTRAINT_SLUG)) {
+          console.error("[admin/products] updateProduct: slug race condition on UPDATE", { id, finalSlug });
+          return { success: false, error: "Un conflit de slug s'est produit. Modifiez légèrement le nom et réessayez." };
         }
-        if (!msg.includes("UNIQUE constraint failed: products.sku")) throw err;
+        if (!msg.includes(DB_CONSTRAINT_SKU)) {
+          console.error("[admin/products] updateProduct: unexpected DB error during SKU generation", { id, attempt }, err);
+          throw err;
+        }
         // SKU collision — retry
       }
     }
     if (!skuWritten) {
-      return { success: false, error: "Impossible de générer un SKU unique, veuillez réessayer" };
+      console.error("[admin/products] updateProduct: SKU generation exhausted after 3 attempts", { id });
+      return { success: false, error: "Impossible de générer un SKU unique. Veuillez contacter le support." };
     }
   } else {
     try {
       await execute(updateSql, buildParams(existingSku));
     } catch (err) {
-      if ((err as Error).message.includes("UNIQUE constraint failed: products.slug")) {
-        return { success: false, error: "Conflit de slug, veuillez réessayer" };
+      const msg = (err as Error).message ?? "";
+      if (msg.includes(DB_CONSTRAINT_SLUG)) {
+        console.error("[admin/products] updateProduct: slug race condition on UPDATE", { id, finalSlug });
+        return { success: false, error: "Un conflit de slug s'est produit. Modifiez légèrement le nom et réessayez." };
       }
+      console.error("[admin/products] updateProduct: unexpected DB error on UPDATE", { id }, err);
       throw err;
     }
   }
