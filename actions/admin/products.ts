@@ -12,7 +12,7 @@ const idSchema = z.string().min(1, "ID requis");
 
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
-  slug: z.string().min(1),
+  slug: z.string().optional().default(""),
   category_id: z.string().min(1, "La catégorie est requise"),
   brand: z.string().optional().default(""),
   sku: z.string().optional().default(""),
@@ -94,9 +94,6 @@ export async function updateProduct(
   if (!idResult.success) return { success: false, error: "ID produit invalide" };
 
   const raw = Object.fromEntries(formData);
-  if (!raw.slug || (raw.slug as string).trim() === "") {
-    raw.slug = slugify(raw.name as string);
-  }
 
   const parsed = productSchema.safeParse(raw);
   if (!parsed.success) {
@@ -106,47 +103,131 @@ export async function updateProduct(
 
   const data = parsed.data;
 
-  // Ensure unique slug (excluding self) — return error for consistency
-  const existing = await queryFirst<{ id: string }>(
-    "SELECT id FROM products WHERE slug = ? AND id != ?",
-    [data.slug, id]
+  // Fetch existing product to preserve slug and SKU
+  const existing = await queryFirst<{ slug: string; sku: string | null; is_draft: number }>(
+    "SELECT slug, sku, is_draft FROM products WHERE id = ?",
+    [id]
   );
-  if (existing) {
-    return { success: false, error: `Un produit avec le slug "${data.slug}" existe déjà` };
+  if (!existing) return { success: false, error: "Produit introuvable" };
+
+  // Slug: generate on first save (draft), preserve thereafter
+  let finalSlug: string;
+  if (existing.is_draft === 1) {
+    const base = slugify(data.name);
+    if (!base) return { success: false, error: "Le nom ne permet pas de générer un slug valide" };
+
+    let candidate = base;
+    let suffix = 1;
+    while (suffix <= 100) {
+      const taken = await queryFirst<{ id: string }>(
+        "SELECT id FROM products WHERE slug = ? LIMIT 1",
+        [candidate]
+      );
+      if (!taken) break;
+      suffix++;
+      candidate = `${base}-${suffix}`;
+    }
+    if (suffix > 100) {
+      return { success: false, error: "Impossible de générer un slug unique pour ce nom" };
+    }
+    finalSlug = candidate;
+  } else {
+    finalSlug = existing.slug;
   }
 
-  await execute(
-    `UPDATE products SET
-       category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
-       base_price = ?, compare_price = ?, sku = ?, brand = ?,
-       is_active = ?, is_featured = ?, stock_quantity = ?,
-       low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
-       is_draft = 0, updated_at = datetime('now') -- Clear draft flag: saving "publishes" the product
-     WHERE id = ?`,
-    [
-      data.category_id,
-      data.name,
-      data.slug,
-      data.description || null,
-      data.short_description || null,
-      data.base_price,
-      data.compare_price ?? null,
-      data.sku || null,
-      data.brand || null,
-      data.is_active,
-      data.is_featured,
-      data.stock_quantity,
-      data.low_stock_threshold,
-      data.weight_grams ?? null,
-      data.meta_title || null,
-      data.meta_description || null,
-      id,
-    ]
-  );
+  // SKU: generate if null (new or migrated product), preserve otherwise
+  const existingSku = existing.sku;
+  if (existingSku === null) {
+    let skuWritten = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const generatedSku = `NET-${nanoid(8).toUpperCase()}`;
+      try {
+        await execute(
+          `UPDATE products SET
+             category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
+             base_price = ?, compare_price = ?, sku = ?, brand = ?,
+             is_active = ?, is_featured = ?, stock_quantity = ?,
+             low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
+             is_draft = 0, updated_at = datetime('now')
+           WHERE id = ?`,
+          [
+            data.category_id,
+            data.name,
+            finalSlug,
+            data.description || null,
+            data.short_description || null,
+            data.base_price,
+            data.compare_price ?? null,
+            generatedSku,
+            data.brand || null,
+            data.is_active,
+            data.is_featured,
+            data.stock_quantity,
+            data.low_stock_threshold,
+            data.weight_grams ?? null,
+            data.meta_title || null,
+            data.meta_description || null,
+            id,
+          ]
+        );
+        skuWritten = true;
+        break;
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (msg.includes("UNIQUE constraint failed: products.slug")) {
+          return { success: false, error: "Conflit de slug, veuillez réessayer" };
+        }
+        if (!msg.includes("UNIQUE constraint failed: products.sku")) throw err;
+        // SKU collision — retry
+      }
+    }
+    if (!skuWritten) {
+      return { success: false, error: "Impossible de générer un SKU unique, veuillez réessayer" };
+    }
+  } else {
+    try {
+      await execute(
+        `UPDATE products SET
+           category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
+           base_price = ?, compare_price = ?, sku = ?, brand = ?,
+           is_active = ?, is_featured = ?, stock_quantity = ?,
+           low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
+           is_draft = 0, updated_at = datetime('now')
+         WHERE id = ?`,
+        [
+          data.category_id,
+          data.name,
+          finalSlug,
+          data.description || null,
+          data.short_description || null,
+          data.base_price,
+          data.compare_price ?? null,
+          existingSku,
+          data.brand || null,
+          data.is_active,
+          data.is_featured,
+          data.stock_quantity,
+          data.low_stock_threshold,
+          data.weight_grams ?? null,
+          data.meta_title || null,
+          data.meta_description || null,
+          id,
+        ]
+      );
+    } catch (err) {
+      if ((err as Error).message.includes("UNIQUE constraint failed: products.slug")) {
+        return { success: false, error: "Conflit de slug, veuillez réessayer" };
+      }
+      throw err;
+    }
+  }
 
   revalidatePath("/products");
   revalidatePath(`/products/${id}/edit`);
   revalidatePath("/dashboard");
+  if (existing.is_draft === 1) {
+    revalidatePath("/p/" + finalSlug);
+  }
   return { success: true, id };
 }
 
