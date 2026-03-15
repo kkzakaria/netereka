@@ -23,15 +23,19 @@ export function descriptionToHtml(raw: string): string {
     try {
       state = JSON.parse(trimmed);
     } catch (err) {
-      console.error("[description-to-html] JSON.parse failed on Lexical state — falling back to plain text", err);
+      console.error("[description-to-html] JSON.parse failed on Lexical state — returning empty", err);
+      return "";
     }
     if (state != null && typeof state === "object" && "root" in state) {
       try {
         return lexicalJsonToHtml(state as Parameters<typeof lexicalJsonToHtml>[0]);
       } catch (err) {
-        console.error("[description-to-html] lexicalJsonToHtml threw unexpectedly — falling back to plain text", err);
+        console.error("[description-to-html] lexicalJsonToHtml threw unexpectedly — returning empty", err);
+        return "";
       }
     }
+    console.error("[description-to-html] JSON parsed but has no root key — not a valid Lexical state");
+    return "";
   }
 
   if (trimmed.startsWith("<")) {

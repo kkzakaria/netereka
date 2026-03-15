@@ -95,7 +95,8 @@ export function RichTextEditor({
       setJsonValue(JSON.stringify(editorState.toJSON()));
     } catch (err) {
       console.error("[RichTextEditor] Failed to serialize editor state", err);
-      toast.error("Erreur lors de la sauvegarde de l'état. Les dernières modifications peuvent ne pas être enregistrées.");
+      setJsonValue("");
+      toast.error("Erreur lors de la sauvegarde de l'état. Ne sauvegardez pas pour éviter la perte de contenu.");
     }
   }, []);
 

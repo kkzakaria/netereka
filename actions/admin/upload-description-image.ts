@@ -4,11 +4,11 @@ import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
 import { uploadToR2 } from "@/lib/storage/images";
 
-export interface UploadDescriptionImageResult {
-  success: boolean;
-  key?: string;
-  error?: string;
-}
+export type UploadDescriptionImageResult =
+  | { success: true; key: string }
+  | { success: false; error: string };
+
+const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
 
 export async function uploadDescriptionImage(
   formData: FormData
@@ -28,10 +28,19 @@ export async function uploadDescriptionImage(
     return { success: false, error: "L'image ne doit pas dépasser 5 Mo" };
   }
 
-  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
+    return { success: false, error: "Format non supporté. Utilisez JPG, PNG, GIF, WebP ou AVIF." };
+  }
+
   const key = `description-images/${nanoid()}.${ext}`;
 
-  await uploadToR2(file, key);
+  try {
+    await uploadToR2(file, key);
+  } catch (err) {
+    console.error("[uploadDescriptionImage] uploadToR2 failed", err);
+    return { success: false, error: "Échec de l'upload. Veuillez réessayer." };
+  }
 
   return { success: true, key };
 }

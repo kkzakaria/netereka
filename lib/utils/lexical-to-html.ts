@@ -1,4 +1,5 @@
 import { escapeHtml } from "./html";
+import { getImageUrl } from "./images";
 
 // Lexical text format bitmask (from lexical source)
 const IS_BOLD = 1;
@@ -24,6 +25,7 @@ export interface LexicalState {
 }
 
 function serializeNode(node: LexicalNode): string {
+  if (!node) return "";
   switch (node.type) {
     case "root":
       return (node.children ?? []).map(serializeNode).join("");
@@ -95,9 +97,7 @@ function serializeNode(node: LexicalNode): string {
     case "image": {
       const src = node.src ?? "";
       if (!src) return "";
-      // Resolve R2 key to URL (matches getImageUrl logic)
-      const base = process.env.NEXT_PUBLIC_R2_URL || "/images";
-      const resolvedSrc = src.startsWith("http") || src.startsWith("/") ? src : `${base}/${src}`;
+      const resolvedSrc = getImageUrl(src);
       const alt = escapeHtml(node.alt ?? "");
       return `<img src="${escapeHtml(resolvedSrc)}" alt="${alt}" class="max-w-full h-auto rounded">`;
     }

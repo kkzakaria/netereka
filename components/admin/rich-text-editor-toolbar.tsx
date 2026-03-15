@@ -181,8 +181,8 @@ export function ToolbarPlugin() {
       const formData = new FormData();
       formData.append("file", file);
       const result = await uploadDescriptionImage(formData);
-      if (!result.success || !result.key) {
-        toast.error(result.error ?? "Échec de l'upload de l'image.");
+      if (!result.success) {
+        toast.error(result.error);
         return;
       }
       const src = getImageUrl(result.key);

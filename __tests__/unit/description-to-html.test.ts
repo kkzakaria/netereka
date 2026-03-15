@@ -26,20 +26,16 @@ describe("descriptionToHtml", () => {
     expect(descriptionToHtml(state)).toBe("<p>Hello</p>");
   });
 
-  it("falls through to plain text when JSON is valid but has no root", () => {
+  it("returns empty string when JSON is valid but has no root", () => {
     const input = '{"foo":"bar"}';
-    // No root property → falls through to plain text path
-    const result = descriptionToHtml(input);
-    expect(result).toContain("<p>");
-    expect(result).toContain("{");
+    // Not a valid Lexical state — return empty rather than rendering raw JSON as plain text
+    expect(descriptionToHtml(input)).toBe("");
   });
 
-  it("falls through to plain text when JSON is malformed", () => {
+  it("returns empty string when JSON is malformed", () => {
     const input = "{bad json}";
-    const result = descriptionToHtml(input);
-    // Falls through to plain text path since it starts with { but is invalid JSON
-    expect(result).toContain("<p>");
-    expect(result).toContain("{bad json}");
+    // Invalid JSON starting with { — return empty rather than rendering garbage
+    expect(descriptionToHtml(input)).toBe("");
   });
 
   // ── Legacy HTML path ───────────────────────────────────────────────────────
