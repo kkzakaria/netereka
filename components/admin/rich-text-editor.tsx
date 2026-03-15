@@ -52,7 +52,6 @@ export function RichTextEditor({
 
   const isLexicalJson = defaultValue?.trim().startsWith("{") ?? false;
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialConfig = useMemo(() => ({
     namespace: "ProductDescription",
     nodes: EDITOR_NODES,
@@ -99,7 +98,8 @@ export function RichTextEditor({
         }, 0);
       }
     },
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
 
   const handleChange = useCallback((editorState: EditorState) => {
     try {
