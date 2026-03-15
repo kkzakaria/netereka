@@ -2,6 +2,9 @@ export function getImageUrl(path: string | null | undefined): string {
   if (!path) return "/images/placeholder.webp";
   if (path.startsWith("http")) return path;
   if (path.startsWith("/")) return path;
-  const base = process.env.NEXT_PUBLIC_R2_URL || "/images";
-  return `${base}/${path}`;
+  const base = process.env.NEXT_PUBLIC_R2_URL;
+  if (!base) {
+    console.warn("[getImageUrl] NEXT_PUBLIC_R2_URL not set — using /images fallback, images may not load");
+  }
+  return `${base ?? "/images"}/${path}`;
 }

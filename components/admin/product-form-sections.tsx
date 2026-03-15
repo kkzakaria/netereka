@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { RichTextEditor } from "./rich-text-editor";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ProductDetail } from "@/lib/db/types";
@@ -120,12 +121,10 @@ export function ProductFormSections({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
+                <Label>Description</Label>
+                <RichTextEditor
                   name="description"
-                  rows={5}
-                  defaultValue={product.description ?? ""}
+                  defaultValue={product.description}
                 />
               </div>
             </CardContent>

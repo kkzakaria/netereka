@@ -1,5 +1,6 @@
 import type { ProductAttribute } from "@/lib/db/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { descriptionToHtml } from "@/lib/utils/description-to-html";
 
 interface ProductDetailsProps {
   description: string | null;
@@ -56,20 +57,16 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
   );
 }
 
+
 function DescriptionContent({ description }: { description: string | null }) {
   if (!description) return null;
-
-  // Split by double newlines for paragraph breaks
-  const paragraphs = description.split(/\n{2,}/).filter(Boolean);
-
+  const html = descriptionToHtml(description);
+  if (!html) return null;
   return (
-    <div className="max-w-prose space-y-3">
-      {paragraphs.map((paragraph, i) => (
-        <p key={i} className="text-sm leading-relaxed text-muted-foreground">
-          {paragraph}
-        </p>
-      ))}
-    </div>
+    <div
+      className="prose prose-sm max-w-prose dark:prose-invert"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
 
