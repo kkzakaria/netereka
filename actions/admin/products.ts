@@ -29,6 +29,7 @@ const productSchema = z.object({
   is_featured: z.coerce.number().int().min(0).max(1).default(0),
 });
 
+/** @deprecated The product form uses createDraftProduct + updateProduct. This function is kept as a reference until the draft flow is confirmed stable. */
 export async function createProduct(formData: FormData): Promise<ActionResult> {
   await requireAdmin();
 
@@ -117,7 +118,7 @@ export async function updateProduct(
     if (!base) return { success: false, error: "Le nom ne permet pas de générer un slug valide" };
 
     let candidate = base;
-    let suffix = 1;
+    let suffix = 1; // sequence: base, base-2, base-3, … (no -1 by convention)
     while (suffix <= 100) {
       const taken = await queryFirst<{ id: string }>(
         "SELECT id FROM products WHERE slug = ? AND id != ? LIMIT 1",
