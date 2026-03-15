@@ -240,6 +240,29 @@ describe("updateProduct", () => {
       expect(mocks.nanoid).not.toHaveBeenCalled();
     });
 
+    it("ne génère pas de suffixe -2 si le slug de base est disponible (exclusion du produit courant via AND id != ?)", async () => {
+      // Simulates re-saving a draft: slug check returns null (current product's own slug excluded)
+      mocks.queryFirst
+        .mockResolvedValueOnce({ slug: "draft-abc", sku: null, is_draft: 1 })
+        .mockResolvedValueOnce(null); // slug "iphone-15-pro" is free (own draft excluded)
+      mocks.slugify.mockReturnValue("iphone-15-pro");
+      mocks.nanoid.mockReturnValue("abcd1234");
+      mocks.execute.mockResolvedValueOnce(undefined);
+      const result = await updateProduct("prod-1", baseFormData());
+      expect(result.success).toBe(true);
+      // Must use bare slug, not "iphone-15-pro-2"
+      expect(mocks.execute).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE products"),
+        expect.arrayContaining(["iphone-15-pro"])
+      );
+      expect(mocks.execute).not.toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE products"),
+        expect.arrayContaining(["iphone-15-pro-2"])
+      );
+      // Only 2 queryFirst calls: 1 for existing product + 1 for slug check
+      expect(mocks.queryFirst).toHaveBeenCalledTimes(2);
+    });
+
     it("retourne une erreur si toutes les variantes de slug sont prises (épuisement)", async () => {
       // First queryFirst is for the existing product, subsequent ones all return "taken"
       mocks.queryFirst.mockResolvedValueOnce({ slug: "draft-abc", sku: null, is_draft: 1 });
