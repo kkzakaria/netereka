@@ -83,15 +83,6 @@ export function ProductFormSections({
                   placeholder="Ex: iPhone 15 Pro Max"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="slug">Slug</Label>
-                <Input
-                  id="slug"
-                  name="slug"
-                  defaultValue={isNew ? "" : product.slug}
-                  placeholder="Auto-généré si vide"
-                />
-              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="brand">Marque</Label>
@@ -102,15 +93,12 @@ export function ProductFormSections({
                     placeholder="Ex: Apple"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sku">SKU</Label>
-                  <Input
-                    id="sku"
-                    name="sku"
-                    defaultValue={product.sku ?? ""}
-                    placeholder="Ex: IP15PM-256"
-                  />
-                </div>
+                {!isNew && product.sku && (
+                  <div className="space-y-2">
+                    <Label>SKU</Label>
+                    <p className="text-sm text-muted-foreground font-mono">{product.sku}</p>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="short_description">Description courte</Label>
