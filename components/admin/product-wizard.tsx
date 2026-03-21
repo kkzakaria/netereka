@@ -21,7 +21,7 @@ const STEPS = [
   { label: "Finalisation", subtitle: "Description · SEO" },
 ];
 
-function getInitialStep(product: ProductDetail): number {
+export function getInitialStep(product: ProductDetail): number {
   if (!product.name) return 0;
   if (!product.category_id || product.base_price === 0) return 1;
   if (!product.images.some((img) => img.is_primary === 1)) return 2;
@@ -41,26 +41,36 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
 
   function handleNext() {
-    if (!formRef.current) return;
+    if (!formRef.current) {
+      console.error("[ProductWizard] formRef is null — form component did not mount");
+      toast.error("Erreur inattendue. Veuillez actualiser la page.");
+      return;
+    }
     const formData = new FormData(formRef.current);
     startTransition(async () => {
       try {
         const result = await saveDraftStep(product.id, formData);
         if (result.success) {
           setCurrentStep((prev) => prev + 1);
+          router.refresh();
         } else {
           toast.error(result.error ?? "Une erreur est survenue");
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("NEXT_REDIRECT")) throw error;
+        console.error("[ProductWizard] handleNext failed:", error);
         toast.error("Une erreur inattendue est survenue. Veuillez réessayer.");
       }
     });
   }
 
   function handlePublish() {
-    if (!formRef.current) return;
+    if (!formRef.current) {
+      console.error("[ProductWizard] formRef is null — form component did not mount");
+      toast.error("Erreur inattendue. Veuillez actualiser la page.");
+      return;
+    }
     const formData = new FormData(formRef.current);
-    formData.set("is_active", "1");
     startTransition(async () => {
       try {
         const result = await updateProduct(product.id, formData);
@@ -70,14 +80,20 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
         } else {
           toast.error(result.error ?? "Une erreur est survenue");
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("NEXT_REDIRECT")) throw error;
+        console.error("[ProductWizard] handlePublish failed:", error);
         toast.error("Une erreur inattendue est survenue. Veuillez réessayer.");
       }
     });
   }
 
   function handleSaveDraft() {
-    if (!formRef.current) return;
+    if (!formRef.current) {
+      console.error("[ProductWizard] formRef is null — form component did not mount");
+      toast.error("Erreur inattendue. Veuillez actualiser la page.");
+      return;
+    }
     const formData = new FormData(formRef.current);
     startTransition(async () => {
       try {
@@ -88,9 +104,27 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
         } else {
           toast.error(result.error ?? "Une erreur est survenue");
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("NEXT_REDIRECT")) throw error;
+        console.error("[ProductWizard] handleSaveDraft failed:", error);
         toast.error("Une erreur inattendue est survenue. Veuillez réessayer.");
       }
+    });
+  }
+
+  function handleNavigate(targetStep: number) {
+    if (!formRef.current) {
+      setCurrentStep(targetStep);
+      return;
+    }
+    const formData = new FormData(formRef.current);
+    startTransition(async () => {
+      try {
+        await saveDraftStep(product.id, formData);
+      } catch {
+        // best-effort — navigate regardless
+      }
+      setCurrentStep(targetStep);
     });
   }
 
@@ -102,7 +136,7 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
       <WizardStepper
         steps={STEPS}
         currentStep={currentStep}
-        onStepClick={setCurrentStep}
+        onStepClick={handleNavigate}
       />
 
       {/* Step content */}
@@ -144,7 +178,7 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
                 type="button"
                 variant="outline"
                 disabled={isPending}
-                onClick={() => setCurrentStep((prev) => prev - 1)}
+                onClick={() => handleNavigate(currentStep - 1)}
               >
                 ← Précédent
               </Button>

@@ -1,6 +1,6 @@
 // __tests__/unit/actions/admin-products-draft.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mockAdminSession } from "../../helpers/mocks";
+import { mockAdminSession, mockCustomerSession } from "../../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -254,5 +254,39 @@ describe("saveDraftStep", () => {
     expect(setClause).not.toContain("is_draft");
     // WHERE clause must still guard against non-drafts
     expect(sql).toContain("AND is_draft = 1");
+  });
+
+  it("redirige si l'utilisateur n'est pas admin", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    await expect(
+      saveDraftStep(
+        "prod-1",
+        makeFormData({ _step: "1", name: "Test", category_id: "cat-1" }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it("retourne une erreur si l'étape est absente (_step manquant)", async () => {
+    const fd = new FormData();
+    // No _step field at all
+    const result = await saveDraftStep("prod-1", fd);
+    expect(result).toEqual({ success: false, error: "Étape invalide" });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it("étape 1 : brand vide est sauvegardé comme null dans les paramètres SQL", async () => {
+    mocks.queryFirst
+      .mockResolvedValueOnce(DRAFT_PRODUCT)
+      .mockResolvedValueOnce(null); // no slug collision
+    await saveDraftStep(
+      "prod-1",
+      makeFormData({ _step: "1", name: "Samsung Galaxy A55", category_id: "cat-1", brand: "" }),
+    );
+    const values: unknown[] = mocks.execute.mock.calls[0][1];
+    // brand should be null, not ""
+    expect(values).toContain(null);
+    // Verify "" is not stored — brand is a NULLABLE_FIELD
+    expect(values).not.toContain("");
   });
 });
