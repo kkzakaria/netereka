@@ -59,4 +59,4 @@ next-env.d.ts
 .playwright-report
 
 # downloaded product images (uploaded to R2)
-scripts/images/
+scripts/images/.superpowers/
