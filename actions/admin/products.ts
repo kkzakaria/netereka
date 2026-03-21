@@ -316,6 +316,172 @@ export async function createDraftProduct(): Promise<ActionResult> {
   return { success: true, id };
 }
 
+export async function saveDraftStep(
+  id: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
+  const product = await queryFirst<{ slug: string }>(
+    "SELECT slug FROM products WHERE id = ? AND is_draft = 1",
+    [id],
+  );
+  if (!product) return { success: false, error: "Produit introuvable" };
+
+  const step = (formData.get("_step") as string) ?? "";
+  const raw = Object.fromEntries(formData);
+  delete raw._step;
+
+  if (step === "1") {
+    const parsed = z
+      .object({
+        name: z.string().min(1, "Le nom est requis"),
+        category_id: z.string().min(1, "La catégorie est requise"),
+        brand: z.string().optional().default(""),
+        sku: z.string().optional().default(""),
+      })
+      .safeParse(raw);
+    if (!parsed.success)
+      return {
+        success: false,
+        error: parsed.error.issues.map((e) => e.message).join(", "),
+      };
+    return applyDraftUpdate(id, parsed.data, product.slug);
+  }
+
+  if (step === "2") {
+    const parsed = z
+      .object({
+        base_price: z.coerce
+          .number()
+          .int("Le prix doit être un entier")
+          .min(0, "Le prix doit être positif"),
+        compare_price: z.coerce.number().int().min(0).optional(),
+        stock_quantity: z.coerce.number().int().min(0).default(0),
+        low_stock_threshold: z.coerce.number().int().min(0).default(5),
+        weight_grams: z.coerce.number().int().min(0).optional(),
+      })
+      .safeParse(raw);
+    if (!parsed.success)
+      return {
+        success: false,
+        error: parsed.error.issues.map((e) => e.message).join(", "),
+      };
+    return applyDraftUpdate(id, parsed.data, product.slug);
+  }
+
+  if (step === "3") {
+    return { success: true };
+  }
+
+  if (step === "4") {
+    const parsed = z
+      .object({
+        short_description: z.string().optional().default(""),
+        description: z.string().optional().default(""),
+        meta_title: z
+          .string()
+          .max(60, "Le titre SEO ne peut pas dépasser 60 caractères")
+          .optional()
+          .default(""),
+        meta_description: z
+          .string()
+          .max(160, "La méta-description ne peut pas dépasser 160 caractères")
+          .optional()
+          .default(""),
+        is_active: z.coerce.number().int().min(0).max(1).default(0),
+        is_featured: z.coerce.number().int().min(0).max(1).default(0),
+      })
+      .safeParse(raw);
+    if (!parsed.success)
+      return {
+        success: false,
+        error: parsed.error.issues.map((e) => e.message).join(", "),
+      };
+    // Step 4: draft already verified above; don't include is_draft in the SQL
+    return applyDraftUpdate(id, parsed.data, product.slug, false);
+  }
+
+  return { success: false, error: "Étape invalide" };
+}
+
+async function applyDraftUpdate(
+  id: string,
+  data: Record<string, unknown>,
+  currentSlug: string,
+  guardDraft = true,
+): Promise<ActionResult> {
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const values: unknown[] = [];
+
+  // Slug auto-derivation: only when name is set and current slug is a draft placeholder
+  if ("name" in data && data.name && currentSlug.startsWith("draft-")) {
+    const candidateSlug = slugify(data.name as string);
+    const collision = await queryFirst<{ id: string }>(
+      "SELECT id FROM products WHERE slug = ? AND id != ?",
+      [candidateSlug, id],
+    );
+    if (collision?.id) {
+      return {
+        success: false,
+        error: `Un produit avec le slug "${candidateSlug}" existe déjà`,
+      };
+    }
+    sets.push("slug = ?");
+    values.push(candidateSlug);
+  }
+
+  const NULLABLE_FIELDS = new Set([
+    "brand",
+    "sku",
+    "compare_price",
+    "weight_grams",
+    "short_description",
+    "description",
+    "meta_title",
+    "meta_description",
+  ]);
+
+  const ALLOWED_COLUMNS = new Set([
+    "name",
+    "brand",
+    "sku",
+    "category_id",
+    "base_price",
+    "compare_price",
+    "stock_quantity",
+    "low_stock_threshold",
+    "weight_grams",
+    "short_description",
+    "description",
+    "meta_title",
+    "meta_description",
+    "is_active",
+    "is_featured",
+  ]);
+
+  for (const [key, val] of Object.entries(data)) {
+    if (!ALLOWED_COLUMNS.has(key)) continue;
+    sets.push(`${key} = ?`);
+    values.push(
+      NULLABLE_FIELDS.has(key) && (val === "" || val == null) ? null : val,
+    );
+  }
+
+  values.push(id);
+
+  const whereClause = guardDraft ? "WHERE id = ? AND is_draft = 1" : "WHERE id = ?";
+  await execute(
+    `UPDATE products SET ${sets.join(", ")} ${whereClause}`,
+    values,
+  );
+
+  return { success: true };
+}
+
 /** Delete draft products abandoned for 24+ hours (name still empty).
  *  Also removes associated product_images, product_variants rows and R2 files. */
 export async function cleanupDraftProducts(): Promise<void> {
