@@ -401,8 +401,7 @@ export async function saveDraftStep(
         success: false,
         error: parsed.error.issues.map((e) => e.message).join(", "),
       };
-    // Step 4: draft already verified above; don't include is_draft in the SQL
-    return applyDraftUpdate(id, parsed.data, product.slug, false);
+    return applyDraftUpdate(id, parsed.data, product.slug);
   }
 
   return { success: false, error: "Étape invalide" };
@@ -412,7 +411,6 @@ async function applyDraftUpdate(
   id: string,
   data: Record<string, unknown>,
   currentSlug: string,
-  guardDraft = true,
 ): Promise<ActionResult> {
   const sets: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
@@ -473,9 +471,8 @@ async function applyDraftUpdate(
 
   values.push(id);
 
-  const whereClause = guardDraft ? "WHERE id = ? AND is_draft = 1" : "WHERE id = ?";
   await execute(
-    `UPDATE products SET ${sets.join(", ")} ${whereClause}`,
+    `UPDATE products SET ${sets.join(", ")} WHERE id = ? AND is_draft = 1`,
     values,
   );
 

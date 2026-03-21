@@ -243,12 +243,16 @@ describe("saveDraftStep", () => {
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
-  it("étape 4 : ne touche pas is_draft dans le SQL", async () => {
+  it("étape 4 : ne touche pas is_draft dans le SQL SET et garde le WHERE guard", async () => {
     await saveDraftStep(
       "prod-1",
       makeFormData({ _step: "4", is_active: "1", is_featured: "0" }),
     );
     const sql: string = mocks.execute.mock.calls[0][0];
-    expect(sql).not.toContain("is_draft");
+    // SET clause must not modify is_draft
+    const setClause = sql.split("WHERE")[0];
+    expect(setClause).not.toContain("is_draft");
+    // WHERE clause must still guard against non-drafts
+    expect(sql).toContain("AND is_draft = 1");
   });
 });
