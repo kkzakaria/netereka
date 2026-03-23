@@ -152,6 +152,10 @@ export function ProductFormSections({
 
   return (
     <form action={handleSubmit}>
+      {/* Carry weight_grams from attributes for updateProduct */}
+      <input type="hidden" name="weight_grams" value={
+        product.attributes.find((a) => a.name === "Poids")?.value ?? ""
+      } />
       <div className="grid gap-6 lg:grid-cols-4">
         {/* Main content — sections */}
         <div className="space-y-6 lg:col-span-3">
@@ -463,7 +467,7 @@ function AttributesSection({ product }: { product: ProductDetail }) {
                   else addColor(p.name, p.hex);
                 }}
                 title={p.name}
-                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                className={`flex min-h-11 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
                   active
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border bg-background text-muted-foreground hover:border-foreground hover:text-foreground"
@@ -664,10 +668,13 @@ function PricingSection({ product }: { product: ProductDetail }) {
   const hasColors = colors.length > 0;
 
   function findVariantForColor(variantColor: string) {
+    const target = variantColor.toLowerCase();
     return product.variants.find((v) => {
       try {
-        return JSON.parse(v.attributes).color === variantColor;
-      } catch {
+        const color = JSON.parse(v.attributes).color;
+        return color?.toLowerCase() === target;
+      } catch (err) {
+        console.warn(`[PricingSection] Failed to parse variant attributes for id="${v.id}":`, err);
         return false;
       }
     });
@@ -992,10 +999,12 @@ function MediaSection({ product }: { product: ProductDetail }) {
     .map((a) => {
       const parsed = parseColorValue(a.value);
       const variantColor = toVariantColorValue(a.value);
+      const target = variantColor.toLowerCase();
       const variant = product.variants.find((v) => {
         try {
-          return JSON.parse(v.attributes).color === variantColor;
-        } catch {
+          return JSON.parse(v.attributes).color?.toLowerCase() === target;
+        } catch (err) {
+          console.warn(`[MediaSection] Failed to parse variant attributes for id="${v.id}":`, err);
           return false;
         }
       });
@@ -1081,11 +1090,11 @@ function MediaSection({ product }: { product: ProductDetail }) {
               </thead>
               <tbody>
                 {colors.map((color, i) => {
-                  const img = color.variantId
-                    ? product.images.find(
+                  const colorImages = color.variantId
+                    ? product.images.filter(
                         (im) => im.variant_id === color.variantId,
                       )
-                    : undefined;
+                    : [];
                   return (
                     <tr
                       key={color.variantId ?? `color-${color.name}`}
@@ -1103,23 +1112,40 @@ function MediaSection({ product }: { product: ProductDetail }) {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        {img ? (
+                        {colorImages.length > 0 ? (
                           <div className="flex items-center gap-2">
-                            <Image
-                              src={getImageUrl(img.url)}
-                              alt={img.alt || color.name}
-                              width={40}
-                              height={40}
-                              className="size-10 shrink-0 rounded-md border object-cover"
-                            />
-                            {img.is_primary === 1 && (
-                              <Badge
-                                variant="outline"
-                                className="px-1 py-0 text-[10px]"
-                              >
-                                Principale
-                              </Badge>
-                            )}
+                            {colorImages.map((img) => (
+                              <div key={img.id} className="group/img relative">
+                                <Image
+                                  src={getImageUrl(img.url)}
+                                  alt={img.alt || color.name}
+                                  width={40}
+                                  height={40}
+                                  className="size-10 shrink-0 rounded-md border object-cover"
+                                />
+                                {img.is_primary === 1 && (
+                                  <Badge
+                                    variant="outline"
+                                    className="absolute -top-1 -right-1 px-0.5 py-0 text-[8px]"
+                                  >
+                                    P
+                                  </Badge>
+                                )}
+                                <div className="absolute inset-0 hidden items-center justify-center rounded-md bg-black/50 group-hover/img:flex">
+                                  <Button
+                                    type="button"
+                                    size="icon-xs"
+                                    variant="ghost"
+                                    className="size-6 text-white hover:text-destructive"
+                                    disabled={isPending}
+                                    onClick={() => handleDelete(img.id)}
+                                    aria-label="Supprimer"
+                                  >
+                                    ×
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">
@@ -1129,34 +1155,7 @@ function MediaSection({ product }: { product: ProductDetail }) {
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {img ? (
-                            <>
-                              {img.is_primary !== 1 && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 text-xs"
-                                  disabled={isPending}
-                                  onClick={() =>
-                                    handleSetPrimary(img.id)
-                                  }
-                                >
-                                  Principale
-                                </Button>
-                              )}
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs text-destructive hover:text-destructive"
-                                disabled={isPending}
-                                onClick={() => handleDelete(img.id)}
-                              >
-                                Supprimer
-                              </Button>
-                            </>
-                          ) : color.variantId ? (
+                          {color.variantId ? (
                             <ColorUploadBtn
                               variantId={color.variantId}
                               disabled={isPending}
@@ -1211,6 +1210,7 @@ function MediaSection({ product }: { product: ProductDetail }) {
                   <div className="flex w-full gap-1.5 p-2">
                     {img.is_primary !== 1 && (
                       <Button
+                        type="button"
                         size="sm"
                         variant="secondary"
                         className="h-9 text-xs"
@@ -1221,6 +1221,7 @@ function MediaSection({ product }: { product: ProductDetail }) {
                       </Button>
                     )}
                     <Button
+                      type="button"
                       size="sm"
                       variant="destructive"
                       className="h-9 text-xs"
@@ -1273,7 +1274,7 @@ function ColorUploadBtn({
         type="button"
         size="sm"
         variant="outline"
-        className="h-7 text-xs"
+        className="h-9 min-h-[44px] text-xs"
         disabled={disabled}
         onClick={() => inputRef.current?.click()}
       >

@@ -635,23 +635,26 @@ export async function saveProductAttributes(
   const idResult = idSchema.safeParse(productId);
   if (!idResult.success) return { success: false, error: "ID produit invalide" };
 
+  const attributeSchema = z.array(z.object({
+    name: z.string().min(1),
+    value: z.string(),
+  }));
+
   const raw = formData.get("attributes");
-  let attrs: { name: string; value: string }[] = [];
+  let valid: z.infer<typeof attributeSchema> = [];
   if (raw && typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return { success: false, error: "Format des caractéristiques invalide" };
+      const result = attributeSchema.safeParse(parsed);
+      if (!result.success) {
+        return { success: false, error: result.error.issues.map((e) => e.message).join(", ") };
       }
-      attrs = parsed;
+      valid = result.data.filter((a) => a.name.trim());
     } catch (error) {
       console.error(`[admin/products] saveProductAttributes: invalid JSON:`, raw, error);
       return { success: false, error: "Format des caractéristiques invalide" };
     }
   }
-  const valid = attrs.filter(
-    (a) => typeof a.name === "string" && a.name.trim() && typeof a.value === "string",
-  );
   try {
     const { getDB } = await import("@/lib/cloudflare/context");
     const db = await getDB();
@@ -663,6 +666,29 @@ export async function saveProductAttributes(
         ).bind(nanoid(), productId, attr.name.trim(), attr.value.trim()),
       ),
     ];
+    // If no color attributes remain, clean up orphan color-only variants
+    const hasColors = valid.some((a) => a.name.trim() === "Couleur");
+    if (!hasColors) {
+      const existingVariants = await query<{ id: string; attributes: string }>(
+        "SELECT id, attributes FROM product_variants WHERE product_id = ?",
+        [productId],
+      );
+      for (const v of existingVariants) {
+        try {
+          const attrs = JSON.parse(v.attributes);
+          const keys = Object.keys(attrs);
+          if (keys.length === 1 && keys[0] === "color") {
+            statements.push(
+              db.prepare("UPDATE product_images SET variant_id = NULL WHERE variant_id = ?").bind(v.id),
+            );
+            statements.push(
+              db.prepare("DELETE FROM product_variants WHERE id = ?").bind(v.id),
+            );
+          }
+        } catch { /* skip malformed */ }
+      }
+    }
+
     await db.batch(statements);
   } catch (error) {
     console.error(`[admin/products] saveProductAttributes failed for id="${productId}":`, error);
@@ -714,11 +740,15 @@ export async function saveColorVariants(
       "SELECT id, attributes FROM product_variants WHERE product_id = ?",
       [productId],
     );
+    // Only track color-only variants (single "color" key) — skip multi-attribute variants (e.g. color+storage)
     const existingColorMap = new Map<string, string>();
     for (const v of existingVariants) {
       try {
         const attrs = JSON.parse(v.attributes);
-        if (attrs.color) existingColorMap.set(attrs.color, v.id);
+        const keys = Object.keys(attrs);
+        if (keys.length === 1 && keys[0] === "color" && attrs.color) {
+          existingColorMap.set(attrs.color, v.id);
+        }
       } catch (error) {
         console.error(`[admin/products] Malformed attributes JSON for variant id="${v.id}":`, v.attributes, error);
       }
