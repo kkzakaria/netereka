@@ -6,7 +6,7 @@ import Image from "next/image";
 import { getProductBySlug, getRelatedProducts, toProductCardData } from "@/lib/db/products";
 import { ImageGallery } from "@/components/storefront/image-gallery";
 import { getImageUrl } from "@/lib/utils/images";
-import { VariantSelector } from "@/components/storefront/variant-selector";
+import { ProductGalleryWithVariants } from "@/components/storefront/product-gallery-with-variants";
 import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
@@ -242,22 +242,18 @@ export default async function ProductPage({ params }: Props) {
         <span className="text-foreground">{product.name}</span>
       </nav>
 
-      <div className="grid gap-8 md:grid-cols-2">
-        {/* Images */}
-        <ImageGallery images={product.images}>
-          <Image
-            src={getImageUrl(product.images[0]?.url)}
-            alt={product.images[0]?.alt || product.name}
-            fill
-            priority
-            fetchPriority="high"
-            sizes="(max-width: 768px) 100vw, 50vw"
-            className="object-contain p-6"
-          />
-        </ImageGallery>
-
-        {/* Product info */}
-        <div className="space-y-4">
+      {product.variants.length > 0 ? (
+        <ProductGalleryWithVariants
+          images={product.images}
+          variants={product.variants}
+          basePrice={product.base_price}
+          product={{
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+          }}
+        >
           <div className="flex items-start justify-between gap-2">
             <div>
               {product.brand ? (
@@ -269,57 +265,71 @@ export default async function ProductPage({ params }: Props) {
             </div>
             <WishlistButtonDynamic productId={product.id} />
           </div>
-
-          {product.variants.length > 0 ? (
-            <VariantSelector
-              variants={product.variants}
-              basePrice={product.base_price}
-              product={{
-                id: product.id,
-                name: product.name,
-                slug: product.slug,
-                imageUrl: product.image_url ?? product.images[0]?.url ?? null,
-              }}
+        </ProductGalleryWithVariants>
+      ) : (
+        <div className="grid gap-8 md:grid-cols-2">
+          <ImageGallery images={product.images}>
+            <Image
+              src={getImageUrl(product.images[0]?.url)}
+              alt={product.images[0]?.alt || product.name}
+              fill
+              priority
+              fetchPriority="high"
+              sizes="(max-width: 768px) 100vw, 50vw"
+              className="object-contain p-6"
             />
-          ) : (
-            <div className="space-y-4">
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <p className="text-2xl font-bold">
-                        {formatPrice(product.base_price)}
-                      </p>
-                      {hasDiscount && (
-                        <span className="rounded-md bg-destructive px-2 py-0.5 text-xs font-bold text-white">
-                          -{discountPercent}%
-                        </span>
-                      )}
-                    </div>
-                    {hasDiscount && (
-                      <p className="text-sm text-muted-foreground line-through">
-                        {formatPrice(comparePrice)}
-                      </p>
-                    )}
-                  </div>
-                  {isOutOfStock && (
-                    <p className="text-sm font-medium text-destructive">Rupture de stock</p>
-                  )}
-                  <AddToCartButton
-                    disabled={isOutOfStock}
-                    item={{
-                      productId: product.id,
-                      variantId: null,
-                      name: product.name,
-                      variantName: null,
-                      price: product.base_price,
-                      imageUrl: product.image_url ?? product.images[0]?.url ?? null,
-                      slug: product.slug,
-                    }}
-                  />
-                </div>
-          )}
+          </ImageGallery>
 
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                {product.brand ? (
+                  <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                    {product.brand}
+                  </span>
+                ) : null}
+                <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
+              </div>
+              <WishlistButtonDynamic productId={product.id} />
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <p className="text-2xl font-bold">
+                    {formatPrice(product.base_price)}
+                  </p>
+                  {hasDiscount && (
+                    <span className="rounded-md bg-destructive px-2 py-0.5 text-xs font-bold text-white">
+                      -{discountPercent}%
+                    </span>
+                  )}
+                </div>
+                {hasDiscount && (
+                  <p className="text-sm text-muted-foreground line-through">
+                    {formatPrice(comparePrice)}
+                  </p>
+                )}
+              </div>
+              {isOutOfStock && (
+                <p className="text-sm font-medium text-destructive">Rupture de stock</p>
+              )}
+              <AddToCartButton
+                disabled={isOutOfStock}
+                item={{
+                  productId: product.id,
+                  variantId: null,
+                  name: product.name,
+                  variantName: null,
+                  price: product.base_price,
+                  imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+                  slug: product.slug,
+                }}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Description & Characteristics */}
       <ProductDetails

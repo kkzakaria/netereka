@@ -103,7 +103,7 @@ describe("saveDraftStep", () => {
       makeFormData({ _step: "1", name: "", category_id: "cat-1" }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toContain("nom");
+    expect(result.fieldErrors?.name).toBeDefined();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
@@ -166,52 +166,53 @@ describe("saveDraftStep", () => {
     expect(sql).not.toContain("slug = ?");
   });
 
-  // ── Étape 2 : Prix & Stock ────────────────────────────────────────────────
+  // ── Étape 3 : Prix & Stock ────────────────────────────────────────────────
 
-  it("étape 2 : réussit avec un prix valide", async () => {
+  it("étape 3 : réussit avec un prix valide", async () => {
     const result = await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "2", base_price: "125000" }),
+      makeFormData({ _step: "3", base_price: "125000" }),
     );
     expect(result).toEqual({ success: true });
     expect(mocks.execute).toHaveBeenCalledOnce();
   });
 
-  it("étape 2 : rejette un prix négatif", async () => {
+  it("étape 3 : rejette un prix négatif", async () => {
     const result = await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "2", base_price: "-1" }),
+      makeFormData({ _step: "3", base_price: "-1" }),
     );
     expect(result.success).toBe(false);
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
-  it("étape 2 : rejette un prix non-entier", async () => {
+  it("étape 3 : rejette un prix non-entier", async () => {
     const result = await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "2", base_price: "125.50" }),
+      makeFormData({ _step: "3", base_price: "125.50" }),
     );
     expect(result.success).toBe(false);
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
 
-  // ── Étape 3 : Médias (no-op) ──────────────────────────────────────────────
+  // ── Étape 4 : Médias (no-op) ──────────────────────────────────────────────
 
-  it("étape 3 : réussit sans appel DB (aucun champ à sauvegarder)", async () => {
+  it("étape 4 : réussit sans appel DB (aucun champ à sauvegarder)", async () => {
     const result = await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "3" }),
+      makeFormData({ _step: "4" }),
     );
     expect(result).toEqual({ success: true });
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
-  // ── Étape 4 : Finalisation ────────────────────────────────────────────────
+  // ── Étape 5 : Finalisation ────────────────────────────────────────────────
 
-  it("étape 4 : réussit avec des champs valides", async () => {
+  it("étape 5 : réussit avec des champs valides", async () => {
     const result = await saveDraftStep(
       "prod-1",
       makeFormData({
-        _step: "4",
+        _step: "5",
         short_description: "Un super téléphone",
         meta_title: "Samsung Galaxy A55 | Netereka",
         meta_description: "Achetez le Samsung Galaxy A55",
@@ -223,30 +224,30 @@ describe("saveDraftStep", () => {
     expect(mocks.execute).toHaveBeenCalledOnce();
   });
 
-  it("étape 4 : rejette meta_title > 60 caractères", async () => {
+  it("étape 5 : rejette meta_title > 60 caractères", async () => {
     const result = await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "4", meta_title: "a".repeat(61) }),
+      makeFormData({ _step: "5", meta_title: "a".repeat(61) }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toContain("60");
+    expect(result.fieldErrors?.meta_title).toBeDefined();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
-  it("étape 4 : rejette meta_description > 160 caractères", async () => {
+  it("étape 5 : rejette meta_description > 160 caractères", async () => {
     const result = await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "4", meta_description: "a".repeat(161) }),
+      makeFormData({ _step: "5", meta_description: "a".repeat(161) }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toContain("160");
+    expect(result.fieldErrors?.meta_description).toBeDefined();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
-  it("étape 4 : ne touche pas is_draft dans le SQL SET et garde le WHERE guard", async () => {
+  it("étape 5 : ne touche pas is_draft dans le SQL SET et garde le WHERE guard", async () => {
     await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "4", is_active: "1", is_featured: "0" }),
+      makeFormData({ _step: "5", is_active: "1", is_featured: "0" }),
     );
     const sql: string = mocks.execute.mock.calls[0][0];
     // SET clause must not modify is_draft
@@ -275,18 +276,16 @@ describe("saveDraftStep", () => {
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
-  it("étape 1 : brand vide est sauvegardé comme null dans les paramètres SQL", async () => {
+  it("étape 1 : les champs hors schéma (brand) sont ignorés par safeParse", async () => {
     mocks.queryFirst
       .mockResolvedValueOnce(DRAFT_PRODUCT)
       .mockResolvedValueOnce(null); // no slug collision
     await saveDraftStep(
       "prod-1",
-      makeFormData({ _step: "1", name: "Samsung Galaxy A55", category_id: "cat-1", brand: "" }),
+      makeFormData({ _step: "1", name: "Samsung Galaxy A55", category_id: "cat-1", brand: "Samsung" }),
     );
-    const values: unknown[] = mocks.execute.mock.calls[0][1];
-    // brand should be null, not ""
-    expect(values).toContain(null);
-    // Verify "" is not stored — brand is a NULLABLE_FIELD
-    expect(values).not.toContain("");
+    const sql: string = mocks.execute.mock.calls[0][0];
+    // brand is not in step 1 schema, so it should not appear in the SQL
+    expect(sql).not.toContain("brand");
   });
 });

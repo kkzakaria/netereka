@@ -68,10 +68,12 @@ export function VariantSelector({
   variants,
   basePrice,
   product,
+  onVariantChange,
 }: {
   variants: ProductVariant[];
   basePrice: number;
   product: ProductInfo;
+  onVariantChange?: (variantId: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState(variants[0]?.id ?? "");
 
@@ -144,7 +146,10 @@ export function VariantSelector({
         bestMatch = v;
       }
     }
-    if (bestMatch) setSelectedId(bestMatch.id);
+    if (bestMatch) {
+      setSelectedId(bestMatch.id);
+      onVariantChange?.(bestMatch.id);
+    }
   }
 
   const price = selectedVariant?.price ?? basePrice;

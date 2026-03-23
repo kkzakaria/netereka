@@ -35,7 +35,7 @@ export function StepFinalization({
 
   return (
     <form ref={formRef} className="space-y-6">
-      <input type="hidden" name="_step" value="4" />
+      <input type="hidden" name="_step" value="5" />
 
       {/* Hidden inputs: all fields required by updateProduct that aren't in this step */}
       <input type="hidden" name="slug" value={product.slug} />

@@ -36,6 +36,14 @@ export default async function EditProductPage({ params }: Props) {
     }),
   );
 
+  if (isNew) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <ProductWizard product={product} categories={categoryOptions} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <AdminPageHeader>
@@ -52,20 +60,12 @@ export default async function EditProductPage({ params }: Props) {
             </Link>
           </Button>
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold sm:text-2xl">
-              {isNew ? "Nouveau produit" : product.name}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {isNew ? "Créer un produit" : "Modifier le produit"}
-            </p>
+            <h1 className="truncate text-lg font-bold sm:text-2xl">{product.name}</h1>
+            <p className="text-sm text-muted-foreground">Modifier le produit</p>
           </div>
         </header>
       </AdminPageHeader>
-      {isNew ? (
-        <ProductWizard product={product} categories={categoryOptions} />
-      ) : (
-        <ProductFormSections product={product} categories={categoryOptions} />
-      )}
+      <ProductFormSections product={product} categories={categoryOptions} />
     </div>
   );
 }

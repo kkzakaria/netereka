@@ -9,7 +9,8 @@ interface ProductDetailsProps {
 
 export function ProductDetails({ description, attributes }: ProductDetailsProps) {
   const hasDescription = !!description;
-  const hasAttributes = attributes.length > 0;
+  const filteredAttributes = attributes.filter((a) => a.name !== "Couleur");
+  const hasAttributes = filteredAttributes.length > 0;
 
   if (!hasDescription && !hasAttributes) return null;
 
@@ -27,7 +28,7 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
     return (
       <section className="mt-10 border-t pt-8">
         <h2 className="mb-4 text-lg font-semibold">Caractéristiques</h2>
-        <AttributesTable attributes={attributes} />
+        <AttributesTable attributes={filteredAttributes} />
       </section>
     );
   }
@@ -50,7 +51,7 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
         </TabsContent>
 
         <TabsContent value="characteristics">
-          <AttributesTable attributes={attributes} />
+          <AttributesTable attributes={filteredAttributes} />
         </TabsContent>
       </Tabs>
     </section>

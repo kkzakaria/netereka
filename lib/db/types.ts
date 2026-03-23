@@ -70,6 +70,7 @@ export interface ProductVariant {
 export interface ProductImage {
   id: string;
   product_id: string;
+  variant_id: string | null;
   url: string;
   alt: string | null;
   sort_order: number;

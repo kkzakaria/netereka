@@ -46,11 +46,20 @@ export async function uploadProductImage(
   const isPrimary = existing.length === 0 ? 1 : 0;
 
   const url = key;
-  await execute(
-    `INSERT INTO product_images (id, product_id, url, alt, sort_order, is_primary)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, productId, url, null, existing.length, isPrimary]
-  );
+  const variantIdRaw = (formData.get("variant_id") as string) || null;
+  const variantId = variantIdRaw && idSchema.safeParse(variantIdRaw).success ? variantIdRaw : null;
+
+  try {
+    await execute(
+      `INSERT INTO product_images (id, product_id, variant_id, url, alt, sort_order, is_primary)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, productId, variantId, url, null, existing.length, isPrimary]
+    );
+  } catch (error) {
+    console.error(`[admin/images] DB insert failed for image="${id}":`, error);
+    try { await deleteFromR2(key); } catch { /* cleanup best-effort */ }
+    return { success: false, error: "Erreur lors de l'enregistrement de l'image" };
+  }
 
   revalidatePath(`/products/${productId}/edit`);
   return { success: true, id, url };
@@ -135,6 +144,49 @@ export async function setPrimaryImage(
     imageId,
     productId,
   ]);
+
+  revalidatePath(`/products/${productId}/edit`);
+  return { success: true };
+}
+
+export async function setImageVariant(
+  imageId: string,
+  productId: string,
+  variantId: string | null,
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const iidResult = idSchema.safeParse(imageId);
+  const pidResult = idSchema.safeParse(productId);
+  if (!iidResult.success || !pidResult.success) {
+    return { success: false, error: "ID invalide" };
+  }
+
+  if (variantId !== null) {
+    const vidResult = idSchema.safeParse(variantId);
+    if (!vidResult.success) {
+      return { success: false, error: "ID de variante invalide" };
+    }
+  }
+
+  // Verify ownership
+  const image = await queryFirst<{ id: string }>(
+    "SELECT id FROM product_images WHERE id = ? AND product_id = ?",
+    [imageId, productId],
+  );
+  if (!image) {
+    return { success: false, error: "Image introuvable pour ce produit" };
+  }
+
+  try {
+    await execute(
+      "UPDATE product_images SET variant_id = ? WHERE id = ? AND product_id = ?",
+      [variantId, imageId, productId],
+    );
+  } catch (error) {
+    console.error(`[admin/images] setImageVariant failed for image="${imageId}":`, error);
+    return { success: false, error: "Erreur lors de l'association image-variante" };
+  }
 
   revalidatePath(`/products/${productId}/edit`);
   return { success: true };

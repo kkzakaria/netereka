@@ -47,47 +47,8 @@ export function StepIdentity({
         </p>
       </div>
 
-      {/* Marque + SKU */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="wiz-brand">Marque</Label>
-          <Input
-            id="wiz-brand"
-            name="brand"
-            disabled={isPending}
-            defaultValue={product.brand ?? ""}
-            placeholder="ex: Samsung"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="wiz-sku">SKU</Label>
-            <span
-              className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground"
-              title="Référence interne pour identifier ce produit dans vos stocks."
-            >
-              ?
-            </span>
-          </div>
-          <Input
-            id="wiz-sku"
-            name="sku"
-            disabled={isPending}
-            defaultValue={product.sku ?? ""}
-            placeholder="ex: SAM-A55-128-BLK"
-            className="bg-muted/40"
-          />
-          <p className="text-xs text-muted-foreground">
-            Laissez vide si vous n&apos;avez pas de référence interne.
-          </p>
-        </div>
-      </div>
-
       {/* Catégorie */}
       <div className="space-y-1.5">
-        <Label>
-          Catégorie <span className="text-destructive">*</span>
-        </Label>
         <CategoryCascadingSelect
           categories={categories}
           defaultCategoryId={product.category_id || undefined}

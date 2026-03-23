@@ -9,10 +9,15 @@ import { getImageUrl } from "@/lib/utils/images";
 interface ImageGalleryProps {
   images: ProductImage[];
   children?: ReactNode;
+  /** Externally controlled selected index (overrides internal state) */
+  selectedIndex?: number;
+  onSelectedChange?: (index: number) => void;
 }
 
-export function ImageGallery({ images, children }: ImageGalleryProps) {
-  const [selected, setSelected] = useState(0);
+export function ImageGallery({ images, children, selectedIndex, onSelectedChange }: ImageGalleryProps) {
+  const [internalSelected, setInternalSelected] = useState(0);
+  const selected = selectedIndex ?? internalSelected;
+  const setSelected = onSelectedChange ?? setInternalSelected;
   const current = images[selected] ?? images[0];
 
   if (!current) {

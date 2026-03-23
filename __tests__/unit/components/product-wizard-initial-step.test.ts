@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 
 // Mock client-side dependencies so the module can be imported in node environment
 vi.mock("next/navigation", () => ({ useRouter: vi.fn() }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   return {
@@ -26,6 +26,8 @@ vi.mock("@/components/admin/product-wizard/step-finalization", () => ({ StepFina
 
 import { getInitialStep } from "@/components/admin/product-wizard";
 import type { ProductDetail } from "@/lib/db/types";
+
+const ATTR = { id: "a1", product_id: "prod-1", name: "Couleur", value: "Noir|#1a1a1a" };
 
 function makeProduct(overrides: Partial<ProductDetail> = {}): ProductDetail {
   return {
@@ -61,45 +63,53 @@ describe("getInitialStep", () => {
     expect(getInitialStep(makeProduct({ name: "" }))).toBe(0);
   });
 
-  it("retourne 1 si le nom est défini mais pas la catégorie", () => {
-    expect(getInitialStep(makeProduct({ name: "Test", category_id: null, base_price: 0 }))).toBe(1);
+  it("retourne 0 si le nom est défini mais pas la catégorie", () => {
+    expect(getInitialStep(makeProduct({ name: "Test", category_id: null }))).toBe(0);
   });
 
-  it("retourne 1 si le nom est défini mais le prix est 0", () => {
-    expect(getInitialStep(makeProduct({ name: "Test", category_id: "cat-1", base_price: 0 }))).toBe(1);
+  it("retourne 1 si nom et catégorie définis mais pas d'attributs", () => {
+    expect(getInitialStep(makeProduct({ name: "Test", category_id: "cat-1", attributes: [] }))).toBe(1);
   });
 
-  it("retourne 2 si nom et catégorie sont définis mais pas d'image principale", () => {
+  it("retourne 2 si des attributs existent mais le prix est 0", () => {
+    expect(
+      getInitialStep(makeProduct({ name: "Test", category_id: "cat-1", attributes: [ATTR], base_price: 0 })),
+    ).toBe(2);
+  });
+
+  it("retourne 3 si nom, catégorie, attributs et prix définis mais pas d'image principale", () => {
     expect(
       getInitialStep(
         makeProduct({
           name: "Test",
           category_id: "cat-1",
+          attributes: [ATTR],
           base_price: 125000,
-          images: [{ id: "img-1", product_id: "prod-1", url: "/img.jpg", alt: null, sort_order: 0, is_primary: 0 }],
-        }),
-      ),
-    ).toBe(2);
-  });
-
-  it("retourne 2 si aucune image", () => {
-    expect(
-      getInitialStep(
-        makeProduct({ name: "Test", category_id: "cat-1", base_price: 125000, images: [] }),
-      ),
-    ).toBe(2);
-  });
-
-  it("retourne 3 si tout est rempli avec une image principale", () => {
-    expect(
-      getInitialStep(
-        makeProduct({
-          name: "Test",
-          category_id: "cat-1",
-          base_price: 125000,
-          images: [{ id: "img-1", product_id: "prod-1", url: "/img.jpg", alt: null, sort_order: 0, is_primary: 1 }],
+          images: [{ id: "img-1", product_id: "prod-1", variant_id: null, url: "/img.jpg", alt: null, sort_order: 0, is_primary: 0 }],
         }),
       ),
     ).toBe(3);
+  });
+
+  it("retourne 3 si aucune image", () => {
+    expect(
+      getInitialStep(
+        makeProduct({ name: "Test", category_id: "cat-1", attributes: [ATTR], base_price: 125000, images: [] }),
+      ),
+    ).toBe(3);
+  });
+
+  it("retourne 4 si tout est rempli avec une image principale", () => {
+    expect(
+      getInitialStep(
+        makeProduct({
+          name: "Test",
+          category_id: "cat-1",
+          attributes: [ATTR],
+          base_price: 125000,
+          images: [{ id: "img-1", product_id: "prod-1", variant_id: null, url: "/img.jpg", alt: null, sort_order: 0, is_primary: 1 }],
+        }),
+      ),
+    ).toBe(4);
   });
 });

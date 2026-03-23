@@ -28,7 +28,7 @@ export function WizardStepper({
               type="button"
               onClick={() => isCompleted && onStepClick(index)}
               disabled={!isCompleted}
-              className="flex shrink-0 items-center gap-2.5 disabled:cursor-default"
+              className="flex min-h-11 shrink-0 items-center gap-2.5 disabled:cursor-default"
               aria-current={isCurrent ? "step" : undefined}
             >
               <span

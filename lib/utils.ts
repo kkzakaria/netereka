@@ -52,6 +52,7 @@ export function formatDateLong(dateStr: string): string {
 export interface ActionResult {
   success: boolean;
   error?: string;
+  fieldErrors?: Record<string, string[]>;
   id?: string;
   url?: string;
 }
