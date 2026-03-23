@@ -627,6 +627,181 @@ async function applyDraftUpdate(
   return { success: true };
 }
 
+export async function saveProductAttributes(
+  productId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+  const idResult = idSchema.safeParse(productId);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
+  const attributeSchema = z.array(z.object({
+    name: z.string().min(1),
+    value: z.string(),
+  }));
+
+  const raw = formData.get("attributes");
+  let valid: z.infer<typeof attributeSchema> = [];
+  if (raw && typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      const result = attributeSchema.safeParse(parsed);
+      if (!result.success) {
+        return { success: false, error: result.error.issues.map((e) => e.message).join(", ") };
+      }
+      valid = result.data.filter((a) => a.name.trim());
+    } catch (error) {
+      console.error(`[admin/products] saveProductAttributes: invalid JSON:`, raw, error);
+      return { success: false, error: "Format des caractéristiques invalide" };
+    }
+  }
+  try {
+    const { getDB } = await import("@/lib/cloudflare/context");
+    const db = await getDB();
+    const statements = [
+      db.prepare("DELETE FROM product_attributes WHERE product_id = ?").bind(productId),
+      ...valid.map((attr) =>
+        db.prepare(
+          "INSERT INTO product_attributes (id, product_id, name, value) VALUES (?, ?, ?, ?)",
+        ).bind(nanoid(), productId, attr.name.trim(), attr.value.trim()),
+      ),
+    ];
+    // If no color attributes remain, clean up orphan color-only variants
+    const hasColors = valid.some((a) => a.name.trim() === "Couleur");
+    if (!hasColors) {
+      const existingVariants = await query<{ id: string; attributes: string }>(
+        "SELECT id, attributes FROM product_variants WHERE product_id = ?",
+        [productId],
+      );
+      for (const v of existingVariants) {
+        try {
+          const attrs = JSON.parse(v.attributes);
+          const keys = Object.keys(attrs);
+          if (keys.length === 1 && keys[0] === "color") {
+            statements.push(
+              db.prepare("UPDATE product_images SET variant_id = NULL WHERE variant_id = ?").bind(v.id),
+            );
+            statements.push(
+              db.prepare("DELETE FROM product_variants WHERE id = ?").bind(v.id),
+            );
+          }
+        } catch { /* skip malformed */ }
+      }
+    }
+
+    await db.batch(statements);
+  } catch (error) {
+    console.error(`[admin/products] saveProductAttributes failed for id="${productId}":`, error);
+    return { success: false, error: "Erreur lors de la sauvegarde des caractéristiques" };
+  }
+  revalidatePath(`/products/${productId}/edit`);
+  return { success: true };
+}
+
+export async function saveColorVariants(
+  productId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+  const idResult = idSchema.safeParse(productId);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
+  const variantEntrySchema = z.array(
+    z.object({
+      color: z.string().min(1),
+      colorName: z.string().min(1),
+      stock: z.number().int().min(0),
+      price: z.number().int().min(0).nullable(),
+    }),
+  );
+
+  const variantsRaw = formData.get("variants") as string | null;
+  const uniformPrice = formData.get("uniform_price") === "1";
+  const basePrice = parseInt(formData.get("base_price") as string) || 0;
+  const comparePrice = parseInt(formData.get("compare_price") as string) || null;
+
+  if (!variantsRaw) return { success: true };
+
+  let variantEntries: z.infer<typeof variantEntrySchema>;
+  try {
+    const rawParsed = JSON.parse(variantsRaw);
+    const validated = variantEntrySchema.safeParse(rawParsed);
+    if (!validated.success) return { success: false, error: "Données de variantes invalides" };
+    variantEntries = validated.data;
+  } catch (error) {
+    console.error(`[admin/products] saveColorVariants: invalid JSON:`, variantsRaw, error);
+    return { success: false, error: "Format des variantes invalide" };
+  }
+
+  const totalStock = variantEntries.reduce((sum, v) => sum + v.stock, 0);
+
+  try {
+    const existingVariants = await query<{ id: string; attributes: string }>(
+      "SELECT id, attributes FROM product_variants WHERE product_id = ?",
+      [productId],
+    );
+    // Only track color-only variants (single "color" key) — skip multi-attribute variants (e.g. color+storage)
+    const existingColorMap = new Map<string, string>();
+    for (const v of existingVariants) {
+      try {
+        const attrs = JSON.parse(v.attributes);
+        const keys = Object.keys(attrs);
+        if (keys.length === 1 && keys[0] === "color" && attrs.color) {
+          existingColorMap.set(attrs.color, v.id);
+        }
+      } catch (error) {
+        console.error(`[admin/products] Malformed attributes JSON for variant id="${v.id}":`, v.attributes, error);
+      }
+    }
+
+    const processedColorKeys = new Set<string>();
+    const { getDB } = await import("@/lib/cloudflare/context");
+    const db = await getDB();
+    const statements: ReturnType<typeof db.prepare>[] = [];
+
+    for (const entry of variantEntries) {
+      const variantPrice = (uniformPrice || entry.price == null) ? basePrice : entry.price;
+      const variantComparePrice = uniformPrice ? comparePrice : null;
+      const attrs = JSON.stringify({ color: entry.color });
+      processedColorKeys.add(entry.color);
+
+      const existingId = existingColorMap.get(entry.color);
+      if (existingId) {
+        statements.push(
+          db.prepare(
+            `UPDATE product_variants SET name = ?, price = ?, compare_price = ?, stock_quantity = ?, attributes = ? WHERE id = ?`,
+          ).bind(entry.colorName, variantPrice, variantComparePrice, entry.stock, attrs, existingId),
+        );
+      } else {
+        statements.push(
+          db.prepare(
+            `INSERT INTO product_variants (id, product_id, name, price, compare_price, stock_quantity, attributes, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+          ).bind(nanoid(), productId, entry.colorName, variantPrice, variantComparePrice, entry.stock, attrs, variantEntries.indexOf(entry)),
+        );
+      }
+    }
+
+    for (const [colorKey, variantId] of existingColorMap) {
+      if (!processedColorKeys.has(colorKey)) {
+        statements.push(db.prepare("UPDATE product_images SET variant_id = NULL WHERE variant_id = ?").bind(variantId));
+        statements.push(db.prepare("DELETE FROM product_variants WHERE id = ?").bind(variantId));
+      }
+    }
+
+    statements.push(
+      db.prepare("UPDATE products SET stock_quantity = ?, updated_at = datetime('now') WHERE id = ?").bind(totalStock, productId),
+    );
+
+    if (statements.length > 0) await db.batch(statements);
+  } catch (error) {
+    console.error(`[admin/products] saveColorVariants failed for id="${productId}":`, error);
+    return { success: false, error: "Erreur lors de la sauvegarde des variantes" };
+  }
+
+  revalidatePath(`/products/${productId}/edit`);
+  return { success: true };
+}
+
 /** Delete draft products abandoned for 24+ hours (name still empty).
  *  Also removes associated product_images, product_variants rows and R2 files. */
 export async function cleanupDraftProducts(): Promise<void> {
