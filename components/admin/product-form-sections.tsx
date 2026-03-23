@@ -2,7 +2,6 @@
 
 import { useRef, useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
 import Image from "next/image";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -38,9 +37,6 @@ import {
 } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
 
-const VariantList = dynamic(() =>
-  import("./variant-list").then((m) => m.VariantList),
-);
 
 const SECTIONS: SectionDef[] = [
   { id: "section-general", label: "Informations" },
@@ -48,7 +44,6 @@ const SECTIONS: SectionDef[] = [
   { id: "section-specs", label: "Caractéristiques" },
   { id: "section-pricing", label: "Tarification" },
   { id: "section-images", label: "Images" },
-  { id: "section-variants", label: "Variantes" },
   { id: "section-seo", label: "SEO" },
   { id: "section-visibility", label: "Visibilité" },
 ];
@@ -256,26 +251,6 @@ export function ProductFormSections({
             </CardContent>
           </Card>
 
-          {/* Section: Variantes */}
-          <Card id="section-variants">
-            <CardHeader>
-              <CardTitle>Variantes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <VariantList
-                productId={product.id}
-                variants={product.variants.filter((v) => {
-                  try {
-                    const attrs = JSON.parse(v.attributes);
-                    const keys = Object.keys(attrs);
-                    return keys.length !== 1 || keys[0] !== "color";
-                  } catch {
-                    return true;
-                  }
-                })}
-              />
-            </CardContent>
-          </Card>
 
           {/* Section: SEO */}
           <Card id="section-seo">
