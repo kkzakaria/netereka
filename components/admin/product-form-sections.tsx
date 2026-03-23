@@ -372,6 +372,7 @@ export function ProductFormSections({
 
 function AttributesSection({ product }: { product: ProductDetail }) {
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const [colors, setColors] = useState<ColorEntry[]>(() =>
     product.attributes
       .filter((a) => a.name === "Couleur")
@@ -426,11 +427,17 @@ function AttributesSection({ product }: { product: ProductDetail }) {
     const fd = new FormData();
     fd.set("attributes", serialized);
     startTransition(async () => {
-      const result = await saveProductAttributes(product.id, fd);
-      if (result.success) {
-        toast.success("Caractéristiques enregistrées");
-      } else {
-        toast.error(result.error || "Erreur");
+      try {
+        const result = await saveProductAttributes(product.id, fd);
+        if (result.success) {
+          toast.success("Caractéristiques enregistrées");
+          router.refresh();
+        } else {
+          toast.error(result.error || "Erreur lors de la sauvegarde");
+        }
+      } catch (err) {
+        console.error("[AttributesSection] handleSave failed:", err);
+        toast.error("Une erreur inattendue est survenue. Veuillez réessayer.");
       }
     });
   }
@@ -721,10 +728,14 @@ function PricingSection({ product }: { product: ProductDetail }) {
     const basePriceEl = document.querySelector<HTMLInputElement>(
       'input[name="base_price"]',
     );
+    if (!basePriceEl || !basePriceEl.value || parseInt(basePriceEl.value) <= 0) {
+      toast.error("Veuillez définir un prix de base avant de sauvegarder les variantes.");
+      return;
+    }
     const comparePriceEl = document.querySelector<HTMLInputElement>(
       'input[name="compare_price"]',
     );
-    const basePrice = basePriceEl?.value ?? "0";
+    const basePrice = basePriceEl.value;
     const comparePrice = comparePriceEl?.value ?? "";
 
     const variantData = JSON.stringify(
@@ -745,9 +756,14 @@ function PricingSection({ product }: { product: ProductDetail }) {
     fd.set("compare_price", comparePrice);
 
     startTransition(async () => {
-      const result = await saveColorVariants(product.id, fd);
-      if (result.success) toast.success("Stock par couleur enregistré");
-      else toast.error(result.error || "Erreur");
+      try {
+        const result = await saveColorVariants(product.id, fd);
+        if (result.success) toast.success("Stock par couleur enregistré");
+        else toast.error(result.error || "Erreur lors de la sauvegarde");
+      } catch (err) {
+        console.error("[PricingSection] handleSaveVariants failed:", err);
+        toast.error("Une erreur inattendue est survenue. Veuillez réessayer.");
+      }
     });
   }
 
@@ -1005,25 +1021,40 @@ function MediaSection({ product }: { product: ProductDetail }) {
     formData.set("file", file);
     if (variantId) formData.set("variant_id", variantId);
     startTransition(async () => {
-      const result = await uploadProductImage(product.id, formData);
-      if (result.success) toast.success("Image ajoutée");
-      else toast.error(result.error);
+      try {
+        const result = await uploadProductImage(product.id, formData);
+        if (result.success) toast.success("Image ajoutée");
+        else toast.error(result.error || "Erreur lors de l'upload");
+      } catch (err) {
+        console.error("[MediaSection] handleUpload failed:", err);
+        toast.error("Une erreur inattendue est survenue.");
+      }
     });
   }
 
   function handleDelete(imageId: string) {
     startTransition(async () => {
-      const result = await deleteProductImage(imageId, product.id);
-      if (result.success) toast.success("Image supprimée");
-      else toast.error(result.error);
+      try {
+        const result = await deleteProductImage(imageId, product.id);
+        if (result.success) toast.success("Image supprimée");
+        else toast.error(result.error || "Erreur lors de la suppression");
+      } catch (err) {
+        console.error("[MediaSection] handleDelete failed:", err);
+        toast.error("Une erreur inattendue est survenue.");
+      }
     });
   }
 
   function handleSetPrimary(imageId: string) {
     startTransition(async () => {
-      const result = await setPrimaryImage(imageId, product.id);
-      if (result.success) toast.success("Image principale définie");
-      else toast.error(result.error);
+      try {
+        const result = await setPrimaryImage(imageId, product.id);
+        if (result.success) toast.success("Image principale définie");
+        else toast.error(result.error || "Erreur lors de la mise à jour");
+      } catch (err) {
+        console.error("[MediaSection] handleSetPrimary failed:", err);
+        toast.error("Une erreur inattendue est survenue.");
+      }
     });
   }
 

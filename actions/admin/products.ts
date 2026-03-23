@@ -644,7 +644,8 @@ export async function saveProductAttributes(
         return { success: false, error: "Format des caractéristiques invalide" };
       }
       attrs = parsed;
-    } catch {
+    } catch (error) {
+      console.error(`[admin/products] saveProductAttributes: invalid JSON:`, raw, error);
       return { success: false, error: "Format des caractéristiques invalide" };
     }
   }
@@ -652,13 +653,17 @@ export async function saveProductAttributes(
     (a) => typeof a.name === "string" && a.name.trim() && typeof a.value === "string",
   );
   try {
-    await execute("DELETE FROM product_attributes WHERE product_id = ?", [productId]);
-    for (const attr of valid) {
-      await execute(
-        "INSERT INTO product_attributes (id, product_id, name, value) VALUES (?, ?, ?, ?)",
-        [nanoid(), productId, attr.name.trim(), attr.value.trim()],
-      );
-    }
+    const { getDB } = await import("@/lib/cloudflare/context");
+    const db = await getDB();
+    const statements = [
+      db.prepare("DELETE FROM product_attributes WHERE product_id = ?").bind(productId),
+      ...valid.map((attr) =>
+        db.prepare(
+          "INSERT INTO product_attributes (id, product_id, name, value) VALUES (?, ?, ?, ?)",
+        ).bind(nanoid(), productId, attr.name.trim(), attr.value.trim()),
+      ),
+    ];
+    await db.batch(statements);
   } catch (error) {
     console.error(`[admin/products] saveProductAttributes failed for id="${productId}":`, error);
     return { success: false, error: "Erreur lors de la sauvegarde des caractéristiques" };
@@ -697,7 +702,8 @@ export async function saveColorVariants(
     const validated = variantEntrySchema.safeParse(rawParsed);
     if (!validated.success) return { success: false, error: "Données de variantes invalides" };
     variantEntries = validated.data;
-  } catch {
+  } catch (error) {
+    console.error(`[admin/products] saveColorVariants: invalid JSON:`, variantsRaw, error);
     return { success: false, error: "Format des variantes invalide" };
   }
 
@@ -724,7 +730,7 @@ export async function saveColorVariants(
     const statements: ReturnType<typeof db.prepare>[] = [];
 
     for (const entry of variantEntries) {
-      const variantPrice = uniformPrice || entry.price == null ? basePrice : entry.price;
+      const variantPrice = (uniformPrice || entry.price == null) ? basePrice : entry.price;
       const variantComparePrice = uniformPrice ? comparePrice : null;
       const attrs = JSON.stringify({ color: entry.color });
       processedColorKeys.add(entry.color);
