@@ -1,0 +1,1 @@
+ALTER TABLE `product_images` ADD `variant_id` text REFERENCES product_variants(id);

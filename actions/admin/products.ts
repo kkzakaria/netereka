@@ -316,6 +316,317 @@ export async function createDraftProduct(): Promise<ActionResult> {
   return { success: true, id };
 }
 
+export async function saveDraftStep(
+  id: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const idResult = idSchema.safeParse(id);
+  if (!idResult.success) return { success: false, error: "ID produit invalide" };
+
+  const product = await queryFirst<{ slug: string }>(
+    "SELECT slug FROM products WHERE id = ? AND is_draft = 1",
+    [id],
+  );
+  if (!product) return { success: false, error: "Produit introuvable" };
+
+  const step = (formData.get("_step") as string) ?? "";
+  const raw = Object.fromEntries(formData);
+  delete raw._step;
+
+  if (step === "1") {
+    const parsed = z
+      .object({
+        name: z.string().min(1, "Le nom est requis"),
+        category_id: z.string().min(1, "La catégorie est requise"),
+      })
+      .safeParse(raw);
+    if (!parsed.success)
+      return {
+        success: false,
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      };
+    return applyDraftUpdate(id, parsed.data, product.slug);
+  }
+
+  if (step === "2") {
+    const raw2 = formData.get("attributes");
+    let attrs: { name: string; value: string }[] = [];
+    if (raw2 && typeof raw2 === "string") {
+      try {
+        const parsed = JSON.parse(raw2);
+        if (!Array.isArray(parsed)) {
+          return { success: false, error: "Format des caractéristiques invalide" };
+        }
+        attrs = parsed;
+      } catch {
+        return { success: false, error: "Format des caractéristiques invalide" };
+      }
+    }
+    const valid = attrs.filter(
+      (a) => typeof a.name === "string" && a.name.trim() && typeof a.value === "string",
+    );
+    try {
+      await execute("DELETE FROM product_attributes WHERE product_id = ?", [id]);
+      for (const attr of valid) {
+        await execute(
+          "INSERT INTO product_attributes (id, product_id, name, value) VALUES (?, ?, ?, ?)",
+          [nanoid(), id, attr.name.trim(), attr.value.trim()],
+        );
+      }
+    } catch (error) {
+      console.error(`[admin/products] saveDraftStep attributes failed for id="${id}":`, error);
+      return { success: false, error: "Erreur lors de la sauvegarde des caractéristiques" };
+    }
+    return { success: true };
+  }
+
+  if (step === "3") {
+    const parsed = z
+      .object({
+        base_price: z.coerce
+          .number()
+          .int("Le prix doit être un entier")
+          .min(0, "Le prix doit être positif"),
+        compare_price: z.coerce.number().int().min(0).optional(),
+        stock_quantity: z.coerce.number().int().min(0).default(0),
+        low_stock_threshold: z.coerce.number().int().min(0).default(5),
+        weight_grams: z.coerce.number().int().min(0).optional(),
+      })
+      .safeParse(raw);
+    if (!parsed.success)
+      return {
+        success: false,
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      };
+
+    // Handle per-color variants
+    const variantsRaw = formData.get("variants") as string | null;
+    const uniformPrice = formData.get("uniform_price") === "1";
+
+    const variantEntrySchema = z.array(
+      z.object({
+        color: z.string().min(1),
+        colorName: z.string().min(1),
+        stock: z.number().int().min(0),
+        price: z.number().int().min(0).nullable(),
+      }),
+    );
+
+    if (variantsRaw) {
+      let variantEntries: z.infer<typeof variantEntrySchema>;
+      try {
+        const rawParsed = JSON.parse(variantsRaw);
+        const validated = variantEntrySchema.safeParse(rawParsed);
+        if (!validated.success) {
+          return { success: false, error: "Données de variantes invalides" };
+        }
+        variantEntries = validated.data;
+      } catch {
+        return { success: false, error: "Format des variantes invalide" };
+      }
+
+      // Compute total stock from variants
+      const totalStock = variantEntries.reduce((sum, v) => sum + (v.stock ?? 0), 0);
+      parsed.data.stock_quantity = totalStock;
+
+      try {
+        // Get existing color variants for this product
+        const existingVariants = await query<{ id: string; attributes: string }>(
+          "SELECT id, attributes FROM product_variants WHERE product_id = ?",
+          [id],
+        );
+        const existingColorMap = new Map<string, string>();
+        for (const v of existingVariants) {
+          try {
+            const attrs = JSON.parse(v.attributes);
+            if (attrs.color) {
+              existingColorMap.set(attrs.color, v.id);
+            }
+          } catch (error) {
+            console.error(`[admin/products] Malformed attributes JSON for variant id="${v.id}":`, v.attributes, error);
+          }
+        }
+
+        const processedColorKeys = new Set<string>();
+
+        // Build all statements for atomic batch execution
+        const { getDB } = await import("@/lib/cloudflare/context");
+        const db = await getDB();
+        const statements: ReturnType<typeof db.prepare>[] = [];
+
+        for (const entry of variantEntries) {
+          const variantPrice = uniformPrice || entry.price == null
+            ? parsed.data.base_price
+            : entry.price;
+          const variantComparePrice = uniformPrice
+            ? (parsed.data.compare_price ?? null)
+            : null;
+          const attrs = JSON.stringify({ color: entry.color });
+
+          processedColorKeys.add(entry.color);
+
+          const existingId = existingColorMap.get(entry.color);
+          if (existingId) {
+            statements.push(
+              db.prepare(
+                `UPDATE product_variants
+                 SET name = ?, price = ?, compare_price = ?, stock_quantity = ?, attributes = ?
+                 WHERE id = ?`,
+              ).bind(entry.colorName, variantPrice, variantComparePrice, entry.stock ?? 0, attrs, existingId),
+            );
+          } else {
+            statements.push(
+              db.prepare(
+                `INSERT INTO product_variants (id, product_id, name, price, compare_price, stock_quantity, attributes, is_active, sort_order)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+              ).bind(nanoid(), id, entry.colorName, variantPrice, variantComparePrice, entry.stock ?? 0, attrs, variantEntries.indexOf(entry)),
+            );
+          }
+        }
+
+        // Remove color variants that no longer exist + clear image associations
+        for (const [colorKey, variantId] of existingColorMap) {
+          if (!processedColorKeys.has(colorKey)) {
+            statements.push(
+              db.prepare("UPDATE product_images SET variant_id = NULL WHERE variant_id = ?").bind(variantId),
+            );
+            statements.push(
+              db.prepare("DELETE FROM product_variants WHERE id = ?").bind(variantId),
+            );
+          }
+        }
+
+        if (statements.length > 0) {
+          await db.batch(statements);
+        }
+      } catch (error) {
+        console.error(`[admin/products] saveDraftStep variants failed for id="${id}":`, error);
+        return { success: false, error: "Erreur lors de la sauvegarde des variantes" };
+      }
+    }
+
+    return applyDraftUpdate(id, parsed.data, product.slug);
+  }
+
+  if (step === "4") {
+    return { success: true };
+  }
+
+  if (step === "5") {
+    const parsed = z
+      .object({
+        short_description: z.string().optional().default(""),
+        description: z.string().optional().default(""),
+        meta_title: z
+          .string()
+          .max(60, "Le titre SEO ne peut pas dépasser 60 caractères")
+          .optional()
+          .default(""),
+        meta_description: z
+          .string()
+          .max(160, "La méta-description ne peut pas dépasser 160 caractères")
+          .optional()
+          .default(""),
+        is_active: z.coerce.number().int().min(0).max(1).default(0),
+        is_featured: z.coerce.number().int().min(0).max(1).default(0),
+      })
+      .safeParse(raw);
+    if (!parsed.success)
+      return {
+        success: false,
+        fieldErrors: parsed.error.flatten().fieldErrors,
+      };
+    return applyDraftUpdate(id, parsed.data, product.slug);
+  }
+
+  return { success: false, error: "Étape invalide" };
+}
+
+async function applyDraftUpdate(
+  id: string,
+  data: Record<string, unknown>,
+  currentSlug: string,
+): Promise<ActionResult> {
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const values: unknown[] = [];
+
+  // Slug auto-derivation: only when name is set and current slug is a draft placeholder
+  if ("name" in data && data.name && currentSlug.startsWith("draft-")) {
+    const candidateSlug = slugify(data.name as string);
+    if (!candidateSlug) {
+      return { success: false, error: "Le nom ne peut pas produire un slug valide" };
+    }
+    const collision = await queryFirst<{ id: string }>(
+      "SELECT id FROM products WHERE slug = ? AND id != ?",
+      [candidateSlug, id],
+    );
+    if (collision?.id) {
+      return {
+        success: false,
+        error: `Un produit avec le slug "${candidateSlug}" existe déjà`,
+      };
+    }
+    sets.push("slug = ?");
+    values.push(candidateSlug);
+  }
+
+  const NULLABLE_FIELDS = new Set([
+    "brand",
+    "sku",
+    "compare_price",
+    "weight_grams",
+    "short_description",
+    "description",
+    "meta_title",
+    "meta_description",
+  ]);
+
+  const ALLOWED_COLUMNS = new Set([
+    "name",
+    "brand",
+    "sku",
+    "category_id",
+    "base_price",
+    "compare_price",
+    "stock_quantity",
+    "low_stock_threshold",
+    "weight_grams",
+    "short_description",
+    "description",
+    "meta_title",
+    "meta_description",
+    "is_active",
+    "is_featured",
+  ]);
+
+  for (const [key, val] of Object.entries(data)) {
+    if (!ALLOWED_COLUMNS.has(key)) continue;
+    sets.push(`${key} = ?`);
+    values.push(
+      NULLABLE_FIELDS.has(key) && (val === "" || val == null) ? null : val,
+    );
+  }
+
+  values.push(id);
+
+  try {
+    const result = await execute(
+      `UPDATE products SET ${sets.join(", ")} WHERE id = ? AND is_draft = 1`,
+      values,
+    );
+    if (result?.meta?.changes === 0) {
+      return { success: false, error: "Ce brouillon n'existe plus ou a déjà été publié" };
+    }
+  } catch (error) {
+    console.error(`[admin/products] applyDraftUpdate failed for id="${id}":`, error);
+    return { success: false, error: "Erreur lors de l'enregistrement du brouillon" };
+  }
+
+  return { success: true };
+}
+
 /** Delete draft products abandoned for 24+ hours (name still empty).
  *  Also removes associated product_images, product_variants rows and R2 files. */
 export async function cleanupDraftProducts(): Promise<void> {

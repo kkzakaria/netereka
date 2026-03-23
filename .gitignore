@@ -58,5 +58,14 @@ next-env.d.ts
 .playwright-test-results
 .playwright-report
 
+# downloaded/uploaded images
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.avif
+
 # downloaded product images (uploaded to R2)
 scripts/images/
+.superpowers/

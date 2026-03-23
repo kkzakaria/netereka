@@ -189,6 +189,7 @@ export const productVariants = sqliteTable("product_variants", {
 export const productImages = sqliteTable("product_images", {
   id: text("id").primaryKey(),
   product_id: text("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  variant_id: text("variant_id").references(() => productVariants.id, { onDelete: "set null" }),
   url: text("url").notNull(),
   alt: text("alt"),
   sort_order: integer("sort_order").notNull().default(0),
