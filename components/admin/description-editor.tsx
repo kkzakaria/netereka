@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
+import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -88,8 +89,12 @@ export function DescriptionEditor({
           if (state?.root) {
             converted = lexicalJsonToHtml(state);
           }
-        } catch {
-          converted = "";
+        } catch (err) {
+          console.error("[description-editor] Failed to convert richtext to HTML", err);
+          toast.error("Impossible de convertir le contenu. Veuillez copier votre texte avant de changer d'éditeur.");
+          setPendingTab(null);
+          setDialogOpen(false);
+          return;
         }
       }
       setHtmlValue(converted);

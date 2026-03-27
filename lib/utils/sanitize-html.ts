@@ -17,8 +17,16 @@ const EVENT_HANDLER_RE = /^on[a-z]/i;
 /**
  * Sanitize admin-authored HTML for product descriptions.
  */
+const MAX_INPUT_LENGTH = 512_000; // 500KB — reject oversized input
+
 export function sanitizeDescriptionHtml(html: string, productId?: string): string {
   if (!html || !html.trim()) return "";
+  if (html.length > MAX_INPUT_LENGTH) {
+    console.error("[sanitize-html] Input exceeds max length — returning empty (fail-closed)", { length: html.length, productId });
+    return "";
+  }
+
+  try {
 
   let result = html;
 
@@ -82,4 +90,9 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   );
 
   return result;
+
+  } catch (err) {
+    console.error("[sanitize-html] Sanitization failed — returning empty (fail-closed)", err, { productId, inputLength: html.length });
+    return "";
+  }
 }

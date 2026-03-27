@@ -28,15 +28,19 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     if (!iframe) return;
     const doc = iframe.contentDocument;
     if (!doc) return;
-    doc.open();
-    doc.write(`<!DOCTYPE html>
+    try {
+      doc.open();
+      doc.write(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{font-family:system-ui,sans-serif;padding:16px;margin:0;color:#1a1a1a;line-height:1.6}img{max-width:100%;height:auto}</style>
 </head>
 <body>${content}</body>
 </html>`);
-    doc.close();
+      doc.close();
+    } catch (err) {
+      console.error("[html-editor] Preview update failed", err);
+    }
   }, []);
 
   const onUpdate = useCallback(
@@ -54,28 +58,32 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     if (!editorRef.current || viewRef.current) return;
 
     const startDoc = defaultValue ?? "";
-    const state = EditorState.create({
-      doc: startDoc,
-      extensions: [
-        basicSetup,
-        html(),
-        css(),
-        EditorView.updateListener.of(onUpdate),
-        EditorView.theme({
-          "&": { height: "100%" },
-          ".cm-scroller": { overflow: "auto" },
-        }),
-        placeholder ? EditorView.contentAttributes.of({ "aria-placeholder": placeholder }) : [],
-      ],
-    });
+    try {
+      const state = EditorState.create({
+        doc: startDoc,
+        extensions: [
+          basicSetup,
+          html(),
+          css(),
+          EditorView.updateListener.of(onUpdate),
+          EditorView.theme({
+            "&": { height: "100%" },
+            ".cm-scroller": { overflow: "auto" },
+          }),
+          placeholder ? EditorView.contentAttributes.of({ "aria-placeholder": placeholder }) : [],
+        ],
+      });
 
-    viewRef.current = new EditorView({
-      state,
-      parent: editorRef.current,
-    });
+      viewRef.current = new EditorView({
+        state,
+        parent: editorRef.current,
+      });
 
-    if (hiddenRef.current) hiddenRef.current.value = startDoc;
-    updatePreview(startDoc);
+      if (hiddenRef.current) hiddenRef.current.value = startDoc;
+      updatePreview(startDoc);
+    } catch (err) {
+      console.error("[html-editor] CodeMirror initialization failed", err);
+    }
 
     return () => {
       viewRef.current?.destroy();
