@@ -334,6 +334,8 @@ export default async function ProductPage({ params }: Props) {
       {/* Description & Characteristics */}
       <ProductDetails
         description={product.description}
+        descriptionType={product.description_type}
+        productId={product.id}
         attributes={product.attributes}
       />
 
