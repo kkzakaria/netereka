@@ -131,10 +131,10 @@ export function RichTextEditor({
     <div className="rounded-md border focus-within:ring-2 focus-within:ring-ring">
       <LexicalComposer initialConfig={initialConfig}>
         <ToolbarPlugin />
-        <div className="editor relative">
+        <div className="editor relative max-h-[800px] overflow-y-auto">
           <RichTextPlugin
             contentEditable={
-              <ContentEditable className="min-h-[200px] p-3 text-sm outline-none" />
+              <ContentEditable className="min-h-[400px] p-3 text-sm outline-none" />
             }
             placeholder={
               <div className="pointer-events-none absolute left-3 top-3 text-sm text-muted-foreground">
