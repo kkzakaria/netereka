@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { authClient } from "@/lib/auth/client";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
@@ -27,7 +27,6 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
   const session = authClient.useSession();
   const [isWishlisted, setIsWishlisted] = useState<boolean | undefined>(undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
 
   const isAuthenticated = !!session.data?.user;
 
@@ -40,9 +39,6 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
         setIsWishlisted(false);
       });
   }, [isAuthenticated, productId]);
-
-  // Avoid hydration mismatch: render nothing until mounted on client
-  if (!mounted) return null;
 
   // Authenticated and wishlist status known
   if (isAuthenticated && isWishlisted !== undefined) {

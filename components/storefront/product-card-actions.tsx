@@ -5,7 +5,12 @@ import { ShoppingCart02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
-import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
+const WishlistButtonDynamic = dynamic(
+  () =>
+    import("@/components/storefront/wishlist-button-dynamic")
+      .then((m) => m.WishlistButtonDynamic),
+  { ssr: false }
+);
 import { useCartStore } from "@/stores/cart-store";
 
 const VariantPickerDialog = dynamic(
