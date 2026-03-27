@@ -40,12 +40,14 @@ interface RichTextEditorProps {
   name: string;
   defaultValue?: string | null;
   placeholder?: string;
+  onValueChange?: (value: string) => void;
 }
 
 export function RichTextEditor({
   name,
   defaultValue,
   placeholder = "Rédigez la description du produit…",
+  onValueChange,
 }: RichTextEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [jsonValue, setJsonValue] = useState(defaultValue ?? "");
@@ -106,11 +108,15 @@ export function RichTextEditor({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
+  const onValueChangeRef = useRef(onValueChange);
+  onValueChangeRef.current = onValueChange;
+
   const handleChange = useCallback((editorState: EditorState) => {
     try {
       const serialized = JSON.stringify(editorState.toJSON());
       lastGoodRef.current = serialized;
       setJsonValue(serialized);
+      onValueChangeRef.current?.(serialized);
     } catch (err) {
       console.error("[RichTextEditor] Failed to serialize editor state", err);
       setJsonValue(lastGoodRef.current);

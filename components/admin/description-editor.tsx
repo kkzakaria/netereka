@@ -48,25 +48,23 @@ export function DescriptionEditor({
   const [dialogMessage, setDialogMessage] = useState("");
   const [richKey, setRichKey] = useState(0);
   const [htmlKey, setHtmlKey] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const richJsonRef = useRef<string>(
+    descriptionType === "richtext" ? (defaultValue ?? "") : "",
+  );
 
   const handleTabChange = useCallback(
     (newTab: string) => {
       if (newTab === activeTab) return;
 
       if (newTab === "html" && activeTab === "richtext") {
-        // Check if richtext editor has content by converting to HTML
-        const hiddenInput = containerRef.current?.querySelector<HTMLInputElement>(
-          `input[type="hidden"][name="${name}"]`,
-        );
-        const currentJson = hiddenInput?.value ?? richValue ?? "";
+        // Check if richtext editor has actual text content
+        const currentJson = richJsonRef.current;
         let hasContent = false;
         if (currentJson.trim().startsWith("{")) {
           try {
             const state = JSON.parse(currentJson);
             if (state?.root) {
               const html = lexicalJsonToHtml(state);
-              // Empty editor produces "" or just "<br>" or whitespace-only HTML
               hasContent = !!html.replace(/<br\s*\/?>/g, "").replace(/<[^>]*>/g, "").trim();
             }
           } catch {
@@ -103,17 +101,14 @@ export function DescriptionEditor({
         return;
       }
     },
-    [activeTab, name, richValue, htmlValue],
+    [activeTab, htmlValue],
   );
 
   const confirmSwitch = useCallback(() => {
     if (!pendingTab) return;
 
     if (pendingTab === "html") {
-      const hiddenInput = containerRef.current?.querySelector<HTMLInputElement>(
-        `input[type="hidden"][name="${name}"]`,
-      );
-      const currentJson = hiddenInput?.value ?? richValue ?? "";
+      const currentJson = richJsonRef.current;
       let converted = "";
       if (currentJson.trim().startsWith("{")) {
         try {
@@ -143,7 +138,7 @@ export function DescriptionEditor({
     setActiveTab(pendingTab);
     setPendingTab(null);
     setDialogOpen(false);
-  }, [pendingTab, name, richValue, htmlValue]);
+  }, [pendingTab, htmlValue]);
 
   const cancelSwitch = useCallback(() => {
     setPendingTab(null);
@@ -151,7 +146,7 @@ export function DescriptionEditor({
   }, []);
 
   return (
-    <div ref={containerRef}>
+    <div>
       <input type="hidden" name="description_type" value={activeTab} />
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
@@ -164,6 +159,7 @@ export function DescriptionEditor({
             name={name}
             defaultValue={richValue}
             placeholder={placeholder}
+            onValueChange={(v) => { richJsonRef.current = v; }}
           />
         </TabsContent>
         <TabsContent value="html" className="mt-3">
