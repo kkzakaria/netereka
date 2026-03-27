@@ -65,6 +65,7 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
           basicSetup,
           html(),
           css(),
+          EditorView.lineWrapping,
           EditorView.updateListener.of(onUpdate),
           EditorView.theme({
             "&": { height: "100%" },

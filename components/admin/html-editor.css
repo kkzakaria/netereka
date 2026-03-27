@@ -6,6 +6,7 @@
   overflow: hidden;
   min-height: 400px;
   max-height: 800px;
+  width: 100%;
 }
 
 .html-editor-code {
@@ -16,10 +17,20 @@
 
 .html-editor-code .cm-editor {
   height: 100%;
+  max-width: 100%;
 }
 
 .html-editor-code .cm-editor .cm-scroller {
   overflow: auto;
+}
+
+.html-editor-code .cm-editor .cm-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.html-editor-code .cm-editor .cm-line {
+  word-break: break-word;
 }
 
 .html-editor-code .cm-editor.cm-focused {
