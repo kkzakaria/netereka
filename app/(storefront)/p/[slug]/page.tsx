@@ -161,7 +161,7 @@ export default async function ProductPage({ params }: Props) {
     "@type": "Product",
     name: product.name,
     image: product.images.filter((img) => img.url).map((img) => img.url),
-    description: product.description ?? product.short_description,
+    description: product.short_description ?? (product.description_type === "html" ? undefined : product.description),
     ...(product.sku && { sku: product.sku }),
     ...(product.brand && {
       brand: { "@type": "Brand", name: product.brand },
