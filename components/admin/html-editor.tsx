@@ -65,7 +65,6 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
           basicSetup,
           html(),
           css(),
-          EditorView.lineWrapping,
           EditorView.updateListener.of(onUpdate),
           EditorView.theme({
             "&": { height: "100%" },
@@ -94,7 +93,7 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="w-full overflow-hidden">
+    <div>
       <div className="mb-2 flex items-center justify-end gap-2 md:hidden">
         <Button
           type="button"
