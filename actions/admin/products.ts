@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { execute, query, queryFirst } from "@/lib/db";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { deleteFromR2 } from "@/lib/storage/images";
+import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 
 const DB_CONSTRAINT_SKU = "UNIQUE constraint failed: products.sku";
 const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
@@ -18,6 +19,7 @@ const productSchema = z.object({
   category_id: z.string().min(1, "La catégorie est requise"),
   brand: z.string().optional().default(""),
   description: z.string().optional().default(""),
+  description_type: z.enum(["richtext", "html"]).optional().default("richtext"),
   short_description: z.string().optional().default(""),
   base_price: z.coerce.number().int().min(0, "Le prix doit être positif"),
   compare_price: z.coerce.number().int().min(0).optional(),
@@ -153,8 +155,13 @@ export async function updateProduct(
     finalSlug = existing.slug;
   }
 
+  // Sanitize HTML description before storage
+  const finalDescription = data.description_type === "html" && data.description
+    ? sanitizeDescriptionHtml(data.description, id)
+    : data.description || null;
+
   const updateSql = `UPDATE products SET
-     category_id = ?, name = ?, slug = ?, description = ?, short_description = ?,
+     category_id = ?, name = ?, slug = ?, description = ?, description_type = ?, short_description = ?,
      base_price = ?, compare_price = ?, sku = ?, brand = ?,
      is_active = ?, is_featured = ?, stock_quantity = ?,
      low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
@@ -166,7 +173,8 @@ export async function updateProduct(
     data.category_id,
     data.name,
     finalSlug,
-    data.description || null,
+    finalDescription,
+    data.description_type,
     data.short_description || null,
     data.base_price,
     data.compare_price ?? null,
@@ -519,6 +527,7 @@ export async function saveDraftStep(
       .object({
         short_description: z.string().optional().default(""),
         description: z.string().optional().default(""),
+        description_type: z.enum(["richtext", "html"]).optional().default("richtext"),
         meta_title: z
           .string()
           .max(60, "Le titre SEO ne peut pas dépasser 60 caractères")
@@ -538,6 +547,12 @@ export async function saveDraftStep(
         success: false,
         fieldErrors: parsed.error.flatten().fieldErrors,
       };
+
+    // Sanitize HTML description before storing draft
+    if (parsed.data.description_type === "html" && parsed.data.description) {
+      parsed.data.description = sanitizeDescriptionHtml(parsed.data.description, id);
+    }
+
     return applyDraftUpdate(id, parsed.data, product.slug);
   }
 
@@ -595,6 +610,7 @@ async function applyDraftUpdate(
     "weight_grams",
     "short_description",
     "description",
+    "description_type",
     "meta_title",
     "meta_description",
     "is_active",

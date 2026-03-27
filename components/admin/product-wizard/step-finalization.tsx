@@ -9,8 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { ProductDetail } from "@/lib/db/types";
 
-const RichTextEditor = dynamic(() =>
-  import("@/components/admin/rich-text-editor").then((m) => m.RichTextEditor),
+const DescriptionEditor = dynamic(() =>
+  import("@/components/admin/description-editor").then((m) => m.DescriptionEditor),
 );
 
 interface StepFinalizationProps {
@@ -79,10 +79,14 @@ export function StepFinalization({
         />
       </div>
 
-      {/* Description riche */}
+      {/* Description */}
       <div className="space-y-1.5">
         <Label>Description</Label>
-        <RichTextEditor name="description" defaultValue={product.description} />
+        <DescriptionEditor
+          name="description"
+          descriptionType={product.description_type}
+          defaultValue={product.description}
+        />
       </div>
 
       {/* SEO */}
