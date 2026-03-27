@@ -9,8 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { ProductDetail } from "@/lib/db/types";
 
-const DescriptionEditor = dynamic(() =>
-  import("@/components/admin/description-editor").then((m) => m.DescriptionEditor),
+const DescriptionEditor = dynamic(
+  () => import("@/components/admin/description-editor").then((m) => m.DescriptionEditor),
+  { ssr: false },
 );
 
 interface StepFinalizationProps {

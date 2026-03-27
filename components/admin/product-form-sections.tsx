@@ -18,7 +18,11 @@ import {
 } from "@/components/ui/input-group";
 import { ColorPicker } from "@/components/admin/color-picker";
 import { ImageUpload } from "@/components/admin/image-upload";
-import { DescriptionEditor } from "./description-editor";
+import dynamic from "next/dynamic";
+const DescriptionEditor = dynamic(
+  () => import("./description-editor").then((m) => m.DescriptionEditor),
+  { ssr: false },
+);
 import { getImageUrl } from "@/lib/utils/images";
 import type { ProductDetail } from "@/lib/db/types";
 import {
