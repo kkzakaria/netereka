@@ -142,6 +142,7 @@ export const products = sqliteTable("products", {
   name: text("name").notNull(),
   slug: text("slug").unique().notNull(),
   description: text("description"),
+  description_type: text("description_type").notNull().default("richtext"),
   short_description: text("short_description"),
   base_price: integer("base_price").notNull(),
   compare_price: integer("compare_price"),

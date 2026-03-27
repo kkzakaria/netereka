@@ -16,6 +16,7 @@ export interface Product {
   name: string;
   slug: string;
   description: string | null;
+  description_type: string;
   short_description: string | null;
   base_price: number;
   compare_price: number | null;
