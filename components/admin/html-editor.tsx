@@ -7,6 +7,13 @@ import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { type ViewUpdate } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import "./html-editor.css";
 
 interface HtmlEditorProps {
@@ -21,9 +28,11 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
   const viewRef = useRef<EditorView | null>(null);
   const hiddenRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const contentRef = useRef(defaultValue ?? "");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const updatePreview = useCallback((content: string) => {
+    contentRef.current = content;
     const iframe = previewRef.current;
     if (!iframe) return;
     const doc = iframe.contentDocument;
@@ -47,6 +56,7 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     (update: ViewUpdate) => {
       if (!update.docChanged) return;
       const content = update.state.doc.toString();
+      contentRef.current = content;
       if (hiddenRef.current) hiddenRef.current.value = content;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => updatePreview(content), 300);
@@ -80,7 +90,6 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
       });
 
       if (hiddenRef.current) hiddenRef.current.value = startDoc;
-      updatePreview(startDoc);
     } catch (err) {
       console.error("[html-editor] CodeMirror initialization failed", err);
     }
@@ -92,30 +101,38 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handlePreviewOpen = useCallback((open: boolean) => {
+    setPreviewOpen(open);
+    if (open) {
+      // Defer so the iframe is mounted before writing
+      setTimeout(() => updatePreview(contentRef.current), 0);
+    }
+  }, [updatePreview]);
+
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-end gap-2 md:hidden">
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          onClick={() => setIsFullscreen(!isFullscreen)}
-        >
-          {isFullscreen ? "Afficher preview" : "Masquer preview"}
-        </Button>
-      </div>
-      <div
-        className="html-editor-container"
-        data-fullscreen={isFullscreen}
-      >
+    <div className="w-full space-y-2">
+      <div className="html-editor-container">
         <div className="html-editor-code" ref={editorRef} />
-        <div className="html-editor-preview">
-          <iframe
-            ref={previewRef}
-            sandbox="allow-styles"
-            title="Preview HTML"
-          />
-        </div>
+      </div>
+      <div className="flex justify-end">
+        <Sheet open={previewOpen} onOpenChange={handlePreviewOpen}>
+          <SheetTrigger asChild>
+            <Button type="button" variant="outline" size="xs">
+              Aperçu
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="sm:max-w-xl md:max-w-2xl lg:max-w-4xl">
+            <SheetHeader>
+              <SheetTitle>Aperçu HTML</SheetTitle>
+            </SheetHeader>
+            <iframe
+              ref={previewRef}
+              sandbox="allow-styles"
+              title="Aperçu HTML"
+              className="h-full w-full border-none"
+            />
+          </SheetContent>
+        </Sheet>
       </div>
       <input type="hidden" name={name} ref={hiddenRef} />
     </div>
