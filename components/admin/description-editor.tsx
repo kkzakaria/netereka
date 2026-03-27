@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -48,6 +48,7 @@ export function DescriptionEditor({
   const [dialogMessage, setDialogMessage] = useState("");
   const [richKey, setRichKey] = useState(0);
   const [htmlKey, setHtmlKey] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleTabChange = useCallback(
     (newTab: string) => {
@@ -78,7 +79,7 @@ export function DescriptionEditor({
     if (!pendingTab) return;
 
     if (pendingTab === "html") {
-      const hiddenInput = document.querySelector<HTMLInputElement>(
+      const hiddenInput = containerRef.current?.querySelector<HTMLInputElement>(
         `input[type="hidden"][name="${name}"]`,
       );
       const currentJson = hiddenInput?.value ?? richValue ?? "";
@@ -100,7 +101,10 @@ export function DescriptionEditor({
       setHtmlValue(converted);
       setHtmlKey((k) => k + 1);
     } else if (pendingTab === "richtext") {
-      const stripped = htmlValue.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      // Strip tags and decode HTML entities via DOM
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = htmlValue;
+      const stripped = (tempDiv.textContent || "").replace(/\s+/g, " ").trim();
       setRichValue(stripped || null);
       setRichKey((k) => k + 1);
     }
@@ -116,7 +120,7 @@ export function DescriptionEditor({
   }, []);
 
   return (
-    <>
+    <div ref={containerRef}>
       <input type="hidden" name="description_type" value={activeTab} />
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
@@ -153,6 +157,6 @@ export function DescriptionEditor({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

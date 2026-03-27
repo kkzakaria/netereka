@@ -86,6 +86,7 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     }
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       viewRef.current?.destroy();
       viewRef.current = null;
     };

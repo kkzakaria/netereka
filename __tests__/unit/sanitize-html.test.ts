@@ -106,6 +106,15 @@ describe("sanitizeDescriptionHtml", () => {
     expect(sanitizeDescriptionHtml(input)).not.toContain("script");
   });
 
+  it("escapes double quotes in attribute values to prevent injection", () => {
+    const input = '<div class=foo"onclick=alert(1)>text</div>';
+    const result = sanitizeDescriptionHtml(input);
+    // The " in the unquoted value is escaped to &quot;, so the onclick
+    // is safely contained inside the class attribute value, not a separate attribute
+    expect(result).toContain('class="foo&quot;onclick=alert(1)"');
+    expect(result).toContain("text");
+  });
+
   it("preserves style blocks without scoping when no productId given", () => {
     const input = "<style>p { color: red; }</style><p>text</p>";
     const result = sanitizeDescriptionHtml(input);

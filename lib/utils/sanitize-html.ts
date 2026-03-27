@@ -81,7 +81,8 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
         if ((attrName === "href" || attrName === "src") && DANGEROUS_URI_RE.test(attrValue)) continue;
-        attrs.push(`${attrName}="${attrValue}"`);
+        const safeValue = attrValue.replace(/"/g, "&quot;");
+        attrs.push(`${attrName}="${safeValue}"`);
       }
 
       const attrString = attrs.length > 0 ? ` ${attrs.join(" ")}` : "";
