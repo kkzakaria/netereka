@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/input-group";
 import { ColorPicker } from "@/components/admin/color-picker";
 import { ImageUpload } from "@/components/admin/image-upload";
-import { RichTextEditor } from "./rich-text-editor";
+import { DescriptionEditor } from "./description-editor";
 import { getImageUrl } from "@/lib/utils/images";
 import type { ProductDetail } from "@/lib/db/types";
 import {
@@ -204,8 +204,9 @@ export function ProductFormSections({
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <RichTextEditor
+                <DescriptionEditor
                   name="description"
+                  descriptionType={product.description_type}
                   defaultValue={product.description}
                 />
               </div>

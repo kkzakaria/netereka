@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `description_type` text DEFAULT 'richtext' NOT NULL;

@@ -79,3 +79,51 @@ describe("descriptionToHtml", () => {
     );
   });
 });
+
+describe("descriptionToHtml with description_type", () => {
+  it("routes richtext type through Lexical converter", () => {
+    const lexicalJson = JSON.stringify({
+      root: {
+        type: "root",
+        children: [
+          { type: "paragraph", children: [{ type: "text", text: "Hello", format: 0 }] },
+        ],
+      },
+    });
+    expect(descriptionToHtml(lexicalJson, "richtext")).toBe("<p>Hello</p>");
+  });
+
+  it("routes html type by returning the HTML as-is", () => {
+    const html = '<div class="promo"><p>Sale!</p></div>';
+    expect(descriptionToHtml(html, "html")).toBe(html);
+  });
+
+  it("falls back to heuristic when type is undefined (backward compat)", () => {
+    const lexicalJson = JSON.stringify({
+      root: {
+        type: "root",
+        children: [
+          { type: "paragraph", children: [{ type: "text", text: "Hello", format: 0 }] },
+        ],
+      },
+    });
+    expect(descriptionToHtml(lexicalJson)).toBe("<p>Hello</p>");
+  });
+
+  it("returns empty for null/empty input regardless of type", () => {
+    expect(descriptionToHtml("", "html")).toBe("");
+    expect(descriptionToHtml("", "richtext")).toBe("");
+  });
+
+  it("returns empty for non-JSON content with richtext type", () => {
+    expect(descriptionToHtml("plain text product description", "richtext")).toBe("");
+  });
+
+  it("sanitizes HTML at read time for defense-in-depth", () => {
+    const html = '<p>Hello</p><script>alert("xss")</script><p>World</p>';
+    const result = descriptionToHtml(html, "html");
+    expect(result).not.toContain("<script>");
+    expect(result).toContain("<p>Hello</p>");
+    expect(result).toContain("<p>World</p>");
+  });
+});

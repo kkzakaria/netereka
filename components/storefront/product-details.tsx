@@ -4,10 +4,12 @@ import { descriptionToHtml } from "@/lib/utils/description-to-html";
 
 interface ProductDetailsProps {
   description: string | null;
+  descriptionType?: string;
+  productId?: string;
   attributes: ProductAttribute[];
 }
 
-export function ProductDetails({ description, attributes }: ProductDetailsProps) {
+export function ProductDetails({ description, descriptionType, productId, attributes }: ProductDetailsProps) {
   const hasDescription = !!description;
   const filteredAttributes = attributes.filter((a) => a.name !== "Couleur");
   const hasAttributes = filteredAttributes.length > 0;
@@ -19,7 +21,7 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
     return (
       <section className="mt-10 border-t pt-8">
         <h2 className="mb-4 text-lg font-semibold">Description</h2>
-        <DescriptionContent description={description} />
+        <DescriptionContent description={description} descriptionType={descriptionType} productId={productId} />
       </section>
     );
   }
@@ -47,7 +49,7 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
         </TabsList>
 
         <TabsContent value="description">
-          <DescriptionContent description={description!} />
+          <DescriptionContent description={description!} descriptionType={descriptionType} productId={productId} />
         </TabsContent>
 
         <TabsContent value="characteristics">
@@ -59,13 +61,25 @@ export function ProductDetails({ description, attributes }: ProductDetailsProps)
 }
 
 
-function DescriptionContent({ description }: { description: string | null }) {
+function DescriptionContent({
+  description,
+  descriptionType,
+  productId,
+}: {
+  description: string | null;
+  descriptionType?: string;
+  productId?: string;
+}) {
   if (!description) return null;
-  const html = descriptionToHtml(description);
+  const html = descriptionToHtml(description, descriptionType);
   if (!html) return null;
+
+  const scopeClass =
+    descriptionType === "html" && productId ? `desc-${productId}` : undefined;
+
   return (
     <div
-      className="prose prose-sm max-w-prose dark:prose-invert"
+      className={`prose prose-sm max-w-prose dark:prose-invert ${scopeClass ?? ""}`}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
