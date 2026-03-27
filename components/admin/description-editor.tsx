@@ -55,6 +55,18 @@ export function DescriptionEditor({
       if (newTab === activeTab) return;
 
       if (newTab === "html" && activeTab === "richtext") {
+        // Check if richtext editor has content
+        const hiddenInput = containerRef.current?.querySelector<HTMLInputElement>(
+          `input[type="hidden"][name="${name}"]`,
+        );
+        const currentJson = hiddenInput?.value ?? richValue ?? "";
+        const hasContent = currentJson.trim().length > 0 && currentJson.trim() !== "{}";
+
+        if (!hasContent) {
+          setActiveTab(newTab);
+          return;
+        }
+
         setDialogMessage(
           "Le contenu de l'éditeur riche sera converti en HTML. Certains détails de mise en forme pourraient être simplifiés.",
         );
@@ -64,6 +76,11 @@ export function DescriptionEditor({
       }
 
       if (newTab === "richtext" && activeTab === "html") {
+        if (!htmlValue.trim()) {
+          setActiveTab(newTab);
+          return;
+        }
+
         setDialogMessage(
           "Le contenu HTML sera importé en texte brut dans l'éditeur riche. Les styles CSS et la mise en page avancée seront perdus.",
         );
@@ -72,7 +89,7 @@ export function DescriptionEditor({
         return;
       }
     },
-    [activeTab],
+    [activeTab, name, richValue, htmlValue],
   );
 
   const confirmSwitch = useCallback(() => {
