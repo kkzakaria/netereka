@@ -84,4 +84,40 @@ describe("sanitizeDescriptionHtml", () => {
     const input = '<figure><img src="https://x.com/a.jpg" alt="a"><figcaption>Caption</figcaption></figure>';
     expect(sanitizeDescriptionHtml(input)).toBe(input);
   });
+
+  it("blocks vbscript: in href", () => {
+    const input = '<a href="vbscript:MsgBox(1)">click</a>';
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).not.toContain("vbscript:");
+  });
+
+  it("blocks mixed-case javascript: URIs", () => {
+    const input = '<a href="JaVaScRiPt:alert(1)">click</a>';
+    expect(sanitizeDescriptionHtml(input)).not.toContain("JaVaScRiPt:");
+  });
+
+  it("blocks whitespace-padded javascript: URIs", () => {
+    const input = '<a href="  javascript:alert(1)">click</a>';
+    expect(sanitizeDescriptionHtml(input)).not.toContain("javascript:");
+  });
+
+  it("strips self-closing script tags", () => {
+    const input = '<p>safe</p><script src="evil.js"/><p>ok</p>';
+    expect(sanitizeDescriptionHtml(input)).not.toContain("script");
+  });
+
+  it("preserves style blocks without scoping when no productId given", () => {
+    const input = "<style>p { color: red; }</style><p>text</p>";
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).toContain("p { color: red; }");
+    expect(result).not.toContain(".desc-");
+  });
+
+  it("scopes comma-separated CSS selectors individually", () => {
+    const input = "<style>h1, h2, .promo { color: blue; }</style>";
+    const result = sanitizeDescriptionHtml(input, "p1");
+    expect(result).toContain(".desc-p1 h1");
+    expect(result).toContain(".desc-p1 h2");
+    expect(result).toContain(".desc-p1 .promo");
+  });
 });

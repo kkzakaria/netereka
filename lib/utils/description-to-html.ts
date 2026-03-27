@@ -1,5 +1,6 @@
 import { lexicalJsonToHtml } from "./lexical-to-html";
 import { escapeHtml, sanitizeLegacyHtml } from "./html";
+import { sanitizeDescriptionHtml } from "./sanitize-html";
 
 /**
  * Converts a stored product description to safe HTML for storefront rendering.
@@ -18,9 +19,9 @@ export function descriptionToHtml(raw: string, type?: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
 
-  // Explicit type routing
+  // Explicit type routing — double-sanitize at read time for defense-in-depth
   if (type === "html") {
-    return trimmed;
+    return sanitizeDescriptionHtml(trimmed);
   }
 
   if (type === "richtext" || trimmed.startsWith("{")) {

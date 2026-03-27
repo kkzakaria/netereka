@@ -49,7 +49,7 @@ export function ProductDetails({ description, descriptionType, productId, attrib
         </TabsList>
 
         <TabsContent value="description">
-          <DescriptionContent description={description!} />
+          <DescriptionContent description={description!} descriptionType={descriptionType} productId={productId} />
         </TabsContent>
 
         <TabsContent value="characteristics">

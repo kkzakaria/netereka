@@ -114,4 +114,16 @@ describe("descriptionToHtml with description_type", () => {
     expect(descriptionToHtml("", "html")).toBe("");
     expect(descriptionToHtml("", "richtext")).toBe("");
   });
+
+  it("returns empty for non-JSON content with richtext type", () => {
+    expect(descriptionToHtml("plain text product description", "richtext")).toBe("");
+  });
+
+  it("sanitizes HTML at read time for defense-in-depth", () => {
+    const html = '<p>Hello</p><script>alert("xss")</script><p>World</p>';
+    const result = descriptionToHtml(html, "html");
+    expect(result).not.toContain("<script>");
+    expect(result).toContain("<p>Hello</p>");
+    expect(result).toContain("<p>World</p>");
+  });
 });
