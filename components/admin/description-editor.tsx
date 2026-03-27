@@ -55,12 +55,26 @@ export function DescriptionEditor({
       if (newTab === activeTab) return;
 
       if (newTab === "html" && activeTab === "richtext") {
-        // Check if richtext editor has content
+        // Check if richtext editor has content by converting to HTML
         const hiddenInput = containerRef.current?.querySelector<HTMLInputElement>(
           `input[type="hidden"][name="${name}"]`,
         );
         const currentJson = hiddenInput?.value ?? richValue ?? "";
-        const hasContent = currentJson.trim().length > 0 && currentJson.trim() !== "{}";
+        let hasContent = false;
+        if (currentJson.trim().startsWith("{")) {
+          try {
+            const state = JSON.parse(currentJson);
+            if (state?.root) {
+              const html = lexicalJsonToHtml(state);
+              // Empty editor produces "" or just "<br>" or whitespace-only HTML
+              hasContent = !!html.replace(/<br\s*\/?>/g, "").replace(/<[^>]*>/g, "").trim();
+            }
+          } catch {
+            hasContent = false;
+          }
+        } else {
+          hasContent = currentJson.trim().length > 0;
+        }
 
         if (!hasContent) {
           setActiveTab(newTab);

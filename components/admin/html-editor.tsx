@@ -94,7 +94,7 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div>
+    <div className="w-full overflow-hidden">
       <div className="mb-2 flex items-center justify-end gap-2 md:hidden">
         <Button
           type="button"
