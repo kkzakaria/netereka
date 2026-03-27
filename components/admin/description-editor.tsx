@@ -23,6 +23,30 @@ const HtmlEditor = dynamic(
   () => import("@/components/admin/html-editor").then((m) => m.HtmlEditor),
 );
 
+/** Recursively extract all text from a Lexical JSON tree. */
+function extractText(node: Record<string, unknown>): string {
+  let text = "";
+  if (typeof node.text === "string") text += node.text;
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      if (child && typeof child === "object") text += extractText(child as Record<string, unknown>);
+    }
+  }
+  return text;
+}
+
+function isLexicalJsonNonEmpty(json: string): boolean {
+  if (!json.trim()) return false;
+  if (!json.trim().startsWith("{")) return json.trim().length > 0;
+  try {
+    const state = JSON.parse(json);
+    if (!state?.root) return false;
+    return extractText(state.root).trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 interface DescriptionEditorProps {
   name: string;
   descriptionType?: string;
@@ -58,23 +82,9 @@ export function DescriptionEditor({
 
       if (newTab === "html" && activeTab === "richtext") {
         // Check if richtext editor has actual text content
+        // by extracting all text from the Lexical JSON tree
         const currentJson = richJsonRef.current;
-        let hasContent = false;
-        if (currentJson.trim().startsWith("{")) {
-          try {
-            const state = JSON.parse(currentJson);
-            if (state?.root) {
-              const html = lexicalJsonToHtml(state);
-              hasContent = !!html.replace(/<br\s*\/?>/g, "").replace(/<[^>]*>/g, "").trim();
-            }
-          } catch {
-            hasContent = false;
-          }
-        } else {
-          hasContent = currentJson.trim().length > 0;
-        }
-
-        if (!hasContent) {
+        if (!isLexicalJsonNonEmpty(currentJson)) {
           setActiveTab(newTab);
           return;
         }

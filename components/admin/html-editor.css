@@ -1,23 +1,23 @@
 .html-editor-container {
   display: flex;
-  gap: 0;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   min-height: 400px;
   max-height: 800px;
   width: 100%;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .html-editor-code {
-  flex: 1;
+  flex: 1 1 0%;
   min-width: 0;
-  overflow: auto;
+  max-width: 50%;
+  overflow: hidden;
 }
 
 .html-editor-code .cm-editor {
   height: 100%;
-  max-width: 100%;
+  width: 100%;
 }
 
 .html-editor-code .cm-editor .cm-scroller {
@@ -26,11 +26,8 @@
 
 .html-editor-code .cm-editor .cm-content {
   white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.html-editor-code .cm-editor .cm-line {
-  word-break: break-word;
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .html-editor-code .cm-editor.cm-focused {
@@ -38,8 +35,9 @@
 }
 
 .html-editor-preview {
-  flex: 1;
+  flex: 1 1 0%;
   min-width: 0;
+  max-width: 50%;
   border-left: 1px solid hsl(var(--border));
   overflow-y: auto;
 }
@@ -54,6 +52,13 @@
 @media (max-width: 767px) {
   .html-editor-container {
     flex-direction: column;
+    max-height: none;
+  }
+  .html-editor-code,
+  .html-editor-preview {
+    max-width: 100%;
+    min-height: 200px;
+    max-height: 400px;
   }
   .html-editor-preview {
     border-left: none;
@@ -61,5 +66,8 @@
   }
   .html-editor-container[data-fullscreen="true"] .html-editor-preview {
     display: none;
+  }
+  .html-editor-container[data-fullscreen="true"] .html-editor-code {
+    max-height: 800px;
   }
 }
