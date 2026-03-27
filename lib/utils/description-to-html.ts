@@ -13,12 +13,17 @@ import { escapeHtml, sanitizeLegacyHtml } from "./html";
  * Legacy HTML sanitization uses an allowlist-based regex pass; this is
  * intentionally limited to admin-authored content (not end-user input).
  */
-export function descriptionToHtml(raw: string): string {
+export function descriptionToHtml(raw: string, type?: string): string {
   if (!raw) return "";
   const trimmed = raw.trim();
   if (!trimmed) return "";
 
-  if (trimmed.startsWith("{")) {
+  // Explicit type routing
+  if (type === "html") {
+    return trimmed;
+  }
+
+  if (type === "richtext" || trimmed.startsWith("{")) {
     let state: unknown;
     try {
       state = JSON.parse(trimmed);
