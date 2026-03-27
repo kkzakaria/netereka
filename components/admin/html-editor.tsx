@@ -7,6 +7,7 @@ import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { type ViewUpdate } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -29,11 +30,14 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
   const hiddenRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const contentRef = useRef(defaultValue ?? "");
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [initError, setInitError] = useState(false);
 
   const writeToIframe = useCallback((iframe: HTMLIFrameElement, content: string) => {
     const doc = iframe.contentDocument;
-    if (!doc) return;
+    if (!doc) {
+      console.warn("[html-editor] iframe.contentDocument is null — preview cannot render");
+      return;
+    }
     try {
       doc.open();
       doc.write(`<!DOCTYPE html>
@@ -46,6 +50,11 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
       doc.close();
     } catch (err) {
       console.error("[html-editor] Preview update failed", err);
+      try {
+        doc.open();
+        doc.write("<p style='color:red;padding:16px'>Impossible d'afficher l'aperçu. Vérifiez votre code HTML.</p>");
+        doc.close();
+      } catch { /* already logged */ }
     }
   }, []);
 
@@ -96,6 +105,10 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
       if (hiddenRef.current) hiddenRef.current.value = startDoc;
     } catch (err) {
       console.error("[html-editor] CodeMirror initialization failed", err);
+      queueMicrotask(() => {
+        setInitError(true);
+        toast.error("L'éditeur HTML n'a pas pu se charger. Rechargez la page. Ne sauvegardez pas le formulaire.", { duration: Infinity });
+      });
     }
 
     return () => {
@@ -107,11 +120,16 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
 
   return (
     <div className="w-full space-y-2">
+      {initError && (
+        <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+          L&apos;éditeur HTML n&apos;a pas pu se charger. Rechargez la page. Ne sauvegardez pas le formulaire.
+        </div>
+      )}
       <div className="html-editor-container">
         <div className="html-editor-code" ref={editorRef} />
       </div>
       <div className="flex justify-end">
-        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <Dialog>
           <DialogTrigger asChild>
             <Button type="button" variant="outline" size="xs">
               Aperçu
