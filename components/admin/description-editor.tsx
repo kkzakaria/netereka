@@ -23,30 +23,6 @@ const HtmlEditor = dynamic(
   () => import("@/components/admin/html-editor").then((m) => m.HtmlEditor),
 );
 
-/** Recursively extract all text from a Lexical JSON tree. */
-function extractText(node: Record<string, unknown>): string {
-  let text = "";
-  if (typeof node.text === "string") text += node.text;
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      if (child && typeof child === "object") text += extractText(child as Record<string, unknown>);
-    }
-  }
-  return text;
-}
-
-function isLexicalJsonNonEmpty(json: string): boolean {
-  if (!json.trim()) return false;
-  if (!json.trim().startsWith("{")) return json.trim().length > 0;
-  try {
-    const state = JSON.parse(json);
-    if (!state?.root) return false;
-    return extractText(state.root).trim().length > 0;
-  } catch {
-    return false;
-  }
-}
-
 interface DescriptionEditorProps {
   name: string;
   descriptionType?: string;
@@ -72,19 +48,21 @@ export function DescriptionEditor({
   const [dialogMessage, setDialogMessage] = useState("");
   const [richKey, setRichKey] = useState(0);
   const [htmlKey, setHtmlKey] = useState(0);
-  const richJsonRef = useRef<string>(
-    descriptionType === "richtext" ? (defaultValue ?? "") : "",
-  );
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleTabChange = useCallback(
     (newTab: string) => {
       if (newTab === activeTab) return;
 
       if (newTab === "html" && activeTab === "richtext") {
-        // Check if richtext editor has actual text content
-        // by extracting all text from the Lexical JSON tree
-        const currentJson = richJsonRef.current;
-        if (!isLexicalJsonNonEmpty(currentJson)) {
+        // Check if richtext editor has content
+        const hiddenInput = containerRef.current?.querySelector<HTMLInputElement>(
+          `input[type="hidden"][name="${name}"]`,
+        );
+        const currentJson = hiddenInput?.value ?? richValue ?? "";
+        const hasContent = currentJson.trim().length > 0 && currentJson.trim() !== "{}";
+
+        if (!hasContent) {
           setActiveTab(newTab);
           return;
         }
@@ -111,14 +89,17 @@ export function DescriptionEditor({
         return;
       }
     },
-    [activeTab, htmlValue],
+    [activeTab, name, richValue, htmlValue],
   );
 
   const confirmSwitch = useCallback(() => {
     if (!pendingTab) return;
 
     if (pendingTab === "html") {
-      const currentJson = richJsonRef.current;
+      const hiddenInput = containerRef.current?.querySelector<HTMLInputElement>(
+        `input[type="hidden"][name="${name}"]`,
+      );
+      const currentJson = hiddenInput?.value ?? richValue ?? "";
       let converted = "";
       if (currentJson.trim().startsWith("{")) {
         try {
@@ -148,7 +129,7 @@ export function DescriptionEditor({
     setActiveTab(pendingTab);
     setPendingTab(null);
     setDialogOpen(false);
-  }, [pendingTab, htmlValue]);
+  }, [pendingTab, name, richValue, htmlValue]);
 
   const cancelSwitch = useCallback(() => {
     setPendingTab(null);
@@ -156,7 +137,7 @@ export function DescriptionEditor({
   }, []);
 
   return (
-    <div>
+    <div ref={containerRef}>
       <input type="hidden" name="description_type" value={activeTab} />
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
@@ -169,7 +150,6 @@ export function DescriptionEditor({
             name={name}
             defaultValue={richValue}
             placeholder={placeholder}
-            onValueChange={(v) => { richJsonRef.current = v; }}
           />
         </TabsContent>
         <TabsContent value="html" className="mt-3">
