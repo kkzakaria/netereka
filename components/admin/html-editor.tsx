@@ -8,12 +8,12 @@ import { css } from "@codemirror/lang-css";
 import { type ViewUpdate } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import "./html-editor.css";
 
 interface HtmlEditorProps {
@@ -31,10 +31,7 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
   const contentRef = useRef(defaultValue ?? "");
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const updatePreview = useCallback((content: string) => {
-    contentRef.current = content;
-    const iframe = previewRef.current;
-    if (!iframe) return;
+  const writeToIframe = useCallback((iframe: HTMLIFrameElement, content: string) => {
     const doc = iframe.contentDocument;
     if (!doc) return;
     try {
@@ -52,6 +49,11 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     }
   }, []);
 
+  const previewCallbackRef = useCallback((iframe: HTMLIFrameElement | null) => {
+    previewRef.current = iframe;
+    if (iframe) writeToIframe(iframe, contentRef.current);
+  }, [writeToIframe]);
+
   const onUpdate = useCallback(
     (update: ViewUpdate) => {
       if (!update.docChanged) return;
@@ -59,9 +61,11 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
       contentRef.current = content;
       if (hiddenRef.current) hiddenRef.current.value = content;
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => updatePreview(content), 300);
+      debounceRef.current = setTimeout(() => {
+        if (previewRef.current) writeToIframe(previewRef.current, content);
+      }, 300);
     },
-    [updatePreview],
+    [writeToIframe],
   );
 
   useEffect(() => {
@@ -101,38 +105,30 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handlePreviewOpen = useCallback((open: boolean) => {
-    setPreviewOpen(open);
-    if (open) {
-      // Defer so the iframe is mounted before writing
-      setTimeout(() => updatePreview(contentRef.current), 0);
-    }
-  }, [updatePreview]);
-
   return (
     <div className="w-full space-y-2">
       <div className="html-editor-container">
         <div className="html-editor-code" ref={editorRef} />
       </div>
       <div className="flex justify-end">
-        <Sheet open={previewOpen} onOpenChange={handlePreviewOpen}>
-          <SheetTrigger asChild>
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogTrigger asChild>
             <Button type="button" variant="outline" size="xs">
               Aperçu
             </Button>
-          </SheetTrigger>
-          <SheetContent side="right" className="sm:max-w-xl md:max-w-2xl lg:max-w-4xl">
-            <SheetHeader>
-              <SheetTitle>Aperçu HTML</SheetTitle>
-            </SheetHeader>
+          </DialogTrigger>
+          <DialogContent className="flex h-[80vh] max-w-4xl flex-col p-0">
+            <DialogHeader className="px-6 pt-6">
+              <DialogTitle>Aperçu HTML</DialogTitle>
+            </DialogHeader>
             <iframe
-              ref={previewRef}
+              ref={previewCallbackRef}
               sandbox="allow-styles"
               title="Aperçu HTML"
-              className="h-full w-full border-none"
+              className="min-h-0 flex-1 border-none"
             />
-          </SheetContent>
-        </Sheet>
+          </DialogContent>
+        </Dialog>
       </div>
       <input type="hidden" name={name} ref={hiddenRef} />
     </div>
