@@ -2,6 +2,7 @@ interface CloudflareEnv {
   DB: D1Database;
   KV: KVNamespace;
   R2: R2Bucket;
+  NEXT_INC_CACHE_R2_BUCKET: R2Bucket;
   ASSETS: Fetcher;
 
   // Auth (Better Auth)

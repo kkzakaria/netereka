@@ -29,6 +29,10 @@
     {
       "binding": "R2",
       "bucket_name": "netereka"
+    },
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "netereka-opennext-cache"
     }
   ],
 }
