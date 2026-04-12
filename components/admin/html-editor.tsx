@@ -139,20 +139,20 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
         <Button
           type="button"
           variant="outline"
-          size="xs"
+          size="sm"
           onClick={() => { setPreviewSrcDoc(buildSrcDoc(contentRef.current)); setPreviewOpen(true); }}
         >
           Aperçu
         </Button>
       </div>
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="flex h-[80vh] max-w-4xl flex-col p-0">
+        <DialogContent className="flex h-[80vh] max-w-6xl sm:max-w-6xl flex-col p-0">
           <DialogHeader className="px-6 pt-6">
             <DialogTitle>Aperçu HTML</DialogTitle>
           </DialogHeader>
           <iframe
             srcDoc={previewSrcDoc}
-            sandbox="allow-styles"
+            sandbox=""
             title="Aperçu HTML"
             className="min-h-0 flex-1 border-none"
           />
