@@ -121,7 +121,7 @@ export function RichTextEditor({
   if (!mounted) {
     return (
       <div className="rounded-md border">
-        <div className="min-h-[200px] p-3" />
+        <div className="min-h-[200px] max-h-[500px] p-3" />
         <input type="hidden" name={name} value={jsonValue} />
       </div>
     );
@@ -134,7 +134,7 @@ export function RichTextEditor({
         <div className="editor relative">
           <RichTextPlugin
             contentEditable={
-              <ContentEditable className="min-h-[200px] p-3 text-sm outline-none" />
+              <ContentEditable className="min-h-[200px] max-h-[500px] overflow-y-auto p-3 text-sm outline-none" />
             }
             placeholder={
               <div className="pointer-events-none absolute left-3 top-3 text-sm text-muted-foreground">
