@@ -43,6 +43,13 @@
       "when": 1774621688857,
       "tag": "0005_ancient_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1776006639870,
+      "tag": "0006_purple_garia",
+      "breakpoints": true
     }
   ]
 }

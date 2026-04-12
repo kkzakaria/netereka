@@ -375,3 +375,17 @@ export interface CategoryOption {
   id: string;
   name: string;
 }
+
+export interface Store {
+  id: string;
+  name: string;
+  address: string;
+  google_maps_url: string;
+  phone: string | null;
+  email: string | null;
+  opening_hours: string | null;
+  is_active: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
