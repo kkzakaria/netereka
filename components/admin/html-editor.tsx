@@ -8,7 +8,51 @@ import { css } from "@codemirror/lang-css";
 import { type ViewUpdate } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import "./html-editor.css";
+
+// Security note: the regex character class [a-zA-Z0-9_-] is intentionally
+// restrictive to prevent attribute injection via the scope class value.
+const SCOPE_CLASS_RE = /\.(desc-[a-zA-Z0-9_-]+)\s/;
+
+/**
+ * Build an HTML document for the preview iframe's srcDoc.
+ * Extracts <style> blocks and places them in <head>, then wraps the remaining
+ * body content in a scoped div (e.g. <div class="desc-xyz">) to match how
+ * the storefront renders product descriptions (see product-details.tsx).
+ */
+function buildSrcDoc(content: string) {
+  const scopeMatch = content.match(SCOPE_CLASS_RE);
+  const scopeClass = scopeMatch?.[1] ?? "";
+
+  // Separate <style> blocks from body content so styles go in <head>
+  // and body content gets wrapped in the scope div.
+  const styles: string[] = [];
+  const bodyHtml = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, (match) => {
+    styles.push(match);
+    return "";
+  });
+
+  const wrappedBody = scopeClass
+    ? `<div class="${scopeClass}">${bodyHtml}</div>`
+    : bodyHtml;
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:system-ui,sans-serif;padding:16px;margin:0;color:#1a1a1a;line-height:1.6}img{max-width:100%;height:auto}</style>
+${styles.join("\n")}
+</head>
+<body>${wrappedBody}</body>
+</html>`;
+}
+
+const TOAST_ID = "html-editor-init-error";
 
 interface HtmlEditorProps {
   name: string;
@@ -24,24 +68,6 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
   const [initError, setInitError] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSrcDoc, setPreviewSrcDoc] = useState("");
-
-  function buildSrcDoc(content: string) {
-    // Extract the scope class (e.g. "desc-xyz") from CSS selectors so the
-    // preview wraps content in a matching div, just like the storefront does.
-    const scopeMatch = content.match(/\.(desc-[a-zA-Z0-9_-]+)\s/);
-    const scopeClass = scopeMatch?.[1] ?? "";
-    const bodyContent = scopeClass
-      ? `<div class="${scopeClass}">${content}</div>`
-      : content;
-
-    return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font-family:system-ui,sans-serif;padding:16px;margin:0;color:#1a1a1a;line-height:1.6}img{max-width:100%;height:auto}</style>
-</head>
-<body>${bodyContent}</body>
-</html>`;
-  }
 
   const onUpdate = useCallback(
     (update: ViewUpdate) => {
@@ -81,13 +107,19 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
       if (hiddenRef.current) hiddenRef.current.value = startDoc;
     } catch (err) {
       console.error("[html-editor] CodeMirror initialization failed", err);
+      // queueMicrotask avoids React "Cannot update a component while rendering" warning
+      // since this runs inside a useEffect that React may batch with renders.
       queueMicrotask(() => {
         setInitError(true);
-        toast.error("L'éditeur HTML n'a pas pu se charger. Rechargez la page. Ne sauvegardez pas le formulaire.", { duration: Infinity });
+        toast.error(
+          "L'éditeur HTML n'a pas pu se charger. Rechargez la page. Ne sauvegardez pas le formulaire.",
+          { id: TOAST_ID, duration: Infinity },
+        );
       });
     }
 
     return () => {
+      toast.dismiss(TOAST_ID);
       viewRef.current?.destroy();
       viewRef.current = null;
     };
@@ -104,29 +136,29 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
         <div className="html-editor-code" ref={editorRef} />
       </div>
       <div className="flex justify-end">
-        <Button type="button" variant="outline" size="xs" onClick={() => { setPreviewSrcDoc(buildSrcDoc(contentRef.current)); setPreviewOpen(true); }}>
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={() => { setPreviewSrcDoc(buildSrcDoc(contentRef.current)); setPreviewOpen(true); }}
+        >
           Aperçu
         </Button>
       </div>
-      {previewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-          <div className="flex h-[80%] w-[80%] flex-col overflow-hidden rounded-xl border bg-background shadow-lg">
-            <div className="flex items-center justify-between px-6 py-4">
-              <h3 className="text-sm font-medium">Aperçu HTML</h3>
-              <Button type="button" variant="ghost" size="xs" onClick={() => setPreviewOpen(false)}>
-                Fermer
-              </Button>
-            </div>
-            <iframe
-              srcDoc={previewSrcDoc}
-              sandbox="allow-styles"
-              title="Aperçu HTML"
-              className="flex-1 border-none"
-            />
-          </div>
-        </div>
-      )}
-      <input type="hidden" name={name} ref={hiddenRef} />
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="flex h-[80vh] max-w-4xl flex-col p-0">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle>Aperçu HTML</DialogTitle>
+          </DialogHeader>
+          <iframe
+            srcDoc={previewSrcDoc}
+            sandbox="allow-styles"
+            title="Aperçu HTML"
+            className="min-h-0 flex-1 border-none"
+          />
+        </DialogContent>
+      </Dialog>
+      <input type="hidden" name={name} ref={hiddenRef} disabled={initError} />
     </div>
   );
 }
