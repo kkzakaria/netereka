@@ -8,13 +8,6 @@ import { css } from "@codemirror/lang-css";
 import { type ViewUpdate } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import "./html-editor.css";
 
 interface HtmlEditorProps {
@@ -25,43 +18,30 @@ interface HtmlEditorProps {
 
 export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
-  const previewRef = useRef<HTMLIFrameElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const hiddenRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const contentRef = useRef(defaultValue ?? "");
   const [initError, setInitError] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSrcDoc, setPreviewSrcDoc] = useState("");
 
-  const writeToIframe = useCallback((iframe: HTMLIFrameElement, content: string) => {
-    const doc = iframe.contentDocument;
-    if (!doc) {
-      console.warn("[html-editor] iframe.contentDocument is null — preview cannot render");
-      return;
-    }
-    try {
-      doc.open();
-      doc.write(`<!DOCTYPE html>
+  function buildSrcDoc(content: string) {
+    // Extract the scope class (e.g. "desc-xyz") from CSS selectors so the
+    // preview wraps content in a matching div, just like the storefront does.
+    const scopeMatch = content.match(/\.(desc-[a-zA-Z0-9_-]+)\s/);
+    const scopeClass = scopeMatch?.[1] ?? "";
+    const bodyContent = scopeClass
+      ? `<div class="${scopeClass}">${content}</div>`
+      : content;
+
+    return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{font-family:system-ui,sans-serif;padding:16px;margin:0;color:#1a1a1a;line-height:1.6}img{max-width:100%;height:auto}</style>
 </head>
-<body>${content}</body>
-</html>`);
-      doc.close();
-    } catch (err) {
-      console.error("[html-editor] Preview update failed", err);
-      try {
-        doc.open();
-        doc.write("<p style='color:red;padding:16px'>Impossible d'afficher l'aperçu. Vérifiez votre code HTML.</p>");
-        doc.close();
-      } catch { /* already logged */ }
-    }
-  }, []);
-
-  const previewCallbackRef = useCallback((iframe: HTMLIFrameElement | null) => {
-    previewRef.current = iframe;
-    if (iframe) writeToIframe(iframe, contentRef.current);
-  }, [writeToIframe]);
+<body>${bodyContent}</body>
+</html>`;
+  }
 
   const onUpdate = useCallback(
     (update: ViewUpdate) => {
@@ -69,12 +49,8 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
       const content = update.state.doc.toString();
       contentRef.current = content;
       if (hiddenRef.current) hiddenRef.current.value = content;
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        if (previewRef.current) writeToIframe(previewRef.current, content);
-      }, 300);
     },
-    [writeToIframe],
+    [],
   );
 
   useEffect(() => {
@@ -112,7 +88,6 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
     }
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
       viewRef.current?.destroy();
       viewRef.current = null;
     };
@@ -129,25 +104,28 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
         <div className="html-editor-code" ref={editorRef} />
       </div>
       <div className="flex justify-end">
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button type="button" variant="outline" size="xs">
-              Aperçu
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="flex h-[80vh] max-w-4xl flex-col p-0">
-            <DialogHeader className="px-6 pt-6">
-              <DialogTitle>Aperçu HTML</DialogTitle>
-            </DialogHeader>
+        <Button type="button" variant="outline" size="xs" onClick={() => { setPreviewSrcDoc(buildSrcDoc(contentRef.current)); setPreviewOpen(true); }}>
+          Aperçu
+        </Button>
+      </div>
+      {previewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="flex h-[80%] w-[80%] flex-col overflow-hidden rounded-xl border bg-background shadow-lg">
+            <div className="flex items-center justify-between px-6 py-4">
+              <h3 className="text-sm font-medium">Aperçu HTML</h3>
+              <Button type="button" variant="ghost" size="xs" onClick={() => setPreviewOpen(false)}>
+                Fermer
+              </Button>
+            </div>
             <iframe
-              ref={previewCallbackRef}
+              srcDoc={previewSrcDoc}
               sandbox="allow-styles"
               title="Aperçu HTML"
-              className="min-h-0 flex-1 border-none"
+              className="flex-1 border-none"
             />
-          </DialogContent>
-        </Dialog>
-      </div>
+          </div>
+        </div>
+      )}
       <input type="hidden" name={name} ref={hiddenRef} />
     </div>
   );
