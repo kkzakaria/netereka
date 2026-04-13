@@ -80,7 +80,23 @@ export async function verifyOtp(
   }
 
   if (row.otp_code !== params.code) {
-    return { success: false, error: "Invalid code. Please check and try again." };
+    // Track failed attempts via KV to prevent brute-force
+    const attemptsKey = `wa:otp_attempts:${ctx.session.id}`;
+    const attemptsStr = await ctx.env.KV.get(attemptsKey);
+    const attempts = (attemptsStr ? parseInt(attemptsStr, 10) : 0) + 1;
+
+    if (attempts >= 5) {
+      // Invalidate OTP after 5 failed attempts
+      await ctx.db
+        .prepare("UPDATE whatsapp_sessions SET otp_code = NULL, otp_expires_at = NULL, updated_at = datetime('now') WHERE id = ?")
+        .bind(ctx.session.id)
+        .run();
+      await ctx.env.KV.delete(attemptsKey);
+      return { success: false, error: "Trop de tentatives. Le code a été invalidé. Veuillez demander un nouveau code." };
+    }
+
+    await ctx.env.KV.put(attemptsKey, String(attempts), { expirationTtl: 600 });
+    return { success: false, error: `Code incorrect (tentative ${attempts}/5). Vérifiez votre email et réessayez.` };
   }
 
   await ctx.db

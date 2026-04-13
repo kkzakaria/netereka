@@ -37,7 +37,12 @@ function createMockCtx(
       updated_at: "",
       ...sessionOverrides,
     } as ToolContext["session"],
-    env: { DB: mockDb as unknown as D1Database, KV: {} as KVNamespace, AI: {} as Ai, RESEND_API_KEY: "test-key" },
+    env: {
+      DB: mockDb as unknown as D1Database,
+      KV: { get: vi.fn().mockResolvedValue(null), put: vi.fn().mockResolvedValue(undefined), delete: vi.fn().mockResolvedValue(undefined) } as unknown as KVNamespace,
+      AI: {} as Ai,
+      RESEND_API_KEY: "test-key",
+    },
   };
 }
 
@@ -146,7 +151,7 @@ describe("verifyOtp", () => {
     const result = await verifyOtp(ctx, { code: "111111" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/invalid code/i);
+    expect(result.error).toMatch(/incorrect/i);
   });
 
   it("verifies successfully with correct code, updates session in memory", async () => {

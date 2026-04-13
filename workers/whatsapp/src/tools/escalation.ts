@@ -19,12 +19,21 @@ export async function escalateHuman(
     .first<{ phone_number_id: string; access_token: string; admin_phones: string }>();
 
   if (config) {
-    const adminPhones = JSON.parse(config.admin_phones) as string[];
+    let adminPhones: string[] = [];
+    try {
+      adminPhones = JSON.parse(config.admin_phones) as string[];
+    } catch {
+      console.error("[escalation] Invalid admin_phones JSON in whatsapp_config");
+    }
+
     if (adminPhones.length > 0) {
       const api = new WhatsAppAPI(config.phone_number_id, config.access_token);
       const alertMsg = `Escalade demandée\nClient: ${session.wa_phone}\nRaison: ${params.reason}`;
       for (const phone of adminPhones) {
-        api.sendText(phone, alertMsg).catch(() => {});
+        const result = await api.sendText(phone, alertMsg);
+        if (!result.success) {
+          console.error(`[escalation] Failed to notify admin ${phone}: ${result.error}`);
+        }
       }
     }
   }

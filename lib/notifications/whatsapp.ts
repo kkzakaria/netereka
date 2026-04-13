@@ -49,7 +49,7 @@ export async function notifyOrderStatusWhatsApp(
 
     const message = messageFn(data);
 
-    await fetch(
+    const response = await fetch(
       `https://graph.facebook.com/v21.0/${config.phone_number_id}/messages`,
       {
         method: "POST",
@@ -65,6 +65,13 @@ export async function notifyOrderStatusWhatsApp(
         }),
       }
     );
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "unknown");
+      console.error(
+        `[whatsapp-notifications] API error for ${data.orderNumber} to ${normalizedPhone}: ${response.status} ${body}`
+      );
+    }
   } catch (error) {
     console.error(
       `[whatsapp-notifications] Failed to send status update for ${data.orderNumber}:`,
