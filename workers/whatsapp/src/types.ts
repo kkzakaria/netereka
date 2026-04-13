@@ -94,3 +94,11 @@ export interface WhatsAppSession {
   created_at: string;
   updated_at: string;
 }
+
+// --- Tool Context ---
+
+export interface ToolContext {
+  db: D1Database;
+  session: WhatsAppSession;
+  env: Env;
+}

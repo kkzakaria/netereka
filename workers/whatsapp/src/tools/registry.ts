@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolResult } from "../types";
+import type { ToolContext, ToolDefinition, ToolResult } from "../types";
 import { searchProducts, getProduct, getCategories } from "./catalogue";
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -66,17 +66,17 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 ];
 
 export async function dispatchTool(
-  db: D1Database,
+  ctx: ToolContext,
   toolName: string,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
   switch (toolName) {
     case "search_products":
-      return searchProducts(db, args as { query: string; category_slug?: string; limit?: number });
+      return searchProducts(ctx, args as { query: string; category_slug?: string; limit?: number });
     case "get_product":
-      return getProduct(db, args as { slug: string });
+      return getProduct(ctx, args as { slug: string });
     case "get_categories":
-      return getCategories(db, args as { parent_slug?: string });
+      return getCategories(ctx, args as { parent_slug?: string });
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }

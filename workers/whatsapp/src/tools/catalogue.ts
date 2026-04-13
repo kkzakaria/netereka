@@ -1,4 +1,4 @@
-import type { ToolResult } from "../types";
+import type { ToolContext, ToolResult } from "../types";
 
 interface ProductRow {
   id: string;
@@ -30,7 +30,7 @@ interface CategoryRow {
 }
 
 export async function searchProducts(
-  db: D1Database,
+  ctx: ToolContext,
   params: { query: string; category_slug?: string; limit?: number }
 ): Promise<ToolResult & { data: unknown[] }> {
   const limit = Math.min(params.limit ?? 5, 10);
@@ -53,7 +53,7 @@ export async function searchProducts(
   sql += ` ORDER BY p.is_featured DESC, p.stock_quantity DESC LIMIT ?`;
   bindings.push(limit);
 
-  const { results } = await db
+  const { results } = await ctx.db
     .prepare(sql)
     .bind(...bindings)
     .all<ProductRow>();
@@ -71,10 +71,10 @@ export async function searchProducts(
 }
 
 export async function getProduct(
-  db: D1Database,
+  ctx: ToolContext,
   params: { slug: string }
 ): Promise<ToolResult & { data?: unknown }> {
-  const product = await db
+  const product = await ctx.db
     .prepare(
       `SELECT p.id, p.name, p.slug, p.base_price, p.stock_quantity, p.brand, p.short_description,
               c.name as category_name
@@ -89,7 +89,7 @@ export async function getProduct(
     return { success: false, error: "Product not found" };
   }
 
-  const { results: variants } = await db
+  const { results: variants } = await ctx.db
     .prepare(
       `SELECT id, name, price, stock_quantity
        FROM product_variants
@@ -122,7 +122,7 @@ export async function getProduct(
 }
 
 export async function getCategories(
-  db: D1Database,
+  ctx: ToolContext,
   params: { parent_slug?: string }
 ): Promise<ToolResult & { data: unknown[] }> {
   let sql: string;
@@ -147,7 +147,7 @@ export async function getCategories(
     `;
   }
 
-  const { results } = await db.prepare(sql).bind(...bindings).all<CategoryRow>();
+  const { results } = await ctx.db.prepare(sql).bind(...bindings).all<CategoryRow>();
 
   return {
     success: true,

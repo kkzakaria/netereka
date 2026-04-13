@@ -1,4 +1,4 @@
-import type { Env } from "./types";
+import type { Env, ToolContext } from "./types";
 import type { ParsedMessage } from "./webhook";
 import { findOrCreateSession } from "./session";
 import { loadContext, saveContext } from "./context";
@@ -34,6 +34,7 @@ export async function handleIncomingMessage(
   const isVerified = session.is_verified === 1;
   const currentMessages = [...context.messages];
   let responseText: string | null = null;
+  const toolCtx: ToolContext = { db: env.DB, session, env };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const llmResult = await callLLM(env.AI, currentMessages, isVerified);
@@ -46,7 +47,7 @@ export async function handleIncomingMessage(
     // Execute tool calls
     for (const toolCall of llmResult.toolCalls) {
       const args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-      const toolResult = await dispatchTool(env.DB, toolCall.function.name, args);
+      const toolResult = await dispatchTool(toolCtx, toolCall.function.name, args);
 
       currentMessages.push({
         role: "assistant",

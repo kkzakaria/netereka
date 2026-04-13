@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { searchProducts, getProduct, getCategories } from "../../../../../workers/whatsapp/src/tools/catalogue";
+import type { ToolContext } from "../../../../../workers/whatsapp/src/types";
 
 function createMockD1() {
   const mockStatement = {
@@ -11,6 +12,22 @@ function createMockD1() {
   return {
     prepare: vi.fn().mockReturnValue(mockStatement),
     _statement: mockStatement,
+  };
+}
+
+function createMockCtx(mockDb: ReturnType<typeof createMockD1>): ToolContext {
+  return {
+    db: mockDb as unknown as D1Database,
+    session: {
+      id: "s",
+      wa_phone: "0",
+      user_id: null,
+      is_verified: 0,
+      status: "active" as const,
+      created_at: "",
+      updated_at: "",
+    },
+    env: {} as ToolContext["env"],
   };
 }
 
@@ -29,7 +46,7 @@ describe("searchProducts", () => {
       ],
     });
 
-    const result = await searchProducts(mockDb as unknown as D1Database, { query: "iphone" });
+    const result = await searchProducts(createMockCtx(mockDb), { query: "iphone" });
 
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(2);
@@ -40,7 +57,7 @@ describe("searchProducts", () => {
   it("returns empty array when no products found", async () => {
     mockDb._statement.all.mockResolvedValueOnce({ results: [] });
 
-    const result = await searchProducts(mockDb as unknown as D1Database, { query: "xyz" });
+    const result = await searchProducts(createMockCtx(mockDb), { query: "xyz" });
 
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(0);
@@ -67,7 +84,7 @@ describe("getProduct", () => {
       ],
     });
 
-    const result = await getProduct(mockDb as unknown as D1Database, { slug: "iphone-15" });
+    const result = await getProduct(createMockCtx(mockDb), { slug: "iphone-15" });
 
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({
@@ -83,7 +100,7 @@ describe("getProduct", () => {
   it("returns error when product not found", async () => {
     mockDb._statement.first.mockResolvedValueOnce(null);
 
-    const result = await getProduct(mockDb as unknown as D1Database, { slug: "nope" });
+    const result = await getProduct(createMockCtx(mockDb), { slug: "nope" });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Product not found");
@@ -105,7 +122,7 @@ describe("getCategories", () => {
       ],
     });
 
-    const result = await getCategories(mockDb as unknown as D1Database, {});
+    const result = await getCategories(createMockCtx(mockDb), {});
 
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(2);
