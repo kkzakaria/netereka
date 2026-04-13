@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCartStore, useCartSubtotal } from "@/stores/cart-store";
 import { CartItemRow } from "@/components/storefront/cart-item-row";
 import { formatPrice } from "@/lib/utils/format";
+import { WhatsAppCartButton } from "@/components/storefront/whatsapp-cart-button";
 
 export default function CartPage() {
   const items = useCartStore((s) => s.items);
@@ -73,6 +74,7 @@ export default function CartPage() {
               <span>{formatPrice(subtotal)}</span>
             </div>
           </div>
+          <WhatsAppCartButton />
           <Link
             href="/checkout"
             className="block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-primary-foreground hover:bg-primary/90"

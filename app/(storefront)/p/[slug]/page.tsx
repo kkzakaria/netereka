@@ -8,6 +8,7 @@ import { ImageGallery } from "@/components/storefront/image-gallery";
 import { getImageUrl } from "@/lib/utils/images";
 import { ProductGalleryWithVariants } from "@/components/storefront/product-gallery-with-variants";
 import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
+import { WhatsAppProductButton } from "@/components/storefront/whatsapp-product-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
 import { ProductDetails } from "@/components/storefront/product-details";
@@ -325,6 +326,12 @@ export default async function ProductPage({ params }: Props) {
                   imageUrl: product.image_url ?? product.images[0]?.url ?? null,
                   slug: product.slug,
                 }}
+              />
+              <WhatsAppProductButton
+                productName={product.name}
+                price={product.base_price}
+                slug={product.slug}
+                variant="full"
               />
             </div>
           </div>

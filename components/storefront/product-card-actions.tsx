@@ -23,6 +23,7 @@ const VariantPickerDialog = dynamic(
       }),
   { ssr: false }
 );
+import { WhatsAppProductButton } from "@/components/storefront/whatsapp-product-button";
 import type { ProductCardData } from "@/lib/db/types";
 
 interface Props {
@@ -77,6 +78,14 @@ export function ProductCardActions({ product }: Props) {
           {isOutOfStock ? "Rupture de stock" : "Ajouter"}
         </Button>
 
+        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <WhatsAppProductButton
+            productName={product.name}
+            price={product.base_price}
+            slug={product.slug}
+            variant="icon"
+          />
+        </div>
         <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
           <WishlistButtonDynamic productId={product.id} />
         </div>

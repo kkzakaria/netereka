@@ -21,6 +21,7 @@ import {
 import type { ActionResult } from "@/lib/utils";
 import type { Order, OrderStatus } from "@/lib/db/types";
 import { notifyOrderStatusUpdate } from "@/lib/notifications";
+import { notifyOrderStatusWhatsApp } from "@/lib/notifications/whatsapp";
 
 // Validation schemas
 const idSchema = z.string().min(1, "ID requis");
@@ -44,9 +45,9 @@ const notesSchema = z
 
 async function getOrderCustomer(
   userId: string
-): Promise<{ email: string; name: string } | null> {
-  return queryFirst<{ email: string; name: string }>(
-    "SELECT email, name FROM user WHERE id = ?",
+): Promise<{ email: string; name: string; phone: string | null } | null> {
+  return queryFirst<{ email: string; name: string; phone: string | null }>(
+    "SELECT email, name, phone FROM user WHERE id = ?",
     [userId]
   );
 }
@@ -54,7 +55,7 @@ async function getOrderCustomer(
 function sendStatusNotification(
   order: Order,
   newStatus: OrderStatus,
-  customer: { email: string; name: string },
+  customer: { email: string; name: string; phone?: string | null },
   extra?: { deliveryPersonName?: string | null; reason?: string | null }
 ): void {
   notifyOrderStatusUpdate(customer.email, {
@@ -157,6 +158,16 @@ export async function updateOrderStatus(
     sendStatusNotification(order, newStatus as OrderStatus, customer, {
       deliveryPersonName: order.delivery_person_name,
       reason: noteResult.data,
+    });
+  }
+
+  // WhatsApp notification (fire-and-forget)
+  if (customer?.phone) {
+    notifyOrderStatusWhatsApp({
+      orderNumber: order.order_number,
+      customerPhone: customer.phone,
+      status: newStatus,
+      total: order.total,
     });
   }
 
