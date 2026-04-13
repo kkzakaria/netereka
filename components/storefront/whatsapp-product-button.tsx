@@ -26,8 +26,8 @@ export function WhatsAppProductButton({ productName, price, slug, variant = "ico
 
   if (variant === "icon") {
     return (
-      <Button size="icon-sm" variant="outline" onClick={handleClick} aria-label={`Demander sur WhatsApp: ${productName}`}>
-        <HugeiconsIcon icon={WhatsappIcon} size={16} />
+      <Button size="icon-lg" variant="outline" onClick={handleClick} aria-label={`Demander sur WhatsApp: ${productName}`}>
+        <HugeiconsIcon icon={WhatsappIcon} size={18} />
       </Button>
     );
   }
