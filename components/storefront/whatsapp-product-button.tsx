@@ -26,7 +26,7 @@ export function WhatsAppProductButton({ productName, price, slug, variant = "ico
 
   if (variant === "icon") {
     return (
-      <Button size="icon-lg" variant="outline" onClick={handleClick} aria-label={`Demander sur WhatsApp: ${productName}`}>
+      <Button size="icon-lg" variant="outline" onClick={handleClick} aria-label={`Commander sur WhatsApp: ${productName}`} className="border-[#25D366] text-[#25D366] hover:bg-[#25D366]/10">
         <HugeiconsIcon icon={WhatsappIcon} size={18} />
       </Button>
     );
@@ -35,10 +35,10 @@ export function WhatsAppProductButton({ productName, price, slug, variant = "ico
   return (
     <button
       onClick={handleClick}
-      className="w-full rounded-xl border py-3 text-sm font-semibold transition-colors hover:bg-muted flex items-center justify-center gap-2"
+      className="w-full rounded-xl bg-[#25D366] py-3 text-sm font-semibold text-white transition-colors hover:bg-[#20BD5A] active:bg-[#1DA851] flex items-center justify-center gap-2"
     >
       <HugeiconsIcon icon={WhatsappIcon} size={18} />
-      Demander sur WhatsApp
+      Commander sur WhatsApp
     </button>
   );
 }

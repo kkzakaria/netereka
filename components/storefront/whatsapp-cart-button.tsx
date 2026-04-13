@@ -3,7 +3,6 @@
 import { useCartStore, selectCartSubtotal } from "@/stores/cart-store";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { WhatsappIcon } from "@hugeicons/core-free-icons";
-import { Button } from "@/components/ui/button";
 
 const WHATSAPP_NUMBER = "2250700000000";
 
@@ -24,13 +23,12 @@ export function WhatsAppCartButton() {
   const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 
   return (
-    <Button
-      variant="outline"
-      className="w-full gap-2"
+    <button
       onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+      className="w-full rounded-xl bg-[#25D366] py-3 text-sm font-semibold text-white transition-colors hover:bg-[#20BD5A] active:bg-[#1DA851] flex items-center justify-center gap-2"
     >
       <HugeiconsIcon icon={WhatsappIcon} size={18} />
-      Finaliser via WhatsApp
-    </Button>
+      Commander sur WhatsApp
+    </button>
   );
 }
