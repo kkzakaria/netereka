@@ -30,7 +30,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toggleStoreActive, deleteStore } from "@/actions/admin/stores";
-import { StoreFormSheet } from "./store-form-sheet";
+import { StoreFormDialog } from "./store-form-dialog";
 import type { Store } from "@/lib/db/types";
 
 export function StoresPageClient({ stores }: { stores: Store[] }) {
@@ -210,8 +210,8 @@ export function StoresPageClient({ stores }: { stores: Store[] }) {
         ))}
       </div>
 
-      {/* Sheet for create/edit */}
-      <StoreFormSheet
+      {/* Dialog for create/edit */}
+      <StoreFormDialog
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         store={editingStore}
