@@ -1,6 +1,6 @@
 import { getDrizzle } from "@/lib/db/drizzle";
 import { stores } from "@/lib/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 
 export interface ActiveStore {
   id: string;
@@ -21,6 +21,6 @@ export async function getActiveStores(): Promise<ActiveStore[]> {
       phone: stores.phone,
     })
     .from(stores)
-    .where(and(eq(stores.is_active, 1)))
+    .where(eq(stores.is_active, 1))
     .orderBy(asc(stores.sort_order)) as unknown as ActiveStore[];
 }

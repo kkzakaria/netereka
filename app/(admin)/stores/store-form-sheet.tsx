@@ -129,16 +129,18 @@ export function StoreFormSheet({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="sort_order">Ordre d&apos;affichage</Label>
-            <Input
-              id="sort_order"
-              name="sort_order"
-              type="number"
-              min={0}
-              defaultValue={store?.sort_order ?? 0}
-            />
-          </div>
+          {isEditing && (
+            <div className="space-y-2">
+              <Label htmlFor="sort_order">Ordre d&apos;affichage</Label>
+              <Input
+                id="sort_order"
+                name="sort_order"
+                type="number"
+                min={0}
+                defaultValue={store?.sort_order ?? 0}
+              />
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-4">
             <Button
