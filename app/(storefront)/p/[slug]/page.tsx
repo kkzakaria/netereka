@@ -244,37 +244,29 @@ export default async function ProductPage({ params }: Props) {
       </nav>
 
       {product.variants.length > 0 ? (
-        <>
-          <ProductGalleryWithVariants
-            images={product.images}
-            variants={product.variants}
-            basePrice={product.base_price}
-            product={{
-              id: product.id,
-              name: product.name,
-              slug: product.slug,
-              imageUrl: product.image_url ?? product.images[0]?.url ?? null,
-            }}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                {product.brand ? (
-                  <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                    {product.brand}
-                  </span>
-                ) : null}
-                <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
-              </div>
-              <WishlistButtonDynamic productId={product.id} />
+        <ProductGalleryWithVariants
+          images={product.images}
+          variants={product.variants}
+          basePrice={product.base_price}
+          product={{
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+          }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              {product.brand ? (
+                <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  {product.brand}
+                </span>
+              ) : null}
+              <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
             </div>
-          </ProductGalleryWithVariants>
-          <WhatsAppProductButton
-            productName={product.name}
-            price={product.base_price}
-            slug={product.slug}
-            variant="full"
-          />
-        </>
+            <WishlistButtonDynamic productId={product.id} />
+          </div>
+        </ProductGalleryWithVariants>
       ) : (
         <div className="grid gap-8 md:grid-cols-2">
           <ImageGallery images={product.images}>

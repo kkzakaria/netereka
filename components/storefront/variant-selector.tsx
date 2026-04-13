@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import type { ProductVariant, ParsedVariantAttributes } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
+import { WhatsAppProductButton } from "@/components/storefront/whatsapp-product-button";
 
 function parseAttributes(variant: ProductVariant): ParsedVariantAttributes {
   try {
@@ -253,6 +254,12 @@ export function VariantSelector({
           imageUrl: product.imageUrl,
           slug: product.slug,
         }}
+      />
+      <WhatsAppProductButton
+        productName={product.name}
+        price={price}
+        slug={product.slug}
+        variant="full"
       />
     </div>
   );
