@@ -45,13 +45,20 @@ export async function linkAccount(
     .bind(otp, expiresAt, user.id, new Date().toISOString(), ctx.session.id)
     .run();
 
-  if (ctx.env.RESEND_API_KEY) {
-    await sendOtpEmail(ctx.env.RESEND_API_KEY, user.email, otp);
+  if (!ctx.env.RESEND_API_KEY) {
+    console.error("[account] RESEND_API_KEY not configured, cannot send OTP");
+    return { success: false, error: "Le service email n'est pas disponible. Veuillez réessayer plus tard." };
+  }
+
+  const emailResult = await sendOtpEmail(ctx.env.RESEND_API_KEY, user.email, otp);
+  if (!emailResult.success) {
+    console.error(`[account] OTP email failed for ${user.email}: ${emailResult.error}`);
+    return { success: false, error: "Impossible d'envoyer l'email de vérification. Veuillez réessayer." };
   }
 
   return {
     success: true,
-    data: { message: `A verification code has been sent to ${user.email}. Please enter the 6-digit code to link your account.` },
+    data: { message: `Un code de vérification a été envoyé à ${user.email}. Envoyez-moi le code à 6 chiffres pour lier votre compte.` },
   };
 }
 

@@ -82,7 +82,7 @@ describe("linkAccount", () => {
     expect(sendOtpEmail).toHaveBeenCalledWith("test-key", "user@example.com", expect.stringMatching(/^\d{6}$/));
   });
 
-  it("still returns success even when RESEND_API_KEY is not configured", async () => {
+  it("returns error when RESEND_API_KEY is not configured", async () => {
     const ctx = createMockCtx(mockDb);
     ctx.env.RESEND_API_KEY = undefined;
 
@@ -91,7 +91,8 @@ describe("linkAccount", () => {
 
     const result = await linkAccount(ctx, { email: "user@example.com" });
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("email");
   });
 });
 

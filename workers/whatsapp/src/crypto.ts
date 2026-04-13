@@ -14,13 +14,24 @@ export async function verifySignature(
     encoder.encode(appSecret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["verify"]
   );
 
-  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
-  const computedHash = Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  // Convert received hex hash to Uint8Array for timing-safe verify
+  const receivedBytes = hexToBytes(receivedHash);
+  if (!receivedBytes) return false;
 
-  return computedHash === receivedHash;
+  // crypto.subtle.verify performs a constant-time comparison internally
+  return crypto.subtle.verify("HMAC", key, receivedBytes.buffer as ArrayBuffer, encoder.encode(body));
+}
+
+function hexToBytes(hex: string): Uint8Array | null {
+  if (hex.length % 2 !== 0) return null;
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    const byte = parseInt(hex.substring(i, i + 2), 16);
+    if (isNaN(byte)) return null;
+    bytes[i / 2] = byte;
+  }
+  return bytes;
 }

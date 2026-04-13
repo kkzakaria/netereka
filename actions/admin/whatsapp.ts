@@ -69,6 +69,11 @@ export interface WhatsAppStats {
 // Config Actions
 // ---------------------------------------------------------------------------
 
+function maskSecret(value: string): string {
+  if (value.length <= 8) return "••••••••";
+  return "••••••••" + value.slice(-4);
+}
+
 export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
   await requireAdmin();
 
@@ -77,7 +82,13 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
     const row = await db
       .prepare("SELECT * FROM whatsapp_config WHERE id = 1")
       .first<WhatsAppConfig>();
-    return row ?? null;
+    if (!row) return null;
+    // Mask sensitive fields — secrets are write-only
+    return {
+      ...row,
+      access_token: maskSecret(row.access_token),
+      webhook_secret: maskSecret(row.webhook_secret),
+    };
   } catch (error) {
     console.error("[admin/whatsapp] getWhatsAppConfig error:", error);
     return null;
@@ -99,12 +110,17 @@ export async function saveWhatsAppConfig(
   const admin_phones_raw = String(formData.get("admin_phones") ?? "").trim();
   const is_active = formData.get("is_active") === "1" ? 1 : 0;
 
-  // Validate required fields
+  // Check if secrets are masked (user didn't change them)
+  const isMasked = (val: string) => val.startsWith("••");
+  const accessTokenMasked = isMasked(access_token);
+  const webhookSecretMasked = isMasked(webhook_secret);
+
+  // Validate required fields (masked values are OK for updates)
   if (
     !phone_number_id ||
-    !access_token ||
+    (!access_token && !accessTokenMasked) ||
     !verify_token ||
-    !webhook_secret ||
+    (!webhook_secret && !webhookSecretMasked) ||
     !business_account_id
   ) {
     return {
@@ -144,24 +160,27 @@ export async function saveWhatsAppConfig(
       .first<{ id: number }>();
 
     if (existing) {
+      // For masked secrets, preserve existing DB values
+      const setClauses = [
+        "phone_number_id = ?",
+        accessTokenMasked ? "" : "access_token = ?",
+        "verify_token = ?",
+        webhookSecretMasked ? "" : "webhook_secret = ?",
+        "business_account_id = ?",
+        "admin_phones = ?",
+        "is_active = ?",
+        "updated_at = ?",
+      ].filter(Boolean).join(", ");
+
+      const bindings: unknown[] = [phone_number_id];
+      if (!accessTokenMasked) bindings.push(access_token);
+      bindings.push(verify_token);
+      if (!webhookSecretMasked) bindings.push(webhook_secret);
+      bindings.push(business_account_id, admin_phones, is_active, now);
+
       await db
-        .prepare(
-          `UPDATE whatsapp_config
-           SET phone_number_id = ?, access_token = ?, verify_token = ?,
-               webhook_secret = ?, business_account_id = ?,
-               admin_phones = ?, is_active = ?, updated_at = ?
-           WHERE id = 1`
-        )
-        .bind(
-          phone_number_id,
-          access_token,
-          verify_token,
-          webhook_secret,
-          business_account_id,
-          admin_phones,
-          is_active,
-          now
-        )
+        .prepare(`UPDATE whatsapp_config SET ${setClauses} WHERE id = 1`)
+        .bind(...bindings)
         .run();
     } else {
       await db

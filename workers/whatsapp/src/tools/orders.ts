@@ -159,11 +159,22 @@ export async function createOrder(
       )
   );
 
+  // Decrement stock for each item
+  const stockDecrements = cartItems.map((item) =>
+    item.variant_id
+      ? ctx.db
+          .prepare("UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?")
+          .bind(item.quantity, item.variant_id)
+      : ctx.db
+          .prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?")
+          .bind(item.quantity, item.product_id)
+  );
+
   const clearCart = ctx.db
     .prepare(`DELETE FROM whatsapp_carts WHERE session_id = ?`)
     .bind(ctx.session.id);
 
-  await ctx.db.batch([insertOrder, ...insertItemStatements, clearCart]);
+  await ctx.db.batch([insertOrder, ...insertItemStatements, ...stockDecrements, clearCart]);
 
   return {
     success: true,
