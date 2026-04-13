@@ -1,4 +1,4 @@
-import type { Env, ChatMessage } from "./types";
+import type { Env } from "./types";
 import type { ParsedMessage } from "./webhook";
 import { findOrCreateSession } from "./session";
 import { loadContext, saveContext } from "./context";
@@ -32,7 +32,7 @@ export async function handleIncomingMessage(
 
   // 5. Call LLM with tool loop
   const isVerified = session.is_verified === 1;
-  let currentMessages = [...context.messages];
+  const currentMessages = [...context.messages];
   let responseText: string | null = null;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
