@@ -33,9 +33,12 @@ export function WhatsAppProductButton({ productName, price, slug, variant = "ico
   }
 
   return (
-    <Button variant="outline" className="w-full gap-2" onClick={handleClick}>
+    <button
+      onClick={handleClick}
+      className="w-full rounded-xl border py-3 text-sm font-semibold transition-colors hover:bg-muted flex items-center justify-center gap-2"
+    >
       <HugeiconsIcon icon={WhatsappIcon} size={18} />
       Demander sur WhatsApp
-    </Button>
+    </button>
   );
 }
