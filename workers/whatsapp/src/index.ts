@@ -1,6 +1,7 @@
 import type { Env } from "./types";
 
 export default {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async fetch(request: Request, _env: Env): Promise<Response> {
     const url = new URL(request.url);
 
