@@ -23,7 +23,12 @@ const VariantPickerDialog = dynamic(
       }),
   { ssr: false }
 );
-import { WhatsAppProductButton } from "@/components/storefront/whatsapp-product-button";
+const WhatsAppProductButton = dynamic(
+  () =>
+    import("@/components/storefront/whatsapp-product-button")
+      .then((m) => m.WhatsAppProductButton),
+  { ssr: false }
+);
 import type { ProductCardData } from "@/lib/db/types";
 
 interface Props {
