@@ -24,11 +24,13 @@ export function WhatsAppCartButton() {
   const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 
   return (
-    <Button variant="outline" className="w-full gap-2" asChild>
-      <a href={url} target="_blank" rel="noopener noreferrer">
-        <HugeiconsIcon icon={WhatsappIcon} size={18} />
-        Finaliser via WhatsApp
-      </a>
+    <Button
+      variant="outline"
+      className="w-full gap-2"
+      onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+    >
+      <HugeiconsIcon icon={WhatsappIcon} size={18} />
+      Finaliser via WhatsApp
     </Button>
   );
 }

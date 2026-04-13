@@ -18,22 +18,24 @@ export function WhatsAppProductButton({ productName, price, slug, variant = "ico
   const message = `Bonjour, je suis intéressé par *${productName}* (${formattedPrice} FCFA). Ref: ${slug}`;
   const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 
+  function handleClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   if (variant === "icon") {
     return (
-      <Button size="icon-sm" variant="outline" asChild aria-label={`Demander sur WhatsApp: ${productName}`}>
-        <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-          <HugeiconsIcon icon={WhatsappIcon} size={16} />
-        </a>
+      <Button size="icon-sm" variant="outline" onClick={handleClick} aria-label={`Demander sur WhatsApp: ${productName}`}>
+        <HugeiconsIcon icon={WhatsappIcon} size={16} />
       </Button>
     );
   }
 
   return (
-    <Button variant="outline" className="w-full gap-2" asChild>
-      <a href={url} target="_blank" rel="noopener noreferrer">
-        <HugeiconsIcon icon={WhatsappIcon} size={18} />
-        Demander sur WhatsApp
-      </a>
+    <Button variant="outline" className="w-full gap-2" onClick={handleClick}>
+      <HugeiconsIcon icon={WhatsappIcon} size={18} />
+      Demander sur WhatsApp
     </Button>
   );
 }
