@@ -30,23 +30,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toggleStoreActive, deleteStore } from "@/actions/admin/stores";
-import { StoreFormSheet } from "./store-form-sheet";
+import { StoreFormDialog } from "./store-form-dialog";
 import type { Store } from "@/lib/db/types";
 
 export function StoresPageClient({ stores }: { stores: Store[] }) {
   const [editingStore, setEditingStore] = useState<Store | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleCreate() {
     setEditingStore(null);
-    setSheetOpen(true);
+    setDialogOpen(true);
   }
 
   function handleEdit(store: Store) {
     setEditingStore(store);
-    setSheetOpen(true);
+    setDialogOpen(true);
   }
 
   function handleToggle(id: string) {
@@ -210,10 +210,10 @@ export function StoresPageClient({ stores }: { stores: Store[] }) {
         ))}
       </div>
 
-      {/* Sheet for create/edit */}
-      <StoreFormSheet
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
+      {/* Dialog for create/edit */}
+      <StoreFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
         store={editingStore}
       />
 

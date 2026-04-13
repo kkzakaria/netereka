@@ -6,26 +6,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { createStore, updateStore } from "@/actions/admin/stores";
 import type { Store } from "@/lib/db/types";
 
-interface StoreFormSheetProps {
+interface StoreFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   store: Store | null;
 }
 
-export function StoreFormSheet({
+export function StoreFormDialog({
   open,
   onOpenChange,
   store,
-}: StoreFormSheetProps) {
+}: StoreFormDialogProps) {
   const isEditing = store !== null;
   const [isPending, startTransition] = useTransition();
 
@@ -50,20 +51,20 @@ export function StoreFormSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
             {isEditing ? "Modifier la boutique" : "Nouvelle boutique"}
-          </SheetTitle>
-          <SheetDescription>
+          </DialogTitle>
+          <DialogDescription>
             {isEditing
               ? "Modifiez les informations de la boutique."
               : "Ajoutez une nouvelle boutique physique."}
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Nom *</Label>
             <Input
@@ -142,7 +143,7 @@ export function StoreFormSheet({
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-4">
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
@@ -157,9 +158,9 @@ export function StoreFormSheet({
                   ? "Mettre à jour"
                   : "Créer"}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
