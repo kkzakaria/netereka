@@ -13,6 +13,7 @@ import {
   UserGroup02Icon,
   UserSettings01Icon,
   Audit01Icon,
+  StoreLocation01Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { SidebarUserMenu } from "./sidebar-user-menu";
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/products", label: "Produits", icon: Package02Icon, minRole: "admin" as const },
   { href: "/categories", label: "Catégories", icon: FolderLibraryIcon, minRole: "admin" as const },
   { href: "/banners", label: "Bannières", icon: Image02Icon, minRole: "admin" as const },
+  { href: "/stores", label: "Boutiques", icon: StoreLocation01Icon, minRole: "admin" as const },
   { href: "/users", label: "Utilisateurs", icon: UserSettings01Icon, minRole: "admin" as const },
   { href: "/audit-log", label: "Journal d'audit", icon: Audit01Icon, minRole: "admin" as const },
 ];

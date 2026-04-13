@@ -386,3 +386,22 @@ export const bannerGradients = sqliteTable("banner_gradients", {
   color_to: text("color_to").notNull(),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
+
+// =============================================================================
+// Stores (physical locations)
+// =============================================================================
+export const stores = sqliteTable("stores", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  address: text("address").notNull(),
+  google_maps_url: text("google_maps_url").notNull(),
+  phone: text("phone"),
+  email: text("email"),
+  opening_hours: text("opening_hours"),
+  is_active: integer("is_active").notNull().default(1),
+  sort_order: integer("sort_order").notNull().default(0),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_stores_active_order").on(table.is_active, table.sort_order),
+]);
