@@ -7,6 +7,7 @@ import {
   Delete02Icon,
   ViewIcon,
   ViewOffSlashIcon,
+  MoreVerticalIcon,
 } from "@hugeicons/core-free-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -28,15 +36,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { ActionSheet, type ActionSheetItem } from "@/components/admin/action-sheet";
 import { toggleStoreActive, deleteStore } from "@/actions/admin/stores";
 import { StoreFormDialog } from "./store-form-dialog";
 import type { Store } from "@/lib/db/types";
 
+const moreIcon = <HugeiconsIcon icon={MoreVerticalIcon} size={18} />;
+
 export function StoresPageClient({ stores }: { stores: Store[] }) {
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleCreate() {
@@ -60,17 +71,37 @@ export function StoresPageClient({ stores }: { stores: Store[] }) {
     });
   }
 
-  function handleDelete() {
-    if (!deleteId) return;
+  function handleDelete(id: string) {
     startTransition(async () => {
-      const result = await deleteStore(deleteId);
+      const result = await deleteStore(id);
       if (result.success) {
         toast.success("Boutique supprimée");
       } else {
         toast.error(result.error ?? "Erreur");
       }
-      setDeleteId(null);
     });
+  }
+
+  function getActions(store: Store): ActionSheetItem[] {
+    return [
+      {
+        label: "Modifier",
+        icon: PencilEdit01Icon,
+        onClick: () => handleEdit(store),
+      },
+      {
+        label: store.is_active ? "Désactiver" : "Activer",
+        icon: store.is_active ? ViewOffSlashIcon : ViewIcon,
+        onClick: () => handleToggle(store.id),
+      },
+      {
+        label: "Supprimer",
+        icon: Delete02Icon,
+        onClick: () => handleDelete(store.id),
+        destructive: true,
+        requiresConfirm: true,
+      },
+    ];
   }
 
   return (
@@ -91,7 +122,7 @@ export function StoresPageClient({ stores }: { stores: Store[] }) {
               <TableHead>Adresse</TableHead>
               <TableHead>Téléphone</TableHead>
               <TableHead>Statut</TableHead>
-              <TableHead className="w-[120px]">Actions</TableHead>
+              <TableHead className="w-[60px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -115,37 +146,48 @@ export function StoresPageClient({ stores }: { stores: Store[] }) {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => handleEdit(store)}
-                      aria-label="Modifier"
-                    >
-                      <HugeiconsIcon icon={PencilEdit01Icon} size={16} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => handleToggle(store.id)}
-                      disabled={isPending}
-                      aria-label={store.is_active ? "Désactiver" : "Activer"}
-                    >
-                      <HugeiconsIcon
-                        icon={store.is_active ? ViewOffSlashIcon : ViewIcon}
-                        size={16}
-                      />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => setDeleteId(store.id)}
-                      aria-label="Supprimer"
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <HugeiconsIcon icon={Delete02Icon} size={16} />
-                    </Button>
-                  </div>
+                  <AlertDialog>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-11 w-11">
+                          {moreIcon}
+                          <span className="sr-only">Actions</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEdit(store)}>
+                          Modifier
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleToggle(store.id)}>
+                          {store.is_active ? "Désactiver" : "Activer"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <AlertDialogTrigger asChild>
+                          <DropdownMenuItem className="text-destructive">
+                            Supprimer
+                          </DropdownMenuItem>
+                        </AlertDialogTrigger>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Supprimer cette boutique ?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Cette action est irréversible. La boutique sera définitivement supprimée.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Annuler</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleDelete(store.id)}
+                          disabled={isPending}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Supprimer
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </TableCell>
               </TableRow>
             ))}
@@ -161,52 +203,11 @@ export function StoresPageClient({ stores }: { stores: Store[] }) {
           </p>
         )}
         {stores.map((store) => (
-          <div
+          <StoreCardMobile
             key={store.id}
-            className="rounded-lg border p-4 space-y-2"
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{store.name}</span>
-              <Badge variant={store.is_active ? "default" : "secondary"}>
-                {store.is_active ? "Actif" : "Inactif"}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">{store.address}</p>
-            {store.phone && (
-              <p className="text-sm text-muted-foreground">{store.phone}</p>
-            )}
-            <div className="flex items-center gap-1 pt-1">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => handleEdit(store)}
-                aria-label="Modifier"
-              >
-                <HugeiconsIcon icon={PencilEdit01Icon} size={16} />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => handleToggle(store.id)}
-                disabled={isPending}
-                aria-label={store.is_active ? "Désactiver" : "Activer"}
-              >
-                <HugeiconsIcon
-                  icon={store.is_active ? ViewOffSlashIcon : ViewIcon}
-                  size={16}
-                />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setDeleteId(store.id)}
-                aria-label="Supprimer"
-                className="text-destructive hover:text-destructive"
-              >
-                <HugeiconsIcon icon={Delete02Icon} size={16} />
-              </Button>
-            </div>
-          </div>
+            store={store}
+            actions={getActions(store)}
+          />
         ))}
       </div>
 
@@ -216,31 +217,49 @@ export function StoresPageClient({ stores }: { stores: Store[] }) {
         onOpenChange={setDialogOpen}
         store={editingStore}
       />
+    </>
+  );
+}
 
-      {/* Delete confirmation */}
-      <AlertDialog
-        open={deleteId !== null}
-        onOpenChange={(open) => !open && setDeleteId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer cette boutique ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Cette action est irréversible. La boutique sera définitivement supprimée.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Supprimer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+function StoreCardMobile({
+  store,
+  actions,
+}: {
+  store: Store;
+  actions: ActionSheetItem[];
+}) {
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
+
+  return (
+    <>
+      <div className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/30">
+        <div className="flex flex-1 flex-col gap-1 overflow-hidden">
+          <span className="truncate text-sm font-medium">{store.name}</span>
+          <span className="truncate text-xs text-muted-foreground">{store.address}</span>
+          {store.phone && (
+            <span className="text-xs text-muted-foreground">{store.phone}</span>
+          )}
+          <div className="mt-1">
+            <Badge variant={store.is_active ? "default" : "secondary"} className="text-[10px]">
+              {store.is_active ? "Actif" : "Inactif"}
+            </Badge>
+          </div>
+        </div>
+        <button
+          onClick={() => setActionSheetOpen(true)}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+          aria-label="Actions"
+        >
+          <HugeiconsIcon icon={MoreVerticalIcon} size={20} />
+        </button>
+      </div>
+
+      <ActionSheet
+        open={actionSheetOpen}
+        onOpenChange={setActionSheetOpen}
+        title={store.name}
+        items={actions}
+      />
     </>
   );
 }
