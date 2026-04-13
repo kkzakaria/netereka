@@ -20,6 +20,9 @@
     "db:seed": "npx wrangler d1 execute netereka-db --local --file=db/seeds/seed.sql",
     "db:seed-catalogue": "npx wrangler d1 execute netereka-db --local --file=db/seeds/catalogue.sql",
     "db:sync": "bash scripts/sync-local-db.sh",
+    "whatsapp:dev": "npx wrangler dev --config workers/whatsapp/wrangler.jsonc",
+    "whatsapp:deploy": "npx wrangler deploy --config workers/whatsapp/wrangler.jsonc",
+    "whatsapp:tail": "npx wrangler tail --config workers/whatsapp/wrangler.jsonc",
     "prepare": "husky",
     "postinstall": "node scripts/patch-opennext.mjs"
   },

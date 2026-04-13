@@ -8,6 +8,7 @@ import { ImageGallery } from "@/components/storefront/image-gallery";
 import { getImageUrl } from "@/lib/utils/images";
 import { ProductGalleryWithVariants } from "@/components/storefront/product-gallery-with-variants";
 import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
+import { WhatsAppProductButton } from "@/components/storefront/whatsapp-product-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
 import { ProductDetails } from "@/components/storefront/product-details";
@@ -243,29 +244,37 @@ export default async function ProductPage({ params }: Props) {
       </nav>
 
       {product.variants.length > 0 ? (
-        <ProductGalleryWithVariants
-          images={product.images}
-          variants={product.variants}
-          basePrice={product.base_price}
-          product={{
-            id: product.id,
-            name: product.name,
-            slug: product.slug,
-            imageUrl: product.image_url ?? product.images[0]?.url ?? null,
-          }}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              {product.brand ? (
-                <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                  {product.brand}
-                </span>
-              ) : null}
-              <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
+        <>
+          <ProductGalleryWithVariants
+            images={product.images}
+            variants={product.variants}
+            basePrice={product.base_price}
+            product={{
+              id: product.id,
+              name: product.name,
+              slug: product.slug,
+              imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                {product.brand ? (
+                  <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                    {product.brand}
+                  </span>
+                ) : null}
+                <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
+              </div>
+              <WishlistButtonDynamic productId={product.id} />
             </div>
-            <WishlistButtonDynamic productId={product.id} />
-          </div>
-        </ProductGalleryWithVariants>
+          </ProductGalleryWithVariants>
+          <WhatsAppProductButton
+            productName={product.name}
+            price={product.base_price}
+            slug={product.slug}
+            variant="full"
+          />
+        </>
       ) : (
         <div className="grid gap-8 md:grid-cols-2">
           <ImageGallery images={product.images}>
@@ -325,6 +334,12 @@ export default async function ProductPage({ params }: Props) {
                   imageUrl: product.image_url ?? product.images[0]?.url ?? null,
                   slug: product.slug,
                 }}
+              />
+              <WhatsAppProductButton
+                productName={product.name}
+                price={product.base_price}
+                slug={product.slug}
+                variant="full"
               />
             </div>
           </div>

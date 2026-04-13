@@ -50,6 +50,13 @@
       "when": 1776006639870,
       "tag": "0006_purple_garia",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1776072302145,
+      "tag": "0007_rich_owl",
+      "breakpoints": true
     }
   ]
 }

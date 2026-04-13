@@ -245,6 +245,7 @@ export const orders = sqliteTable("orders", {
   discount_amount: integer("discount_amount").notNull().default(0),
   total: integer("total").notNull(),
   promo_code_id: text("promo_code_id").references(() => promoCodes.id),
+  channel: text("channel", { enum: ["web", "whatsapp"] }).notNull().default("web"),
   delivery_address: text("delivery_address").notNull(),
   delivery_commune: text("delivery_commune").notNull(),
   delivery_phone: text("delivery_phone").notNull(),
@@ -404,4 +405,71 @@ export const stores = sqliteTable("stores", {
   updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
 }, (table) => [
   index("idx_stores_active_order").on(table.is_active, table.sort_order),
+]);
+
+// =============================================================================
+// WhatsApp Configuration
+// =============================================================================
+export const whatsappConfig = sqliteTable("whatsapp_config", {
+  id: integer("id").primaryKey(),
+  phone_number_id: text("phone_number_id").notNull(),
+  access_token: text("access_token").notNull(),
+  verify_token: text("verify_token").notNull(),
+  webhook_secret: text("webhook_secret").notNull(),
+  business_account_id: text("business_account_id"),
+  admin_phones: text("admin_phones").notNull().default("[]"),
+  is_active: integer("is_active").notNull().default(1),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+});
+
+// =============================================================================
+// WhatsApp Sessions
+// =============================================================================
+export const whatsappSessions = sqliteTable("whatsapp_sessions", {
+  id: text("id").primaryKey(),
+  wa_phone: text("wa_phone").unique().notNull(),
+  user_id: text("user_id").references(() => user.id),
+  otp_code: text("otp_code"),
+  otp_expires_at: text("otp_expires_at"),
+  is_verified: integer("is_verified").notNull().default(0),
+  status: text("status", { enum: ["active", "escalated", "closed"] }).notNull().default("active"),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_wa_sessions_phone").on(table.wa_phone),
+  index("idx_wa_sessions_user").on(table.user_id),
+]);
+
+// =============================================================================
+// WhatsApp Carts
+// =============================================================================
+export const whatsappCarts = sqliteTable("whatsapp_carts", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id").notNull().references(() => whatsappSessions.id, { onDelete: "cascade" }),
+  product_id: text("product_id").notNull().references(() => products.id),
+  variant_id: text("variant_id").references(() => productVariants.id),
+  quantity: integer("quantity").notNull().default(1),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_wa_carts_session").on(table.session_id),
+]);
+
+// =============================================================================
+// WhatsApp Messages
+// =============================================================================
+export const whatsappMessages = sqliteTable("whatsapp_messages", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id").notNull().references(() => whatsappSessions.id, { onDelete: "cascade" }),
+  wa_message_id: text("wa_message_id"),
+  direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
+  content: text("content").notNull(),
+  message_type: text("message_type", { enum: ["text", "interactive", "template", "image", "system"] }).notNull().default("text"),
+  metadata: text("metadata"),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_wa_messages_session").on(table.session_id),
+  index("idx_wa_messages_created").on(table.created_at),
+  index("idx_wa_messages_wa_id").on(table.wa_message_id),
 ]);
