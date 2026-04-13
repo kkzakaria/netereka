@@ -91,6 +91,8 @@ export interface WhatsAppSession {
   wa_phone: string;
   user_id: string | null;
   is_verified: number;
+  otp_code: string | null;
+  otp_expires_at: string | null;
   status: "active" | "escalated" | "closed";
   created_at: string;
   updated_at: string;
