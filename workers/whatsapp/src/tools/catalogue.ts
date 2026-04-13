@@ -33,7 +33,7 @@ export async function searchProducts(
   ctx: ToolContext,
   params: { query: string; category_slug?: string; limit?: number }
 ): Promise<ToolResult & { data: unknown[] }> {
-  const limit = Math.min(params.limit ?? 5, 10);
+  const limit = Math.max(1, Math.min(params.limit ?? 5, 10));
   const searchTerm = `%${params.query}%`;
 
   let sql = `
@@ -80,7 +80,7 @@ export async function getProduct(
               c.name as category_name
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
-       WHERE p.slug = ? AND p.is_active = 1`
+       WHERE p.slug = ? AND p.is_active = 1 AND p.is_draft = 0`
     )
     .bind(params.slug)
     .first<ProductDetailRow>();
@@ -131,7 +131,7 @@ export async function getCategories(
   if (params.parent_slug) {
     sql = `
       SELECT c.id, c.name, c.slug,
-             (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = 1) as product_count
+             (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = 1 AND p.is_draft = 0) as product_count
       FROM categories c
       WHERE c.is_active = 1 AND c.parent_id = (SELECT id FROM categories WHERE slug = ?)
       ORDER BY c.sort_order
@@ -140,7 +140,7 @@ export async function getCategories(
   } else {
     sql = `
       SELECT c.id, c.name, c.slug,
-             (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = 1) as product_count
+             (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = 1 AND p.is_draft = 0) as product_count
       FROM categories c
       WHERE c.is_active = 1 AND c.parent_id IS NULL
       ORDER BY c.sort_order

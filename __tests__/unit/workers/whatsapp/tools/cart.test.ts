@@ -181,12 +181,22 @@ describe("cartUpdate", () => {
     mockDb = createMockD1();
   });
 
-  it("updates item quantity", async () => {
+  it("updates item quantity when stock is sufficient", async () => {
+    // Stock lookup returns available stock
+    mockDb._statement.first.mockResolvedValueOnce({ product_id: "p1", variant_id: null, available_stock: 10 });
     mockDb._statement.run.mockResolvedValueOnce({ success: true, meta: { changes: 1 } });
 
     const result = await cartUpdate(createMockCtx(mockDb), { item_id: "ci1", quantity: 3 });
 
     expect(result.success).toBe(true);
+  });
+
+  it("returns error when quantity exceeds stock", async () => {
+    mockDb._statement.first.mockResolvedValueOnce({ product_id: "p1", variant_id: null, available_stock: 2 });
+
+    const result = await cartUpdate(createMockCtx(mockDb), { item_id: "ci1", quantity: 5 });
+
+    expect(result.success).toBe(false);
   });
 
   it("removes item when quantity is 0", async () => {

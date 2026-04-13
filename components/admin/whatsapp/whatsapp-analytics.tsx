@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { WhatsAppStats } from "@/actions/admin/whatsapp";
+import { formatPrice } from "@/lib/utils/format";
 
 type Period = "7d" | "30d" | "90d";
 
@@ -12,10 +13,6 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: "30d", label: "30 jours" },
   { value: "90d", label: "90 jours" },
 ];
-
-function formatPrice(value: number): string {
-  return `${new Intl.NumberFormat("fr-FR").format(value)} FCFA`;
-}
 
 interface MetricCardProps {
   title: string;

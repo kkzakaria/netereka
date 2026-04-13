@@ -204,7 +204,7 @@ export async function saveWhatsAppConfig(
         .run();
     }
 
-    revalidatePath("/admin/whatsapp");
+    revalidatePath("/whatsapp");
     return { success: true };
   } catch (error) {
     console.error("[admin/whatsapp] saveWhatsAppConfig error:", error);
@@ -463,8 +463,8 @@ export async function sendAdminMessage(
       .bind(now, sessionId)
       .run();
 
-    revalidatePath(`/admin/whatsapp/${sessionId}`);
-    revalidatePath("/admin/whatsapp");
+    revalidatePath(`/whatsapp/conversations/${sessionId}`);
+    revalidatePath("/whatsapp");
     return { success: true };
   } catch (error) {
     console.error("[admin/whatsapp] sendAdminMessage error:", error);
@@ -503,8 +503,8 @@ export async function updateSessionStatus(
       .bind(status, now, sessionId)
       .run();
 
-    revalidatePath(`/admin/whatsapp/${sessionId}`);
-    revalidatePath("/admin/whatsapp");
+    revalidatePath(`/whatsapp/conversations/${sessionId}`);
+    revalidatePath("/whatsapp");
     return { success: true };
   } catch (error) {
     console.error("[admin/whatsapp] updateSessionStatus error:", error);

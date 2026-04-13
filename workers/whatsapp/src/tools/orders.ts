@@ -239,7 +239,7 @@ export async function listOrders(
     };
   }
 
-  const limit = Math.min(params.limit ?? 5, 10);
+  const limit = Math.max(1, Math.min(params.limit ?? 5, 10));
 
   const { results } = await ctx.db
     .prepare(

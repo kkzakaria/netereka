@@ -11,7 +11,11 @@ export async function loadContext(
   const stored = await kv.get(`${KV_PREFIX}${waPhone}`);
 
   if (stored) {
-    return JSON.parse(stored) as ConversationContext;
+    try {
+      return JSON.parse(stored) as ConversationContext;
+    } catch {
+      console.error(`[context] Corrupted KV context for ${waPhone}, resetting`);
+    }
   }
 
   return {

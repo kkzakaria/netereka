@@ -37,6 +37,11 @@ export async function cartAdd(
 ): Promise<ToolResult & { data?: unknown }> {
   const quantity = params.quantity ?? 1;
 
+  // Validate quantity
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return { success: false, error: "La quantité doit être un entier positif." };
+  }
+
   // Validate product exists and is available
   const product = await ctx.db
     .prepare(
@@ -98,8 +103,14 @@ export async function cartAdd(
     .first<CartItemRow>();
 
   if (existing) {
-    // Update existing item quantity
+    // Update existing item quantity — check cumulative stock
     const newQuantity = existing.quantity + quantity;
+    if (newQuantity > availableStock) {
+      return {
+        success: false,
+        error: `Stock insuffisant pour ${itemName}. Vous avez déjà ${existing.quantity} unité(s) dans le panier, seulement ${availableStock} disponible(s).`,
+      };
+    }
     await ctx.db
       .prepare(
         `UPDATE whatsapp_carts
@@ -167,6 +178,31 @@ export async function cartUpdate(
 ): Promise<ToolResult> {
   if (params.quantity <= 0) {
     return cartRemove(ctx, { item_id: params.item_id });
+  }
+
+  if (!Number.isInteger(params.quantity)) {
+    return { success: false, error: "La quantité doit être un entier." };
+  }
+
+  // Validate stock for the new quantity
+  const cartItem = await ctx.db
+    .prepare(
+      `SELECT wc.product_id, wc.variant_id,
+              COALESCE(pv.stock_quantity, p.stock_quantity) as available_stock
+       FROM whatsapp_carts wc
+       JOIN products p ON wc.product_id = p.id
+       LEFT JOIN product_variants pv ON wc.variant_id = pv.id
+       WHERE wc.id = ? AND wc.session_id = ?`
+    )
+    .bind(params.item_id, ctx.session.id)
+    .first<{ product_id: string; variant_id: string | null; available_stock: number }>();
+
+  if (!cartItem) {
+    return { success: false, error: "Article introuvable dans le panier." };
+  }
+
+  if (params.quantity > cartItem.available_stock) {
+    return { success: false, error: `Stock insuffisant. Seulement ${cartItem.available_stock} unité(s) disponible(s).` };
   }
 
   await ctx.db

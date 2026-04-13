@@ -6,7 +6,7 @@ import { handleIncomingMessage } from "./orchestrator";
 export type { Env };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname !== "/webhook") {
@@ -24,6 +24,7 @@ export default {
     if (request.method === "POST") {
       const config = await getConfig(env.DB);
       if (!config || !config.is_active) {
+        console.warn("[webhook] WhatsApp config missing or inactive, dropping message");
         return new Response("OK", { status: 200 });
       }
 
@@ -35,18 +36,27 @@ export default {
         return new Response("Invalid signature", { status: 401 });
       }
 
-      // Parse and handle messages
-      const payload = JSON.parse(body) as WebhookPayload;
+      // Parse messages
+      let payload: WebhookPayload;
+      try {
+        payload = JSON.parse(body) as WebhookPayload;
+      } catch {
+        return new Response("Invalid JSON", { status: 400 });
+      }
+
       const messages = parseIncomingMessages(payload);
 
+      // Process messages asynchronously — ack Meta immediately (< 5s requirement)
       for (const msg of messages) {
-        await handleIncomingMessage(
-          env,
-          { phoneNumberId: config.phone_number_id, accessToken: config.access_token },
-          msg
-        ).catch((err) => {
-          console.error("Error processing message:", err);
-        });
+        ctx.waitUntil(
+          handleIncomingMessage(
+            env,
+            { phoneNumberId: config.phone_number_id, accessToken: config.access_token },
+            msg
+          ).catch((err) => {
+            console.error("Error processing message:", err);
+          })
+        );
       }
 
       return new Response("OK", { status: 200 });

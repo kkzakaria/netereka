@@ -16,6 +16,10 @@ const STATUS_MESSAGES: Record<string, (data: OrderNotificationData) => string> =
     `Votre commande *${d.orderNumber}* est en route ! Notre livreur vous contactera bientôt.`,
   delivered: (d) =>
     `Votre commande *${d.orderNumber}* a été livrée. Merci pour votre confiance !`,
+  cancelled: (d) =>
+    `Votre commande *${d.orderNumber}* a été annulée. Contactez-nous pour plus d'informations.`,
+  returned: (d) =>
+    `Le retour de votre commande *${d.orderNumber}* a été traité.`,
 };
 
 export async function notifyOrderStatusWhatsApp(
