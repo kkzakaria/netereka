@@ -4,7 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { WhatsappIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 
-const WHATSAPP_NUMBER = "2250700000000";
+const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
 
 interface Props {
   productName: string;
@@ -14,6 +14,8 @@ interface Props {
 }
 
 export function WhatsAppProductButton({ productName, price, slug, variant = "icon" }: Props) {
+  if (!WHATSAPP_NUMBER) return null;
+
   const formattedPrice = new Intl.NumberFormat("fr-FR").format(price);
   const message = `Bonjour, je suis intéressé par *${productName}* (${formattedPrice} FCFA). Ref: ${slug}`;
   const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;

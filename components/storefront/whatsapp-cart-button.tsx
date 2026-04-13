@@ -4,13 +4,13 @@ import { useCartStore, selectCartSubtotal } from "@/stores/cart-store";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { WhatsappIcon } from "@hugeicons/core-free-icons";
 
-const WHATSAPP_NUMBER = "2250700000000";
+const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
 
 export function WhatsAppCartButton() {
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore(selectCartSubtotal);
 
-  if (items.length === 0) return null;
+  if (!WHATSAPP_NUMBER || items.length === 0) return null;
 
   const formattedTotal = new Intl.NumberFormat("fr-FR").format(subtotal);
   const itemLines = items
