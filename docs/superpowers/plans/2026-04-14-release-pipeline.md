@@ -882,13 +882,23 @@ jobs:
       - name: Capture currently-active version (before upload)
         id: current
         run: |
-          # Fetch the current deployment. If no deployment exists yet (fresh worker),
+          # Fetch the current deployment. If no deployment exists (fresh worker),
           # leave previous_version_id empty — we'll treat as bootstrap.
           DEPLOYMENTS_JSON=$(npx wrangler deployments list --json 2>/dev/null || echo "[]")
-          # Pick the version_id currently at 100% (or the first version of the most
-          # recent deployment if the structure differs between wrangler versions).
-          PREV_ID=$(echo "$DEPLOYMENTS_JSON" \
-            | jq -r 'if (. | length) == 0 then "" else (.[0].versions // [] | map(select((.percentage // 0) == 100)) | .[0].version_id // "") end')
+          # Pick the baseline version:
+          # 1) Preferred: the version currently at 100% (clean state after a completed promote).
+          # 2) Fallback: the version with the highest traffic share (handles the case where a
+          #    previous canary 10/90 was never promoted — we treat the 90% as baseline).
+          # 3) Empty string → triggers bootstrap mode at 100%.
+          PREV_ID=$(echo "$DEPLOYMENTS_JSON" | jq -r '
+            if (. | length) == 0 then ""
+            else
+              (.[0].versions // [])
+              | (map(select((.percentage // 0) == 100)) | .[0].version_id)
+                // (max_by(.percentage // 0).version_id)
+                // ""
+            end
+          ')
           echo "previous_version_id=${PREV_ID}" >> "$GITHUB_OUTPUT"
           if [ -z "$PREV_ID" ]; then
             echo "No active deployment found — will bootstrap at 100%."
@@ -1774,7 +1784,7 @@ Fermer les tâches du plan une fois tous les steps validés.
 
 **Type consistency :**
 - `version_id` (snake_case) cohérent dans tous les workflows et scripts.
-- `steps.upload.outputs.version_id` (new) et `steps.current.outputs.previous_version_id` (captured before upload) nommés cohéremment. `steps.strategy.outputs.mode` est `bootstrap` ou `canary`.
+- `steps.upload.outputs.version_id` (new) et `steps.current.outputs.previous_version_id` (captured before upload) nommés de manière cohérente. `steps.strategy.outputs.mode` est `bootstrap` ou `canary`.
 - Nom des patterns IDs dans `check-migration-safety.mjs` exportés et testés (`drop-column`, `drop-table`, `rename-column`, `alter-not-null-no-default`, `drop-unique-index`, `drop-index`).
 
 **Dépendances entre phases :**
