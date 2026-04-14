@@ -147,16 +147,20 @@ export const PATTERNS = [
   {
     id: "drop-unique-index",
     level: "error",
-    regex: /\bDROP\s+INDEX\b[^;]*\bUNIQUE\b/i,
+    // SQLite's DROP INDEX syntax doesn't include the UNIQUE keyword.
+    // Heuristic: match index names containing "unique" (Drizzle convention:
+    // unique indexes are named with suffix `_unique`, e.g. `categories_slug_unique`).
+    // No word boundary after `unique` because `_unique` is not a regex word boundary.
+    regex: /\bDROP\s+INDEX\b[^;]*unique/i,
     reason:
-      "DROP INDEX UNIQUE lève une contrainte critique. " +
+      "DROP INDEX sur un index dont le nom contient 'unique' — probablement une contrainte critique. " +
       "Vérifier explicitement avec le bypass marker si intentionnel.",
   },
   {
     id: "drop-index",
     level: "warning",
-    // non-unique DROP INDEX (signalé mais pas bloquant)
-    regex: /\bDROP\s+INDEX\b(?![^;]*\bUNIQUE\b)/i,
+    // Any other DROP INDEX (index name doesn't contain "unique")
+    regex: /\bDROP\s+INDEX\b(?![^;]*unique)/i,
     reason:
       "DROP INDEX détecté. Autorisé mais peut impacter les performances — vérifier.",
   },
@@ -372,8 +376,10 @@ describe("check-migration-safety — analyze()", () => {
     );
   });
 
-  it("blocks DROP INDEX ... UNIQUE as error", () => {
-    const sql = `DROP INDEX idx_users_email_unique UNIQUE;`;
+  it("blocks DROP INDEX on an index whose name contains 'unique' (Drizzle convention)", () => {
+    // Drizzle generates names like `categories_slug_unique` for unique indexes.
+    // SQLite's DROP INDEX syntax doesn't include a UNIQUE keyword, so we match on name.
+    const sql = `DROP INDEX categories_slug_unique;`;
     const { violations } = analyze(sql);
     const hit = violations.find(
       (v: { patternId: string }) => v.patternId === "drop-unique-index"
@@ -382,7 +388,7 @@ describe("check-migration-safety — analyze()", () => {
     expect(hit!.level).toBe("error");
   });
 
-  it("flags plain DROP INDEX as warning only", () => {
+  it("flags plain (non-unique) DROP INDEX as warning only", () => {
     const sql = `DROP INDEX idx_products_created_at;`;
     const { violations } = analyze(sql);
     const errors = violations.filter(
@@ -873,6 +879,26 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Capture currently-active version (before upload)
+        id: current
+        run: |
+          # Fetch the current deployment. If no deployment exists yet (fresh worker),
+          # leave previous_version_id empty — we'll treat as bootstrap.
+          DEPLOYMENTS_JSON=$(npx wrangler deployments list --json 2>/dev/null || echo "[]")
+          # Pick the version_id currently at 100% (or the first version of the most
+          # recent deployment if the structure differs between wrangler versions).
+          PREV_ID=$(echo "$DEPLOYMENTS_JSON" \
+            | jq -r 'if (. | length) == 0 then "" else (.[0].versions // [] | map(select((.percentage // 0) == 100)) | .[0].version_id // "") end')
+          echo "previous_version_id=${PREV_ID}" >> "$GITHUB_OUTPUT"
+          if [ -z "$PREV_ID" ]; then
+            echo "No active deployment found — will bootstrap at 100%."
+          else
+            echo "Previous active version: $PREV_ID"
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Upload new version
         id: upload
         run: |
@@ -897,18 +923,11 @@ jobs:
       - name: Determine deploy strategy (canary vs bootstrap)
         id: strategy
         run: |
-          VERSIONS_JSON=$(npx wrangler versions list --json 2>/dev/null || echo "[]")
-          COUNT=$(echo "$VERSIONS_JSON" | jq '. | length')
-          if [ "$COUNT" -lt 2 ]; then
+          if [ -z "${{ steps.current.outputs.previous_version_id }}" ]; then
             echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
           else
-            PREV_ID=$(echo "$VERSIONS_JSON" | jq -r 'map(select(.id != "${{ steps.upload.outputs.version_id }}")) | .[0].id')
             echo "mode=canary" >> "$GITHUB_OUTPUT"
-            echo "previous_version_id=$PREV_ID" >> "$GITHUB_OUTPUT"
           fi
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy at 100% (bootstrap)
         if: steps.strategy.outputs.mode == 'bootstrap'
@@ -923,7 +942,7 @@ jobs:
         run: |
           npx wrangler versions deploy \
             "${{ steps.upload.outputs.version_id }}@10%" \
-            "${{ steps.strategy.outputs.previous_version_id }}@90%" --yes
+            "${{ steps.current.outputs.previous_version_id }}@90%" --yes
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -1755,7 +1774,7 @@ Fermer les tâches du plan une fois tous les steps validés.
 
 **Type consistency :**
 - `version_id` (snake_case) cohérent dans tous les workflows et scripts.
-- `steps.upload.outputs.version_id` et `steps.strategy.outputs.previous_version_id` nommés cohéremment.
+- `steps.upload.outputs.version_id` (new) et `steps.current.outputs.previous_version_id` (captured before upload) nommés cohéremment. `steps.strategy.outputs.mode` est `bootstrap` ou `canary`.
 - Nom des patterns IDs dans `check-migration-safety.mjs` exportés et testés (`drop-column`, `drop-table`, `rename-column`, `alter-not-null-no-default`, `drop-unique-index`, `drop-index`).
 
 **Dépendances entre phases :**

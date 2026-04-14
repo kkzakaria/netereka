@@ -177,8 +177,10 @@ Patterns bloqués :
 | `\bDROP TABLE\b` | error | Idem |
 | `\bRENAME COLUMN\b` | error | Idem |
 | `\bALTER COLUMN\b.*\bNOT NULL\b` sans `\bDEFAULT\b` dans la même instruction | error | Échoue sur lignes existantes |
-| `\bDROP INDEX\b.*\bUNIQUE\b` | error | Lève une contrainte critique |
-| `\bDROP INDEX\b` (non unique) | warning | Autorisé mais signalé |
+| `\bDROP\s+INDEX\b[^;]*unique` (case-insensitive, substring match) | error | Lève une contrainte critique. Heuristique basée sur la convention Drizzle qui nomme les unique indexes avec suffixe `_unique` (ex: `categories_slug_unique`) — détecté par match de substring `unique` (sans `\b` final car `_unique` n'a pas de word boundary en regex POSIX) |
+| `\bDROP\s+INDEX\b` (autre cas) | warning | Autorisé mais signalé. Peut impacter les performances ; vérifier manuellement qu'il n'y a pas de contrainte à préserver |
+
+**Limitation connue** : SQLite ne permet pas d'exprimer "UNIQUE" dans la syntaxe `DROP INDEX` (contrairement à certains dialectes). La détection repose donc sur le **nom de l'index** plutôt que sur un mot-clé SQL. Si un projet future n'utilise pas la convention de nommage Drizzle, adapter le pattern ou s'en remettre au bypass marker + relecture manuelle.
 
 Bypass : toute ligne contenant `-- migration-safety: acknowledged reason="<text>"` dans le fichier SQL désactive le lint pour ce fichier **et logue l'acknowledgement** (contexte pour `git blame` futur).
 
