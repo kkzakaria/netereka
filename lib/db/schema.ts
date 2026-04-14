@@ -412,14 +412,14 @@ export const stores = sqliteTable("stores", {
 // =============================================================================
 export const whatsappConfig = sqliteTable("whatsapp_config", {
   id: integer("id").primaryKey(),
-  phone_number_id: text("phone_number_id").notNull(),
+  phone_number_id: text("phone_number_id"),
   display_phone_number: text("display_phone_number"),
-  access_token: text("access_token").notNull(),
-  verify_token: text("verify_token").notNull(),
-  webhook_secret: text("webhook_secret").notNull(),
+  access_token: text("access_token"),
+  verify_token: text("verify_token"),
+  webhook_secret: text("webhook_secret"),
   business_account_id: text("business_account_id"),
   admin_phones: text("admin_phones").notNull().default("[]"),
-  is_active: integer("is_active").notNull().default(1),
+  is_active: integer("is_active").notNull().default(0),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
   updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
 });
