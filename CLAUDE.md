@@ -155,6 +155,9 @@ Wrangler config: `wrangler.jsonc` (not `.toml`).
 - **Local DB data vs prod:** The seed catalogue (`db/seeds/catalogue.sql`) uses hardcoded image paths that don't exist on R2. For realistic local data (real product images), use `npm run db:sync` instead — it dumps the remote DB, reorders SQL for SQLite compatibility, then re-applies `seed.sql` (test accounts and all sample data) on top via INSERT OR IGNORE (prod rows take precedence). `db:sync` requires Cloudflare credentials (`npx wrangler login` or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
 - **SEO files:** `app/robots.ts` and `app/sitemap.ts` generate SEO metadata dynamically.
 - **Drizzle remote mode:** To use `drizzle-kit` against remote D1, set `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, and `CLOUDFLARE_D1_TOKEN` env vars.
+- **`.claude/settings.local.json` drift:** This file is modified by tool-permission prompts and will block `gh pr merge` with "local changes would be overwritten". Stash before merging: `git stash push -- .claude/settings.local.json`.
+- **Untracked AI tool folders:** The repo root has many untracked `.agent/`, `.kilocode/`, `.crush/`, etc. folders (AI tool configs). Don't use `git add -A` for feature PRs — it bundles them all. Use targeted `git add <specific paths>` instead.
+- **Nullable column type sync:** When making a Drizzle column nullable, grep for every `.first<{ ... }>` and `.all<{ ... }>` type parameter referencing that column and update to `string | null`. TypeScript won't catch these type lies and nulls will silently reach runtime (e.g. `fetch('.../v21.0/null/messages')`).
 
 ## Authentication (better-auth)
 
@@ -177,6 +180,18 @@ Server config in `lib/auth/index.ts`, client in `lib/auth/client.ts`, guards in 
 - `getOptionalSession()` — Returns session or `null`, no redirect
 
 **Client-side:** Import `authClient` from `@/lib/auth/client` (uses `inferAdditionalFields` for typed custom fields).
+
+## WhatsApp Integration
+
+Two-tier config in `whatsapp_config` table:
+- **`display_phone_number`** (public): drives storefront `wa.me` buttons. Independent of `is_active` — buttons appear whenever this is set.
+- **`phone_number_id`, `access_token`, `verify_token`, `webhook_secret`, `business_account_id`** (API): required only when `is_active=1` to enable the conversational bot.
+
+The Worker (`workers/whatsapp/`) is a separate Cloudflare Worker — deploy with `npm run whatsapp:deploy`. It must respond to Meta webhooks in <5s, so message processing uses `ctx.waitUntil()`.
+
+Public number flow: `getPublicWhatsAppNumber()` (server, React-cached) → `WhatsAppNumberProvider` in `app/(storefront)/layout.tsx` → `useWhatsAppNumber()` hook in client buttons.
+
+Masked secret pattern: admin config form shows secrets as `••••••••` + last 4 chars. Detect "unchanged" on save by exact equality against the expected mask (not `startsWith("••")`), otherwise a real secret starting with bullets gets silently discarded.
 
 ## Reference Documents
 
