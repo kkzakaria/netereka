@@ -882,9 +882,18 @@ jobs:
       - name: Capture currently-active version (before upload)
         id: current
         run: |
-          # Fetch the current deployment. If no deployment exists (fresh worker),
-          # leave previous_version_id empty — we'll treat as bootstrap.
-          DEPLOYMENTS_JSON=$(npx wrangler deployments list --json 2>/dev/null || echo "[]")
+          # Fetch the current deployment. Fail closed on wrangler errors (auth,
+          # network, Cloudflare API down) — otherwise we'd misclassify a transient
+          # failure as "fresh worker" and push the new version to 100% directly,
+          # skipping the canary. A clean empty-list result is a legitimate bootstrap.
+          set -o pipefail
+          if ! DEPLOYMENTS_JSON=$(npx wrangler deployments list --json 2>&1); then
+            echo "ERROR: 'wrangler deployments list' failed. Aborting to avoid " \
+                 "silently bootstrapping over an existing deployment."
+            echo "wrangler output was:"
+            echo "$DEPLOYMENTS_JSON"
+            exit 1
+          fi
           # Pick the baseline version:
           # 1) Preferred: the version currently at 100% (clean state after a completed promote).
           # 2) Fallback: the version with the highest traffic share (handles the case where a
