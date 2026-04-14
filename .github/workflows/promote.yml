@@ -28,23 +28,32 @@ jobs:
 
       - name: Resolve target version_id
         id: resolve
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          INPUT_VERSION_ID: ${{ github.event.inputs.version_id }}
         run: |
-          INPUT="${{ github.event.inputs.version_id }}"
-          if [ -n "$INPUT" ]; then
-            echo "version_id=$INPUT" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_VERSION_ID" ]; then
+            echo "version_id=$INPUT_VERSION_ID" >> "$GITHUB_OUTPUT"
           else
-            # Pick the most recently uploaded version that isn't already at 100%
-            VID=$(npx wrangler versions list --json \
-              | jq -r '[.[] | select((.deployed_percentage // 0) < 100)] | sort_by(.created_on) | last | .id')
+            # Pick the version actively in the current canary split
+            # (0 < percentage < 100). We must NOT use `wrangler versions list`
+            # here because that includes uploaded-but-never-deployed versions
+            # whose `deployed_percentage` defaults to 0 — auto-promoting one of
+            # those would bypass canary entirely and route 100% of traffic to
+            # an untested version.
+            VID=$(npx wrangler deployments list --json \
+              | jq -r '.[0].versions
+                       | map(select((.percentage // 0) > 0 and (.percentage // 0) < 100))
+                       | first
+                       | .version_id')
             if [ -z "$VID" ] || [ "$VID" = "null" ]; then
-              echo "ERROR: no non-100% version found to promote"
+              echo "ERROR: no canary version (0 < % < 100) found to promote." \
+                   "If you want to deploy a fresh version, use deploy.yml first."
               exit 1
             fi
             echo "version_id=$VID" >> "$GITHUB_OUTPUT"
           fi
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy at 100%
         run: |
