@@ -64,6 +64,13 @@
       "when": 1776125293845,
       "tag": "0008_eager_hairball",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1776157513310,
+      "tag": "0009_fast_karnak",
+      "breakpoints": true
     }
   ]
 }

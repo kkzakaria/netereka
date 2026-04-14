@@ -38,28 +38,18 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
   return (
     <form action={handleSubmit}>
       <div className="space-y-6">
-        {/* API Credentials */}
+        {/* Public display — minimal config for storefront buttons */}
         <Card>
           <CardHeader>
-            <CardTitle>Identifiants API</CardTitle>
+            <CardTitle>Affichage public</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Numéro WhatsApp affiché aux clients via les boutons &ldquo;Commander sur WhatsApp&rdquo; du storefront.
+              Ce champ seul suffit pour activer les boutons (sans bot).
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="phone_number_id">Phone Number ID</Label>
-              <Input
-                id="phone_number_id"
-                name="phone_number_id"
-                required
-                defaultValue={config?.phone_number_id ?? ""}
-                placeholder="Ex: 123456789012345"
-              />
-              <p className="text-xs text-muted-foreground">
-                ID opaque fourni par Meta (pas le numéro visible). Utilisé pour les appels API.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="display_phone_number">Numéro public (affiché aux clients)</Label>
+              <Label htmlFor="display_phone_number">Numéro public</Label>
               <Input
                 id="display_phone_number"
                 name="display_phone_number"
@@ -67,8 +57,32 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 placeholder="Ex: 2250700000001"
               />
               <p className="text-xs text-muted-foreground">
-                Numéro WhatsApp Business au format international sans « + » (ex: 2250700000001).
-                Utilisé pour les liens wa.me sur les boutons de la boutique.
+                Format international sans « + », entre 8 et 15 chiffres. Utilisé pour les liens wa.me.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* API credentials — required for bot + webhooks */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Intégration API (Bot conversationnel)</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Ces champs sont requis uniquement si vous activez le bot WhatsApp conversationnel.
+              Obtenus depuis Meta Business Suite → WhatsApp → API Setup.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="phone_number_id">Phone Number ID</Label>
+              <Input
+                id="phone_number_id"
+                name="phone_number_id"
+                defaultValue={config?.phone_number_id ?? ""}
+                placeholder="Ex: 123456789012345"
+              />
+              <p className="text-xs text-muted-foreground">
+                ID opaque fourni par Meta (différent du numéro public).
               </p>
             </div>
 
@@ -89,7 +103,6 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                   id="access_token"
                   name="access_token"
                   type={showAccessToken ? "text" : "password"}
-                  required
                   defaultValue={config?.access_token ?? ""}
                   placeholder="EAAxxxxxxxx..."
                   className="flex-1"
@@ -105,21 +118,12 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-        {/* Webhook */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Webhook</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="verify_token">Verify Token</Label>
+              <Label htmlFor="verify_token">Verify Token (webhook)</Label>
               <Input
                 id="verify_token"
                 name="verify_token"
-                required
                 defaultValue={config?.verify_token ?? ""}
                 placeholder="Token de vérification du webhook"
               />
@@ -132,7 +136,6 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                   id="webhook_secret"
                   name="webhook_secret"
                   type={showWebhookSecret ? "text" : "password"}
-                  required
                   defaultValue={config?.webhook_secret ?? ""}
                   placeholder="Secret HMAC pour valider les webhooks"
                   className="flex-1"
@@ -167,24 +170,24 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 placeholder='["2250700000001", "2250700000002"]'
               />
               <p className="text-muted-foreground text-xs">
-                Tableau JSON des numéros WhatsApp des administrateurs (avec indicatif pays, sans
-                le &quot;+&quot;). Ex&nbsp;: <code>[&quot;2250700000001&quot;]</code>
+                Tableau JSON des numéros WhatsApp qui recevront les alertes d&apos;escalade
+                (avec indicatif pays, sans « + »). Ex&nbsp;: <code>[&quot;2250700000001&quot;]</code>
               </p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Publication */}
+        {/* Activation */}
         <Card>
           <CardHeader>
-            <CardTitle>Activation</CardTitle>
+            <CardTitle>Activation du bot</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <Label>Intégration active</Label>
+                <Label>Bot WhatsApp actif</Label>
                 <p className="text-muted-foreground text-sm">
-                  Active ou désactive l&apos;intégration WhatsApp sur la plateforme.
+                  Active le bot conversationnel (nécessite l&apos;intégration API complète).
                 </p>
               </div>
               <input

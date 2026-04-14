@@ -11,12 +11,12 @@ import type { ActionResult } from "@/lib/utils";
 
 export interface WhatsAppConfig {
   id: number;
-  phone_number_id: string;
+  phone_number_id: string | null;
   display_phone_number: string | null;
-  access_token: string;
-  verify_token: string;
-  webhook_secret: string;
-  business_account_id: string;
+  access_token: string | null;
+  verify_token: string | null;
+  webhook_secret: string | null;
+  business_account_id: string | null;
   admin_phones: string; // JSON array string
   is_active: number;
   created_at: string;
@@ -87,8 +87,8 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
     // Mask sensitive fields — secrets are write-only
     return {
       ...row,
-      access_token: maskSecret(row.access_token),
-      webhook_secret: maskSecret(row.webhook_secret),
+      access_token: row.access_token ? maskSecret(row.access_token) : null,
+      webhook_secret: row.webhook_secret ? maskSecret(row.webhook_secret) : null,
     };
   } catch (error) {
     console.error("[admin/whatsapp] getWhatsAppConfig error:", error);
@@ -101,7 +101,9 @@ export async function saveWhatsAppConfig(
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  const phone_number_id = String(formData.get("phone_number_id") ?? "").trim();
+  const phone_number_id_raw = String(formData.get("phone_number_id") ?? "").trim();
+  const phone_number_id = phone_number_id_raw || null;
+
   const display_phone_number_raw = String(formData.get("display_phone_number") ?? "").trim();
   // Normalize: keep digits only (strips +, spaces, dashes, dots)
   const display_phone_number_normalized = display_phone_number_raw.replace(/\D/g, "");
@@ -114,33 +116,39 @@ export async function saveWhatsAppConfig(
       error: "Le numéro public doit contenir entre 8 et 15 chiffres (format international, ex: 2250700000001).",
     };
   }
-  const access_token = String(formData.get("access_token") ?? "").trim();
-  const verify_token = String(formData.get("verify_token") ?? "").trim();
-  const webhook_secret = String(formData.get("webhook_secret") ?? "").trim();
-  const business_account_id = String(
-    formData.get("business_account_id") ?? ""
-  ).trim();
+
+  const access_token_raw = String(formData.get("access_token") ?? "").trim();
+  const verify_token_raw = String(formData.get("verify_token") ?? "").trim();
+  const webhook_secret_raw = String(formData.get("webhook_secret") ?? "").trim();
+  const business_account_id_raw = String(formData.get("business_account_id") ?? "").trim();
+  const business_account_id = business_account_id_raw || null;
   const admin_phones_raw = String(formData.get("admin_phones") ?? "").trim();
   const is_active = formData.get("is_active") === "1" ? 1 : 0;
 
   // Check if secrets are masked (user didn't change them)
   const isMasked = (val: string) => val.startsWith("••");
-  const accessTokenMasked = isMasked(access_token);
-  const webhookSecretMasked = isMasked(webhook_secret);
+  const accessTokenMasked = isMasked(access_token_raw);
+  const webhookSecretMasked = isMasked(webhook_secret_raw);
 
-  // Validate required fields (masked values are OK for updates)
-  if (
-    !phone_number_id ||
-    (!access_token && !accessTokenMasked) ||
-    !verify_token ||
-    (!webhook_secret && !webhookSecretMasked) ||
-    !business_account_id
-  ) {
-    return {
-      success: false,
-      error:
-        "Les champs phone_number_id, access_token, verify_token, webhook_secret et business_account_id sont obligatoires.",
-    };
+  // Final values (null if empty, undefined if masked to preserve existing)
+  const access_token = accessTokenMasked ? undefined : (access_token_raw || null);
+  const verify_token = verify_token_raw || null;
+  const webhook_secret = webhookSecretMasked ? undefined : (webhook_secret_raw || null);
+
+  // If bot is being activated, require full API credentials
+  if (is_active === 1) {
+    const hasPhoneId = !!phone_number_id;
+    const hasAccessToken = accessTokenMasked || !!access_token;
+    const hasVerifyToken = !!verify_token;
+    const hasWebhookSecret = webhookSecretMasked || !!webhook_secret;
+
+    if (!hasPhoneId || !hasAccessToken || !hasVerifyToken || !hasWebhookSecret) {
+      return {
+        success: false,
+        error:
+          "Pour activer le bot, renseignez phone_number_id, access_token, verify_token et webhook_secret.",
+      };
+    }
   }
 
   // Validate admin_phones is a valid JSON array (if provided)
@@ -173,13 +181,13 @@ export async function saveWhatsAppConfig(
       .first<{ id: number }>();
 
     if (existing) {
-      // For masked secrets, preserve existing DB values
+      // For masked secrets (access_token/webhook_secret = undefined), preserve existing DB values
       const setClauses = [
         "phone_number_id = ?",
         "display_phone_number = ?",
-        accessTokenMasked ? "" : "access_token = ?",
+        access_token !== undefined ? "access_token = ?" : "",
         "verify_token = ?",
-        webhookSecretMasked ? "" : "webhook_secret = ?",
+        webhook_secret !== undefined ? "webhook_secret = ?" : "",
         "business_account_id = ?",
         "admin_phones = ?",
         "is_active = ?",
@@ -187,9 +195,9 @@ export async function saveWhatsAppConfig(
       ].filter(Boolean).join(", ");
 
       const bindings: unknown[] = [phone_number_id, display_phone_number];
-      if (!accessTokenMasked) bindings.push(access_token);
+      if (access_token !== undefined) bindings.push(access_token);
       bindings.push(verify_token);
-      if (!webhookSecretMasked) bindings.push(webhook_secret);
+      if (webhook_secret !== undefined) bindings.push(webhook_secret);
       bindings.push(business_account_id, admin_phones, is_active, now);
 
       await db
@@ -207,9 +215,9 @@ export async function saveWhatsAppConfig(
         .bind(
           phone_number_id,
           display_phone_number,
-          access_token,
+          access_token ?? null,
           verify_token,
-          webhook_secret,
+          webhook_secret ?? null,
           business_account_id,
           admin_phones,
           is_active,

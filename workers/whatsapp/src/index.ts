@@ -16,15 +16,15 @@ export default {
     // GET: Meta webhook verification
     if (request.method === "GET") {
       const config = await getConfig(env.DB);
-      if (!config) return new Response("Not configured", { status: 503 });
+      if (!config || !config.verify_token) return new Response("Not configured", { status: 503 });
       return handleVerification(url, config.verify_token);
     }
 
     // POST: Incoming messages
     if (request.method === "POST") {
       const config = await getConfig(env.DB);
-      if (!config || !config.is_active) {
-        console.warn("[webhook] WhatsApp config missing or inactive, dropping message");
+      if (!config || !config.is_active || !config.webhook_secret || !config.phone_number_id || !config.access_token) {
+        console.warn("[webhook] WhatsApp config incomplete or inactive, dropping message");
         return new Response("OK", { status: 200 });
       }
 
@@ -67,10 +67,10 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 interface WhatsAppConfig {
-  phone_number_id: string;
-  access_token: string;
-  verify_token: string;
-  webhook_secret: string;
+  phone_number_id: string | null;
+  access_token: string | null;
+  verify_token: string | null;
+  webhook_secret: string | null;
   admin_phones: string;
   is_active: number;
 }

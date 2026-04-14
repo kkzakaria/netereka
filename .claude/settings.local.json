@@ -52,7 +52,11 @@
       "Bash(git status:*)",
       "Bash(echo \"exit: $?\")",
       "Bash(.husky/pre-commit)",
-      "Skill(pr-review-toolkit:review-pr)"
+      "Skill(pr-review-toolkit:review-pr)",
+      "Bash(wait %1)",
+      "Read(//tmp/**)",
+      "Bash(gh issue create --title 'docs: fix markdownlint and typography issues in plan files' --body ':*)",
+      "Bash(python3 -c ':*)"
     ]
   },
   "enableAllProjectMcpServers": true,
