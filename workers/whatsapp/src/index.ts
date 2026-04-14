@@ -23,15 +23,26 @@ export default {
     // POST: Incoming messages
     if (request.method === "POST") {
       const config = await getConfig(env.DB);
-      if (!config || !config.is_active || !config.webhook_secret || !config.phone_number_id || !config.access_token) {
-        console.warn("[webhook] WhatsApp config incomplete or inactive, dropping message");
+      const missing = getMissingFields(config);
+      if (missing.length > 0 || !config) {
+        // Distinguish "intentionally off" from "active but broken" — return 200 to avoid Meta retry storms either way
+        if (config?.is_active) {
+          console.error(`[webhook] CRITICAL: is_active=1 but missing fields: ${missing.join(", ")}. Messages are being dropped!`);
+        } else {
+          console.warn(`[webhook] bot inactive or unconfigured (missing: ${missing.join(", ")}), dropping message`);
+        }
         return new Response("OK", { status: 200 });
       }
+
+      // TypeScript: after getMissingFields passed, all required API fields are non-null.
+      const phoneNumberId = config.phone_number_id!;
+      const accessToken = config.access_token!;
+      const webhookSecret = config.webhook_secret!;
 
       // Verify signature
       const body = await request.text();
       const signature = request.headers.get("x-hub-signature-256") ?? "";
-      const isValid = await verifySignature(body, signature, config.webhook_secret);
+      const isValid = await verifySignature(body, signature, webhookSecret);
       if (!isValid) {
         return new Response("Invalid signature", { status: 401 });
       }
@@ -51,7 +62,7 @@ export default {
         ctx.waitUntil(
           handleIncomingMessage(
             env,
-            { phoneNumberId: config.phone_number_id, accessToken: config.access_token },
+            { phoneNumberId, accessToken },
             msg
           ).catch((err) => {
             console.error("Error processing message:", err);
@@ -79,4 +90,14 @@ async function getConfig(db: D1Database): Promise<WhatsAppConfig | null> {
   return db
     .prepare("SELECT * FROM whatsapp_config WHERE id = 1")
     .first<WhatsAppConfig>();
+}
+
+function getMissingFields(config: WhatsAppConfig | null): string[] {
+  if (!config) return ["config row"];
+  const missing: string[] = [];
+  if (!config.is_active) missing.push("is_active=0");
+  if (!config.phone_number_id) missing.push("phone_number_id");
+  if (!config.access_token) missing.push("access_token");
+  if (!config.webhook_secret) missing.push("webhook_secret");
+  return missing;
 }

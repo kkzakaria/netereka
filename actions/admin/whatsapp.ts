@@ -135,14 +135,23 @@ export async function saveWhatsAppConfig(
   const verify_token = verify_token_raw || null;
   const webhook_secret = webhookSecretMasked ? undefined : (webhook_secret_raw || null);
 
-  // If bot is being activated, require full API credentials
+  // If bot is being activated, require full API credentials.
+  // For masked values we must check the *effective* value (incoming OR existing DB value),
+  // since a masked prefix doesn't guarantee the DB actually has a valid value.
   if (is_active === 1) {
-    const hasPhoneId = !!phone_number_id;
-    const hasAccessToken = accessTokenMasked || !!access_token;
-    const hasVerifyToken = !!verify_token;
-    const hasWebhookSecret = webhookSecretMasked || !!webhook_secret;
+    const dbInternal = await getDB();
+    const existingForValidation = await dbInternal
+      .prepare("SELECT access_token, webhook_secret FROM whatsapp_config WHERE id = 1")
+      .first<{ access_token: string | null; webhook_secret: string | null }>();
 
-    if (!hasPhoneId || !hasAccessToken || !hasVerifyToken || !hasWebhookSecret) {
+    const effectiveAccessToken = accessTokenMasked
+      ? existingForValidation?.access_token ?? null
+      : access_token;
+    const effectiveWebhookSecret = webhookSecretMasked
+      ? existingForValidation?.webhook_secret ?? null
+      : webhook_secret;
+
+    if (!phone_number_id || !effectiveAccessToken || !verify_token || !effectiveWebhookSecret) {
       return {
         success: false,
         error:
@@ -428,12 +437,13 @@ export async function sendAdminMessage(
       .prepare(
         "SELECT phone_number_id, access_token FROM whatsapp_config WHERE id = 1"
       )
-      .first<{ phone_number_id: string; access_token: string }>();
+      .first<{ phone_number_id: string | null; access_token: string | null }>();
 
-    if (!config) {
+    if (!config || !config.phone_number_id || !config.access_token) {
       return {
         success: false,
-        error: "Configuration WhatsApp introuvable.",
+        error:
+          "L'intégration API WhatsApp n'est pas configurée. Renseignez phone_number_id et access_token dans la configuration.",
       };
     }
 
