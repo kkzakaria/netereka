@@ -125,31 +125,28 @@ export async function saveWhatsAppConfig(
   const admin_phones_raw = String(formData.get("admin_phones") ?? "").trim();
   const is_active = formData.get("is_active") === "1" ? 1 : 0;
 
-  // Check if secrets are masked (user didn't change them)
-  const isMasked = (val: string) => val.startsWith("••");
-  const accessTokenMasked = isMasked(access_token_raw);
-  const webhookSecretMasked = isMasked(webhook_secret_raw);
+  // Read existing row once — used for mask detection and effective-value validation.
+  const dbForValidation = await getDB();
+  const existingRow = await dbForValidation
+    .prepare("SELECT access_token, webhook_secret FROM whatsapp_config WHERE id = 1")
+    .first<{ access_token: string | null; webhook_secret: string | null }>();
+
+  // Detect masked values by exact equality with the mask we would have sent to the client.
+  // This avoids false positives if a real secret happens to start with bullet characters.
+  const expectedMaskedAccessToken = existingRow?.access_token ? maskSecret(existingRow.access_token) : null;
+  const expectedMaskedWebhookSecret = existingRow?.webhook_secret ? maskSecret(existingRow.webhook_secret) : null;
+  const accessTokenMasked = expectedMaskedAccessToken !== null && access_token_raw === expectedMaskedAccessToken;
+  const webhookSecretMasked = expectedMaskedWebhookSecret !== null && webhook_secret_raw === expectedMaskedWebhookSecret;
 
   // Final values (null if empty, undefined if masked to preserve existing)
   const access_token = accessTokenMasked ? undefined : (access_token_raw || null);
   const verify_token = verify_token_raw || null;
   const webhook_secret = webhookSecretMasked ? undefined : (webhook_secret_raw || null);
 
-  // If bot is being activated, require full API credentials.
-  // For masked values we must check the *effective* value (incoming OR existing DB value),
-  // since a masked prefix doesn't guarantee the DB actually has a valid value.
+  // If bot is being activated, require full API credentials (check effective values against DB).
   if (is_active === 1) {
-    const dbInternal = await getDB();
-    const existingForValidation = await dbInternal
-      .prepare("SELECT access_token, webhook_secret FROM whatsapp_config WHERE id = 1")
-      .first<{ access_token: string | null; webhook_secret: string | null }>();
-
-    const effectiveAccessToken = accessTokenMasked
-      ? existingForValidation?.access_token ?? null
-      : access_token;
-    const effectiveWebhookSecret = webhookSecretMasked
-      ? existingForValidation?.webhook_secret ?? null
-      : webhook_secret;
+    const effectiveAccessToken = accessTokenMasked ? existingRow?.access_token ?? null : access_token;
+    const effectiveWebhookSecret = webhookSecretMasked ? existingRow?.webhook_secret ?? null : webhook_secret;
 
     if (!phone_number_id || !effectiveAccessToken || !verify_token || !effectiveWebhookSecret) {
       return {
@@ -209,10 +206,29 @@ export async function saveWhatsAppConfig(
       if (webhook_secret !== undefined) bindings.push(webhook_secret);
       bindings.push(business_account_id, admin_phones, is_active, now);
 
-      await db
-        .prepare(`UPDATE whatsapp_config SET ${setClauses} WHERE id = 1`)
+      // Atomic guard: when activating the bot, require existing creds to still be non-null
+      // at write time. Prevents a race where another admin nulls a cred between our SELECT
+      // and our UPDATE. The WHERE clauses only apply to masked fields (for unmasked values
+      // we're writing a new value directly, so the constraint is already satisfied).
+      const whereExtras: string[] = [];
+      if (is_active === 1) {
+        if (accessTokenMasked) whereExtras.push("access_token IS NOT NULL");
+        if (webhookSecretMasked) whereExtras.push("webhook_secret IS NOT NULL");
+      }
+      const whereClause = ["id = 1", ...whereExtras].join(" AND ");
+
+      const result = await db
+        .prepare(`UPDATE whatsapp_config SET ${setClauses} WHERE ${whereClause}`)
         .bind(...bindings)
         .run();
+
+      if (is_active === 1 && result.meta.changes === 0) {
+        return {
+          success: false,
+          error:
+            "Impossible d'activer le bot : les identifiants API ont été modifiés entre-temps. Rechargez la page et réessayez.",
+        };
+      }
     } else {
       await db
         .prepare(
