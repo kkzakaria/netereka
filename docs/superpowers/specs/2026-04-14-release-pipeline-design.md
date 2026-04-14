@@ -413,7 +413,7 @@ CLAUDE.md                        (+ section "Release pipeline" avec runbooks con
 | Migration appliquée puis build/deploy échoue | Faible | Forward-only + expand/contract = vieux code (100% du trafic après échec) tolère le nouveau schéma |
 | `release-please` ouvre une Release PR pendant un incident | Faible | Release PR n'auto-merge jamais ; ignorer pendant l'incident |
 | Oubli de promote → version coincée à 10% | Moyenne | Issue "Pending promotion" créée à chaque deploy ; évolution possible vers auto-promote après N heures si récurrent |
-| Cloudflare Versions : historique limité en rétention | À vérifier | **Action** : confirmer la durée de rétention (docs Cloudflare) avant de poser `rollback.yml` comme filet ultime. Si limitée, garder des tags git + re-deploy comme fallback |
+| Cloudflare Versions : historique limité en rétention | À vérifier | **Action** : traité comme **première étape** du plan d'implémentation (confirmer la durée de rétention via docs Cloudflare + test). Si limitée, compléter avec tags git + procédure de re-deploy documentée comme fallback |
 | WhatsApp Worker : pas de canary = casse immédiate visible par Meta | Faible | Smoke check HEAD post-deploy + rollback manuel via `wrangler rollback --config workers/whatsapp/wrangler.jsonc` |
 
 ## Hors scope
