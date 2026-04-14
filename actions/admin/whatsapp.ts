@@ -12,6 +12,7 @@ import type { ActionResult } from "@/lib/utils";
 export interface WhatsAppConfig {
   id: number;
   phone_number_id: string;
+  display_phone_number: string | null;
   access_token: string;
   verify_token: string;
   webhook_secret: string;
@@ -101,6 +102,18 @@ export async function saveWhatsAppConfig(
   await requireAdmin();
 
   const phone_number_id = String(formData.get("phone_number_id") ?? "").trim();
+  const display_phone_number_raw = String(formData.get("display_phone_number") ?? "").trim();
+  // Normalize: keep digits only (strips +, spaces, dashes, dots)
+  const display_phone_number_normalized = display_phone_number_raw.replace(/\D/g, "");
+  const display_phone_number = display_phone_number_normalized || null;
+
+  // Validate E.164-ish format: 8-15 digits (ITU-T E.164 max is 15)
+  if (display_phone_number && !/^\d{8,15}$/.test(display_phone_number)) {
+    return {
+      success: false,
+      error: "Le numéro public doit contenir entre 8 et 15 chiffres (format international, ex: 2250700000001).",
+    };
+  }
   const access_token = String(formData.get("access_token") ?? "").trim();
   const verify_token = String(formData.get("verify_token") ?? "").trim();
   const webhook_secret = String(formData.get("webhook_secret") ?? "").trim();
@@ -163,6 +176,7 @@ export async function saveWhatsAppConfig(
       // For masked secrets, preserve existing DB values
       const setClauses = [
         "phone_number_id = ?",
+        "display_phone_number = ?",
         accessTokenMasked ? "" : "access_token = ?",
         "verify_token = ?",
         webhookSecretMasked ? "" : "webhook_secret = ?",
@@ -172,7 +186,7 @@ export async function saveWhatsAppConfig(
         "updated_at = ?",
       ].filter(Boolean).join(", ");
 
-      const bindings: unknown[] = [phone_number_id];
+      const bindings: unknown[] = [phone_number_id, display_phone_number];
       if (!accessTokenMasked) bindings.push(access_token);
       bindings.push(verify_token);
       if (!webhookSecretMasked) bindings.push(webhook_secret);
@@ -186,12 +200,13 @@ export async function saveWhatsAppConfig(
       await db
         .prepare(
           `INSERT INTO whatsapp_config
-             (id, phone_number_id, access_token, verify_token, webhook_secret,
+             (id, phone_number_id, display_phone_number, access_token, verify_token, webhook_secret,
               business_account_id, admin_phones, is_active, created_at, updated_at)
-           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           phone_number_id,
+          display_phone_number,
           access_token,
           verify_token,
           webhook_secret,
@@ -205,6 +220,7 @@ export async function saveWhatsAppConfig(
     }
 
     revalidatePath("/whatsapp");
+    revalidatePath("/", "layout"); // storefront uses display_phone_number
     return { success: true };
   } catch (error) {
     console.error("[admin/whatsapp] saveWhatsAppConfig error:", error);

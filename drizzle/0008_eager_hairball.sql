@@ -1,0 +1,1 @@
+ALTER TABLE `whatsapp_config` ADD `display_phone_number` text;

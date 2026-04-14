@@ -3,14 +3,14 @@
 import { useCartStore, selectCartSubtotal } from "@/stores/cart-store";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { WhatsappIcon } from "@hugeicons/core-free-icons";
-
-const WHATSAPP_NUMBER = "2250700000000";
+import { useWhatsAppNumber } from "@/components/storefront/whatsapp-number-provider";
 
 export function WhatsAppCartButton() {
+  const whatsappNumber = useWhatsAppNumber();
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore(selectCartSubtotal);
 
-  if (items.length === 0) return null;
+  if (!whatsappNumber || items.length === 0) return null;
 
   const formattedTotal = new Intl.NumberFormat("fr-FR").format(subtotal);
   const itemLines = items
@@ -20,7 +20,7 @@ export function WhatsAppCartButton() {
     )
     .join("\n");
   const message = `Bonjour, je souhaite commander :\n${itemLines}\nTotal : ${formattedTotal} FCFA`;
-  const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+  const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
 
   return (
     <button

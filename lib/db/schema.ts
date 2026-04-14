@@ -413,6 +413,7 @@ export const stores = sqliteTable("stores", {
 export const whatsappConfig = sqliteTable("whatsapp_config", {
   id: integer("id").primaryKey(),
   phone_number_id: text("phone_number_id").notNull(),
+  display_phone_number: text("display_phone_number"),
   access_token: text("access_token").notNull(),
   verify_token: text("verify_token").notNull(),
   webhook_secret: text("webhook_secret").notNull(),
