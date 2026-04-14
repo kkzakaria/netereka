@@ -15,8 +15,9 @@ export const getPublicWhatsAppNumber = cache(async (): Promise<string | null> =>
 
     if (!row || !row.is_active || !row.display_phone_number) return null;
 
-    // Normalize: remove leading + and any spaces
-    return row.display_phone_number.replace(/^\+/, "").replace(/\s/g, "");
+    // Defensive normalization: digits only (DB should already store normalized values)
+    const digits = row.display_phone_number.replace(/\D/g, "");
+    return /^\d{8,15}$/.test(digits) ? digits : null;
   } catch (error) {
     console.error("[whatsapp/public-config] Failed to read display number:", error);
     return null;

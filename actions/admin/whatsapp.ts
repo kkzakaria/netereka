@@ -103,7 +103,17 @@ export async function saveWhatsAppConfig(
 
   const phone_number_id = String(formData.get("phone_number_id") ?? "").trim();
   const display_phone_number_raw = String(formData.get("display_phone_number") ?? "").trim();
-  const display_phone_number = display_phone_number_raw || null;
+  // Normalize: keep digits only (strips +, spaces, dashes, dots)
+  const display_phone_number_normalized = display_phone_number_raw.replace(/\D/g, "");
+  const display_phone_number = display_phone_number_normalized || null;
+
+  // Validate E.164-ish format: 8-15 digits (ITU-T E.164 max is 15)
+  if (display_phone_number && !/^\d{8,15}$/.test(display_phone_number)) {
+    return {
+      success: false,
+      error: "Le numéro public doit contenir entre 8 et 15 chiffres (format international, ex: 2250700000001).",
+    };
+  }
   const access_token = String(formData.get("access_token") ?? "").trim();
   const verify_token = String(formData.get("verify_token") ?? "").trim();
   const webhook_secret = String(formData.get("webhook_secret") ?? "").trim();
