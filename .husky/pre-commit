@@ -14,7 +14,12 @@ echo "🧪 Exécution des tests..."
 npm test
 TEST_EXIT=$?
 
-if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
+echo ""
+echo "🛡  Lint des migrations D1 (expand/contract)..."
+PRE_COMMIT=1 node scripts/check-migration-safety.mjs
+MIGRATION_EXIT=$?
+
+if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ] || [ $MIGRATION_EXIT -ne 0 ]; then
   echo ""
   echo "❌ =============================================="
   echo "❌  COMMIT BLOQUÉ"
@@ -29,6 +34,9 @@ if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
   if [ $TEST_EXIT -ne 0 ]; then
     echo "  → Des tests ont échoué."
   fi
+  if [ $MIGRATION_EXIT -ne 0 ]; then
+    echo "  → Migration D1 non-safe détectée (voir messages ci-dessus)."
+  fi
   echo ""
   echo "  Corrigez ces erreurs avant de commit."
   echo "  NE PAS utiliser --no-verify pour bypasser."
@@ -37,4 +45,4 @@ if [ $TSC_EXIT -ne 0 ] || [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
 fi
 
 echo ""
-echo "✅ Types, lint et tests OK — commit autorisé."
+echo "✅ Types, lint, tests et migrations OK — commit autorisé."
