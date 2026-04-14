@@ -53,6 +53,23 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 defaultValue={config?.phone_number_id ?? ""}
                 placeholder="Ex: 123456789012345"
               />
+              <p className="text-xs text-muted-foreground">
+                ID opaque fourni par Meta (pas le numéro visible). Utilisé pour les appels API.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="display_phone_number">Numéro public (affiché aux clients)</Label>
+              <Input
+                id="display_phone_number"
+                name="display_phone_number"
+                defaultValue={config?.display_phone_number ?? ""}
+                placeholder="Ex: 2250700000001"
+              />
+              <p className="text-xs text-muted-foreground">
+                Numéro WhatsApp Business au format international sans « + » (ex: 2250700000001).
+                Utilisé pour les liens wa.me sur les boutons de la boutique.
+              </p>
             </div>
 
             <div className="space-y-2">

@@ -22,6 +22,4 @@ interface CloudflareEnv {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string; // defaults to "NETEREKA <commandes@netereka.ci>"
 
-  // WhatsApp (public — exposed to client)
-  NEXT_PUBLIC_WHATSAPP_NUMBER?: string; // E.164 format without +, e.g. "2250700000001"
 }

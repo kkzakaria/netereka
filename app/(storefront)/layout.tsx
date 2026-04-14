@@ -3,6 +3,8 @@ import { preload } from "react-dom";
 import { Header } from "@/components/storefront/header";
 import { Footer } from "@/components/storefront/footer";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
+import { WhatsAppNumberProvider } from "@/components/storefront/whatsapp-number-provider";
+import { getPublicWhatsAppNumber } from "@/lib/whatsapp/public-config";
 
 const R2_URL = process.env.NEXT_PUBLIC_R2_URL;
 const HERO_WIDTHS = [256, 384, 640, 750, 828, 1080, 1200];
@@ -31,13 +33,14 @@ export default async function StorefrontLayout({
   children: React.ReactNode;
 }) {
   await maybePreloadHero();
+  const whatsappNumber = await getPublicWhatsAppNumber();
 
   return (
-    <>
+    <WhatsAppNumberProvider value={whatsappNumber}>
       <Header />
       <main className="min-h-[calc(100dvh-8rem)]">{children}</main>
       <Footer />
       <CartDrawer />
-    </>
+    </WhatsAppNumberProvider>
   );
 }
