@@ -11,12 +11,15 @@
  *   node scripts/check-migration-safety.mjs [--files file1.sql file2.sql]
  *
  * If --files is not provided, detects new files automatically from git diff
- * depending on context (PR, pre-commit, push to main, or fallback to all).
+ * depending on context (PR base, pre-commit staged, or last commit). If no
+ * strategy applies we skip rather than lint history — historical migrations
+ * predate the current rules and re-flagging them would create noise.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { resolve, relative } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * Pattern definitions. Case-insensitive, matched against each file's content.
@@ -217,7 +220,12 @@ function main() {
   process.exit(hasError ? 1 : 0);
 }
 
-// Only run when invoked as entry point, not when imported for tests
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Only run when invoked as entry point, not when imported for tests.
+// Use pathToFileURL + realpathSync to handle Windows paths and symlinks
+// correctly (naive `file://${argv[1]}` breaks on Windows backslashes).
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+) {
   main();
 }
