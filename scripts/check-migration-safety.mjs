@@ -96,9 +96,17 @@ export function analyze(content) {
     return { violations: [], bypass };
   }
 
+  // Strip SQL comments before pattern matching, so narrative text like
+  // "-- TODO: next PR will DROP TABLE foo" in a comment doesn't trigger a
+  // false positive. The bypass marker check above already ran against the
+  // raw content, so stripping here is safe.
+  const stripped = content
+    .replace(/--.*$/gm, "") // line comments
+    .replace(/\/\*[\s\S]*?\*\//g, ""); // block comments
+
   const violations = [];
   for (const pattern of PATTERNS) {
-    if (pattern.regex.test(content)) {
+    if (pattern.regex.test(stripped)) {
       violations.push({
         patternId: pattern.id,
         level: pattern.level,
@@ -135,7 +143,7 @@ function detectNewFiles() {
       const baseRef = process.env.GITHUB_BASE_REF;
       if (!baseRef) return null;
       return execSync(
-        `git diff --name-only --diff-filter=A origin/${baseRef}...HEAD -- 'drizzle/*.sql'`,
+        `git diff --name-only --diff-filter=A origin/${baseRef}...HEAD -- "drizzle/*.sql"`,
         { encoding: "utf-8" }
       );
     },
@@ -145,14 +153,14 @@ function detectNewFiles() {
         return null;
       }
       return execSync(
-        `git diff --name-only --diff-filter=A --cached -- 'drizzle/*.sql'`,
+        `git diff --name-only --diff-filter=A --cached -- "drizzle/*.sql"`,
         { encoding: "utf-8" }
       );
     },
     // Last commit (push context or local manual run)
     () =>
       execSync(
-        `git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'drizzle/*.sql'`,
+        `git diff --name-only --diff-filter=A HEAD~1 HEAD -- "drizzle/*.sql"`,
         { encoding: "utf-8" }
       ),
   ];

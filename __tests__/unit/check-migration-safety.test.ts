@@ -84,6 +84,29 @@ ALTER TABLE products DROP COLUMN old_field;`;
     expect(violations.map((v: { patternId: string }) => v.patternId)).toContain("drop-column");
   });
 
+  it("ignores dangerous keywords inside SQL line comments", () => {
+    // A narrative comment must not trigger a false positive.
+    const sql = `-- TODO: follow-up PR will DROP TABLE legacy_items
+ALTER TABLE products ADD COLUMN notes TEXT;`;
+    const { violations } = analyze(sql);
+    expect(violations).toEqual([]);
+  });
+
+  it("ignores dangerous keywords inside SQL block comments", () => {
+    const sql = `/* Historical note: we used to DROP COLUMN price
+   before we adopted expand/contract. */
+ALTER TABLE products ADD COLUMN notes TEXT;`;
+    const { violations } = analyze(sql);
+    expect(violations).toEqual([]);
+  });
+
+  it("still catches the real statement when a harmless comment appears alongside", () => {
+    const sql = `-- This migration drops the old column after PR #42
+ALTER TABLE products DROP COLUMN old_field;`;
+    const { violations } = analyze(sql);
+    expect(violations.map((v: { patternId: string }) => v.patternId)).toContain("drop-column");
+  });
+
   it("exports the expected pattern IDs", () => {
     const ids = PATTERNS.map((p: { id: string }) => p.id).sort();
     expect(ids).toEqual(
