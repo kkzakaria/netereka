@@ -125,38 +125,6 @@ export async function saveWhatsAppConfig(
   const admin_phones_raw = String(formData.get("admin_phones") ?? "").trim();
   const is_active = formData.get("is_active") === "1" ? 1 : 0;
 
-  // Read existing row once — used for mask detection and effective-value validation.
-  const dbForValidation = await getDB();
-  const existingRow = await dbForValidation
-    .prepare("SELECT access_token, webhook_secret FROM whatsapp_config WHERE id = 1")
-    .first<{ access_token: string | null; webhook_secret: string | null }>();
-
-  // Detect masked values by exact equality with the mask we would have sent to the client.
-  // This avoids false positives if a real secret happens to start with bullet characters.
-  const expectedMaskedAccessToken = existingRow?.access_token ? maskSecret(existingRow.access_token) : null;
-  const expectedMaskedWebhookSecret = existingRow?.webhook_secret ? maskSecret(existingRow.webhook_secret) : null;
-  const accessTokenMasked = expectedMaskedAccessToken !== null && access_token_raw === expectedMaskedAccessToken;
-  const webhookSecretMasked = expectedMaskedWebhookSecret !== null && webhook_secret_raw === expectedMaskedWebhookSecret;
-
-  // Final values (null if empty, undefined if masked to preserve existing)
-  const access_token = accessTokenMasked ? undefined : (access_token_raw || null);
-  const verify_token = verify_token_raw || null;
-  const webhook_secret = webhookSecretMasked ? undefined : (webhook_secret_raw || null);
-
-  // If bot is being activated, require full API credentials (check effective values against DB).
-  if (is_active === 1) {
-    const effectiveAccessToken = accessTokenMasked ? existingRow?.access_token ?? null : access_token;
-    const effectiveWebhookSecret = webhookSecretMasked ? existingRow?.webhook_secret ?? null : webhook_secret;
-
-    if (!phone_number_id || !effectiveAccessToken || !verify_token || !effectiveWebhookSecret) {
-      return {
-        success: false,
-        error:
-          "Pour activer le bot, renseignez phone_number_id, access_token, verify_token et webhook_secret.",
-      };
-    }
-  }
-
   // Validate admin_phones is a valid JSON array (if provided)
   let admin_phones = "[]";
   if (admin_phones_raw) {
@@ -181,10 +149,38 @@ export async function saveWhatsAppConfig(
     const db = await getDB();
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
-    // Check if config row exists
-    const existing = await db
-      .prepare("SELECT id FROM whatsapp_config WHERE id = 1")
-      .first<{ id: number }>();
+    // Read existing row once — used for mask detection, validation, and existence check.
+    const existingRow = await db
+      .prepare("SELECT id, access_token, webhook_secret FROM whatsapp_config WHERE id = 1")
+      .first<{ id: number; access_token: string | null; webhook_secret: string | null }>();
+
+    // Detect masked values by exact equality with the mask we would have sent to the client.
+    // Avoids false positives if a real secret happens to start with bullet characters.
+    const expectedMaskedAccessToken = existingRow?.access_token ? maskSecret(existingRow.access_token) : null;
+    const expectedMaskedWebhookSecret = existingRow?.webhook_secret ? maskSecret(existingRow.webhook_secret) : null;
+    const accessTokenMasked = expectedMaskedAccessToken !== null && access_token_raw === expectedMaskedAccessToken;
+    const webhookSecretMasked = expectedMaskedWebhookSecret !== null && webhook_secret_raw === expectedMaskedWebhookSecret;
+
+    // Final values (null if empty, undefined if masked to preserve existing)
+    const access_token = accessTokenMasked ? undefined : (access_token_raw || null);
+    const verify_token = verify_token_raw || null;
+    const webhook_secret = webhookSecretMasked ? undefined : (webhook_secret_raw || null);
+
+    // If bot is being activated, require full API credentials (check effective values against DB).
+    if (is_active === 1) {
+      const effectiveAccessToken = accessTokenMasked ? existingRow?.access_token ?? null : access_token;
+      const effectiveWebhookSecret = webhookSecretMasked ? existingRow?.webhook_secret ?? null : webhook_secret;
+
+      if (!phone_number_id || !effectiveAccessToken || !verify_token || !effectiveWebhookSecret || !business_account_id) {
+        return {
+          success: false,
+          error:
+            "Pour activer le bot, renseignez phone_number_id, access_token, verify_token, webhook_secret et business_account_id.",
+        };
+      }
+    }
+
+    const existing = existingRow ? { id: existingRow.id } : null;
 
     if (existing) {
       // For masked secrets (access_token/webhook_secret = undefined), preserve existing DB values
