@@ -15,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -32,10 +34,16 @@ jobs:
       - name: Tests
         run: npm test
 
+      - name: Migration safety lint
+        run: node scripts/check-migration-safety.mjs
+
   deploy:
-    name: Deploy to Cloudflare Workers
+    name: Deploy to Cloudflare (canary 10%)
     needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
 
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +55,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Run D1 migrations
+      - name: Run D1 migrations (expand phase)
         run: bash scripts/migrate.sh --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -61,16 +69,125 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+      - name: Capture currently-active version (before upload)
+        id: current
+        run: |
+          # Fetch the current deployment. Fail closed on wrangler errors (auth,
+          # network, Cloudflare API down) — otherwise we'd misclassify a transient
+          # failure as "fresh worker" and push the new version to 100% directly,
+          # skipping the canary. A clean empty-list result is a legitimate bootstrap.
+          set -o pipefail
+          if ! DEPLOYMENTS_JSON=$(npx wrangler deployments list --json 2>&1); then
+            echo "ERROR: 'wrangler deployments list' failed. Aborting to avoid " \
+                 "silently bootstrapping over an existing deployment."
+            echo "wrangler output was:"
+            echo "$DEPLOYMENTS_JSON"
+            exit 1
+          fi
+          # Pick the baseline version:
+          # 1) Preferred: the version currently at 100% (clean state after a completed promote).
+          # 2) Fallback: the version with the highest traffic share (handles the case where a
+          #    previous canary 10/90 was never promoted — we treat the 90% as baseline).
+          # 3) Empty string → triggers bootstrap mode at 100%.
+          PREV_ID=$(echo "$DEPLOYMENTS_JSON" | jq -r '
+            if (. | length) == 0 then ""
+            else
+              (.[0].versions // [])
+              | (map(select((.percentage // 0) == 100)) | .[0].version_id)
+                // (max_by(.percentage // 0).version_id)
+                // ""
+            end
+          ')
+          echo "previous_version_id=${PREV_ID}" >> "$GITHUB_OUTPUT"
+          if [ -z "$PREV_ID" ]; then
+            echo "No active deployment found — will bootstrap at 100%."
+          else
+            echo "Previous active version: $PREV_ID"
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Seed hero LCP preload KV
+      - name: Upload new version
+        id: upload
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          OUTPUT=$(npx wrangler versions upload \
+            --tag "sha-${SHORT_SHA}" \
+            --message "${COMMIT_MSG}" 2>&1)
+          echo "$OUTPUT"
+          # Parse version ID (wrangler prints "Worker Version ID: <uuid>")
+          VERSION_ID=$(echo "$OUTPUT" | grep -oE "Worker Version ID:[[:space:]]+[a-f0-9-]+" | awk '{print $NF}')
+          if [ -z "$VERSION_ID" ]; then
+            echo "ERROR: could not parse version ID from wrangler output"
+            exit 1
+          fi
+          echo "version_id=$VERSION_ID" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Determine deploy strategy (canary vs bootstrap)
+        id: strategy
+        run: |
+          if [ -z "${{ steps.current.outputs.previous_version_id }}" ]; then
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=canary" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy at 100% (bootstrap)
+        if: steps.strategy.outputs.mode == 'bootstrap'
+        run: |
+          npx wrangler versions deploy "${{ steps.upload.outputs.version_id }}@100%" --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy at 10% (canary)
+        if: steps.strategy.outputs.mode == 'canary'
+        run: |
+          npx wrangler versions deploy \
+            "${{ steps.upload.outputs.version_id }}@10%" \
+            "${{ steps.current.outputs.previous_version_id }}@90%" --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Seed hero LCP preload KV (bootstrap only)
+        if: steps.strategy.outputs.mode == 'bootstrap'
         run: node scripts/seed-hero-preload.js
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEXT_PUBLIC_R2_URL: ${{ vars.NEXT_PUBLIC_R2_URL }}
+
+      - name: Create pending-promotion issue (canary)
+        if: steps.strategy.outputs.mode == 'canary'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const versionId = "${{ steps.upload.outputs.version_id }}";
+            const shortSha = "${{ steps.upload.outputs.short_sha }}";
+            const body = [
+              `New version deployed at **10%** of traffic.`,
+              ``,
+              `- Version ID : \`${versionId}\``,
+              `- Commit : ${context.sha}`,
+              `- Short SHA : \`${shortSha}\``,
+              ``,
+              `**Promote to 100%** :`,
+              `Actions → [promote.yml](../../actions/workflows/promote.yml) → Run workflow with \`version_id=${versionId}\`.`,
+              ``,
+              `**Rollback** :`,
+              `Actions → [rollback.yml](../../actions/workflows/rollback.yml).`,
+            ].join("\n");
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Pending promotion — sha-${shortSha}`,
+              body,
+              labels: ["release-pipeline", "pending-promotion"],
+            });
