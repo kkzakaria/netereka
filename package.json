@@ -10,6 +10,7 @@
     "deploy": "npm run build:worker && npx wrangler deploy",
     "start": "next start",
     "lint": "eslint",
+    "commitlint": "commitlint --edit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -79,6 +80,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260131.0",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
