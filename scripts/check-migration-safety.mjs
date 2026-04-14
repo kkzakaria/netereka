@@ -116,6 +116,16 @@ function detectNewFiles() {
     return process.argv.slice(argsIdx + 1);
   }
 
+  // Each strategy returns:
+  //   - `null` if it doesn't apply (try next)
+  //   - a string (possibly empty) if it ran successfully
+  //
+  // The first strategy that applies is trusted — including when it reports
+  // zero new files. We intentionally do NOT fall back to "lint every file
+  // in drizzle/" because historical migrations are out of scope for the
+  // current rules, and re-flagging them on every unrelated commit creates
+  // noise (and false positives on patterns like Drizzle's SQLite
+  // column-rename emulation).
   const strategies = [
     // PR context
     () => {
@@ -128,46 +138,36 @@ function detectNewFiles() {
     },
     // Pre-commit (staged files)
     () => {
-      if (process.env.HUSKY_GIT_PARAMS || process.env.PRE_COMMIT === "1") {
-        return execSync(
-          `git diff --name-only --diff-filter=A --cached -- 'drizzle/*.sql'`,
-          { encoding: "utf-8" }
-        );
+      if (!process.env.HUSKY_GIT_PARAMS && process.env.PRE_COMMIT !== "1") {
+        return null;
       }
-      return null;
-    },
-    // Push to main
-    () => {
       return execSync(
-        `git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'drizzle/*.sql'`,
+        `git diff --name-only --diff-filter=A --cached -- 'drizzle/*.sql'`,
         { encoding: "utf-8" }
       );
     },
+    // Last commit (push context or local manual run)
+    () =>
+      execSync(
+        `git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'drizzle/*.sql'`,
+        { encoding: "utf-8" }
+      ),
   ];
 
   for (const strategy of strategies) {
     try {
       const output = strategy();
-      if (output !== null && output.trim()) {
-        return output.trim().split("\n").filter(Boolean);
-      }
+      if (output === null) continue;
+      return output.trim().split("\n").filter(Boolean);
     } catch {
       continue;
     }
   }
 
-  // Fallback : tous les fichiers drizzle/*.sql (safe mais verbeux)
-  try {
-    const all = execSync(`ls drizzle/*.sql 2>/dev/null || true`, {
-      encoding: "utf-8",
-    });
-    console.warn(
-      "[migration-safety] Aucune base de diff détectée, lint de tous les fichiers drizzle/*.sql"
-    );
-    return all.trim().split("\n").filter(Boolean);
-  } catch {
-    return [];
-  }
+  console.warn(
+    "[migration-safety] Aucune stratégie de détection applicable — skip."
+  );
+  return [];
 }
 
 function main() {
