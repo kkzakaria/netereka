@@ -27,11 +27,21 @@ jobs:
 
       - run: npm ci
 
+      # The root package.json installs @opennextjs/cloudflare for the main
+      # storefront worker. Wrangler auto-detects OpenNext when it finds
+      # (next.config.*, open-next.config.*, @opennextjs/cloudflare) at the
+      # project root, and intercepts `wrangler deploy` to call
+      # `opennextjs-cloudflare deploy` instead — which looks for a compiled
+      # `.open-next/worker.js` that doesn't exist for this Worker.
+      # OPEN_NEXT_DEPLOY=1 short-circuits that delegation (wrangler's
+      # `getOpenNextDeployFromEnv()` reads it) so the WhatsApp worker deploys
+      # as a plain wrangler Worker, which is what we want.
       - name: Deploy
         run: npx wrangler deploy --config workers/whatsapp/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OPEN_NEXT_DEPLOY: "1"
 
       # Meta's webhook endpoint must respond to HEAD/GET. A successful deploy
       # should answer 200 (verify callback handler) or 405 (method not allowed
