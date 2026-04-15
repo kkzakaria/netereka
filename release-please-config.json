@@ -1,0 +1,24 @@
+{
+  "release-type": "node",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "netereka",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
+    }
+  },
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Refactoring" },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "chore", "hidden": true },
+    { "type": "ci", "hidden": true },
+    { "type": "test", "hidden": true },
+    { "type": "style", "hidden": true }
+  ]
+}
