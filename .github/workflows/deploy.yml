@@ -84,7 +84,15 @@ jobs:
             echo "$DEPLOYMENTS_JSON"
             exit 1
           fi
-          # Pick the baseline version:
+          # Pick the baseline version from the MOST RECENT deployment.
+          #
+          # `wrangler deployments list --json` returns deployments in ASCENDING
+          # order (oldest first). `.[0]` would give us the very first deploy
+          # ever made — a critical bug that caused a canary to route 90% of
+          # traffic to a 2-day-old version. Sort explicitly by `created_on`
+          # descending and take the most recent.
+          #
+          # Selection within that deployment:
           # 1) Preferred: the version currently at 100% (clean state after a completed promote).
           # 2) Fallback: the version with the highest traffic share (handles the case where a
           #    previous canary 10/90 was never promoted — we treat the 90% as baseline).
@@ -92,7 +100,7 @@ jobs:
           PREV_ID=$(echo "$DEPLOYMENTS_JSON" | jq -r '
             if (. | length) == 0 then ""
             else
-              (.[0].versions // [])
+              (sort_by(.created_on) | reverse | .[0].versions // [])
               | (map(select((.percentage // 0) == 100)) | .[0].version_id)
                 // (max_by(.percentage // 0).version_id)
                 // ""
