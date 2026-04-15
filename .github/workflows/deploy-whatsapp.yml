@@ -1,0 +1,60 @@
+name: Deploy WhatsApp Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/whatsapp/**"
+      - ".github/workflows/deploy-whatsapp.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-whatsapp
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy WhatsApp Worker to Cloudflare
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Deploy
+        run: npx wrangler deploy --config workers/whatsapp/wrangler.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Meta's webhook endpoint must respond to HEAD/GET. A successful deploy
+      # should answer 200 (verify callback handler) or 405 (method not allowed
+      # if only POST is implemented for that route) — both indicate the Worker
+      # is alive. Anything else (5xx, timeout, DNS failure) is a regression.
+      - name: Smoke check — webhook responds
+        env:
+          WHATSAPP_WORKER_URL: ${{ vars.WHATSAPP_WORKER_URL }}
+        run: |
+          if [ -z "$WHATSAPP_WORKER_URL" ]; then
+            echo "⚠  WHATSAPP_WORKER_URL repo variable not set, skipping smoke check."
+            echo "   Configure it in Settings → Secrets and variables → Actions → Variables."
+            exit 0
+          fi
+          # Retry 3 times with backoff — Cloudflare edge propagation can take a few seconds
+          for i in 1 2 3; do
+            CODE=$(curl -sI -o /dev/null -w "%{http_code}" -X HEAD "${WHATSAPP_WORKER_URL}/webhook" || echo "000")
+            if [ "$CODE" = "200" ] || [ "$CODE" = "405" ]; then
+              echo "✅ Smoke check OK (HTTP $CODE)"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $CODE, retrying in 5s..."
+            sleep 5
+          done
+          echo "❌ Smoke check failed after 3 attempts"
+          exit 1
