@@ -187,11 +187,25 @@ Two-tier config in `whatsapp_config` table:
 - **`display_phone_number`** (public): drives storefront `wa.me` buttons. Independent of `is_active` — buttons appear whenever this is set.
 - **`phone_number_id`, `access_token`, `verify_token`, `webhook_secret`, `business_account_id`** (API): required only when `is_active=1` to enable the conversational bot.
 
-The Worker (`workers/whatsapp/`) is a separate Cloudflare Worker — deploy with `npm run whatsapp:deploy`. It must respond to Meta webhooks in <5s, so message processing uses `ctx.waitUntil()`.
+The Worker (`workers/whatsapp/`) is a separate Cloudflare Worker — CD is wired via `.github/workflows/deploy-whatsapp.yml` (path-filtered on `workers/whatsapp/**`). For manual re-deploys without a code change, use Actions → "Deploy WhatsApp Worker" → Run workflow. Locally : `npm run whatsapp:deploy`. It must respond to Meta webhooks in <5s, so message processing uses `ctx.waitUntil()`.
 
 Public number flow: `getPublicWhatsAppNumber()` (server, React-cached) → `WhatsAppNumberProvider` in `app/(storefront)/layout.tsx` → `useWhatsAppNumber()` hook in client buttons.
 
 Masked secret pattern: admin config form shows secrets as `••••••••` + last 4 chars. Detect "unchanged" on save by exact equality against the expected mask (not `startsWith("••")`), otherwise a real secret starting with bullets gets silently discarded.
+
+## Release Pipeline
+
+Full reference : **[`docs/RELEASE_PIPELINE.md`](./docs/RELEASE_PIPELINE.md)**.
+
+Quick mental model :
+
+- **Deploy** (each merge on `main`) ≠ **Promote** (manual, canary 10% → 100%) ≠ **Release** (merge a release-please PR → SemVer tag + CHANGELOG).
+- Six workflows : `ci.yml`, `deploy.yml` (canary 10/90), `promote.yml`, `rollback.yml`, `deploy-whatsapp.yml`, `release-please.yml`.
+- Migrations must be backward-compatible (expand/contract). `scripts/check-migration-safety.mjs` blocks `DROP COLUMN / DROP TABLE / RENAME COLUMN / ALTER NOT NULL without DEFAULT / DROP UNIQUE INDEX` in pre-commit and CI. Bypass marker : `-- migration-safety: acknowledged reason="..."`.
+- Conventional Commits required (enforced via commitlint `commit-msg` hook). Scopes : `storefront / admin / whatsapp / auth / db / seo / claude / ci / deps / release`.
+- Local tooling : `npm run rollback`, `npm run promote`, `npm run versions:list`, `npm run check:migrations`.
+
+Always prefer the GitHub workflows (`promote.yml` / `rollback.yml`) over `wrangler` CLI or the Cloudflare dashboard : the workflows audit-trail the action, re-seed the hero KV on promote, and auto-close the "Pending promotion" issue.
 
 ## Reference Documents
 
@@ -199,6 +213,7 @@ Masked secret pattern: admin config form shows secrets as `•••••••
 - `NETEREKA_Design_System.md` — Colors, typography, spacing, component specs
 - `NETEREKA_Plan_Developpement.md` — 4-week development timeline with task tracking and checklists
 - `NETEREKA_Homepage_Concept.jsx` — Homepage component prototype
+- `docs/RELEASE_PIPELINE.md` — Deploy / promote / rollback / release runbooks and workflow reference
 
 ## MCP Servers
 
