@@ -97,7 +97,7 @@ Six GitHub Actions workflows implement the pipeline.
 
 ### A. Ship a feature (nominal)
 
-```
+```text
 1. git checkout -b feat/<feature-name>
 2. Code, test locally (`npm run dev` / `npm run preview`)
 3. git commit
@@ -142,7 +142,7 @@ After either path, document the incident (if not auto-created by the workflow) �
 
 Weekly cadence or whenever there's material to ship officially.
 
-```
+```text
 1. Open the "chore: release main" Release PR
    (maintained by release-please, refreshed every push)
 2. Review the generated CHANGELOG.md and version bump
@@ -184,7 +184,9 @@ Split destructive changes into **2 or 3 PRs** :
 
 ### E. Deploy only the WhatsApp Worker
 
-**Automatic** : any push to `main` touching `workers/whatsapp/**` triggers `deploy-whatsapp.yml` automatically. No other deploy path runs.
+**Automatic** : any push to `main` touching `workers/whatsapp/**` triggers `deploy-whatsapp.yml`.
+
+**Note on concurrent workflows** : `deploy.yml` always runs on every push to `main` (it's not path-filtered), and `deploy-whatsapp.yml` runs in addition when the path filter matches. The two workflows have separate `concurrency` groups (`deploy` vs `deploy-whatsapp`) and touch different Cloudflare Workers, so they run in parallel without interfering.
 
 **Manual** (e.g. re-deploy without a code change) :
 - Actions → "Deploy WhatsApp Worker" → Run workflow
@@ -242,7 +244,7 @@ The script logs the acknowledgement and skips the file entirely. `git blame` pre
 
 Required format enforced by commitlint (Husky `commit-msg` hook) :
 
-```
+```text
 <type>(<scope>): <subject>
 
 [optional body]

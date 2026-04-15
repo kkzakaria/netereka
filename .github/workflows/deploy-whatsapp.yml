@@ -46,9 +46,16 @@ jobs:
             echo "   Configure it in Settings → Secrets and variables → Actions → Variables."
             exit 0
           fi
-          # Retry 3 times with backoff — Cloudflare edge propagation can take a few seconds
+          # Retry 3 times with backoff — Cloudflare edge propagation can take a few seconds.
+          # Hard timeouts (connect 5s, total 10s) prevent a hung connection from burning the
+          # whole GitHub Actions runtime before the retries kick in. Strip any trailing slash
+          # from the URL so `<url>/webhook` stays well-formed regardless of how the variable
+          # is set in repo settings.
           for i in 1 2 3; do
-            CODE=$(curl -sI -o /dev/null -w "%{http_code}" -X HEAD "${WHATSAPP_WORKER_URL}/webhook" || echo "000")
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+              --connect-timeout 5 \
+              --max-time 10 \
+              -X HEAD "${WHATSAPP_WORKER_URL%/}/webhook" || echo "000")
             if [ "$CODE" = "200" ] || [ "$CODE" = "405" ]; then
               echo "✅ Smoke check OK (HTTP $CODE)"
               exit 0
