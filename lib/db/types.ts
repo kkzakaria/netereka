@@ -10,6 +10,23 @@ export interface Category {
   created_at: string;
 }
 
+export interface ProductHighlight {
+  icon: string;
+  label: string;
+}
+
+export interface ProductFeatureBlock {
+  title: string;
+  body: string;
+  image_url?: string | null;
+  image_alt?: string | null;
+}
+
+export interface ProductFaqItem {
+  question: string;
+  answer: string;
+}
+
 export interface Product {
   id: string;
   category_id: string | null;
@@ -29,6 +46,10 @@ export interface Product {
   weight_grams: number | null;
   meta_title: string | null;
   meta_description: string | null;
+  tagline: string | null;
+  highlights: ProductHighlight[] | null;
+  feature_blocks: ProductFeatureBlock[] | null;
+  faq: ProductFaqItem[] | null;
   is_draft: number;
   created_at: string;
   updated_at: string;
