@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/kkzakaria/netereka/compare/v1.7.0...v1.7.1) (2026-04-16)
+
+
+### Documentation
+
+* **claude:** capture release pipeline operational lessons ([#167](https://github.com/kkzakaria/netereka/issues/167)) ([10da99c](https://github.com/kkzakaria/netereka/commit/10da99c0a3432f8e97a1e04548ad913df7be448b))
+
 ## [1.7.0](https://github.com/kkzakaria/netereka/compare/v1.6.0...v1.7.0) (2026-04-16)
 
 Accumulation de 2 mois de développement depuis `v1.6.0` (2026-02-24) : 82 commits regroupés en une seule release. Les sections ci-dessous thématisent le travail ; la liste exhaustive originale reste accessible via le `git log v1.6.0..v1.7.0`.
