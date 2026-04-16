@@ -64,14 +64,14 @@ export function ProductCardActions({ product }: Props) {
   return (
     <>
       <div
-        className="flex items-center gap-2 border-t px-3 py-2"
+        className="flex flex-col gap-1.5 border-t px-3 py-2 sm:flex-row sm:items-center sm:gap-2"
         onClick={(e) => e.stopPropagation()}
       >
         <Button
           size="lg"
           variant={isOutOfStock ? "outline" : "default"}
           disabled={isOutOfStock}
-          className="flex-1"
+          className="w-full order-last sm:order-none sm:w-auto sm:flex-1"
           onClick={handleCartClick}
           aria-label={
             isOutOfStock
@@ -83,16 +83,19 @@ export function ProductCardActions({ product }: Props) {
           {isOutOfStock ? "Rupture de stock" : "Ajouter"}
         </Button>
 
-        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-          <WhatsAppProductButton
-            productName={product.name}
-            price={product.base_price}
-            slug={product.slug}
-            variant="icon"
-          />
-        </div>
-        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-          <WishlistButtonDynamic productId={product.id} />
+        <div className="flex gap-1.5 sm:contents">
+          <div className="flex-1 sm:flex-none" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+            <WhatsAppProductButton
+              productName={product.name}
+              price={product.base_price}
+              slug={product.slug}
+              variant="icon"
+              className="w-full sm:w-8"
+            />
+          </div>
+          <div className="flex-1 sm:flex-none" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+            <WishlistButtonDynamic productId={product.id} className="w-full sm:w-8" />
+          </div>
         </div>
       </div>
 
