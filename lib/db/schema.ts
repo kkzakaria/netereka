@@ -156,6 +156,10 @@ export const products = sqliteTable("products", {
   weight_grams: integer("weight_grams"),
   meta_title: text("meta_title"),
   meta_description: text("meta_description"),
+  tagline: text("tagline"),
+  highlights: text("highlights"),
+  feature_blocks: text("feature_blocks"),
+  faq: text("faq"),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
   updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
 }, (table) => [
