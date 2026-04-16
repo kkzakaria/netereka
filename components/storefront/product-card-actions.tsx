@@ -64,14 +64,14 @@ export function ProductCardActions({ product }: Props) {
   return (
     <>
       <div
-        className="flex items-center gap-2 border-t px-3 py-2"
+        className="flex items-center gap-1.5 border-t px-3 py-2"
         onClick={(e) => e.stopPropagation()}
       >
         <Button
           size="lg"
           variant={isOutOfStock ? "outline" : "default"}
           disabled={isOutOfStock}
-          className="flex-1"
+          className="min-w-0 flex-1"
           onClick={handleCartClick}
           aria-label={
             isOutOfStock
@@ -80,7 +80,7 @@ export function ProductCardActions({ product }: Props) {
           }
         >
           <HugeiconsIcon icon={ShoppingCart02Icon} size={16} />
-          {isOutOfStock ? "Rupture de stock" : "Ajouter"}
+          <span className="truncate">{isOutOfStock ? "Épuisé" : "Ajouter"}</span>
         </Button>
 
         <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
