@@ -6,6 +6,7 @@ import { authClient } from "@/lib/auth/client";
 import { WishlistButton } from "@/components/storefront/wishlist-button";
 import { checkWishlist } from "@/actions/wishlist";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const AuthDialog = dynamic(
   () =>
@@ -23,7 +24,7 @@ function prefetchAuthDialog(): void {
   void import("@/components/storefront/auth-dialog").catch(() => {});
 }
 
-export function WishlistButtonDynamic({ productId }: { productId: string }) {
+export function WishlistButtonDynamic({ productId, className }: { productId: string; className?: string }) {
   const session = authClient.useSession();
   const [isWishlisted, setIsWishlisted] = useState<boolean | undefined>(undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -47,6 +48,7 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
         productId={productId}
         isWishlisted={isWishlisted}
         onToggled={setIsWishlisted}
+        className={className}
       />
     );
   }
@@ -59,7 +61,7 @@ export function WishlistButtonDynamic({ productId }: { productId: string }) {
           type="button"
           size="icon-lg"
           variant="outline"
-          className="hover:text-destructive hover:border-destructive/50"
+          className={cn("hover:text-destructive hover:border-destructive/50", className)}
           onMouseEnter={prefetchAuthDialog}
           onFocus={prefetchAuthDialog}
           onClick={(e) => {

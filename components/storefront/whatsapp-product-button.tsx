@@ -3,6 +3,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { WhatsappIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useWhatsAppNumber } from "@/components/storefront/whatsapp-number-provider";
 
 interface Props {
@@ -10,9 +11,10 @@ interface Props {
   price: number;
   slug: string;
   variant?: "icon" | "full";
+  className?: string;
 }
 
-export function WhatsAppProductButton({ productName, price, slug, variant = "icon" }: Props) {
+export function WhatsAppProductButton({ productName, price, slug, variant = "icon", className }: Props) {
   const whatsappNumber = useWhatsAppNumber();
   if (!whatsappNumber) return null;
 
@@ -28,7 +30,13 @@ export function WhatsAppProductButton({ productName, price, slug, variant = "ico
 
   if (variant === "icon") {
     return (
-      <Button size="icon-lg" variant="outline" onClick={handleClick} aria-label={`Commander sur WhatsApp: ${productName}`} className="border-[#25D366] text-[#25D366] hover:bg-[#25D366]/10">
+      <Button
+        size="icon-lg"
+        variant="outline"
+        onClick={handleClick}
+        aria-label={`Commander sur WhatsApp: ${productName}`}
+        className={cn("border-[#25D366] text-[#25D366] hover:bg-[#25D366]/10", className)}
+      >
         <HugeiconsIcon icon={WhatsappIcon} size={18} />
       </Button>
     );
