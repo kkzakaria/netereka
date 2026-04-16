@@ -158,6 +158,10 @@ Wrangler config: `wrangler.jsonc` (not `.toml`).
 - **`.claude/settings.local.json` drift:** This file is modified by tool-permission prompts and will block `gh pr merge` with "local changes would be overwritten". Stash before merging: `git stash push -- .claude/settings.local.json`.
 - **Untracked AI tool folders:** The repo root has many untracked `.agent/`, `.kilocode/`, `.crush/`, etc. folders (AI tool configs). Don't use `git add -A` for feature PRs — it bundles them all. Use targeted `git add <specific paths>` instead.
 - **Nullable column type sync:** When making a Drizzle column nullable, grep for every `.first<{ ... }>` and `.all<{ ... }>` type parameter referencing that column and update to `string | null`. TypeScript won't catch these type lies and nulls will silently reach runtime (e.g. `fetch('.../v21.0/null/messages')`).
+- **Commitlint scope enum:** the `commit-msg` hook rejects unknown scopes. Allowed: `storefront | admin | whatsapp | auth | db | seo | claude | ci | deps | release`. For CI/CD tooling commits use `ci` (not `scripts`, `tooling`, etc. — they're not in the enum).
+- **WhatsApp Worker deploy needs `OPEN_NEXT_DEPLOY=1`:** Wrangler auto-detects OpenNext projects (presence of `next.config.*` + `open-next.config.*` + `@opennextjs/cloudflare`) and intercepts `wrangler deploy` to delegate to `opennextjs-cloudflare deploy`, which fails on the WhatsApp worker (plain `src/index.ts`, no OpenNext compiled output). Both `npm run whatsapp:deploy` and `.github/workflows/deploy-whatsapp.yml` set `OPEN_NEXT_DEPLOY=1` to short-circuit the delegation. Don't remove it.
+- **`wrangler deployments list --json` returns ascending order** (oldest first). Always `sort_by(.created_on) | reverse | .[0]` to pick the current deployment. Naive `.[0]` burned us once — 90% of prod traffic routed to a 2-day-old version.
+- **GitHub setting for release-please:** "Allow GitHub Actions to create and approve pull requests" must be enabled in Settings → Actions → General → Workflow permissions. The UI checkbox needs an explicit **Save** click (it won't auto-persist). Verify via `gh api /repos/<owner>/<repo>/actions/permissions/workflow` — `can_approve_pull_request_reviews` must be `true`.
 
 ## Authentication (better-auth)
 
@@ -206,6 +210,16 @@ Quick mental model :
 - Local tooling : `npm run rollback`, `npm run promote`, `npm run versions:list`, `npm run check:migrations`.
 
 Always prefer the GitHub workflows (`promote.yml` / `rollback.yml`) over `wrangler` CLI or the Cloudflare dashboard : the workflows audit-trail the action, re-seed the hero KV on promote, and auto-close the "Pending promotion" issue.
+
+**Operational lessons (hard-learned)** :
+
+- **Always promote (or rollback) the current canary before merging the next PR to `main`.** A new merge triggers a new canary that displaces the previous one — the old 10% version becomes orphaned (never promoted, never reaches 100%). The "Pending promotion" GitHub issue is the visual reminder; don't ignore it.
+- **If curating the v`X.Y.Z` CHANGELOG before merging a Release PR**, edit `CHANGELOG.md` on the `release-please--branches--main--components--netereka` branch and push. **But** the GitHub Release page body is "locked in" when release-please first created the PR — it won't pick up your edit automatically. After merge, sync the Release body manually :
+  ```bash
+  awk '/^## \[X\.Y\.Z\]/{flag=1} /^## \[/{if(flag&&!/^## \[X\.Y\.Z\]/)flag=0} flag' CHANGELOG.md > /tmp/body.md
+  gh release edit vX.Y.Z --notes-file /tmp/body.md
+  ```
+- **Release-please manifest must align with actual git tags** when wiring it into a project with prior manual releases. If `.release-please-manifest.json` says `1.0.0` but the repo has tag `v1.6.0`, release-please will propose a `v1.1.0` release that collides with the existing tag. Init the manifest to the most recent real version.
 
 ## Reference Documents
 
