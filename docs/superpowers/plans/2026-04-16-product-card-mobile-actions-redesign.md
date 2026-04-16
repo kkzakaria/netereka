@@ -138,7 +138,7 @@ grep -n "className" components/storefront/whatsapp-product-button.tsx
 
 Expected output (lines may differ slightly):
 
-```
+```text
 Props interface line containing `className?: string;`
 Function signature destructuring `className`
 className={cn(... className)} on the icon Button
