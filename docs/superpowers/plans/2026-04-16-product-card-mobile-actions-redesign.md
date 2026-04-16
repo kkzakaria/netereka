@@ -18,7 +18,7 @@
 |---|---|---|
 | `components/storefront/whatsapp-product-button.tsx` | Modify | Add `className?: string` prop on the icon variant; merge with existing classes via `cn()`. |
 | `components/storefront/wishlist-button-dynamic.tsx` | Modify | Add `className?: string` prop; forward to both internal Button (guest state) and `<WishlistButton>` (authenticated state). |
-| `components/storefront/product-card-actions.tsx` | Modify | Refactor the actions `<div>`: container becomes `flex-col sm:flex-row`, icons wrapped in `flex sm:contents` sub-div, primary CTA reordered with `order-last sm:order-none`. Pass `flex-1 sm:flex-none` and `w-full sm:w-auto` to icon button wrappers/buttons. |
+| `components/storefront/product-card-actions.tsx` | Modify | Refactor the actions `<div>`: container becomes `flex-col sm:flex-row`, icons wrapped in `flex sm:contents` sub-div, primary CTA reordered with `order-last sm:order-none`. Pass `flex-1 sm:flex-none` to icon button wrappers and `w-full sm:w-8` to the buttons inside. |
 
 No new files. No tests added (purely visual responsive change; existing 710-test suite re-runs via pre-commit hook to guard against regressions). No changes to `wishlist-button.tsx` (already accepts `className`).
 
@@ -373,16 +373,16 @@ Replace this entire block with:
       price={product.base_price}
       slug={product.slug}
       variant="icon"
-      className="w-full sm:w-auto"
+      className="w-full sm:w-8"
     />
   </div>
   <div className="flex-1 sm:flex-none" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-    <WishlistButtonDynamic productId={product.id} className="w-full sm:w-auto" />
+    <WishlistButtonDynamic productId={product.id} className="w-full sm:w-8" />
   </div>
 </div>
 ```
 
-**Why:** outer sub-div is `flex gap-1.5` on mobile (forms the icons row) but `display: contents` on sm+ (effectively unwraps itself, so the inner wrapper divs become direct children of the parent flex). Inner wrapper divs are `flex-1` on mobile (split 50/50 width) and `flex-none` on sm+ (intrinsic width = button width). Buttons inside use the new `className` prop with `w-full sm:w-auto` so they fill the wrapper on mobile and revert to native `icon-lg` 32×32 on sm+.
+**Why:** outer sub-div is `flex gap-1.5` on mobile (forms the icons row) but `display: contents` on sm+ (effectively unwraps itself, so the inner wrapper divs become direct children of the parent flex). Inner wrapper divs are `flex-1` on mobile (split 50/50 width) and `flex-none` on sm+ (intrinsic width = button width). Buttons inside use the new `className` prop with `w-full sm:w-8` so they fill the wrapper on mobile and explicitly restore the 32px width on sm+ — `sm:w-8` rather than `sm:w-auto` because `size-8` from the `icon-lg` CVA can't override `w-full` cleanly via `tailwind-merge` (caught during code review; see the PR commit body).
 
 - [ ] **Step 4: Sanity check the full JSX**
 
@@ -418,11 +418,11 @@ return (
             price={product.base_price}
             slug={product.slug}
             variant="icon"
-            className="w-full sm:w-auto"
+            className="w-full sm:w-8"
           />
         </div>
         <div className="flex-1 sm:flex-none" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-          <WishlistButtonDynamic productId={product.id} className="w-full sm:w-auto" />
+          <WishlistButtonDynamic productId={product.id} className="w-full sm:w-8" />
         </div>
       </div>
     </div>
