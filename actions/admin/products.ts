@@ -8,6 +8,12 @@ import { execute, query, queryFirst } from "@/lib/db";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { deleteFromR2 } from "@/lib/storage/images";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
+import {
+  taglineSchema,
+  highlightsSchema,
+  featureBlocksSchema,
+  faqSchema,
+} from "@/lib/validations/product-story";
 
 const DB_CONSTRAINT_SKU = "UNIQUE constraint failed: products.sku";
 const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
@@ -30,6 +36,25 @@ const productSchema = z.object({
   meta_description: z.string().max(160).optional().default(""),
   is_active: z.coerce.number().int().min(0).max(1).default(1),
   is_featured: z.coerce.number().int().min(0).max(1).default(0),
+  tagline: z.preprocess(
+    (v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v),
+    taglineSchema,
+  ),
+  highlights: z.preprocess((v) => {
+    if (v == null || (typeof v === "string" && v.trim() === "")) return null;
+    if (typeof v !== "string") return "__invalid__";
+    try { return JSON.parse(v); } catch { return "__invalid__"; }
+  }, highlightsSchema),
+  feature_blocks: z.preprocess((v) => {
+    if (v == null || (typeof v === "string" && v.trim() === "")) return null;
+    if (typeof v !== "string") return "__invalid__";
+    try { return JSON.parse(v); } catch { return "__invalid__"; }
+  }, featureBlocksSchema),
+  faq: z.preprocess((v) => {
+    if (v == null || (typeof v === "string" && v.trim() === "")) return null;
+    if (typeof v !== "string") return "__invalid__";
+    try { return JSON.parse(v); } catch { return "__invalid__"; }
+  }, faqSchema),
 });
 
 /** @deprecated Never called from the UI — product creation now goes through createDraftProduct() + updateProduct(). Scheduled for removal once the draft flow is confirmed stable in production. */
@@ -165,6 +190,7 @@ export async function updateProduct(
      base_price = ?, compare_price = ?, sku = ?, brand = ?,
      is_active = ?, is_featured = ?, stock_quantity = ?,
      low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
+     tagline = ?, highlights = ?, feature_blocks = ?, faq = ?,
      is_draft = 0, -- Clear draft flag (product becomes live if is_active = 1)
      updated_at = datetime('now')
    WHERE id = ?`;
@@ -187,6 +213,10 @@ export async function updateProduct(
     data.weight_grams ?? null,
     data.meta_title || null,
     data.meta_description || null,
+    data.tagline ?? null,
+    data.highlights == null ? null : JSON.stringify(data.highlights),
+    data.feature_blocks == null ? null : JSON.stringify(data.feature_blocks),
+    data.faq == null ? null : JSON.stringify(data.faq),
     id,
   ];
 
