@@ -18,11 +18,6 @@ import {
 } from "@/components/ui/input-group";
 import { ColorPicker } from "@/components/admin/color-picker";
 import { ImageUpload } from "@/components/admin/image-upload";
-import dynamic from "next/dynamic";
-const DescriptionEditor = dynamic(
-  () => import("./description-editor").then((m) => m.DescriptionEditor),
-  { ssr: false },
-);
 import { getImageUrl } from "@/lib/utils/images";
 import type { ProductDetail } from "@/lib/db/types";
 import {
@@ -208,17 +203,9 @@ export function ProductFormSections({
                   defaultValue={product.short_description ?? ""}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Contenu complémentaire</Label>
-                <p className="text-xs text-muted-foreground">
-                  S&apos;affiche dans le bloc « zone libre » de la Story, sous les blocs structurés.
-                </p>
-                <DescriptionEditor
-                  name="description"
-                  descriptionType={product.description_type}
-                  defaultValue={product.description}
-                />
-              </div>
+              {/* Preserve existing description on save (legacy content renders in Story free-content block) */}
+              <input type="hidden" name="description" value={product.description ?? ""} />
+              <input type="hidden" name="description_type" value={product.description_type ?? "richtext"} />
             </CardContent>
           </Card>
 
