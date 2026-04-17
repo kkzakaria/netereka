@@ -1,6 +1,6 @@
 import { query, queryFirst } from "@/lib/db";
 import type { Product, ProductCardData, ProductAttribute, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
-import { hydrateProductStoryFields } from "@/lib/utils/product-story";
+import { hydrateProductStoryFields, type ProductWithRawStory } from "@/lib/utils/product-story";
 
 export async function getProductsByCategory(
   categoryId: string,
@@ -31,11 +31,7 @@ export async function getProductCountByCategory(categoryId: string): Promise<num
 }
 
 export async function getProductBySlug(slug: string): Promise<ProductDetail | null> {
-  const product = await queryFirst<Omit<Product, "highlights" | "feature_blocks" | "faq"> & {
-    highlights: string | null;
-    feature_blocks: string | null;
-    faq: string | null;
-  }>(
+  const product = await queryFirst<ProductWithRawStory>(
     `SELECT p.*, c.name as category_name, c.slug as category_slug
      FROM products p
      JOIN categories c ON c.id = p.category_id

@@ -4,6 +4,7 @@ import {
   faqSchema,
 } from "@/lib/validations/product-story";
 import type {
+  Product,
   ProductHighlight,
   ProductFeatureBlock,
   ProductFaqItem,
@@ -20,6 +21,8 @@ export interface StoryRawFields {
   faq: string | null;
 }
 
+export type ProductWithRawStory = Omit<Product, keyof StoryRawFields> & StoryRawFields;
+
 export interface StoryHydratedFields {
   tagline: string | null;
   highlights: ProductHighlight[] | null;
@@ -29,7 +32,7 @@ export interface StoryHydratedFields {
 
 function parseWith<T>(
   raw: string | null,
-  schema: { safeParse: (input: unknown) => { success: boolean; data?: T } },
+  schema: { safeParse: (input: unknown) => { success: boolean; data?: T; error?: { issues: unknown[] } } },
   label: string,
 ): T | null {
   if (raw == null || raw === "") return null;
@@ -44,6 +47,7 @@ function parseWith<T>(
   if (!result.success) {
     console.error(`[product-story] JSON failed ${label} schema validation — falling back to null`, {
       raw: raw.slice(0, 120),
+      issues: result.error?.issues,
     });
     return null;
   }
