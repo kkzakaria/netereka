@@ -40,12 +40,14 @@ import {
   type CategoryOption,
 } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
+import { ProductStorySection } from "./product-story-section";
 
 
 const SECTIONS: SectionDef[] = [
   { id: "section-general", label: "Informations" },
   { id: "section-category", label: "Catégorie" },
   { id: "section-specs", label: "Caractéristiques" },
+  { id: "section-story", label: "Story" },
   { id: "section-pricing", label: "Tarification" },
   { id: "section-images", label: "Images" },
   { id: "section-seo", label: "SEO" },
@@ -207,7 +209,10 @@ export function ProductFormSections({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Description</Label>
+                <Label>Contenu complémentaire</Label>
+                <p className="text-xs text-muted-foreground">
+                  S&apos;affiche dans le bloc « zone libre » de la Story, sous les blocs structurés.
+                </p>
                 <DescriptionEditor
                   name="description"
                   descriptionType={product.description_type}
@@ -237,6 +242,37 @@ export function ProductFormSections({
             </CardHeader>
             <CardContent>
               <AttributesSection product={product} />
+            </CardContent>
+          </Card>
+
+          {/* Section: Story */}
+          <Card id="section-story">
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <CardTitle>Story produit</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Blocs éditoriaux rendus en pleine largeur sur la fiche produit.
+                    Tous les blocs sont optionnels.
+                  </p>
+                </div>
+                {!isNew && product.slug && (
+                  <Button variant="outline" size="sm" asChild className="shrink-0">
+                    <a href={`/p/${product.slug}`} target="_blank" rel="noopener noreferrer">
+                      Aperçu
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ProductStorySection
+                productId={product.id}
+                tagline={product.tagline}
+                highlights={product.highlights}
+                featureBlocks={product.feature_blocks}
+                faq={product.faq}
+              />
             </CardContent>
           </Card>
 
