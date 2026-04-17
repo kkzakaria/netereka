@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { descriptionToHtml } from "@/lib/utils/description-to-html";
 
 interface StoryFreeContentProps {
@@ -18,7 +19,7 @@ export function StoryFreeContent({
   return (
     <div className="mx-auto max-w-3xl px-6">
       <div
-        className={`prose prose-lg max-w-none dark:prose-invert ${scopeClass ?? ""}`}
+        className={cn("prose prose-lg max-w-none dark:prose-invert", scopeClass)}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
