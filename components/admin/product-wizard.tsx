@@ -144,7 +144,7 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
       {/* Integrated header: back button + description + stepper */}
-      <div className="-mx-4 -mt-4 bg-background sm:-mx-6 sm:-mt-6">
+      <div className="shrink-0 -mx-4 -mt-4 bg-background sm:-mx-6 sm:-mt-6">
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 sm:px-6 sm:pt-5">
           <Button variant="ghost" size="icon" asChild className="shrink-0">
             <Link href="/products" aria-label="Retour aux produits">
