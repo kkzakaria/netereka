@@ -11,7 +11,8 @@ import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { WhatsAppProductButton } from "@/components/storefront/whatsapp-product-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
-import { ProductDetails } from "@/components/storefront/product-details";
+import { ProductSpecs } from "@/components/storefront/product-details";
+import { ProductStory } from "@/components/storefront/product-story";
 import { StarRating } from "@/components/storefront/star-rating";
 import { JsonLd } from "@/components/seo/json-ld";
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
@@ -219,69 +220,43 @@ export default async function ProductPage({ params }: Props) {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
+    <>
       <JsonLd data={productSchema} />
       <BreadcrumbSchema items={breadcrumbItems} />
 
-      {/* Breadcrumb */}
-      <nav className="mb-4 text-sm text-muted-foreground">
-        <Link href="/" className="hover:text-foreground">
-          Accueil
-        </Link>
-        <span className="mx-1.5">/</span>
-        {product.category_slug ? (
-          <>
-            <Link
-              href={`/c/${product.category_slug}`}
-              className="hover:text-foreground"
-            >
-              {product.category_name}
-            </Link>
-            <span className="mx-1.5">/</span>
-          </>
-        ) : null}
-        <span className="text-foreground">{product.name}</span>
-      </nav>
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        {/* Breadcrumb */}
+        <nav className="mb-4 text-sm text-muted-foreground">
+          <Link href="/" className="hover:text-foreground">
+            Accueil
+          </Link>
+          <span className="mx-1.5">/</span>
+          {product.category_slug ? (
+            <>
+              <Link
+                href={`/c/${product.category_slug}`}
+                className="hover:text-foreground"
+              >
+                {product.category_name}
+              </Link>
+              <span className="mx-1.5">/</span>
+            </>
+          ) : null}
+          <span className="text-foreground">{product.name}</span>
+        </nav>
 
-      {product.variants.length > 0 ? (
-        <ProductGalleryWithVariants
-          images={product.images}
-          variants={product.variants}
-          basePrice={product.base_price}
-          product={{
-            id: product.id,
-            name: product.name,
-            slug: product.slug,
-            imageUrl: product.image_url ?? product.images[0]?.url ?? null,
-          }}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              {product.brand ? (
-                <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                  {product.brand}
-                </span>
-              ) : null}
-              <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
-            </div>
-            <WishlistButtonDynamic productId={product.id} />
-          </div>
-        </ProductGalleryWithVariants>
-      ) : (
-        <div className="grid gap-8 md:grid-cols-2">
-          <ImageGallery images={product.images}>
-            <Image
-              src={getImageUrl(product.images[0]?.url)}
-              alt={product.images[0]?.alt || product.name}
-              fill
-              priority
-              fetchPriority="high"
-              sizes="(max-width: 768px) 100vw, 50vw"
-              className="object-contain p-6"
-            />
-          </ImageGallery>
-
-          <div className="space-y-4">
+        {product.variants.length > 0 ? (
+          <ProductGalleryWithVariants
+            images={product.images}
+            variants={product.variants}
+            basePrice={product.base_price}
+            product={{
+              id: product.id,
+              name: product.name,
+              slug: product.slug,
+              imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+            }}
+          >
             <div className="flex items-start justify-between gap-2">
               <div>
                 {product.brand ? (
@@ -293,72 +268,107 @@ export default async function ProductPage({ params }: Props) {
               </div>
               <WishlistButtonDynamic productId={product.id} />
             </div>
+          </ProductGalleryWithVariants>
+        ) : (
+          <div className="grid gap-8 md:grid-cols-2">
+            <ImageGallery images={product.images}>
+              <Image
+                src={getImageUrl(product.images[0]?.url)}
+                alt={product.images[0]?.alt || product.name}
+                fill
+                priority
+                fetchPriority="high"
+                sizes="(max-width: 768px) 100vw, 50vw"
+                className="object-contain p-6"
+              />
+            </ImageGallery>
 
             <div className="space-y-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <p className="text-2xl font-bold">
-                    {formatPrice(product.base_price)}
-                  </p>
-                  {hasDiscount && (
-                    <span className="rounded-md bg-destructive px-2 py-0.5 text-xs font-bold text-white">
-                      -{discountPercent}%
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  {product.brand ? (
+                    <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                      {product.brand}
                     </span>
+                  ) : null}
+                  <h1 className="text-2xl font-bold sm:text-3xl">{product.name}</h1>
+                </div>
+                <WishlistButtonDynamic productId={product.id} />
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-2xl font-bold">
+                      {formatPrice(product.base_price)}
+                    </p>
+                    {hasDiscount && (
+                      <span className="rounded-md bg-destructive px-2 py-0.5 text-xs font-bold text-white">
+                        -{discountPercent}%
+                      </span>
+                    )}
+                  </div>
+                  {hasDiscount && (
+                    <p className="text-sm text-muted-foreground line-through">
+                      {formatPrice(comparePrice)}
+                    </p>
                   )}
                 </div>
-                {hasDiscount && (
-                  <p className="text-sm text-muted-foreground line-through">
-                    {formatPrice(comparePrice)}
-                  </p>
+                {isOutOfStock && (
+                  <p className="text-sm font-medium text-destructive">Rupture de stock</p>
                 )}
+                <AddToCartButton
+                  disabled={isOutOfStock}
+                  item={{
+                    productId: product.id,
+                    variantId: null,
+                    name: product.name,
+                    variantName: null,
+                    price: product.base_price,
+                    imageUrl: product.image_url ?? product.images[0]?.url ?? null,
+                    slug: product.slug,
+                  }}
+                />
+                <WhatsAppProductButton
+                  productName={product.name}
+                  price={product.base_price}
+                  slug={product.slug}
+                  variant="full"
+                />
               </div>
-              {isOutOfStock && (
-                <p className="text-sm font-medium text-destructive">Rupture de stock</p>
-              )}
-              <AddToCartButton
-                disabled={isOutOfStock}
-                item={{
-                  productId: product.id,
-                  variantId: null,
-                  name: product.name,
-                  variantName: null,
-                  price: product.base_price,
-                  imageUrl: product.image_url ?? product.images[0]?.url ?? null,
-                  slug: product.slug,
-                }}
-              />
-              <WhatsAppProductButton
-                productName={product.name}
-                price={product.base_price}
-                slug={product.slug}
-                variant="full"
-              />
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Description & Characteristics */}
-      <ProductDetails
+      {/* Full-width Product Story (OUTSIDE max-w-7xl) */}
+      <ProductStory
+        tagline={product.tagline}
+        highlights={product.highlights}
+        featureBlocks={product.feature_blocks}
+        faq={product.faq}
         description={product.description}
         descriptionType={product.description_type}
         productId={product.id}
-        attributes={product.attributes}
       />
 
-      {/* Reviews */}
-      <Suspense fallback={null}>
-        <ProductReviews productId={product.id} />
-      </Suspense>
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        <ProductSpecs attributes={product.attributes} />
 
-      {/* Related */}
-      <Suspense fallback={<RelatedProductsSkeleton />}>
-        <RelatedProducts
-          productId={product.id}
-          categoryId={product.category_id ?? ""}
-          categorySlug={product.category_slug}
-        />
-      </Suspense>
-    </div>
+        {/* Reviews */}
+        <Suspense fallback={null}>
+          <ProductReviews productId={product.id} />
+        </Suspense>
+
+        {/* Related */}
+        <Suspense fallback={<RelatedProductsSkeleton />}>
+          <RelatedProducts
+            productId={product.id}
+            categoryId={product.category_id ?? ""}
+            categorySlug={product.category_slug}
+          />
+        </Suspense>
+      </div>
+    </>
   );
 }
