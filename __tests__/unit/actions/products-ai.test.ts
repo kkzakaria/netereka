@@ -33,6 +33,10 @@ vi.mock("@/lib/cloudflare/context", () => ({
   }),
 }));
 vi.mock("@/lib/ai/image-fetch", () => ({ fetchAndUploadImage: mocks.fetchAndUploadImage }));
+vi.mock("@/lib/storage/images", () => ({
+  deleteFromR2: vi.fn().mockResolvedValue(undefined),
+  uploadToR2: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { importCandidateImages } from "@/actions/admin/products-ai";
 
@@ -117,5 +121,61 @@ describe("importCandidateImages", () => {
     ]);
     expect(r.success).toBe(true);
     if (r.success) expect(r.warnings).toEqual(["https://x.test/a.jpg"]);
+  });
+
+  it("écrit la clé R2 brute (sans prefixe /images/) et propage alt", async () => {
+    const outputWithAlt = {
+      ...OUTPUT,
+      image_candidates: [
+        { url: "https://x.test/a.jpg", source_domain: "x.test", alt: "Face avant" },
+        { url: "https://x.test/b.jpg", source_domain: "x.test", alt: "Profil" },
+      ],
+    };
+    mocks.fetchAndUploadImage.mockImplementation(async (_: string, url: string) => ({
+      ok: true,
+      key: `products/d1/${url.split("/").pop()}`,
+      contentType: "image/jpeg",
+      size: 10,
+    }));
+
+    const r = await importCandidateImages(outputWithAlt, [
+      "https://x.test/a.jpg",
+      "https://x.test/b.jpg",
+    ]);
+    expect(r.success).toBe(true);
+
+    const imageInserts = mocks.prepare.mock.calls
+      .map((call) => call[0] as string)
+      .filter((sql) => sql.includes("INSERT INTO product_images"));
+    expect(imageInserts.length).toBe(2); // one prepare() call per image row
+    expect(imageInserts[0]).toContain("(id, product_id, url, alt, is_primary, sort_order, created_at)");
+
+    // Also verify the bind args carry the bare key and alt
+    const batchCall = mocks.dbBatch.mock.calls[0][0] as Array<{ sql: string; args: unknown[] }>;
+    const imageBinds = batchCall.filter((s) => s.sql.includes("INSERT INTO product_images"));
+    expect(imageBinds).toHaveLength(2);
+    expect(imageBinds[0].args[2]).toBe("products/d1/a.jpg"); // url = bare key, no "/images/" prefix
+    expect(imageBinds[0].args[3]).toBe("Face avant");        // alt
+    expect(imageBinds[1].args[2]).toBe("products/d1/b.jpg");
+    expect(imageBinds[1].args[3]).toBe("Profil");
+  });
+
+  it("nettoie les images R2 orphelines si le batch échoue", async () => {
+    const { deleteFromR2: deleteFromR2Mock } = await import("@/lib/storage/images");
+    // deleteFromR2 was auto-mocked via vi.mock below — set up the mock.
+    mocks.dbBatch.mockRejectedValueOnce(new Error("batch failed"));
+    mocks.fetchAndUploadImage.mockImplementation(async (_: string, url: string) => ({
+      ok: true,
+      key: `products/d1/${url.split("/").pop()}`,
+      contentType: "image/jpeg",
+      size: 10,
+    }));
+
+    const r = await importCandidateImages(OUTPUT, [
+      "https://x.test/a.jpg",
+      "https://x.test/b.jpg",
+    ]);
+    expect(r.success).toBe(false);
+    expect(deleteFromR2Mock).toHaveBeenCalledTimes(2);
   });
 });

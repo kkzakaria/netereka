@@ -8,6 +8,7 @@ import { getDB } from "@/lib/cloudflare/context";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { fetchAndUploadImage, type FetchImageResult } from "@/lib/ai/image-fetch";
+import { deleteFromR2 } from "@/lib/storage/images";
 import type { AiProductOutput } from "@/lib/validations/product-ai";
 import { aiProductOutputSchema } from "@/lib/validations/product-ai";
 import {
@@ -154,12 +155,13 @@ export async function importCandidateImages(
     );
   }
 
-  succeeded.forEach(({ r }, idx) => {
+  succeeded.forEach(({ url, r }, idx) => {
+    const alt = output.image_candidates.find((c) => c.url === url)?.alt ?? null;
     stmts.push(
       db.prepare(
-        `INSERT INTO product_images (id, product_id, url, is_primary, sort_order, created_at)
-         VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-      ).bind(nanoid(), draftId, `/images/${r.key}`, idx === 0 ? 1 : 0, idx),
+        `INSERT INTO product_images (id, product_id, url, alt, is_primary, sort_order, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+      ).bind(nanoid(), draftId, r.key, alt, idx === 0 ? 1 : 0, idx),
     );
   });
 
@@ -167,6 +169,13 @@ export async function importCandidateImages(
     await db.batch(stmts);
   } catch (err) {
     console.error("[admin/products-ai] batch write failed", err);
+    // Orphan R2 hygiene: the batch failed but we already uploaded to R2.
+    // Best-effort cleanup — failures here should not mask the original error.
+    await Promise.allSettled(
+      succeeded.map(({ r }) => deleteFromR2(r.key).catch((e) => {
+        console.warn("[admin/products-ai] orphan cleanup failed for key", r.key, e);
+      })),
+    );
     return { success: false, error: "Erreur lors de l'enregistrement de la fiche IA" };
   }
 

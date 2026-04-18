@@ -99,7 +99,7 @@ export async function fetchAndUploadImage(
   for (const c of chunks) { buffer.set(c, offset); offset += c.byteLength; }
 
   const ext = EXT_BY_TYPE[ct] ?? "jpg";
-  const key = `products/${draftId}/${nanoid(10)}.${ext}`;
+  const key = `products/${draftId}/${nanoid()}.${ext}`;
   const file = new File([buffer], key, { type: ct });
   await uploadToR2(file, key);
 
