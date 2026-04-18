@@ -37,7 +37,12 @@ export default async function EditProductPage({ params }: Props) {
   );
 
   if (isNew) {
-    return <ProductWizard product={product} categories={categoryOptions} />;
+    // Counter main's p-4 sm:p-6 so the wizard sticky header can sit flush with main's top edge.
+    return (
+      <div className="-m-4 sm:-m-6">
+        <ProductWizard product={product} categories={categoryOptions} />
+      </div>
+    );
   }
 
   return (

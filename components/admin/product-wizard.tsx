@@ -145,7 +145,7 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
     <div className="flex flex-col">
       {/* Integrated header: back button + description + stepper.
          Sticky so it stays visible while main (the admin layout scroll container) scrolls. */}
-      <div className="sticky top-0 z-20 -mx-4 -mt-4 bg-background border-b sm:-mx-6 sm:-mt-6">
+      <div className="sticky top-0 z-20 bg-background border-b">
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 sm:px-6 sm:pt-5">
           <Button variant="ghost" size="icon" asChild className="shrink-0">
             <Link href="/products" aria-label="Retour aux produits">
