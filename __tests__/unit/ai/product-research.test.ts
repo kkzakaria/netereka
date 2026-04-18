@@ -2,10 +2,36 @@ import { describe, expect, it } from "vitest";
 import { researchProduct, type ResearchProgress } from "@/lib/ai/product-research";
 import type Anthropic from "@anthropic-ai/sdk";
 
-function makeAnthropicStub(content: unknown[]): Anthropic {
+/**
+ * Build a minimal Anthropic stub where `messages.stream(...)` returns an object
+ * that (a) yields the provided events as an async iterable, and (b) exposes a
+ * `finalMessage()` method returning a message whose `content` is derived from
+ * the `tool_use` events we recorded.
+ */
+function makeAnthropicStub(events: Array<{ type: string; content_block?: { type: string; name?: string; input?: unknown } }>): Anthropic {
   return {
     messages: {
-      create: async () => ({ content, stop_reason: "end_turn" }),
+      stream: () => {
+        const toolUses = events
+          .filter((e) => e.type === "content_block_start" && e.content_block?.type === "tool_use")
+          .map((e) => ({
+            type: "tool_use" as const,
+            name: e.content_block!.name,
+            input: e.content_block!.input,
+          }));
+
+        const iterable = (async function* () {
+          for (const ev of events) yield ev;
+        })();
+
+        return {
+          [Symbol.asyncIterator]() { return iterable; },
+          finalMessage: async () => ({
+            content: toolUses,
+            stop_reason: "end_turn",
+          }),
+        };
+      },
     },
   } as unknown as Anthropic;
 }
@@ -26,39 +52,53 @@ const validOutput = {
 };
 
 describe("researchProduct", () => {
-  it("émet progress puis done pour une sortie valide", async () => {
+  it("émet progress (search) pour un server_tool_use web_search puis done", async () => {
     const anthropic = makeAnthropicStub([
-      { type: "tool_use", name: "web_search", id: "1", input: { query: "Galaxy A55" } },
-      { type: "tool_use", name: "web_search", id: "2", input: { query: "Galaxy A55 images" } },
-      { type: "tool_use", name: "submit_product", id: "3", input: validOutput },
+      { type: "content_block_start", content_block: { type: "server_tool_use", name: "web_search", input: { query: "Galaxy A55" } } },
+      { type: "content_block_start", content_block: { type: "tool_use", name: "submit_product", input: validOutput } },
     ]);
 
     const events = await drain(researchProduct("Galaxy A55", anthropic));
 
-    expect(events.map((e) => e.type)).toEqual(["progress", "progress", "progress", "done"]);
-    expect((events.at(-1) as { type: "done"; output: typeof validOutput }).output.name).toBe("Galaxy A55");
+    expect(events.map((e) => e.type)).toEqual(["progress", "progress", "done"]);
+    const terminal = events.at(-1) as { type: "done"; output: typeof validOutput };
+    expect(terminal.output.name).toBe("Galaxy A55");
   });
 
-  it("émet not_found", async () => {
+  it("émet search → specs → images pour 3 recherches consécutives", async () => {
     const anthropic = makeAnthropicStub([
-      { type: "tool_use", name: "submit_product", id: "x", input: { not_found: true, reason: "unknown" } },
+      { type: "content_block_start", content_block: { type: "server_tool_use", name: "web_search", input: { query: "a" } } },
+      { type: "content_block_start", content_block: { type: "server_tool_use", name: "web_search", input: { query: "b" } } },
+      { type: "content_block_start", content_block: { type: "server_tool_use", name: "web_search", input: { query: "c" } } },
+      { type: "content_block_start", content_block: { type: "tool_use", name: "submit_product", input: validOutput } },
+    ]);
+
+    const events = await drain(researchProduct("x", anthropic));
+    const progressSteps = events
+      .filter((e) => e.type === "progress")
+      .map((e) => (e as { type: "progress"; step: string }).step);
+    expect(progressSteps).toEqual(["search", "specs", "images", "finalize"]);
+  });
+
+  it("émet not_found quand submit_product signale introuvable", async () => {
+    const anthropic = makeAnthropicStub([
+      { type: "content_block_start", content_block: { type: "tool_use", name: "submit_product", input: { not_found: true, reason: "unknown" } } },
     ]);
     const events = await drain(researchProduct("zxzx", anthropic));
-    expect(events[0]).toEqual({ type: "progress", step: "finalize" });
     expect(events.at(-1)).toEqual({ type: "not_found", reason: "unknown" });
   });
 
-  it("émet error pour une sortie invalide", async () => {
+  it("émet error:invalid_ai_output pour une sortie cassée", async () => {
     const anthropic = makeAnthropicStub([
-      { type: "tool_use", name: "submit_product", id: "x", input: { garbage: true } },
+      { type: "content_block_start", content_block: { type: "tool_use", name: "submit_product", input: { garbage: true } } },
     ]);
     const events = await drain(researchProduct("x", anthropic));
-    expect(events.find((e) => e.type === "error")).toEqual({ type: "error", code: "invalid_ai_output" });
+    expect(events.at(-1)).toEqual({ type: "error", code: "invalid_ai_output" });
   });
 
-  it("émet error si submit_product jamais appelé", async () => {
+  it("émet error:api_error si submit_product jamais appelé", async () => {
     const anthropic = makeAnthropicStub([
-      { type: "text", text: "hmm" },
+      { type: "content_block_start", content_block: { type: "text", name: undefined } },
     ]);
     const events = await drain(researchProduct("x", anthropic));
     expect(events.at(-1)).toEqual({ type: "error", code: "api_error" });

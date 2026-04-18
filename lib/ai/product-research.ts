@@ -8,9 +8,18 @@ export type ResearchProgress =
   | { type: "not_found"; reason: string }
   | { type: "error"; code: "invalid_ai_output" | "api_error" | "feature_disabled" };
 
+/** Default model. Override per-call via `researchProduct(..., { model })` or via the `AI_MODEL` env var at the caller. */
 export const MODEL = "claude-sonnet-4-6";
 
+/** Hard budget for the Anthropic call. Claude with 3-5 web_search invocations typically finishes in 15-45s; 90s is a generous ceiling that still bounds Worker CPU exposure. */
+export const DEFAULT_TIMEOUT_MS = 90_000;
+
 export const SUBMIT_TOOL_NAME = "submit_product";
+
+export interface ResearchOptions {
+  model?: string;
+  timeoutMs?: number;
+}
 
 export function buildSystemPrompt(): string {
   const icons = HIGHLIGHT_ICON_NAMES.join(", ");
@@ -33,6 +42,8 @@ export function buildSystemPrompt(): string {
 export function buildTools(): Anthropic.Tool[] {
   return [
     {
+      // Anthropic-executed web search. The SDK 0.33 does not expose this in Anthropic.Tool,
+      // hence the cast; the server happily accepts it at runtime.
       type: "web_search_20250305",
       name: "web_search",
       max_uses: 5,
@@ -48,39 +59,86 @@ export function buildTools(): Anthropic.Tool[] {
   ];
 }
 
-/** Drives the Anthropic stream and yields typed events. */
+/**
+ * Drive an Anthropic streaming call and yield typed progress events, then a terminal event.
+ *
+ * Progress mapping (best-effort, based on content_block_start events as they arrive):
+ *  - 1st `server_tool_use` (web_search) → "search"
+ *  - 2nd web_search → "specs"
+ *  - 3rd web_search → "images"
+ *  - `tool_use` for SUBMIT_TOOL_NAME start → "finalize"
+ *
+ * Terminal events:
+ *  - `done` when submit_product input parses as full AiProductOutput
+ *  - `not_found` when submit_product input is `{ not_found: true, reason }`
+ *  - `error: invalid_ai_output` when submit_product input fails validation
+ *  - `error: api_error` on network / timeout / malformed stream
+ */
 export async function* researchProduct(
   prompt: string,
   anthropic: Anthropic,
+  opts: ResearchOptions = {},
 ): AsyncGenerator<ResearchProgress> {
-  let emittedSearch = false;
-  let emittedImages = false;
-  let emittedSpecs = false;
+  const model = opts.model ?? MODEL;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 8000,
-    system: buildSystemPrompt(),
-    tools: buildTools(),
-    messages: [{ role: "user", content: prompt }],
-  });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
 
-  for (const block of response.content) {
-    if (block.type === "tool_use" && block.name === "web_search") {
-      const q = (block.input as { query?: string } | undefined)?.query ?? "";
-      if (!emittedSearch) { yield { type: "progress", step: "search" }; emittedSearch = true; }
-      if (!emittedSpecs && /spec|caract/i.test(q)) { yield { type: "progress", step: "specs" }; emittedSpecs = true; }
-      if (!emittedImages && /image|photo/i.test(q)) { yield { type: "progress", step: "images" }; emittedImages = true; }
+  let searchCount = 0;
+  let finalizeEmitted = false;
+  let submitInput: unknown = null;
+
+  try {
+    const stream = anthropic.messages.stream(
+      {
+        model,
+        max_tokens: 8000,
+        system: buildSystemPrompt(),
+        tools: buildTools(),
+        messages: [{ role: "user", content: prompt }],
+      },
+      { signal: ac.signal },
+    );
+
+    for await (const event of stream) {
+      if (event.type === "content_block_start") {
+        const block = event.content_block as { type: string; name?: string };
+        if ((block.type === "server_tool_use" || block.type === "tool_use") && block.name === "web_search") {
+          searchCount++;
+          if (searchCount === 1) yield { type: "progress", step: "search" };
+          else if (searchCount === 2) yield { type: "progress", step: "specs" };
+          else if (searchCount === 3) yield { type: "progress", step: "images" };
+        }
+        if (block.type === "tool_use" && block.name === SUBMIT_TOOL_NAME && !finalizeEmitted) {
+          finalizeEmitted = true;
+          yield { type: "progress", step: "finalize" };
+        }
+      }
     }
-    if (block.type === "tool_use" && block.name === SUBMIT_TOOL_NAME) {
-      yield { type: "progress", step: "finalize" };
-      const parsed = parseAiToolInput(block.input);
-      if (parsed.kind === "ok") { yield { type: "done", output: parsed.output }; return; }
-      if (parsed.kind === "not_found") { yield { type: "not_found", reason: parsed.reason }; return; }
-      yield { type: "error", code: "invalid_ai_output" };
+
+    // After the stream completes, pull the fully-assembled message so we can read submit_product's input.
+    const final = await stream.finalMessage();
+    for (const block of final.content) {
+      if (block.type === "tool_use" && block.name === SUBMIT_TOOL_NAME) {
+        submitInput = block.input;
+        break;
+      }
+    }
+
+    if (submitInput === null) {
+      yield { type: "error", code: "api_error" };
       return;
     }
-  }
 
-  yield { type: "error", code: "api_error" };
+    const parsed = parseAiToolInput(submitInput);
+    if (parsed.kind === "ok") { yield { type: "done", output: parsed.output }; return; }
+    if (parsed.kind === "not_found") { yield { type: "not_found", reason: parsed.reason }; return; }
+    yield { type: "error", code: "invalid_ai_output" };
+  } catch (err) {
+    console.error("[ai-product] researchProduct failed:", err);
+    yield { type: "error", code: "api_error" };
+  } finally {
+    clearTimeout(timer);
+  }
 }

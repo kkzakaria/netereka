@@ -32,12 +32,13 @@ export async function POST(req: Request) {
 
   const anthropic = await getAnthropicClient();
   const encoder = new TextEncoder();
+  const model = env.AI_MODEL || undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const write = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       try {
-        for await (const ev of researchProduct(parsed.data, anthropic)) {
+        for await (const ev of researchProduct(parsed.data, anthropic, { model })) {
           write(ev);
         }
       } catch (err) {

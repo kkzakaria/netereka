@@ -10,7 +10,10 @@ export async function getAnthropicClient(): Promise<Anthropic> {
   if (!env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY is not configured");
   }
-  cached = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  cached = new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    maxRetries: 3, // handles 408/409/429/5xx with exponential backoff
+  });
   return cached;
 }
 

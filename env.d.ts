@@ -26,4 +26,6 @@ interface CloudflareEnv {
   ANTHROPIC_API_KEY: string;
   // "0" disables the feature (button hidden, /products/ai-new returns 404). Any other value or unset = enabled.
   AI_PRODUCT_CREATION_ENABLED?: string;
+  // Optional model override (for rolling to newer Anthropic model IDs without a code change)
+  AI_MODEL?: string;
 }
