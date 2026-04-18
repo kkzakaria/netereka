@@ -257,11 +257,11 @@ Transitions:
 
 - `ANTHROPIC_API_KEY` is only accessed server-side via `getCloudflareContext().env`. It is never in the response payload or client bundle.
 - `requireAdmin()` gates both server actions and the page.
-- SSRF protection in `image-fetch.ts`: resolve the URL's hostname and reject if it maps to `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7`, `fe80::/10`. Reject non-`http(s)` schemes.
+- SSRF protection in `image-fetch.ts`: **host-literal checks only** (Cloudflare Workers do not expose DNS resolution to user code, so we cannot reject a hostname that resolves to an internal IP). We reject URL hosts that are literal private IPs (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `0.0.0.0`, `::1`, `fc00::/7`, `fe80::/10`, `metadata.google.internal`, `localhost` and its subdomains) and non-`http(s)` schemes. This is defence against direct IP literals from Claude or malicious redirects; a resolver-side DNS rebinding attack is not fully mitigated. The content-type whitelist and 5 MB size cap are the other main guards.
 - Size limit (5 MB) enforced while streaming the response body; abort on overflow so we never buffer more than the limit.
 - Content-type whitelist enforces image-only uploads.
 - `sanitizeDescriptionHtml()` applied to `description_html` before storage (reuses existing sanitizer).
-- Rate limit (10 gen/h/admin) also serves as a cost/abuse ceiling.
+- Rate limit (10 gen/h/admin) — counts **attempts**, not successes. Incrementing only on success would let a misbehaving client hammer the Anthropic API (which we pay for) without tripping the limit, so the counter bumps before the API call. An admin whose generation fails still "pays" one slot; this trade favours cost control over UX.
 
 ## Observability
 
@@ -280,6 +280,7 @@ interface CloudflareEnv {
   // existing...
   ANTHROPIC_API_KEY: string;
   AI_PRODUCT_CREATION_ENABLED?: string; // "0" disables the feature; any other value / unset = enabled
+  AI_MODEL?: string;                    // override the default Anthropic model id without a code change
 }
 ```
 
