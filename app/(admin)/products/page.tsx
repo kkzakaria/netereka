@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
@@ -9,6 +10,7 @@ import { ProductFilters } from "@/components/admin/product-filters";
 import { getAdminProducts, getAdminProductCount } from "@/lib/db/admin/products";
 import { getAllCategories } from "@/lib/db/admin/categories";
 import { cleanupDraftProducts } from "@/actions/admin/products";
+import { isAiFeatureEnabled } from "@/lib/ai/client";
 import { ProductsPageClient, ProductsPageActions } from "./products-page-client";
 
 interface Props {
@@ -24,6 +26,9 @@ const PAGE_SIZE = 20;
 
 export default async function ProductsPage({ searchParams }: Props) {
   await requireAdmin();
+
+  const { env } = await getCloudflareContext({ async: true });
+  const aiEnabled = isAiFeatureEnabled(env);
 
   // Remove draft products abandoned for 24+ hours after response is sent
   after(() =>
@@ -79,7 +84,7 @@ export default async function ProductsPage({ searchParams }: Props) {
             categories={categoryOptions}
             className="flex-1"
           />
-          <ProductsPageActions />
+          <ProductsPageActions aiEnabled={aiEnabled} />
         </div>
       </AdminPageHeader>
 
@@ -88,6 +93,7 @@ export default async function ProductsPage({ searchParams }: Props) {
         products={productData}
         categories={categoryOptions}
         totalCount={totalCount}
+        aiEnabled={aiEnabled}
       />
 
       {/* Active filter chips (mobile) */}
