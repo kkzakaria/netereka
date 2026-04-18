@@ -143,12 +143,32 @@ const aiProductOutputSchema = z.object({
       value: z.string().min(1).max(200),
     })).max(20).default([]),
   }).default({ colors: [], dimensions: {}, specs: [] }),
+  // Story sub-shapes mirror lib/validations/product-story.ts — the canonical DB shape.
+  // Highlights use an *icon* enum (curated HIGHLIGHT_ICON_NAMES list) and a short *label*,
+  // not free-form title/description. Feature blocks use title/body/image_url/image_alt.
+  // The AI must pick icon names from the allowed list only.
   story: z.object({
-    tagline: z.string().max(80).optional(),
-    highlights: z.array(z.object({ title: z.string(), description: z.string() })).max(6).default([]),
-    feature_blocks: z.array(z.object({ heading: z.string(), body: z.string() })).max(6).default([]),
-    faq: z.array(z.object({ question: z.string(), answer: z.string() })).max(8).default([]),
-  }).default({ highlights: [], feature_blocks: [], faq: [] }),
+    tagline: z.string().max(200).optional(),
+    highlights: z
+      .array(z.object({
+        icon: z.enum(HIGHLIGHT_ICON_NAMES),       // imported from product-story.ts
+        label: z.string().trim().min(1).max(80),
+      }))
+      .min(3).max(6).optional(),                  // null/absent = "highlights disabled"
+    feature_blocks: z
+      .array(z.object({
+        title: z.string().trim().min(1).max(120),
+        body:  z.string().trim().min(1).max(600),
+        // image_url / image_alt omitted — AI doesn't have block-level images
+      }))
+      .min(2).max(4).optional(),                  // null/absent = "blocks disabled"
+    faq: z
+      .array(z.object({
+        question: z.string().trim().min(1).max(160),
+        answer:   z.string().trim().min(1).max(600),
+      }))
+      .max(5).optional(),                         // null/absent = "no faq"
+  }).default({}),
   seo: z.object({
     meta_title: z.string().max(60).optional(),
     meta_description: z.string().max(160).optional(),
@@ -169,8 +189,9 @@ const aiNotFoundSchema = z.object({
 
 ### Alignment with existing schemas
 
-- `story` fields map 1:1 to `taglineSchema / highlightsSchema / featureBlocksSchema / faqSchema` in `lib/validations/product-story.ts`. The AI sub-schemas above are deliberately a subset (caps on max items, max lengths). Before persisting we pass each story section through the existing schema to catch any drift.
+- `story` fields map 1:1 to `taglineSchema / highlightsSchema / featureBlocksSchema / faqSchema` in `lib/validations/product-story.ts`. The AI sub-schemas above deliberately reuse the shapes and caps from that file; importing `HIGHLIGHT_ICON_NAMES` from there keeps the icon enum in sync. Before persisting we pass each story section through the canonical schema a second time to catch any drift.
 - `description_html` is passed through `sanitizeDescriptionHtml()` (existing) before insertion; we set `description_type = "html"`.
+- The system prompt must list the allowed icon names explicitly so Claude can pick matching ones for each highlight (a phone product would pick `smart-phone`, `camera`, `battery`, etc.).
 
 ## Server-Side Flow
 
