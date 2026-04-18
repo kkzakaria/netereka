@@ -6,8 +6,6 @@ import { checkRateLimit } from "@/lib/ai/rate-limit";
 import { getAnthropicClient, isAiFeatureEnabled } from "@/lib/ai/client";
 import { researchProduct } from "@/lib/ai/product-research";
 
-export const runtime = "edge";
-
 export async function POST(req: Request) {
   const { env } = await getCloudflareContext({ async: true });
   if (!isAiFeatureEnabled(env)) {
