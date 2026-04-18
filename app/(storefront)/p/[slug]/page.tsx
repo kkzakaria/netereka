@@ -11,8 +11,7 @@ import { AddToCartButton } from "@/components/storefront/add-to-cart-button";
 import { WhatsAppProductButton } from "@/components/storefront/whatsapp-product-button";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { WishlistButtonDynamic } from "@/components/storefront/wishlist-button-dynamic";
-import { ProductSpecs } from "@/components/storefront/product-details";
-import { ProductStory } from "@/components/storefront/product-story";
+import { ProductDetails } from "@/components/storefront/product-details";
 import { StarRating } from "@/components/storefront/star-rating";
 import { JsonLd } from "@/components/seo/json-ld";
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
@@ -341,19 +340,17 @@ export default async function ProductPage({ params }: Props) {
         )}
       </div>
 
-      {/* Full-width Product Story (OUTSIDE max-w-7xl) */}
-      <ProductStory
-        tagline={product.tagline}
-        highlights={product.highlights}
-        featureBlocks={product.feature_blocks}
-        faq={product.faq}
-        description={product.description}
-        descriptionType={product.description_type}
-        productId={product.id}
-      />
-
       <div className="mx-auto max-w-7xl px-4 py-6">
-        <ProductSpecs attributes={product.attributes} />
+        <ProductDetails
+          tagline={product.tagline}
+          highlights={product.highlights}
+          featureBlocks={product.feature_blocks}
+          faq={product.faq}
+          description={product.description}
+          descriptionType={product.description_type}
+          productId={product.id}
+          attributes={product.attributes}
+        />
 
         {/* Reviews */}
         <Suspense fallback={null}>
