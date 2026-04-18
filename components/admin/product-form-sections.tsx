@@ -244,7 +244,7 @@ export function ProductFormSections({
                   </p>
                 </div>
                 {!isNew && product.slug && (
-                  <Button variant="outline" size="sm" asChild className="shrink-0">
+                  <Button variant="outline" size="touch" asChild className="shrink-0">
                     <a href={`/p/${product.slug}`} target="_blank" rel="noopener noreferrer">
                       Aperçu
                     </a>

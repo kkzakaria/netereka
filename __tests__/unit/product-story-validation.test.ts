@@ -27,6 +27,9 @@ describe("highlightsSchema", () => {
   it("accepts null (block disabled)", () => {
     expect(highlightsSchema.parse(null)).toBeNull();
   });
+  it("rejects an empty array", () => {
+    expect(() => highlightsSchema.parse([])).toThrow();
+  });
   it("rejects 1 or 2 items", () => {
     expect(() =>
       highlightsSchema.parse([{ icon: validIcon, label: "a" }]),

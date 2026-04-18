@@ -63,17 +63,22 @@ export function StoryFeatureBlockEditor({
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon-touch"
           disabled={!canRemove}
           onClick={onRemove}
           aria-label="Supprimer le bloc"
         >
-          <HugeiconsIcon icon={Delete02Icon} size={16} />
+          <HugeiconsIcon icon={Delete02Icon} size={20} />
         </Button>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor={`block-${index}-title`}>Titre</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor={`block-${index}-title`}>Titre</Label>
+          <span className="text-xs text-muted-foreground">
+            {block.title.length}/120
+          </span>
+        </div>
         <Input
           id={`block-${index}-title`}
           value={block.title}

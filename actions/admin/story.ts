@@ -2,12 +2,23 @@
 
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth/guards";
-import { queryFirst } from "@/lib/db";
+import { getDrizzle } from "@/lib/db/drizzle";
+import { products } from "@/lib/db/schema";
 import { uploadToR2 } from "@/lib/storage/images";
 import type { ActionResult } from "@/lib/utils";
 
 const idSchema = z.string().min(1, "ID requis");
+
+const ALLOWED_IMAGE_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "avif",
+]);
 
 export async function uploadStoryImage(
   productId: string,
@@ -18,11 +29,11 @@ export async function uploadStoryImage(
   const idResult = idSchema.safeParse(productId);
   if (!idResult.success) return { success: false, error: "ID produit invalide" };
 
-  // Verify product exists
-  const product = await queryFirst<{ id: string }>(
-    "SELECT id FROM products WHERE id = ?",
-    [productId],
-  );
+  const db = await getDrizzle();
+  const product = await db.query.products.findFirst({
+    where: eq(products.id, productId),
+    columns: { id: true },
+  });
   if (!product) {
     return { success: false, error: "Produit introuvable" };
   }
@@ -40,7 +51,8 @@ export async function uploadStoryImage(
     return { success: false, error: "L'image ne doit pas dépasser 5 Mo" };
   }
 
-  const ext = file.name.split(".").pop() || "jpg";
+  const rawExt = (file.name.split(".").pop() ?? "").toLowerCase();
+  const ext = ALLOWED_IMAGE_EXTENSIONS.has(rawExt) ? rawExt : "jpg";
   const key = `products/${productId}/story/${nanoid()}.${ext}`;
 
   try {

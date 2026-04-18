@@ -8,7 +8,7 @@ export async function getProductsByCategory(
 ): Promise<Product[]> {
   const limit = opts.limit ?? 20;
   const offset = opts.offset ?? 0;
-  return query<Product>(
+  const rows = await query<ProductWithRawStory>(
     `SELECT p.*,
        (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id AND pi.is_primary = 1 LIMIT 1) as image_url,
        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = 1) as variant_count,
@@ -20,6 +20,7 @@ export async function getProductsByCategory(
      LIMIT ? OFFSET ?`,
     [categoryId, limit, offset]
   );
+  return rows.map(hydrateProductStoryFields);
 }
 
 export async function getProductCountByCategory(categoryId: string): Promise<number> {
@@ -59,7 +60,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | nu
 }
 
 export async function getFeaturedProducts(limit = 10): Promise<Product[]> {
-  return query<Product>(
+  const rows = await query<ProductWithRawStory>(
     `SELECT p.*,
        (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id AND pi.is_primary = 1 LIMIT 1) as image_url,
        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = 1) as variant_count,
@@ -71,11 +72,12 @@ export async function getFeaturedProducts(limit = 10): Promise<Product[]> {
      LIMIT ?`,
     [limit]
   );
+  return rows.map(hydrateProductStoryFields);
 }
 
 export async function getLatestProducts(limit = 10, excludeFeatured = false): Promise<Product[]> {
   const featuredFilter = excludeFeatured ? "AND p.is_featured = 0" : "";
-  return query<Product>(
+  const rows = await query<ProductWithRawStory>(
     `SELECT p.*,
        (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id AND pi.is_primary = 1 LIMIT 1) as image_url,
        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = 1) as variant_count,
@@ -87,13 +89,14 @@ export async function getLatestProducts(limit = 10, excludeFeatured = false): Pr
      LIMIT ?`,
     [limit]
   );
+  return rows.map(hydrateProductStoryFields);
 }
 
 export async function getProductsByCategorySlug(
   categorySlug: string,
   limit = 10
 ): Promise<Product[]> {
-  return query<Product>(
+  const rows = await query<ProductWithRawStory>(
     `SELECT p.*,
        (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id AND pi.is_primary = 1 LIMIT 1) as image_url,
        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = 1) as variant_count,
@@ -105,6 +108,7 @@ export async function getProductsByCategorySlug(
      LIMIT ?`,
     [categorySlug, limit]
   );
+  return rows.map(hydrateProductStoryFields);
 }
 
 /** Strip a Product to only the fields needed by client-side cards. */
@@ -129,7 +133,7 @@ export async function getRelatedProducts(
   categoryId: string,
   limit = 8
 ): Promise<Product[]> {
-  return query<Product>(
+  const rows = await query<ProductWithRawStory>(
     `SELECT p.*,
        (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id AND pi.is_primary = 1 LIMIT 1) as image_url,
        (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id AND pv.is_active = 1) as variant_count,
@@ -141,4 +145,5 @@ export async function getRelatedProducts(
      LIMIT ?`,
     [categoryId, productId, limit]
   );
+  return rows.map(hydrateProductStoryFields);
 }

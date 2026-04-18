@@ -42,7 +42,7 @@ Fournir un **template structuré et stylisé** qui s'applique à **toute descrip
 
 Ordre vertical final :
 
-```
+```text
 [ Fil d'Ariane ]
 [ Galerie image  |  Nom + Prix + Add to cart + Wishlist + WhatsApp ]
 [ SECTION PRODUCT STORY (pleine largeur) ]
@@ -126,7 +126,7 @@ Ces mins/max s'appliquent **quand le bloc est activé**. Un admin peut laisser l
 
 Nouveau répertoire `components/storefront/product-story/` :
 
-```
+```text
 product-story/
 ├── index.tsx                    # composant racine, gère le "rien à afficher"
 ├── story-tagline.tsx

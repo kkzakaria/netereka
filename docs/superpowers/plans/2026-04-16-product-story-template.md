@@ -18,7 +18,7 @@
 
 ### New files
 
-```
+```text
 drizzle/
 └── 0010_product_story.sql                               # schema migration
 
@@ -57,7 +57,7 @@ __tests__/unit/
 
 ### Modified files
 
-```
+```text
 lib/db/schema.ts                                         # add 4 columns
 lib/db/types.ts                                          # add types + extend Product
 lib/db/products.ts                                       # deserialize JSON in getProductBySlug

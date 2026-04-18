@@ -13,7 +13,7 @@ describe("HIGHLIGHT_ICON_MAP", () => {
 describe("resolveHighlightIcon", () => {
   it("returns the mapped icon for a valid name", () => {
     const icon = resolveHighlightIcon("battery");
-    expect(icon).toBeDefined();
+    expect(icon).toBe(HIGHLIGHT_ICON_MAP["battery"]);
   });
   it("returns the fallback icon for an unknown name", () => {
     const fallback = resolveHighlightIcon("unknown-name-xyz");

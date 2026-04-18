@@ -9,19 +9,18 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { HIGHLIGHT_ICON_NAMES } from "@/lib/validations/product-story";
+import { HIGHLIGHT_ICON_NAMES, type HighlightIconName } from "@/lib/validations/product-story";
 import { HIGHLIGHT_ICON_MAP } from "@/components/storefront/product-story/icons";
 
 interface StoryIconPickerProps {
-  value: string;
-  onChange: (name: string) => void;
+  value: HighlightIconName | "";
+  onChange: (name: HighlightIconName) => void;
   className?: string;
 }
 
 export function StoryIconPicker({ value, onChange, className }: StoryIconPickerProps) {
   const [open, setOpen] = useState(false);
-  const icon = HIGHLIGHT_ICON_MAP[value as keyof typeof HIGHLIGHT_ICON_MAP]
-    ?? HIGHLIGHT_ICON_MAP["star"];
+  const icon = value ? HIGHLIGHT_ICON_MAP[value] : HIGHLIGHT_ICON_MAP["star"];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -29,8 +28,8 @@ export function StoryIconPicker({ value, onChange, className }: StoryIconPickerP
         <Button
           type="button"
           variant="outline"
-          size="icon"
-          className={cn("h-10 w-10 shrink-0", className)}
+          size="icon-touch"
+          className={cn("shrink-0", className)}
           aria-label="Choisir une icône"
         >
           <HugeiconsIcon icon={icon} size={20} strokeWidth={1.5} />
@@ -48,7 +47,7 @@ export function StoryIconPicker({ value, onChange, className }: StoryIconPickerP
                 aria-label={name}
                 aria-pressed={isSelected}
                 className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground",
+                  "flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground",
                   isSelected && "bg-accent text-foreground ring-2 ring-primary",
                 )}
                 onClick={() => {

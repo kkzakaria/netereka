@@ -26,7 +26,7 @@ export function StoryFeatureBlock({ block, index }: StoryFeatureBlockProps) {
           <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-muted">
             <Image
               src={getImageUrl(block.image_url!)}
-              alt={block.image_alt ?? ""}
+              alt={block.image_alt || block.title}
               fill
               sizes="(max-width: 768px) 100vw, 50vw"
               className="object-cover"

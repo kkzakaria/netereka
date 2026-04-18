@@ -20,6 +20,20 @@ const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
 
 const idSchema = z.string().min(1, "ID requis");
 
+// Sentinel string used to force Zod validation failure for non-parseable JSON inputs.
+const INVALID_JSON_SENTINEL = "__invalid__";
+
+/** FormData-safe JSON preprocessor: null/empty → null, valid JSON string → parsed, otherwise sentinel. */
+function parseNullableJsonString(value: unknown): unknown {
+  if (value == null || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value !== "string") return INVALID_JSON_SENTINEL;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return INVALID_JSON_SENTINEL;
+  }
+}
+
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
   category_id: z.string().min(1, "La catégorie est requise"),
@@ -40,21 +54,9 @@ const productSchema = z.object({
     (v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v),
     taglineSchema,
   ),
-  highlights: z.preprocess((v) => {
-    if (v == null || (typeof v === "string" && v.trim() === "")) return null;
-    if (typeof v !== "string") return "__invalid__";
-    try { return JSON.parse(v); } catch { return "__invalid__"; }
-  }, highlightsSchema),
-  feature_blocks: z.preprocess((v) => {
-    if (v == null || (typeof v === "string" && v.trim() === "")) return null;
-    if (typeof v !== "string") return "__invalid__";
-    try { return JSON.parse(v); } catch { return "__invalid__"; }
-  }, featureBlocksSchema),
-  faq: z.preprocess((v) => {
-    if (v == null || (typeof v === "string" && v.trim() === "")) return null;
-    if (typeof v !== "string") return "__invalid__";
-    try { return JSON.parse(v); } catch { return "__invalid__"; }
-  }, faqSchema),
+  highlights: z.preprocess(parseNullableJsonString, highlightsSchema),
+  feature_blocks: z.preprocess(parseNullableJsonString, featureBlocksSchema),
+  faq: z.preprocess(parseNullableJsonString, faqSchema),
 });
 
 /** @deprecated Never called from the UI — product creation now goes through createDraftProduct() + updateProduct(). Scheduled for removal once the draft flow is confirmed stable in production. */

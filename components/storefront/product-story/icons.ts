@@ -117,7 +117,7 @@ export const HIGHLIGHT_ICON_MAP: Record<HighlightIconName, IconSvgElement> = {
 };
 
 export function resolveHighlightIcon(name: string): IconSvgElement {
-  if (name in HIGHLIGHT_ICON_MAP) {
+  if (Object.hasOwn(HIGHLIGHT_ICON_MAP, name)) {
     return HIGHLIGHT_ICON_MAP[name as HighlightIconName];
   }
   console.warn(`[product-story] unknown highlight icon "${name}" — falling back to "star"`);

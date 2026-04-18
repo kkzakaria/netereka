@@ -19,16 +19,19 @@ export function StoryFaq({ faq }: StoryFaqProps) {
         Questions fréquentes
       </h2>
       <Accordion type="single" collapsible className="w-full">
-        {faq.map((item, i) => (
-          <AccordionItem key={i} value={`item-${i}`}>
-            <AccordionTrigger className="text-left text-lg font-medium">
-              {item.question}
-            </AccordionTrigger>
-            <AccordionContent className="whitespace-pre-line text-base leading-relaxed text-muted-foreground">
-              {item.answer}
-            </AccordionContent>
-          </AccordionItem>
-        ))}
+        {faq.map((item, i) => {
+          const id = `faq-${i}-${item.question.slice(0, 40)}`;
+          return (
+            <AccordionItem key={id} value={id}>
+              <AccordionTrigger className="text-left text-lg font-medium">
+                {item.question}
+              </AccordionTrigger>
+              <AccordionContent className="whitespace-pre-line text-base leading-relaxed text-muted-foreground">
+                {item.answer}
+              </AccordionContent>
+            </AccordionItem>
+          );
+        })}
       </Accordion>
     </div>
   );

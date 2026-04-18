@@ -76,9 +76,9 @@ export function StepFinalization({
       </div>
 
       {/* Story produit */}
-      <div className="space-y-1.5">
-        <Label>Story produit</Label>
-        <p className="text-xs text-muted-foreground">
+      <div data-slot="story-section" className="space-y-1.5">
+        <Label data-slot="story-section-label">Story produit</Label>
+        <p data-slot="story-section-help" className="text-xs text-muted-foreground">
           Blocs éditoriaux rendus en pleine largeur sur la fiche produit. Tous optionnels.
         </p>
         <ProductStorySection

@@ -66,7 +66,7 @@ export function ProductStory({
       {hasFeatureBlocks &&
         featureBlocks!.map((block, i) => (
           <div
-            key={i}
+            key={`feature-${i}-${block.title.slice(0, 40)}`}
             className={i % 2 === 0 ? "py-16 sm:py-24" : "bg-muted/30 py-16 sm:py-24"}
           >
             <StoryFeatureBlock block={block} index={i} />

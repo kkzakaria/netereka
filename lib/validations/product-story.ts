@@ -73,7 +73,7 @@ export const taglineSchema = z
 
 export const highlightSchema = z.object({
   icon: iconSchema,
-  label: z.string().min(1, "Libellé requis").max(80, "Max 80 caractères"),
+  label: z.string().trim().min(1, "Libellé requis").max(80, "Max 80 caractères"),
 });
 
 /** highlights → null (disabled) OR 3–6 items */
@@ -84,10 +84,10 @@ export const highlightsSchema = z
   .nullable();
 
 export const featureBlockSchema = z.object({
-  title: z.string().min(1, "Titre requis").max(120, "Max 120 caractères"),
-  body: z.string().min(1, "Texte requis").max(600, "Max 600 caractères"),
-  image_url: z.string().min(1).max(500).optional(),
-  image_alt: z.string().max(200).optional(),
+  title: z.string().trim().min(1, "Titre requis").max(120, "Max 120 caractères"),
+  body: z.string().trim().min(1, "Texte requis").max(600, "Max 600 caractères"),
+  image_url: z.string().min(1).max(500).nullable().optional(),
+  image_alt: z.string().trim().max(200).nullable().optional(),
 });
 
 /** feature_blocks → null (disabled) OR 2–4 items */
@@ -98,8 +98,8 @@ export const featureBlocksSchema = z
   .nullable();
 
 export const faqItemSchema = z.object({
-  question: z.string().min(1, "Question requise").max(160, "Max 160 caractères"),
-  answer: z.string().min(1, "Réponse requise").max(600, "Max 600 caractères"),
+  question: z.string().trim().min(1, "Question requise").max(160, "Max 160 caractères"),
+  answer: z.string().trim().min(1, "Réponse requise").max(600, "Max 600 caractères"),
 });
 
 /** faq → null OR 0–5 items (empty array treated as "no faq") */
