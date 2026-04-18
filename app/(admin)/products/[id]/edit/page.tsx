@@ -37,8 +37,11 @@ export default async function EditProductPage({ params }: Props) {
   );
 
   if (isNew) {
+    // Escape main's p-4 sm:p-6 via absolute positioning so the wizard sticky
+    // header can sit flush with main's top edge (sticky top-0 otherwise sticks
+    // at main's padding-box interior, leaving a 24px blank strip above).
     return (
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="absolute inset-0 overflow-y-auto">
         <ProductWizard product={product} categories={categoryOptions} />
       </div>
     );

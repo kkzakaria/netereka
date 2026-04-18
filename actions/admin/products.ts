@@ -3,16 +3,39 @@
 import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth/guards";
 import { execute, query, queryFirst } from "@/lib/db";
+import { getDrizzle } from "@/lib/db/drizzle";
+import { products } from "@/lib/db/schema";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { deleteFromR2 } from "@/lib/storage/images";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
+import {
+  taglineSchema,
+  highlightsSchema,
+  featureBlocksSchema,
+  faqSchema,
+} from "@/lib/validations/product-story";
 
 const DB_CONSTRAINT_SKU = "UNIQUE constraint failed: products.sku";
 const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
 
 const idSchema = z.string().min(1, "ID requis");
+
+// Sentinel string used to force Zod validation failure for non-parseable JSON inputs.
+const INVALID_JSON_SENTINEL = "__invalid__";
+
+/** FormData-safe JSON preprocessor: null/empty → null, valid JSON string → parsed, otherwise sentinel. */
+function parseNullableJsonString(value: unknown): unknown {
+  if (value == null || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value !== "string") return INVALID_JSON_SENTINEL;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return INVALID_JSON_SENTINEL;
+  }
+}
 
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
@@ -30,6 +53,13 @@ const productSchema = z.object({
   meta_description: z.string().max(160).optional().default(""),
   is_active: z.coerce.number().int().min(0).max(1).default(1),
   is_featured: z.coerce.number().int().min(0).max(1).default(0),
+  tagline: z.preprocess(
+    (v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v),
+    taglineSchema,
+  ),
+  highlights: z.preprocess(parseNullableJsonString, highlightsSchema),
+  feature_blocks: z.preprocess(parseNullableJsonString, featureBlocksSchema),
+  faq: z.preprocess(parseNullableJsonString, faqSchema),
 });
 
 /** @deprecated Never called from the UI — product creation now goes through createDraftProduct() + updateProduct(). Scheduled for removal once the draft flow is confirmed stable in production. */
@@ -44,8 +74,9 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
 
   const parsed = productSchema.safeParse(raw);
   if (!parsed.success) {
+    const flat = parsed.error.flatten();
     const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
-    return { success: false, error: msg };
+    return { success: false, error: msg, fieldErrors: flat.fieldErrors };
   }
 
   const data = parsed.data;
@@ -110,8 +141,9 @@ export async function updateProduct(
 
   const parsed = productSchema.safeParse(raw);
   if (!parsed.success) {
+    const flat = parsed.error.flatten();
     const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
-    return { success: false, error: msg };
+    return { success: false, error: msg, fieldErrors: flat.fieldErrors };
   }
 
   const data = parsed.data;
@@ -160,35 +192,35 @@ export async function updateProduct(
     ? sanitizeDescriptionHtml(data.description, id)
     : data.description || null;
 
-  const updateSql = `UPDATE products SET
-     category_id = ?, name = ?, slug = ?, description = ?, description_type = ?, short_description = ?,
-     base_price = ?, compare_price = ?, sku = ?, brand = ?,
-     is_active = ?, is_featured = ?, stock_quantity = ?,
-     low_stock_threshold = ?, weight_grams = ?, meta_title = ?, meta_description = ?,
-     is_draft = 0, -- Clear draft flag (product becomes live if is_active = 1)
-     updated_at = datetime('now')
-   WHERE id = ?`;
-
-  const buildParams = (sku: string) => [
-    data.category_id,
-    data.name,
-    finalSlug,
-    finalDescription,
-    data.description_type,
-    data.short_description || null,
-    data.base_price,
-    data.compare_price ?? null,
+  const db = await getDrizzle();
+  const buildValues = (sku: string) => ({
+    category_id: data.category_id,
+    name: data.name,
+    slug: finalSlug,
+    description: finalDescription,
+    description_type: data.description_type,
+    short_description: data.short_description || null,
+    base_price: data.base_price,
+    compare_price: data.compare_price ?? null,
     sku,
-    data.brand || null,
-    data.is_active,
-    data.is_featured,
-    data.stock_quantity,
-    data.low_stock_threshold,
-    data.weight_grams ?? null,
-    data.meta_title || null,
-    data.meta_description || null,
-    id,
-  ];
+    brand: data.brand || null,
+    is_active: data.is_active,
+    is_featured: data.is_featured,
+    stock_quantity: data.stock_quantity,
+    low_stock_threshold: data.low_stock_threshold,
+    weight_grams: data.weight_grams ?? null,
+    meta_title: data.meta_title || null,
+    meta_description: data.meta_description || null,
+    tagline: data.tagline ?? null,
+    highlights: data.highlights == null ? null : JSON.stringify(data.highlights),
+    feature_blocks: data.feature_blocks == null ? null : JSON.stringify(data.feature_blocks),
+    faq: data.faq == null ? null : JSON.stringify(data.faq),
+    is_draft: 0,
+    updated_at: sql`datetime('now')`,
+  });
+
+  const runUpdate = (sku: string) =>
+    db.update(products).set(buildValues(sku)).where(eq(products.id, id));
 
   // SKU: auto-generate when null (covers both draft-flow products and pre-existing rows that predate SKU auto-assignment)
   const existingSku = existing.sku;
@@ -197,7 +229,7 @@ export async function updateProduct(
     for (let attempt = 0; attempt < 3; attempt++) {
       const generatedSku = `NET-${nanoid(8).toUpperCase()}`;
       try {
-        await execute(updateSql, buildParams(generatedSku));
+        await runUpdate(generatedSku);
         skuWritten = true;
         break;
       } catch (err) {
@@ -219,7 +251,7 @@ export async function updateProduct(
     }
   } else {
     try {
-      await execute(updateSql, buildParams(existingSku));
+      await runUpdate(existingSku);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes(DB_CONSTRAINT_SLUG)) {

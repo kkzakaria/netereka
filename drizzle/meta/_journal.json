@@ -71,6 +71,13 @@
       "when": 1776157513310,
       "tag": "0009_fast_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1776358177965,
+      "tag": "0010_nasty_rafael_vega",
+      "breakpoints": true
     }
   ]
 }

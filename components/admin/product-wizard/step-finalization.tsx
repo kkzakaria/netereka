@@ -2,17 +2,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { ProductDetail } from "@/lib/db/types";
-
-const DescriptionEditor = dynamic(
-  () => import("@/components/admin/description-editor").then((m) => m.DescriptionEditor),
-  { ssr: false },
-);
+import { ProductStorySection } from "@/components/admin/product-story-section";
 
 interface StepFinalizationProps {
   product: ProductDetail;
@@ -80,15 +75,22 @@ export function StepFinalization({
         />
       </div>
 
-      {/* Description */}
-      <div className="space-y-1.5">
-        <Label>Description</Label>
-        <DescriptionEditor
-          name="description"
-          descriptionType={product.description_type}
-          defaultValue={product.description}
+      {/* Story produit */}
+      <div data-slot="story-section" className="space-y-1.5">
+        <Label data-slot="story-section-label">Story produit</Label>
+        <p data-slot="story-section-help" className="text-xs text-muted-foreground">
+          Blocs éditoriaux rendus en pleine largeur sur la fiche produit. Tous optionnels.
+        </p>
+        <ProductStorySection
+          productId={product.id}
+          tagline={product.tagline}
+          highlights={product.highlights}
+          featureBlocks={product.feature_blocks}
+          faq={product.faq}
         />
       </div>
+      <input type="hidden" name="description" value={product.description ?? ""} />
+      <input type="hidden" name="description_type" value={product.description_type ?? "richtext"} />
 
       {/* SEO */}
       <div className="space-y-4 rounded-lg border p-4">

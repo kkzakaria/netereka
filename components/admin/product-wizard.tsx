@@ -142,9 +142,10 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
   const isLastStep = currentStep === STEPS.length - 1;
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-      {/* Integrated header: back button + description + stepper */}
-      <div className="-mx-4 -mt-4 bg-background sm:-mx-6 sm:-mt-6">
+    <div className="flex flex-col">
+      {/* Integrated header: back button + description + stepper.
+         Sticky so it stays visible while main (the admin layout scroll container) scrolls. */}
+      <div className="sticky top-0 z-20 bg-background border-b">
         <div className="flex items-center gap-2 px-4 pt-4 pb-2 sm:px-6 sm:pt-5">
           <Button variant="ghost" size="icon" asChild className="shrink-0">
             <Link href="/products" aria-label="Retour aux produits">
@@ -160,8 +161,7 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
         />
       </div>
 
-      {/* Step content — internal scroll */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      {/* Step content — flows inside main's scroll */}
       <div className="mx-auto w-full max-w-2xl px-4 py-8">
         {currentStep === 0 && (
           <StepIdentity
@@ -241,7 +241,6 @@ export function ProductWizard({ product, categories }: ProductWizardProps) {
             )}
           </div>
         </div>
-      </div>
       </div>
     </div>
   );

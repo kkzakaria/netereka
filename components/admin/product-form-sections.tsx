@@ -18,11 +18,6 @@ import {
 } from "@/components/ui/input-group";
 import { ColorPicker } from "@/components/admin/color-picker";
 import { ImageUpload } from "@/components/admin/image-upload";
-import dynamic from "next/dynamic";
-const DescriptionEditor = dynamic(
-  () => import("./description-editor").then((m) => m.DescriptionEditor),
-  { ssr: false },
-);
 import { getImageUrl } from "@/lib/utils/images";
 import type { ProductDetail } from "@/lib/db/types";
 import {
@@ -40,12 +35,14 @@ import {
   type CategoryOption,
 } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
+import { ProductStorySection } from "./product-story-section";
 
 
 const SECTIONS: SectionDef[] = [
   { id: "section-general", label: "Informations" },
   { id: "section-category", label: "Catégorie" },
   { id: "section-specs", label: "Caractéristiques" },
+  { id: "section-story", label: "Story" },
   { id: "section-pricing", label: "Tarification" },
   { id: "section-images", label: "Images" },
   { id: "section-seo", label: "SEO" },
@@ -206,14 +203,9 @@ export function ProductFormSections({
                   defaultValue={product.short_description ?? ""}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <DescriptionEditor
-                  name="description"
-                  descriptionType={product.description_type}
-                  defaultValue={product.description}
-                />
-              </div>
+              {/* Preserve existing description on save (legacy content renders in Story free-content block) */}
+              <input type="hidden" name="description" value={product.description ?? ""} />
+              <input type="hidden" name="description_type" value={product.description_type ?? "richtext"} />
             </CardContent>
           </Card>
 
@@ -237,6 +229,37 @@ export function ProductFormSections({
             </CardHeader>
             <CardContent>
               <AttributesSection product={product} />
+            </CardContent>
+          </Card>
+
+          {/* Section: Story */}
+          <Card id="section-story">
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <CardTitle>Story produit</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Blocs éditoriaux rendus en pleine largeur sur la fiche produit.
+                    Tous les blocs sont optionnels.
+                  </p>
+                </div>
+                {!isNew && product.slug && (
+                  <Button variant="outline" size="touch" asChild className="shrink-0">
+                    <a href={`/p/${product.slug}`} target="_blank" rel="noopener noreferrer">
+                      Aperçu
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ProductStorySection
+                productId={product.id}
+                tagline={product.tagline}
+                highlights={product.highlights}
+                featureBlocks={product.feature_blocks}
+                faq={product.faq}
+              />
             </CardContent>
           </Card>
 
