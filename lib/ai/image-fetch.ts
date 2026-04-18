@@ -1,0 +1,107 @@
+import { nanoid } from "nanoid";
+import { uploadToR2 } from "@/lib/storage/images";
+
+export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+export const IMAGE_FETCH_TIMEOUT_MS = 10_000;
+
+const ALLOWED_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+]);
+
+const EXT_BY_TYPE: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg":  "jpg",
+  "image/png":  "png",
+  "image/webp": "webp",
+  "image/avif": "avif",
+};
+
+export type FetchImageResult =
+  | { ok: true; key: string; contentType: string; size: number }
+  | { ok: false; reason: "ssrf" | "bad_status" | "bad_content_type" | "too_large" | "timeout" | "fetch_failed" };
+
+/**
+ * Rejects URLs that could hit internal networks. DNS lookup is not available
+ * inside Workers, so we rely on host-based heuristics: literal IP in private
+ * ranges, or common internal hostnames. Any DNS name resolves to whatever the
+ * Cloudflare edge resolves it to — this is a best-effort guard, not absolute.
+ */
+function isBlockedHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost") || h === "metadata.google.internal") return true;
+
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 0) return true;
+  }
+  if (h.startsWith("[") && h.endsWith("]")) {
+    const inner = h.slice(1, -1);
+    if (inner === "::1" || inner.startsWith("fc") || inner.startsWith("fd") || inner.startsWith("fe80:")) return true;
+  }
+  return false;
+}
+
+export async function fetchAndUploadImage(
+  draftId: string,
+  url: string,
+): Promise<FetchImageResult> {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return { ok: false, reason: "ssrf" }; }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, reason: "ssrf" };
+  if (isBlockedHost(parsed.hostname)) return { ok: false, reason: "ssrf" };
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), IMAGE_FETCH_TIMEOUT_MS);
+
+  let resp: Response;
+  try {
+    resp = await fetch(parsed.toString(), { signal: ac.signal, redirect: "follow" });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof Error && err.name === "AbortError") return { ok: false, reason: "timeout" };
+    return { ok: false, reason: "fetch_failed" };
+  }
+  clearTimeout(timer);
+
+  if (!resp.ok) return { ok: false, reason: "bad_status" };
+
+  const ct = (resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!ALLOWED_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
+
+  const reader = resp.body?.getReader();
+  if (!reader) return { ok: false, reason: "fetch_failed" };
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > IMAGE_MAX_BYTES) {
+      try { await reader.cancel(); } catch { /* ignore */ }
+      return { ok: false, reason: "too_large" };
+    }
+    chunks.push(value);
+  }
+
+  const buffer = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) { buffer.set(c, offset); offset += c.byteLength; }
+
+  const ext = EXT_BY_TYPE[ct] ?? "jpg";
+  const key = `products/${draftId}/${nanoid(10)}.${ext}`;
+  const file = new File([buffer], key, { type: ct });
+  await uploadToR2(file, key);
+
+  return { ok: true, key, contentType: ct, size: total };
+}
