@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/kkzakaria/netereka/compare/v1.7.2...v1.8.0) (2026-04-18)
+
+
+### Features
+
+* **storefront:** Apple-like Product Story template ([#177](https://github.com/kkzakaria/netereka/issues/177)) ([0884eb4](https://github.com/kkzakaria/netereka/commit/0884eb4d375afa878881a7b2061f3e4b96855b59))
+
 ## [1.7.2](https://github.com/kkzakaria/netereka/compare/v1.7.1...v1.7.2) (2026-04-16)
 
 
