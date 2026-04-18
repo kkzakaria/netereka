@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aiPromptSchema, aiProductOutputSchema, aiNotFoundSchema, parseAiToolInput } from "@/lib/validations/product-ai";
+import { aiPromptSchema, aiProductOutputSchema, parseAiToolInput } from "@/lib/validations/product-ai";
 
 describe("aiPromptSchema", () => {
   it("accepte un prompt normal", () => {
