@@ -5,7 +5,6 @@ import type {
   ProductHighlight,
 } from "@/lib/db/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { descriptionToHtml } from "@/lib/utils/description-to-html";
 import { ProductStory } from "./product-story";
 
 interface ProductDetailsProps {
@@ -25,16 +24,15 @@ function hasStoryContent({
   featureBlocks,
   faq,
   description,
-  descriptionType,
 }: Pick<
   ProductDetailsProps,
-  "tagline" | "highlights" | "featureBlocks" | "faq" | "description" | "descriptionType"
+  "tagline" | "highlights" | "featureBlocks" | "faq" | "description"
 >): boolean {
   if (tagline) return true;
   if (highlights && highlights.length > 0) return true;
   if (featureBlocks && featureBlocks.length > 0) return true;
   if (faq && faq.length > 0) return true;
-  if (description && descriptionToHtml(description, descriptionType)) return true;
+  if (description && description.trim()) return true;
   return false;
 }
 
@@ -54,7 +52,6 @@ export function ProductDetails({
     featureBlocks,
     faq,
     description,
-    descriptionType,
   });
   const filteredAttributes = attributes.filter((a) => a.name !== "Couleur");
   const hasAttributes = filteredAttributes.length > 0;
@@ -94,11 +91,11 @@ export function ProductDetails({
   return (
     <section className="mt-10 border-t pt-8">
       <Tabs defaultValue="description">
-        <TabsList variant="line" className="mb-6">
-          <TabsTrigger value="description" className="text-sm">
+        <TabsList variant="line" className="mb-6 min-h-11">
+          <TabsTrigger value="description" className="px-3 text-sm">
             Description
           </TabsTrigger>
-          <TabsTrigger value="characteristics" className="text-sm">
+          <TabsTrigger value="characteristics" className="px-3 text-sm">
             Caractéristiques
           </TabsTrigger>
         </TabsList>
