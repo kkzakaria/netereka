@@ -35,4 +35,10 @@
       "bucket_name": "netereka-opennext-cache"
     }
   ],
+  "observability": {
+    "logs": {
+      "enabled": false,
+      "invocation_logs": true
+    }
+  }
 }
