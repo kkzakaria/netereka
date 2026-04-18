@@ -52,8 +52,10 @@ export async function uploadStoryImage(
   }
 
   const rawExt = (file.name.split(".").pop() ?? "").toLowerCase();
-  const ext = ALLOWED_IMAGE_EXTENSIONS.has(rawExt) ? rawExt : "jpg";
-  const key = `products/${productId}/story/${nanoid()}.${ext}`;
+  if (!ALLOWED_IMAGE_EXTENSIONS.has(rawExt)) {
+    return { success: false, error: "Format d'image non pris en charge" };
+  }
+  const key = `products/${productId}/story/${nanoid()}.${rawExt}`;
 
   try {
     await uploadToR2(file, key);

@@ -37,11 +37,7 @@ export default async function EditProductPage({ params }: Props) {
   );
 
   if (isNew) {
-    return (
-      <div className="flex h-full flex-col overflow-hidden">
-        <ProductWizard product={product} categories={categoryOptions} />
-      </div>
-    );
+    return <ProductWizard product={product} categories={categoryOptions} />;
   }
 
   return (

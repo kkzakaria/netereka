@@ -74,8 +74,9 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
 
   const parsed = productSchema.safeParse(raw);
   if (!parsed.success) {
+    const flat = parsed.error.flatten();
     const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
-    return { success: false, error: msg };
+    return { success: false, error: msg, fieldErrors: flat.fieldErrors };
   }
 
   const data = parsed.data;
@@ -140,8 +141,9 @@ export async function updateProduct(
 
   const parsed = productSchema.safeParse(raw);
   if (!parsed.success) {
+    const flat = parsed.error.flatten();
     const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
-    return { success: false, error: msg };
+    return { success: false, error: msg, fieldErrors: flat.fieldErrors };
   }
 
   const data = parsed.data;
