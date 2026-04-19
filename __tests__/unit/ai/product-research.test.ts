@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { researchProduct, type ResearchProgress } from "@/lib/ai/product-research";
+import { classifyError, researchProduct, type ResearchProgress } from "@/lib/ai/product-research";
 import type Anthropic from "@anthropic-ai/sdk";
 
 /**
@@ -102,5 +102,46 @@ describe("researchProduct", () => {
     ]);
     const events = await drain(researchProduct("x", anthropic));
     expect(events.at(-1)).toEqual({ type: "error", code: "api_error" });
+  });
+});
+
+describe("classifyError", () => {
+  it("retourne timeout si aborted", () => {
+    expect(classifyError(new Error("any"), true)).toBe("timeout");
+  });
+
+  it("retourne timeout pour AbortError", () => {
+    const err = Object.assign(new Error("aborted"), { name: "AbortError" });
+    expect(classifyError(err, false)).toBe("timeout");
+  });
+
+  it("retourne auth_failed pour 401/403", () => {
+    expect(classifyError({ status: 401 }, false)).toBe("auth_failed");
+    expect(classifyError({ status: 403 }, false)).toBe("auth_failed");
+  });
+
+  it("retourne upstream_rate_limited pour 429", () => {
+    expect(classifyError({ status: 429 }, false)).toBe("upstream_rate_limited");
+  });
+
+  it("retourne no_credits pour 400 avec message de solde", () => {
+    const err = { status: 400, error: { error: { message: "Your credit balance is too low" } } };
+    expect(classifyError(err, false)).toBe("no_credits");
+  });
+
+  it("retourne no_credits aussi pour 'billing' dans le message", () => {
+    const err = { status: 400, error: { error: { message: "billing issue" } } };
+    expect(classifyError(err, false)).toBe("no_credits");
+  });
+
+  it("retourne upstream_unavailable pour 5xx", () => {
+    expect(classifyError({ status: 500 }, false)).toBe("upstream_unavailable");
+    expect(classifyError({ status: 503 }, false)).toBe("upstream_unavailable");
+  });
+
+  it("retourne api_error pour un 400 non-billing ou erreur inconnue", () => {
+    expect(classifyError({ status: 400, error: { error: { message: "bad request" } } }, false)).toBe("api_error");
+    expect(classifyError(new Error("random"), false)).toBe("api_error");
+    expect(classifyError(undefined, false)).toBe("api_error");
   });
 });

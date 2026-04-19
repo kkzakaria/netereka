@@ -18,6 +18,21 @@ type UiState =
   | { kind: "generating"; completed: Set<ProgressStep>; active: ProgressStep | null }
   | { kind: "selecting"; output: AiProductOutput };
 
+const ERROR_MESSAGES: Record<string, string> = {
+  no_credits: "Crédit Anthropic épuisé. Rechargez le compte pour continuer.",
+  auth_failed: "Clé API Anthropic invalide. Vérifiez la configuration.",
+  upstream_rate_limited: "Anthropic a temporairement limité nos requêtes. Réessayez dans quelques minutes.",
+  upstream_unavailable: "Service IA momentanément indisponible. Réessayez.",
+  timeout: "La génération a dépassé le délai maximum. Réessayez avec un prompt plus précis.",
+  invalid_ai_output: "Le modèle n'a pas produit une fiche exploitable. Réessayez.",
+  feature_disabled: "La génération IA est désactivée. Contactez un administrateur.",
+};
+
+function errorMessageFor(code: string | undefined): string {
+  if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
+  return "Une erreur est survenue. Réessayez.";
+}
+
 export function AiNewClient() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
@@ -45,9 +60,12 @@ export function AiNewClient() {
     }
 
     if (!resp.ok || !resp.body) {
-      const msg = resp.status === 429
-        ? "Limite de générations atteinte. Réessayez plus tard."
-        : "Une erreur est survenue. Réessayez.";
+      let msg: string;
+      if (resp.status === 429) msg = "Limite de générations atteinte (10/h). Réessayez plus tard.";
+      else if (resp.status === 403) msg = "Accès refusé. Reconnectez-vous avec un compte administrateur.";
+      else if (resp.status === 404) msg = "La génération IA est désactivée. Contactez un administrateur.";
+      else if (resp.status === 400) msg = "Prompt invalide. Vérifiez la saisie.";
+      else msg = "Une erreur est survenue. Réessayez.";
       setUi({ kind: "prompt", error: msg });
       return;
     }
@@ -82,7 +100,7 @@ export function AiNewClient() {
           setUi({ kind: "prompt", error: "Produit introuvable. Précisez marque + modèle." });
           return;
         } else if (event.type === "error") {
-          setUi({ kind: "prompt", error: "Le modèle n'a pas pu produire une fiche valide. Réessayez." });
+          setUi({ kind: "prompt", error: errorMessageFor(event.code) });
           return;
         }
       }

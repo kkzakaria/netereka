@@ -2,11 +2,21 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { parseAiToolInput, type AiProductOutput } from "@/lib/validations/product-ai";
 import { HIGHLIGHT_ICON_NAMES } from "@/lib/validations/product-story";
 
+export type ResearchErrorCode =
+  | "invalid_ai_output"       // Claude returned a submit_product payload we couldn't parse
+  | "api_error"               // fallback: unclassified error from the SDK
+  | "feature_disabled"        // AI_PRODUCT_CREATION_ENABLED=0
+  | "no_credits"              // Anthropic billing: balance too low
+  | "auth_failed"             // Invalid or revoked API key
+  | "upstream_rate_limited"   // Anthropic 429 — distinct from our per-admin quota
+  | "upstream_unavailable"    // Anthropic 5xx / network reachability
+  | "timeout";                // our DEFAULT_TIMEOUT_MS AbortController fired
+
 export type ResearchProgress =
   | { type: "progress"; step: "search" | "specs" | "images" | "finalize" }
   | { type: "done"; output: AiProductOutput }
   | { type: "not_found"; reason: string }
-  | { type: "error"; code: "invalid_ai_output" | "api_error" | "feature_disabled" };
+  | { type: "error"; code: ResearchErrorCode };
 
 /** Default model. Override per-call via `researchProduct(..., { model })` or via the `AI_MODEL` env var at the caller. */
 export const MODEL = "claude-sonnet-4-6";
@@ -137,8 +147,25 @@ export async function* researchProduct(
     yield { type: "error", code: "invalid_ai_output" };
   } catch (err) {
     console.error("[ai-product] researchProduct failed:", err);
-    yield { type: "error", code: "api_error" };
+    yield { type: "error", code: classifyError(err, ac.signal.aborted) };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Map an Anthropic SDK / network error to a stable code the UI can translate. */
+export function classifyError(err: unknown, aborted: boolean): ResearchErrorCode {
+  if (aborted) return "timeout";
+  const anyErr = err as { name?: string; status?: number; error?: { error?: { message?: string } } };
+  if (anyErr?.name === "AbortError" || anyErr?.name === "APIUserAbortError") return "timeout";
+
+  const status = anyErr?.status;
+  const message = anyErr?.error?.error?.message ?? "";
+
+  if (status === 401 || status === 403) return "auth_failed";
+  if (status === 429) return "upstream_rate_limited";
+  if (status === 400 && /credit|balance|billing/i.test(message)) return "no_credits";
+  if (typeof status === "number" && status >= 500) return "upstream_unavailable";
+
+  return "api_error";
 }
