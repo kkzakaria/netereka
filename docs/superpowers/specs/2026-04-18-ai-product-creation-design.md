@@ -57,7 +57,7 @@ This spec adds an AI-assisted path that takes a short text prompt (e.g. `"Samsun
 
 ### Files
 
-```
+```text
 app/(admin)/products/
   ai-new/
     page.tsx                         # Server component, gate on AI_PRODUCT_CREATION_ENABLED + requireAdmin()

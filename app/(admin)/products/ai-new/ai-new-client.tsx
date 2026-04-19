@@ -26,6 +26,10 @@ export function AiNewClient() {
 
   const generate = useCallback(async () => {
     const trimmed = prompt.trim();
+    if (trimmed.length < 3) {
+      setUi({ kind: "prompt", error: "Prompt trop court (min 3 caractères)" });
+      return;
+    }
     setUi({ kind: "generating", completed: new Set(), active: "search" });
 
     let resp: Response;
@@ -83,6 +87,8 @@ export function AiNewClient() {
         }
       }
     }
+    // Stream ended without a terminal event — network drop, Worker timeout, etc.
+    setUi({ kind: "prompt", error: "La génération a été interrompue. Réessayez." });
   }, [prompt]);
 
   const confirmImport = useCallback((selectedUrls: string[]) => {

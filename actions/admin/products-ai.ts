@@ -45,10 +45,23 @@ export async function importCandidateImages(
     if (!candidateSet.has(u)) return { success: false, error: "Sélection d'images invalide" };
   }
 
-  const tagline        = taglineSchema.parse(output.story.tagline ?? null);
-  const highlights     = output.story.highlights        ? highlightsSchema.parse(output.story.highlights)        : null;
-  const featureBlocks  = output.story.feature_blocks    ? featureBlocksSchema.parse(output.story.feature_blocks) : null;
-  const faq            = output.story.faq               ? faqSchema.parse(output.story.faq)                      : null;
+  const storyTagline      = taglineSchema.safeParse(output.story.tagline ?? null);
+  const storyHighlights   = output.story.highlights     ? highlightsSchema.safeParse(output.story.highlights)    : { success: true as const, data: null };
+  const storyFeatureBlocks = output.story.feature_blocks ? featureBlocksSchema.safeParse(output.story.feature_blocks) : { success: true as const, data: null };
+  const storyFaq          = output.story.faq           ? faqSchema.safeParse(output.story.faq)                 : { success: true as const, data: null };
+  if (!storyTagline.success || !storyHighlights.success || !storyFeatureBlocks.success || !storyFaq.success) {
+    console.error("[admin/products-ai] story validation drift", {
+      tagline: storyTagline.success ? null : storyTagline.error.issues,
+      highlights: storyHighlights.success ? null : storyHighlights.error.issues,
+      feature_blocks: storyFeatureBlocks.success ? null : storyFeatureBlocks.error.issues,
+      faq: storyFaq.success ? null : storyFaq.error.issues,
+    });
+    return { success: false, error: "La story produit générée est invalide" };
+  }
+  const tagline = storyTagline.data;
+  const highlights = storyHighlights.data;
+  const featureBlocks = storyFeatureBlocks.data;
+  const faq = storyFaq.data;
 
   const draftId = nanoid();
   const placeholderSlug = `draft-${draftId}`;
