@@ -43,7 +43,7 @@ export function AiProgressPanel({ completed, active }: AiProgressPanelProps) {
           );
         })}
       </ul>
-      <p className="pt-2 text-xs text-muted-foreground">Peut prendre jusqu&apos;à 30 secondes.</p>
+      <p className="pt-2 text-xs text-muted-foreground">Peut prendre jusqu&apos;à 90 secondes.</p>
     </div>
   );
 }

@@ -67,4 +67,14 @@ describe("fetchAndUploadImage", () => {
     if (r.ok) expect(r.key).toMatch(/^products\/draft-1\/[A-Za-z0-9_-]+\.png$/);
     expect(uploadToR2Mock).toHaveBeenCalledOnce();
   });
+
+  it("renvoie upload_failed si uploadToR2 throw", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeImageResponse()));
+    uploadToR2Mock.mockRejectedValueOnce(new Error("R2 bucket non disponible"));
+
+    const r = await fetchAndUploadImage("draft-1", "https://example.test/a.png");
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("upload_failed");
+  });
 });

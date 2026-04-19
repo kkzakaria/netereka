@@ -46,7 +46,7 @@ export function AiPromptForm({ prompt, onPromptChange, onSubmit, disabled, error
             type="button"
             disabled={disabled}
             onClick={() => onPromptChange(ex)}
-            className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground hover:border-foreground hover:text-foreground disabled:opacity-50"
+            className="inline-flex min-h-11 items-center rounded-full border bg-background px-4 py-2 text-xs text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
           >
             {ex}
           </button>

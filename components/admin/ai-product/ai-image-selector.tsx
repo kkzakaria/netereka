@@ -52,7 +52,9 @@ export function AiImageSelector({ output, onConfirm, onCancel, busy }: AiImageSe
               type="button"
               disabled={busy}
               onClick={() => toggle(c.url)}
-              className={`group relative overflow-hidden rounded-lg border text-left transition ${
+              aria-pressed={isSelected}
+              aria-label={`${isSelected ? "Désélectionner" : "Sélectionner"} l'image ${c.alt ? `« ${c.alt} »` : ""} de ${c.source_domain}`.trim()}
+              className={`group relative overflow-hidden rounded-lg border text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
                 isSelected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-foreground"
               }`}
             >

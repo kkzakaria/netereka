@@ -22,7 +22,7 @@ const EXT_BY_TYPE: Record<string, string> = {
 
 export type FetchImageResult =
   | { ok: true; key: string; contentType: string; size: number }
-  | { ok: false; reason: "ssrf" | "bad_status" | "bad_content_type" | "too_large" | "timeout" | "fetch_failed" };
+  | { ok: false; reason: "ssrf" | "bad_status" | "bad_content_type" | "too_large" | "timeout" | "fetch_failed" | "upload_failed" };
 
 /**
  * Rejects URLs that could hit internal networks. DNS lookup is not available
@@ -101,7 +101,12 @@ export async function fetchAndUploadImage(
   const ext = EXT_BY_TYPE[ct] ?? "jpg";
   const key = `products/${draftId}/${nanoid()}.${ext}`;
   const file = new File([buffer], key, { type: ct });
-  await uploadToR2(file, key);
+  try {
+    await uploadToR2(file, key);
+  } catch (err) {
+    console.error("[ai-product] R2 upload failed for key", key, err);
+    return { ok: false, reason: "upload_failed" };
+  }
 
   return { ok: true, key, contentType: ct, size: total };
 }

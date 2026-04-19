@@ -83,18 +83,18 @@ export async function importCandidateImages(
   const categoryId = category?.id ?? null;
 
   const baseSlug = slugify(output.name);
-  let finalSlug = baseSlug || placeholderSlug;
+  // Keep the placeholder slug if slugify produced nothing OR every candidate in 20 tries collided.
+  // The placeholder is guaranteed unique (nanoid-based) so the batch UPDATE below won't throw on slug.
+  let finalSlug = placeholderSlug;
   if (baseSlug) {
-    let suffix = 1;
     let candidate = baseSlug;
-    while (suffix <= 20) {
+    for (let suffix = 1; suffix <= 20; suffix++) {
       const taken = await queryFirst<{ id: string }>(
         "SELECT id FROM products WHERE slug = ? AND id != ? LIMIT 1",
         [candidate, draftId],
       );
       if (!taken) { finalSlug = candidate; break; }
-      suffix++;
-      candidate = `${baseSlug}-${suffix}`;
+      candidate = `${baseSlug}-${suffix + 1}`;
     }
   }
 
