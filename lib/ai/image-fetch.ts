@@ -51,6 +51,34 @@ function isBlockedHost(hostname: string): boolean {
   return false;
 }
 
+const MAX_REDIRECTS = 3;
+
+/**
+ * Follow HTTP redirects manually so each Location target passes the SSRF host check
+ * before we issue the next request. `redirect: "follow"` would let a public URL
+ * bounce to a private IP and bypass the initial hostname validation.
+ */
+async function fetchWithSsrfSafeRedirects(
+  initialUrl: URL,
+  signal: AbortSignal,
+): Promise<{ ok: true; resp: Response } | { ok: false; reason: "ssrf" | "fetch_failed" }> {
+  let current = initialUrl;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const resp = await fetch(current.toString(), { signal, redirect: "manual" });
+    const status = resp.status;
+    if (status < 300 || status >= 400) return { ok: true, resp };
+
+    const location = resp.headers.get("location");
+    if (!location) return { ok: true, resp }; // 3xx without Location — treat as-is (caller will see bad_status)
+    let next: URL;
+    try { next = new URL(location, current); } catch { return { ok: false, reason: "fetch_failed" }; }
+    if (next.protocol !== "http:" && next.protocol !== "https:") return { ok: false, reason: "ssrf" };
+    if (isBlockedHost(next.hostname)) return { ok: false, reason: "ssrf" };
+    current = next;
+  }
+  return { ok: false, reason: "fetch_failed" }; // redirect loop / cap exceeded
+}
+
 export async function fetchAndUploadImage(
   draftId: string,
   url: string,
@@ -63,50 +91,62 @@ export async function fetchAndUploadImage(
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), IMAGE_FETCH_TIMEOUT_MS);
 
-  let resp: Response;
   try {
-    resp = await fetch(parsed.toString(), { signal: ac.signal, redirect: "follow" });
-  } catch (err) {
-    clearTimeout(timer);
-    if (err instanceof Error && err.name === "AbortError") return { ok: false, reason: "timeout" };
-    return { ok: false, reason: "fetch_failed" };
-  }
-  clearTimeout(timer);
-
-  if (!resp.ok) return { ok: false, reason: "bad_status" };
-
-  const ct = (resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-  if (!ALLOWED_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
-
-  const reader = resp.body?.getReader();
-  if (!reader) return { ok: false, reason: "fetch_failed" };
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > IMAGE_MAX_BYTES) {
-      try { await reader.cancel(); } catch { /* ignore */ }
-      return { ok: false, reason: "too_large" };
+    let resp: Response;
+    try {
+      const r = await fetchWithSsrfSafeRedirects(parsed, ac.signal);
+      if (!r.ok) return { ok: false, reason: r.reason };
+      resp = r.resp;
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return { ok: false, reason: "timeout" };
+      return { ok: false, reason: "fetch_failed" };
     }
-    chunks.push(value);
+
+    if (!resp.ok) return { ok: false, reason: "bad_status" };
+
+    const ct = (resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    if (!ALLOWED_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
+
+    const reader = resp.body?.getReader();
+    if (!reader) return { ok: false, reason: "fetch_failed" };
+
+    // Keep the timeout active during body streaming — an oversized or slow image
+    // can legitimately trip the abort mid-stream; reader.read() will reject with
+    // AbortError, caught below and normalized to a structured result.
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > IMAGE_MAX_BYTES) {
+          try { await reader.cancel(); } catch { /* ignore */ }
+          return { ok: false, reason: "too_large" };
+        }
+        chunks.push(value);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return { ok: false, reason: "timeout" };
+      return { ok: false, reason: "fetch_failed" };
+    }
+
+    const buffer = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) { buffer.set(c, offset); offset += c.byteLength; }
+
+    const ext = EXT_BY_TYPE[ct] ?? "jpg";
+    const key = `products/${draftId}/${nanoid()}.${ext}`;
+    const file = new File([buffer], key, { type: ct });
+    try {
+      await uploadToR2(file, key);
+    } catch (err) {
+      console.error("[ai-product] R2 upload failed for key", key, err);
+      return { ok: false, reason: "upload_failed" };
+    }
+
+    return { ok: true, key, contentType: ct, size: total };
+  } finally {
+    clearTimeout(timer);
   }
-
-  const buffer = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) { buffer.set(c, offset); offset += c.byteLength; }
-
-  const ext = EXT_BY_TYPE[ct] ?? "jpg";
-  const key = `products/${draftId}/${nanoid()}.${ext}`;
-  const file = new File([buffer], key, { type: ct });
-  try {
-    await uploadToR2(file, key);
-  } catch (err) {
-    console.error("[ai-product] R2 upload failed for key", key, err);
-    return { ok: false, reason: "upload_failed" };
-  }
-
-  return { ok: true, key, contentType: ct, size: total };
 }

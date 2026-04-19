@@ -178,4 +178,26 @@ describe("importCandidateImages", () => {
     expect(r.success).toBe(false);
     expect(deleteFromR2Mock).toHaveBeenCalledTimes(2);
   });
+
+  it("supprime la ligne draft orpheline si le batch échoue", async () => {
+    mocks.dbBatch.mockRejectedValueOnce(new Error("batch failed"));
+    mocks.fetchAndUploadImage.mockImplementation(async (_: string, url: string) => ({
+      ok: true,
+      key: `products/d1/${url.split("/").pop()}`,
+      contentType: "image/jpeg",
+      size: 10,
+    }));
+
+    const r = await importCandidateImages(OUTPUT, ["https://x.test/a.jpg"]);
+    expect(r.success).toBe(false);
+
+    // The compensating DELETE should have been issued with the draft id.
+    const deleteCalls = mocks.execute.mock.calls.filter(
+      (call: unknown[]) => typeof call[0] === "string" && call[0].startsWith("DELETE FROM products"),
+    );
+    expect(deleteCalls).toHaveLength(1);
+    // The draft id is the one passed to fetchAndUploadImage as the first arg.
+    const fetchCall = mocks.fetchAndUploadImage.mock.calls[0] as [string, string];
+    expect((deleteCalls[0] as unknown[])[1]).toEqual([fetchCall[0]]);
+  });
 });

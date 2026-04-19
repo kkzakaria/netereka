@@ -77,4 +77,71 @@ describe("fetchAndUploadImage", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("upload_failed");
   });
+
+  it("rejette un redirect vers une IP privée (SSRF via Location header)", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "http://10.0.0.1/evil.png" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const r = await fetchAndUploadImage("draft-1", "https://public.test/a.png");
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("ssrf");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // second hop never issued
+  });
+
+  it("suit un redirect vers une URL publique", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, {
+        status: 301,
+        headers: { location: "https://cdn.public.test/a.png" },
+      }))
+      .mockResolvedValueOnce(makeImageResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    uploadToR2Mock.mockResolvedValue("products/draft-1/abc.png");
+
+    const r = await fetchAndUploadImage("draft-1", "https://origin.test/a.png");
+    expect(r.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("abandonne au-delà du cap de redirects", async () => {
+    const loopingResp = () => new Response(null, {
+      status: 302,
+      headers: { location: "https://public.test/next" },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(loopingResp())
+      .mockResolvedValueOnce(loopingResp())
+      .mockResolvedValueOnce(loopingResp())
+      .mockResolvedValueOnce(loopingResp());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const r = await fetchAndUploadImage("draft-1", "https://public.test/a");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("fetch_failed");
+  });
+
+  it("normalise un AbortError pendant le streaming du body en reason=timeout", async () => {
+    // Simulate fetch resolving OK, but reader.read() throwing AbortError mid-stream
+    const aborted = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const bodyStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0x89]));
+        controller.error(aborted);
+      },
+    });
+    const resp = new Response(bodyStream, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resp));
+
+    const r = await fetchAndUploadImage("draft-1", "https://public.test/a.png");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("timeout");
+  });
 });

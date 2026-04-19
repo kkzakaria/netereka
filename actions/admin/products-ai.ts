@@ -182,13 +182,18 @@ export async function importCandidateImages(
     await db.batch(stmts);
   } catch (err) {
     console.error("[admin/products-ai] batch write failed", err);
-    // Orphan R2 hygiene: the batch failed but we already uploaded to R2.
-    // Best-effort cleanup — failures here should not mask the original error.
-    await Promise.allSettled(
-      succeeded.map(({ r }) => deleteFromR2(r.key).catch((e) => {
-        console.warn("[admin/products-ai] orphan cleanup failed for key", r.key, e);
+    // Compensating cleanup — the draft row, any pending attribute/image inserts,
+    // and the R2 objects we uploaded must all be undone so retries stay idempotent
+    // and no orphans survive. All failures here are logged but swallowed so the
+    // original error reaches the caller.
+    await Promise.allSettled([
+      ...succeeded.map(({ r }) => deleteFromR2(r.key).catch((e) => {
+        console.warn("[admin/products-ai] orphan R2 cleanup failed for key", r.key, e);
       })),
-    );
+      execute("DELETE FROM products WHERE id = ?", [draftId]).catch((e) => {
+        console.warn("[admin/products-ai] orphan draft cleanup failed for id", draftId, e);
+      }),
+    ]);
     return { success: false, error: "Erreur lors de l'enregistrement de la fiche IA" };
   }
 
