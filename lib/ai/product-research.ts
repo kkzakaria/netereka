@@ -49,15 +49,13 @@ export function buildSystemPrompt(): string {
   ].join("\n");
 }
 
-export function buildTools(): Anthropic.Tool[] {
+export function buildTools(): Anthropic.ToolUnion[] {
   return [
     {
-      // Anthropic-executed web search. The SDK 0.33 does not expose this in Anthropic.Tool,
-      // hence the cast; the server happily accepts it at runtime.
       type: "web_search_20250305",
       name: "web_search",
       max_uses: 5,
-    } as unknown as Anthropic.Tool,
+    },
     {
       name: SUBMIT_TOOL_NAME,
       description: "Soumet la fiche produit complète (ou signale que le produit est introuvable).",
@@ -112,18 +110,17 @@ export async function* researchProduct(
     );
 
     for await (const event of stream) {
-      if (event.type === "content_block_start") {
-        const block = event.content_block as { type: string; name?: string };
-        if ((block.type === "server_tool_use" || block.type === "tool_use") && block.name === "web_search") {
-          searchCount++;
-          if (searchCount === 1) yield { type: "progress", step: "search" };
-          else if (searchCount === 2) yield { type: "progress", step: "specs" };
-          else if (searchCount === 3) yield { type: "progress", step: "images" };
-        }
-        if (block.type === "tool_use" && block.name === SUBMIT_TOOL_NAME && !finalizeEmitted) {
-          finalizeEmitted = true;
-          yield { type: "progress", step: "finalize" };
-        }
+      if (event.type !== "content_block_start") continue;
+      const block = event.content_block;
+      // server_tool_use (Anthropic-executed web_search) vs tool_use (our submit_product).
+      if (block.type === "server_tool_use" && block.name === "web_search") {
+        searchCount++;
+        if (searchCount === 1) yield { type: "progress", step: "search" };
+        else if (searchCount === 2) yield { type: "progress", step: "specs" };
+        else if (searchCount === 3) yield { type: "progress", step: "images" };
+      } else if (block.type === "tool_use" && block.name === SUBMIT_TOOL_NAME && !finalizeEmitted) {
+        finalizeEmitted = true;
+        yield { type: "progress", step: "finalize" };
       }
     }
 
