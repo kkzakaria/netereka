@@ -32,6 +32,7 @@
     "postinstall": "node scripts/patch-opennext.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@base-ui/react": "^1.1.0",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-css": "^6.3.1",
