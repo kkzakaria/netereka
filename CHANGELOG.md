@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/kkzakaria/netereka/compare/v1.8.0...v1.9.0) (2026-04-19)
+
+
+### Features
+
+* **admin:** AI-powered product creation ([#186](https://github.com/kkzakaria/netereka/issues/186)) ([da68ef0](https://github.com/kkzakaria/netereka/commit/da68ef042713fca0d443f16a6e684ce0c1daedfd))
+* **storefront:** restore Description + Caractéristiques tabs ([#183](https://github.com/kkzakaria/netereka/issues/183)) ([d8a2df8](https://github.com/kkzakaria/netereka/commit/d8a2df8f3ff919734d2a5397dc4ec70d78dff733))
+
 ## [1.8.0](https://github.com/kkzakaria/netereka/compare/v1.7.2...v1.8.0) (2026-04-18)
 
 
