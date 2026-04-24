@@ -429,6 +429,18 @@ export const whatsappConfig = sqliteTable("whatsapp_config", {
 });
 
 // =============================================================================
+// AI Config (singleton row: id=1)
+// =============================================================================
+export const aiConfig = sqliteTable("ai_config", {
+  id: integer("id").primaryKey(),
+  anthropic_api_key: text("anthropic_api_key"),
+  model: text("model"),
+  enabled: integer("enabled").notNull().default(1),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+});
+
+// =============================================================================
 // WhatsApp Sessions
 // =============================================================================
 export const whatsappSessions = sqliteTable("whatsapp_sessions", {
