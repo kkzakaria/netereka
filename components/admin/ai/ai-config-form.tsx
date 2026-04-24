@@ -19,7 +19,8 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
   const [enabled, setEnabled] = useState(config.enabled);
 
   function handleSubmit(formData: FormData) {
-    // Switch's hidden input sends "on"/off — we mirror our controlled state
+    // <Switch> has no `name` prop, so it doesn't appear in FormData by itself.
+    // Inject the controlled `enabled` state explicitly so the server action receives it.
     formData.set("enabled", enabled ? "on" : "off");
 
     startTransition(async () => {
@@ -33,8 +34,13 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
         } else {
           toast.error(result.error ?? "Une erreur est survenue");
         }
-      } catch {
-        toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
+      } catch (error) {
+        console.error("[ai-config-form] saveAiConfig threw:", error);
+        toast.error(
+          error instanceof Error
+            ? `Erreur serveur : ${error.message}`
+            : "Erreur inattendue. Consultez la console pour les détails.",
+        );
       }
     });
   }
@@ -42,13 +48,6 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
   return (
     <form action={handleSubmit}>
       <div className="space-y-6">
-        {config.apiKeyFromEnv && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
-            Cette clé API est actuellement chargée depuis une variable d&apos;environnement (legacy).
-            Renseignez-la ici pour la gérer depuis l&apos;administration.
-          </div>
-        )}
-
         <Card>
           <CardHeader>
             <CardTitle>Clé API Anthropic</CardTitle>
@@ -67,6 +66,14 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            {config.apiKeyFromEnv && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                Clé chargée depuis la variable d&apos;environnement (legacy):{" "}
+                <code>{config.apiKeyMask}</code>. Saisissez-la ici pour la gérer
+                depuis l&apos;administration. Tant que ce champ reste vide, la valeur
+                de l&apos;environnement continue d&apos;être utilisée.
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="anthropic_api_key">Clé API</Label>
               <div className="flex gap-2">
@@ -74,7 +81,7 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
                   id="anthropic_api_key"
                   name="anthropic_api_key"
                   type={showApiKey ? "text" : "password"}
-                  defaultValue={config.apiKeyMask ?? ""}
+                  defaultValue={config.apiKeyFromEnv ? "" : (config.apiKeyMask ?? "")}
                   placeholder="sk-ant-api03-..."
                   className="flex-1"
                 />
@@ -89,8 +96,9 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
                 </Button>
               </div>
               <p className="text-muted-foreground text-xs">
-                La clé est masquée (8 puces + 4 derniers caractères). Laissez le masque tel
-                quel pour conserver la clé existante, ou saisissez une nouvelle valeur.
+                Quand une clé est enregistrée, ce champ affiche son masque
+                (8 puces + 4 derniers caractères). Laissez le masque tel quel pour
+                conserver la clé existante, ou saisissez une nouvelle valeur.
               </p>
             </div>
           </CardContent>
@@ -104,13 +112,20 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
               le modèle par défaut configuré dans le code.
             </p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {config.modelFromEnv && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                Modèle chargé depuis la variable d&apos;environnement (legacy):{" "}
+                <code>{config.model}</code>. Tant que ce champ reste vide, la valeur
+                de l&apos;environnement continue d&apos;être utilisée.
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="model">Modèle</Label>
               <Input
                 id="model"
                 name="model"
-                defaultValue={config.model ?? ""}
+                defaultValue={config.modelFromEnv ? "" : (config.model ?? "")}
                 placeholder="claude-opus-4-7"
               />
               <p className="text-muted-foreground text-xs">
