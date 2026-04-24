@@ -9,7 +9,9 @@ import { getAiSettings } from "@/lib/ai/config";
 export async function getAnthropicClient(): Promise<Anthropic> {
   const { apiKey } = await getAiSettings();
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not configured");
+    throw new Error(
+      "Aucune clé API Anthropic configurée. Renseignez-la dans /ai-settings ou via la variable d'environnement ANTHROPIC_API_KEY.",
+    );
   }
   return new Anthropic({
     apiKey,

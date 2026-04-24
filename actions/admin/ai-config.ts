@@ -13,9 +13,12 @@ export interface AiConfigView {
   apiKeyMask: string | null;
   apiKeyFromEnv: boolean;
   model: string | null;
+  modelFromEnv: boolean;
   enabled: boolean;
 }
 
+// Fixed 8 bullets (regardless of original key length) so the mask doesn't leak
+// the real key length. The form copy at ai-config-form.tsx mirrors this number.
 function maskKey(value: string): string {
   if (value.length <= 8) return "••••••••";
   return "••••••••" + value.slice(-4);
@@ -27,18 +30,26 @@ function nowIso(): string {
 
 export async function getAiConfig(): Promise<AiConfigView> {
   await requireAdmin();
-
-  const db = await getDrizzle();
-  const row = await db.select().from(aiConfig).where(eq(aiConfig.id, 1)).get();
   const { env } = await getCloudflareContext({ async: true });
 
+  let row: typeof aiConfig.$inferSelect | undefined;
+  try {
+    const db = await getDrizzle();
+    row = await db.select().from(aiConfig).where(eq(aiConfig.id, 1)).get();
+  } catch (error) {
+    console.error("[admin/ai-config] getAiConfig DB read failed, falling back to env:", error);
+  }
+
   const dbKey = row?.anthropic_api_key || null;
+  const dbModel = row?.model || null;
   const envKey = env.ANTHROPIC_API_KEY || null;
+  const envModel = env.AI_MODEL || null;
 
   return {
     apiKeyMask: dbKey ? maskKey(dbKey) : envKey ? maskKey(envKey) : null,
     apiKeyFromEnv: !dbKey && !!envKey,
-    model: row?.model ?? null,
+    model: dbModel || envModel,
+    modelFromEnv: !dbModel && !!envModel,
     enabled: row
       ? row.enabled === 1
       : env.AI_PRODUCT_CREATION_ENABLED !== "0",
@@ -57,41 +68,64 @@ export async function saveAiConfig(formData: FormData): Promise<ActionResult> {
     return { success: false, fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
-  const db = await getDrizzle();
-  const existing = await db.select().from(aiConfig).where(eq(aiConfig.id, 1)).get();
+  try {
+    const db = await getDrizzle();
+    const existing = await db.select().from(aiConfig).where(eq(aiConfig.id, 1)).get();
 
-  // Detect "unchanged" by EXACT mask equality — gotcha from CLAUDE.md: startsWith("••")
-  // would falsely match a legit key that happens to start with bullets.
-  const expectedMask = existing?.anthropic_api_key ? maskKey(existing.anthropic_api_key) : null;
-  const incomingKeyRaw = parsed.data.anthropic_api_key ?? "";
-  const incomingKey =
-    expectedMask !== null && incomingKeyRaw === expectedMask
-      ? existing!.anthropic_api_key
-      : (incomingKeyRaw.trim() || null);
+    // Detect "unchanged" by EXACT mask equality — gotcha from CLAUDE.md: startsWith("••")
+    // would falsely match a legit key that happens to start with bullets.
+    const expectedMask = existing?.anthropic_api_key ? maskKey(existing.anthropic_api_key) : null;
+    const incomingKeyRaw = parsed.data.anthropic_api_key ?? "";
 
-  const incomingModel = parsed.data.model?.trim() || null;
-  const enabledInt = parsed.data.enabled ? 1 : 0;
-  const updated = nowIso();
+    let incomingKey: string | null;
+    if (expectedMask !== null && incomingKeyRaw === expectedMask) {
+      // Mask returned unchanged → preserve existing stored key
+      incomingKey = existing!.anthropic_api_key;
+    } else if (/^•{8}/.test(incomingKeyRaw)) {
+      // Looks like a mask but doesn't match an existing stored key — most often the
+      // env-fallback mask submitted as-is. Refuse rather than silently persist garbage.
+      return {
+        success: false,
+        fieldErrors: {
+          anthropic_api_key: [
+            "Cette valeur ressemble à un masque (••••••••...). Saisissez une vraie clé API ou laissez vide pour la supprimer.",
+          ],
+        },
+      };
+    } else {
+      incomingKey = incomingKeyRaw.trim() || null;
+    }
 
-  await db
-    .insert(aiConfig)
-    .values({
-      id: 1,
-      anthropic_api_key: incomingKey,
-      model: incomingModel,
-      enabled: enabledInt,
-      updated_at: updated,
-    })
-    .onConflictDoUpdate({
-      target: aiConfig.id,
-      set: {
+    const incomingModel = parsed.data.model?.trim() || null;
+    const enabledInt = parsed.data.enabled ? 1 : 0;
+    const updated = nowIso();
+
+    await db
+      .insert(aiConfig)
+      .values({
+        id: 1,
         anthropic_api_key: incomingKey,
         model: incomingModel,
         enabled: enabledInt,
         updated_at: updated,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: aiConfig.id,
+        set: {
+          anthropic_api_key: incomingKey,
+          model: incomingModel,
+          enabled: enabledInt,
+          updated_at: updated,
+        },
+      });
 
-  revalidatePath("/ai-settings");
-  return { success: true };
+    revalidatePath("/ai-settings");
+    return { success: true };
+  } catch (error) {
+    console.error("[admin/ai-config] saveAiConfig error:", error);
+    return {
+      success: false,
+      error: "Erreur lors de la sauvegarde de la configuration AI.",
+    };
+  }
 }

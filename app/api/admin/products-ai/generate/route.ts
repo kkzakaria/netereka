@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
   const anthropic = await getAnthropicClient();
   const encoder = new TextEncoder();
-  const model = settings.model;
+  const model = settings.model ?? undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

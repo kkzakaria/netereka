@@ -65,7 +65,7 @@ describe("getAiSettings", () => {
     expect(result.enabled).toBe(true);
   });
 
-  it("renvoie null/undefined quand ni DB ni env ne fournissent de valeur", async () => {
+  it("renvoie null quand ni DB ni env ne fournissent de valeur", async () => {
     mocks.dbGet.mockResolvedValue(undefined);
     mocks.getEnv.mockResolvedValue({});
 
@@ -73,7 +73,7 @@ describe("getAiSettings", () => {
 
     expect(result).toEqual({
       apiKey: null,
-      model: undefined,
+      model: null,
       enabled: true, // default-on preserved
     });
   });
@@ -117,5 +117,23 @@ describe("getAiSettings", () => {
 
     expect(result.apiKey).toBe("sk-ant-env");
     expect(result.model).toBe("claude-opus-4-7");
+  });
+
+  it("graceful degradation: erreur DB → fallback env, pas de throw", async () => {
+    mocks.dbGet.mockRejectedValue(new Error("D1_ERROR: no such table: ai_config"));
+    mocks.getEnv.mockResolvedValue({
+      ANTHROPIC_API_KEY: "sk-ant-env-fallback",
+      AI_MODEL: "claude-opus-4-7",
+    });
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await getAiSettings();
+
+    expect(result.apiKey).toBe("sk-ant-env-fallback");
+    expect(result.model).toBe("claude-opus-4-7");
+    expect(result.enabled).toBe(true);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
   });
 });
