@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireAdmin } from "@/lib/auth/guards";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
@@ -27,8 +26,7 @@ const PAGE_SIZE = 20;
 export default async function ProductsPage({ searchParams }: Props) {
   await requireAdmin();
 
-  const { env } = await getCloudflareContext({ async: true });
-  const aiEnabled = isAiFeatureEnabled(env);
+  const aiEnabled = await isAiFeatureEnabled();
 
   // Remove draft products abandoned for 24+ hours after response is sent
   after(() =>

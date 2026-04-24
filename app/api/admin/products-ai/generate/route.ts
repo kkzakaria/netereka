@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireAdmin } from "@/lib/auth/guards";
 import { aiPromptSchema } from "@/lib/validations/product-ai";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
-import { getAnthropicClient, isAiFeatureEnabled } from "@/lib/ai/client";
+import { getAnthropicClient } from "@/lib/ai/client";
+import { getAiSettings } from "@/lib/ai/config";
 import { researchProduct } from "@/lib/ai/product-research";
 
 export async function POST(req: Request) {
-  const { env } = await getCloudflareContext({ async: true });
-  if (!isAiFeatureEnabled(env)) {
+  const settings = await getAiSettings();
+  if (!settings.enabled) {
     return new NextResponse("Not found", { status: 404 });
   }
 
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
   const anthropic = await getAnthropicClient();
   const encoder = new TextEncoder();
-  const model = env.AI_MODEL || undefined;
+  const model = settings.model;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
