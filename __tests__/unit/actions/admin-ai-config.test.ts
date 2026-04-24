@@ -281,4 +281,25 @@ describe("saveAiConfig", () => {
 
     consoleErrorSpy.mockRestore();
   });
+
+  it("clé qui ne commence pas par sk-ant- → fieldErrors", async () => {
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "wrong-prefix-key");
+    fd.set("enabled", "on");
+
+    const result = await saveAiConfig(fd);
+
+    expect(result.success).toBe(false);
+    expect(result.fieldErrors?.anthropic_api_key).toBeDefined();
+  });
+
+  it("clé valide sk-ant-... acceptée", async () => {
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "sk-ant-real-1234");
+    fd.set("enabled", "on");
+
+    const result = await saveAiConfig(fd);
+
+    expect(result.success).toBe(true);
+  });
 });
