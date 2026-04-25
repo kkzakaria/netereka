@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0](https://github.com/kkzakaria/netereka/compare/v1.9.0...v1.10.0) (2026-04-25)
+
+
+### Features
+
+* **admin:** group sidebar into 3 sections + domain icons ([#196](https://github.com/kkzakaria/netereka/issues/196)) ([403d51f](https://github.com/kkzakaria/netereka/commit/403d51fda483a9023392f675bdca53aeb8214f72))
+* **admin:** move AI config from env vars to admin settings ([#193](https://github.com/kkzakaria/netereka/issues/193)) ([b27ca98](https://github.com/kkzakaria/netereka/commit/b27ca983c30cf8b470681d4e4b30a81184005741))
+
 ## [1.9.0](https://github.com/kkzakaria/netereka/compare/v1.8.0...v1.9.0) (2026-04-19)
 
 
