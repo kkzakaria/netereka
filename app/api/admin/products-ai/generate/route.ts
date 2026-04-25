@@ -7,14 +7,14 @@ import { getAiSettings } from "@/lib/ai/config";
 import { researchProduct } from "@/lib/ai/product-research";
 
 export async function POST(req: Request) {
+  let session;
+  try { session = await requireAdmin(); }
+  catch { return new NextResponse("Forbidden", { status: 403 }); }
+
   const settings = await getAiSettings();
   if (!settings.enabled) {
     return new NextResponse("Not found", { status: 404 });
   }
-
-  let session;
-  try { session = await requireAdmin(); }
-  catch { return new NextResponse("Forbidden", { status: 403 }); }
 
   const body = await req.json().catch(() => null) as { prompt?: unknown } | null;
   const parsed = aiPromptSchema.safeParse(body?.prompt);

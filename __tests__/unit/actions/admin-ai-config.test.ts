@@ -231,6 +231,26 @@ describe("saveAiConfig", () => {
     );
   });
 
+  it("clé vide → null (efface la clé existante)", async () => {
+    mocks.dbGet.mockResolvedValue({
+      id: 1,
+      anthropic_api_key: "sk-ant-existing-key",
+      model: null,
+      enabled: 1,
+    });
+
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "");
+    fd.set("enabled", "on");
+
+    const result = await saveAiConfig(fd);
+
+    expect(result.success).toBe(true);
+    expect(mocks.dbValues).toHaveBeenCalledWith(
+      expect.objectContaining({ anthropic_api_key: null }),
+    );
+  });
+
   it("enabled absent du FormData → 0", async () => {
     const fd = new FormData();
     fd.set("anthropic_api_key", "sk-ant-k");
@@ -251,6 +271,8 @@ describe("saveAiConfig", () => {
 
     expect(result.success).toBe(false);
     expect(result.fieldErrors?.anthropic_api_key).toBeDefined();
+    expect(mocks.dbValues).not.toHaveBeenCalled();
+    expect(mocks.dbOnConflict).not.toHaveBeenCalled();
   });
 
   it("modèle trop long → fieldErrors", async () => {
@@ -263,6 +285,8 @@ describe("saveAiConfig", () => {
 
     expect(result.success).toBe(false);
     expect(result.fieldErrors?.model).toBeDefined();
+    expect(mocks.dbValues).not.toHaveBeenCalled();
+    expect(mocks.dbOnConflict).not.toHaveBeenCalled();
   });
 
   it("erreur DB sur upsert → ActionResult error, pas de throw", async () => {
@@ -291,6 +315,8 @@ describe("saveAiConfig", () => {
 
     expect(result.success).toBe(false);
     expect(result.fieldErrors?.anthropic_api_key).toBeDefined();
+    expect(mocks.dbValues).not.toHaveBeenCalled();
+    expect(mocks.dbOnConflict).not.toHaveBeenCalled();
   });
 
   it("clé valide sk-ant-... acceptée", async () => {
