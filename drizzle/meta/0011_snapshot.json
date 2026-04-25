@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "928fc232-a1f4-49a7-b34b-c853fca664bb",
+  "id": "16ff559c-c852-408b-8f73-ac25a0bad26a",
   "prevId": "74499940-bff5-45c1-b0c6-4e95db48be84",
   "tables": {
     "account": {
@@ -323,7 +323,16 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "ai_config_singleton_id": {
+          "name": "ai_config_singleton_id",
+          "value": "\"ai_config\".\"id\" = 1"
+        },
+        "ai_config_enabled_bool": {
+          "name": "ai_config_enabled_bool",
+          "value": "\"ai_config\".\"enabled\" in (0, 1)"
+        }
+      }
     },
     "audit_log": {
       "name": "audit_log",

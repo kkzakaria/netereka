@@ -431,14 +431,21 @@ export const whatsappConfig = sqliteTable("whatsapp_config", {
 // =============================================================================
 // AI Config (singleton row: id=1)
 // =============================================================================
-export const aiConfig = sqliteTable("ai_config", {
-  id: integer("id").primaryKey(),
-  anthropic_api_key: text("anthropic_api_key"),
-  model: text("model"),
-  enabled: integer("enabled").notNull().default(1),
-  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
-  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
-});
+export const aiConfig = sqliteTable(
+  "ai_config",
+  {
+    id: integer("id").primaryKey(),
+    anthropic_api_key: text("anthropic_api_key"),
+    model: text("model"),
+    enabled: integer("enabled").notNull().default(1),
+    created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+    updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    check("ai_config_singleton_id", sql`${table.id} = 1`),
+    check("ai_config_enabled_bool", sql`${table.enabled} in (0, 1)`),
+  ],
+);
 
 // =============================================================================
 // WhatsApp Sessions
