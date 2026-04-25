@@ -29,6 +29,7 @@ const navItems = [
   { href: "/whatsapp/conversations", label: "Conversations WA", icon: MessageMultiple02Icon, minRole: "agent" as const },
   { href: "/whatsapp/analytics", label: "Analytics WA", icon: ChartLineData02Icon, minRole: "admin" as const },
   { href: "/whatsapp/settings", label: "Config WhatsApp", icon: Configuration01Icon, minRole: "admin" as const },
+  { href: "/ai-settings", label: "Config AI", icon: Configuration01Icon, minRole: "admin" as const },
   { href: "/products", label: "Produits", icon: Package02Icon, minRole: "admin" as const },
   { href: "/categories", label: "Catégories", icon: FolderLibraryIcon, minRole: "admin" as const },
   { href: "/banners", label: "Bannières", icon: Image02Icon, minRole: "admin" as const },

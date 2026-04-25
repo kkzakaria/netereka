@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireAdmin } from "@/lib/auth/guards";
 import { aiPromptSchema } from "@/lib/validations/product-ai";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
-import { getAnthropicClient, isAiFeatureEnabled } from "@/lib/ai/client";
+import { getAnthropicClient } from "@/lib/ai/client";
+import { getAiSettings } from "@/lib/ai/config";
 import { researchProduct } from "@/lib/ai/product-research";
 
 export async function POST(req: Request) {
-  const { env } = await getCloudflareContext({ async: true });
-  if (!isAiFeatureEnabled(env)) {
-    return new NextResponse("Not found", { status: 404 });
-  }
-
   let session;
   try { session = await requireAdmin(); }
   catch { return new NextResponse("Forbidden", { status: 403 }); }
+
+  const settings = await getAiSettings();
+  if (!settings.enabled) {
+    return new NextResponse("Not found", { status: 404 });
+  }
 
   const body = await req.json().catch(() => null) as { prompt?: unknown } | null;
   const parsed = aiPromptSchema.safeParse(body?.prompt);
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
   const anthropic = await getAnthropicClient();
   const encoder = new TextEncoder();
-  const model = env.AI_MODEL || undefined;
+  const model = settings.model ?? undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
