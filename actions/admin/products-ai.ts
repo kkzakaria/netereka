@@ -38,8 +38,8 @@ export async function importCandidateImages(
   const output = outputParsed.data;
 
   const candidateSet = new Set(output.image_candidates.map((c) => c.url));
-  if (selectedUrls.length < 1 || selectedUrls.length > 8) {
-    return { success: false, error: "Sélectionnez entre 1 et 8 images" };
+  if (selectedUrls.length > 8) {
+    return { success: false, error: "Sélectionnez au plus 8 images" };
   }
   for (const u of selectedUrls) {
     if (!candidateSet.has(u)) return { success: false, error: "Sélection d'images invalide" };

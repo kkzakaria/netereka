@@ -48,7 +48,7 @@ export function buildSystemPrompt(): string {
     "- short_description est un RÉSUMÉ court (≤120 caractères), pas une description complète. La description longue va dans description_html.",
     "- tagline, highlights, feature_blocks, faq sont nestés sous story (ex : { story: { tagline, highlights: [...] } }).",
     "- Pour chaque highlight, choisis une icône parmi cette liste exacte : " + icons + ".",
-    "- image_candidates est un tableau d'OBJETS de la forme { url, source_domain, alt? } — JAMAIS un tableau de strings. 6 à 10 entrées, images directes (jpg/png/webp), sites constructeurs/presse, évite les watermarks.",
+    "- image_candidates : N'INVENTE JAMAIS d'URLs. Inclus UNIQUEMENT des URLs présentes telles quelles dans les résultats web_search (copier-coller exact, jamais reconstruire un pattern type `/imgroot/.../001.jpg` ni deviner un nom de fichier). Si web_search n'a renvoyé aucune URL d'image directement utilisable, retourne `image_candidates: []` — l'admin ajoutera les images après. Format des entrées : { url, source_domain, alt? } — JAMAIS un tableau de strings. Privilégie images directes (jpg/png/webp).",
     "- Les descriptions suivent un style Apple : tagline courte et percutante, highlights concis, feature_blocks éditoriaux avec un titre et un corps de 1-2 paragraphes.",
   ].join("\n");
 }

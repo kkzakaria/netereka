@@ -71,11 +71,15 @@ export const aiProductOutputSchema = z.object({
     meta_title: z.string().trim().max(60).optional(),
     meta_description: z.string().trim().max(160).optional(),
   }).default({}),
+  // min:0 — Claude must be allowed to honestly return [] when web_search
+  // didn't surface any image URL it can copy verbatim. Forcing min:1 made it
+  // hallucinate URL patterns (e.g. cdn.gsmarena.com/vv/pics/{model}-{N}.jpg)
+  // that 404'd at display and import time. Admin fills images manually if 0.
   image_candidates: z.array(z.object({
     url: z.string().url(),
     source_domain: z.string().min(1),
     alt: z.string().max(200).optional(),
-  })).min(1).max(12),
+  })).max(12).default([]),
 });
 
 export const aiNotFoundSchema = z.object({

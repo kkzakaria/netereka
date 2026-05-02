@@ -154,10 +154,9 @@ export const SUBMIT_PRODUCT_TOOL_SCHEMA = {
     },
     image_candidates: {
       type: "array",
-      minItems: 1,
       maxItems: 12,
       description:
-        "Tableau d'OBJETS — chaque image est { url, source_domain, alt? }. Pas de strings nues.",
+        "Tableau d'OBJETS — chaque image est { url, source_domain, alt? }. Pas de strings nues. Inclus UNIQUEMENT des URLs trouvées telles quelles dans les résultats web_search ; tableau vide si aucune URL n'est sûre.",
       items: {
         type: "object",
         required: ["url", "source_domain"],

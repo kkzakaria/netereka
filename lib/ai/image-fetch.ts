@@ -22,7 +22,14 @@ const EXT_BY_TYPE: Record<string, string> = {
 
 export type FetchImageResult =
   | { ok: true; key: string; contentType: string; size: number }
-  | { ok: false; reason: "ssrf" | "bad_status" | "bad_content_type" | "too_large" | "timeout" | "fetch_failed" | "upload_failed" };
+  | {
+      ok: false;
+      reason: "ssrf" | "bad_status" | "bad_content_type" | "too_large" | "timeout" | "fetch_failed" | "upload_failed";
+      // HTTP status surfaced for `bad_status` so the diagnostic log can
+      // distinguish 403 (anti-bot, may need more headers) from 404 (URL
+      // hallucinated by the model, fix is upstream in the prompt).
+      status?: number;
+    };
 
 /**
  * Rejects URLs that could hit internal networks. DNS lookup is not available
@@ -118,7 +125,7 @@ export async function fetchAndUploadImage(
       return { ok: false, reason: "fetch_failed" };
     }
 
-    if (!resp.ok) return { ok: false, reason: "bad_status" };
+    if (!resp.ok) return { ok: false, reason: "bad_status", status: resp.status };
 
     const ct = (resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
     if (!ALLOWED_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
