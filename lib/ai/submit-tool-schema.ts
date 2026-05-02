@@ -14,8 +14,10 @@ import { HIGHLIGHT_ICON_NAMES } from "@/lib/validations/product-story";
  *  - Full product fiche with required `name`, `category_suggestion`, `image_candidates`.
  *
  * The Zod parser in `parseAiToolInput()` is the runtime safety net; this schema
- * is the upstream constraint. They MUST stay in sync — if you change one,
- * change the other and update the matching test.
+ * is the upstream constraint. They MUST stay in sync — there is no automated
+ * equivalence check between the two. When changing one, change the other and
+ * update `__tests__/unit/ai/submit-tool-schema.test.ts` (verify the canonical
+ * `validOutput` fixture still passes both).
  */
 export const SUBMIT_PRODUCT_TOOL_SCHEMA = {
   type: "object" as const,
@@ -175,6 +177,8 @@ export const SUBMIT_PRODUCT_TOOL_SCHEMA = {
             },
           },
         },
+        // Discriminator: keeps the two oneOf branches mutually exclusive even if
+        // `name`/`category_suggestion`/`image_candidates` are ever made optional.
         not_found: {
           type: "boolean",
           const: false,

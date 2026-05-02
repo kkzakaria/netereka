@@ -47,7 +47,7 @@ export function buildSystemPrompt(): string {
     "- Ne génère PAS de prix ni de stock (ne sont pas dans le schéma).",
     "- short_description est un RÉSUMÉ court (≤120 caractères), pas une description complète. La description longue va dans description_html.",
     "- tagline, highlights, feature_blocks, faq sont nestés sous story (ex : { story: { tagline, highlights: [...] } }).",
-    "- Pour chaque highlight, choisis un icône parmi cette liste exacte : " + icons + ".",
+    "- Pour chaque highlight, choisis une icône parmi cette liste exacte : " + icons + ".",
     "- image_candidates est un tableau d'OBJETS de la forme { url, source_domain, alt? } — JAMAIS un tableau de strings. 6 à 10 entrées, images directes (jpg/png/webp), sites constructeurs/presse, évite les watermarks.",
     "- Les descriptions suivent un style Apple : tagline courte et percutante, highlights concis, feature_blocks éditoriaux avec un titre et un corps de 1-2 paragraphes.",
   ].join("\n");

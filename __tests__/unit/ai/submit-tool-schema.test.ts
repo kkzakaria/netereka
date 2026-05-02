@@ -5,13 +5,12 @@ import { SUBMIT_PRODUCT_TOOL_SCHEMA } from "@/lib/ai/submit-tool-schema";
 
 /**
  * The JSON Schema we hand to Anthropic constrains Claude's tool-call output.
- * These tests pin the schema's behavior on the two payloads that motivated
- * its existence:
- *   - the canonical fixture from `product-research.test.ts` MUST pass
- *   - the MacBook payload that triggered the production bug MUST fail
- *     (top-level `category` instead of `category_suggestion`, top-level
- *     `tagline`/`highlights`/`feature_blocks` instead of nested under `story`,
- *     `image_candidates` as strings instead of objects).
+ * These tests pin the schema's behavior on:
+ *   - the canonical fixture from `product-research.test.ts` (MUST pass)
+ *   - the MacBook-style payload (top-level `category` / `tagline` / `highlights`,
+ *     string-only `image_candidates`) MUST fail
+ *   - oneOf disambiguation between the success and not_found branches
+ *   - bounded length, URL format, and enum membership backstops
  */
 
 const ajv = new Ajv({ allErrors: true, strict: false });
@@ -119,6 +118,57 @@ describe("SUBMIT_PRODUCT_TOOL_SCHEMA", () => {
     expect(
       (validate.errors ?? []).some(
         (e) => e.instancePath === "/image_candidates/0/url" && e.keyword === "format",
+      ),
+    ).toBe(true);
+  });
+
+  // oneOf disambiguation — the whole PR strategy rests on these branches being
+  // mutually exclusive. Pin so an accidental swap to anyOf or a loosened
+  // additionalProperties doesn't silently neutralize the schema.
+  describe("oneOf disambiguation", () => {
+    it.each([
+      ["empty payload", {}],
+      ["not_found:true without reason", { not_found: true }],
+      ["not_found:false alone", { not_found: false }],
+      ["hybrid (not_found:true mixed with success fields)", {
+        not_found: true,
+        reason: "ambigu",
+        name: "X",
+        category_suggestion: "smartphones",
+        image_candidates: [{ url: "https://x.test/a.jpg", source_domain: "x.test" }],
+      }],
+    ])("rejette %s", (_label, payload) => {
+      expect(validate(payload)).toBe(false);
+    });
+  });
+
+  it("rejette une propriété inconnue au top-level (additionalProperties:false sur ProductSubmission)", () => {
+    const ok = validate({ ...validOutput, mystery_field: "x" });
+    expect(ok).toBe(false);
+    expect(
+      (validate.errors ?? []).some(
+        (e) =>
+          e.keyword === "additionalProperties" &&
+          (e.params as { additionalProperty?: string }).additionalProperty === "mystery_field",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejette un highlight avec un icône hors de HIGHLIGHT_ICON_NAMES", () => {
+    const ok = validate({
+      ...validOutput,
+      story: {
+        highlights: [
+          { icon: "laser-cannon", label: "x" },
+          { icon: "battery", label: "y" },
+          { icon: "wifi", label: "z" },
+        ],
+      },
+    });
+    expect(ok).toBe(false);
+    expect(
+      (validate.errors ?? []).some(
+        (e) => /\/story\/highlights\/0\/icon$/.test(e.instancePath) && e.keyword === "enum",
       ),
     ).toBe(true);
   });
