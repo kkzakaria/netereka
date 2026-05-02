@@ -111,4 +111,33 @@ describe("parseAiToolInput", () => {
     const r = parseAiToolInput({ oops: true });
     expect(r.kind).toBe("invalid");
   });
+
+  // Disambiguation — the JSON Schema in `submit-tool-schema.ts` is permissive
+  // (Anthropic forbids `oneOf` at the top level), so these corner cases are
+  // the runtime guardrail against malformed payloads.
+  it("retourne invalid pour un payload vide", () => {
+    expect(parseAiToolInput({}).kind).toBe("invalid");
+  });
+
+  it("retourne invalid pour not_found:true sans reason", () => {
+    expect(parseAiToolInput({ not_found: true }).kind).toBe("invalid");
+  });
+
+  it("retourne invalid pour not_found:false sans champs success", () => {
+    expect(parseAiToolInput({ not_found: false }).kind).toBe("invalid");
+  });
+
+  it("préfère not_found quand le payload est hybride (not_found:true + champs success)", () => {
+    // aiNotFoundSchema is checked first and is permissive about extra fields,
+    // so a model emitting both modes is treated as not_found. This is desired:
+    // if the model self-signals uncertainty, we trust it over its other output.
+    const r = parseAiToolInput({
+      not_found: true,
+      reason: "ambigu",
+      name: "X",
+      category_suggestion: "smartphones",
+      image_candidates: [{ url: "https://x.test/a.jpg", source_domain: "x.test" }],
+    });
+    expect(r.kind).toBe("not_found");
+  });
 });
