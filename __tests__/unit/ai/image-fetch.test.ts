@@ -125,6 +125,19 @@ describe("fetchAndUploadImage", () => {
     if (!r.ok) expect(r.reason).toBe("fetch_failed");
   });
 
+  it("envoie un User-Agent navigateur et un Accept image (anti-403)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeImageResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    uploadToR2Mock.mockResolvedValue("products/draft-1/abc.png");
+
+    await fetchAndUploadImage("draft-1", "https://example.test/a.png");
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["user-agent"]).toMatch(/Mozilla\/5\.0/);
+    expect(headers["accept"]).toContain("image/");
+  });
+
   it("normalise un AbortError pendant le streaming du body en reason=timeout", async () => {
     // Simulate fetch resolving OK, but reader.read() throwing AbortError mid-stream
     const aborted = Object.assign(new Error("aborted"), { name: "AbortError" });

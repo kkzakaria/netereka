@@ -54,6 +54,18 @@ function isBlockedHost(hostname: string): boolean {
 const MAX_REDIRECTS = 3;
 
 /**
+ * Browser-like request headers. Many image CDNs (Apple, Samsung, news sites
+ * Claude cites) gate on User-Agent and 403 Cloudflare Workers' default UA.
+ * A realistic Chrome UA + standard image Accept dramatically improves the
+ * fetch success rate without changing semantics for hosts that don't care.
+ */
+const FETCH_HEADERS: Record<string, string> = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+};
+
+/**
  * Follow HTTP redirects manually so each Location target passes the SSRF host check
  * before we issue the next request. `redirect: "follow"` would let a public URL
  * bounce to a private IP and bypass the initial hostname validation.
@@ -64,7 +76,11 @@ async function fetchWithSsrfSafeRedirects(
 ): Promise<{ ok: true; resp: Response } | { ok: false; reason: "ssrf" | "fetch_failed" }> {
   let current = initialUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const resp = await fetch(current.toString(), { signal, redirect: "manual" });
+    const resp = await fetch(current.toString(), {
+      signal,
+      redirect: "manual",
+      headers: FETCH_HEADERS,
+    });
     const status = resp.status;
     if (status < 300 || status >= 400) return { ok: true, resp };
 
