@@ -104,7 +104,16 @@ export async function importCandidateImages(
   const succeeded: Array<{ url: string; r: FetchSuccess }> = fetchResults.filter(
     (x): x is { url: string; r: FetchSuccess } => x.r.ok,
   );
-  const failed = fetchResults.filter((x) => !x.r.ok).map((x) => x.url);
+  const failedDetails = fetchResults
+    .filter((x): x is { url: string; r: Exclude<FetchImageResult, { ok: true }> } => !x.r.ok)
+    .map((x) => ({ url: x.url, reason: x.r.reason }));
+  const failed = failedDetails.map((x) => x.url);
+  if (failedDetails.length > 0) {
+    // Diagnostic: surface per-URL failure reasons so we can tell whether
+    // images bounced on Referer/UA blocks (bad_status/bad_content_type) vs
+    // hallucinated URLs (fetch_failed) vs size limits (too_large).
+    console.error("[admin/products-ai] image fetch failures", failedDetails);
+  }
 
   const descriptionHtml = output.description_html
     ? sanitizeDescriptionHtml(output.description_html, draftId)

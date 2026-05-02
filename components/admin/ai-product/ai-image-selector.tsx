@@ -60,7 +60,16 @@ export function AiImageSelector({ output, onConfirm, onCancel, busy }: AiImageSe
             >
               <div className="relative aspect-square bg-muted">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={c.url} alt={c.alt ?? ""} className="h-full w-full object-contain" />
+                <img
+                  src={c.url}
+                  alt={c.alt ?? ""}
+                  className="h-full w-full object-contain"
+                  // Many manufacturer/news sites block hotlinks based on the
+                  // Referer header; stripping it makes the cross-origin preview
+                  // succeed on more sources.
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                />
                 {isSelected && (
                   <span className="absolute left-2 top-2 flex size-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                     {index + 1}
