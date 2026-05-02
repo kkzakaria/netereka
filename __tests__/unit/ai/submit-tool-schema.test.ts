@@ -5,12 +5,16 @@ import { SUBMIT_PRODUCT_TOOL_SCHEMA } from "@/lib/ai/submit-tool-schema";
 
 /**
  * The JSON Schema we hand to Anthropic constrains Claude's tool-call output.
- * These tests pin the schema's behavior on:
+ * These tests pin the schema's *structural* behavior on:
  *   - the canonical fixture from `product-research.test.ts` (MUST pass)
  *   - the MacBook-style payload (top-level `category` / `tagline` / `highlights`,
  *     string-only `image_candidates`) MUST fail
- *   - oneOf disambiguation between the success and not_found branches
- *   - bounded length, URL format, and enum membership backstops
+ *   - bounded length, URL format, additionalProperties, and enum membership
+ *
+ * Disambiguation between the success and not_found modes is enforced at
+ * runtime by `parseAiToolInput()` (Zod) — see `prompt-validation.test.ts` —
+ * not by this schema, because Anthropic forbids `oneOf` at the top level
+ * of input_schema.
  */
 
 const ajv = new Ajv({ allErrors: true, strict: false });
@@ -122,27 +126,13 @@ describe("SUBMIT_PRODUCT_TOOL_SCHEMA", () => {
     ).toBe(true);
   });
 
-  // oneOf disambiguation — the whole PR strategy rests on these branches being
-  // mutually exclusive. Pin so an accidental swap to anyOf or a loosened
-  // additionalProperties doesn't silently neutralize the schema.
-  describe("oneOf disambiguation", () => {
-    it.each([
-      ["empty payload", {}],
-      ["not_found:true without reason", { not_found: true }],
-      ["not_found:false alone", { not_found: false }],
-      ["hybrid (not_found:true mixed with success fields)", {
-        not_found: true,
-        reason: "ambigu",
-        name: "X",
-        category_suggestion: "smartphones",
-        image_candidates: [{ url: "https://x.test/a.jpg", source_domain: "x.test" }],
-      }],
-    ])("rejette %s", (_label, payload) => {
-      expect(validate(payload)).toBe(false);
-    });
-  });
+  // Anthropic forbids oneOf/allOf/anyOf at the top level of input_schema, so
+  // the schema is a single permissive object and disambiguation between the
+  // success and not_found modes lives in `parseAiToolInput()` (Zod). This
+  // suite pins the *structural* contract; corner-case disambiguation is
+  // covered in `__tests__/unit/ai/prompt-validation.test.ts`.
 
-  it("rejette une propriété inconnue au top-level (additionalProperties:false sur ProductSubmission)", () => {
+  it("rejette une propriété inconnue au top-level (additionalProperties:false)", () => {
     const ok = validate({ ...validOutput, mystery_field: "x" });
     expect(ok).toBe(false);
     expect(
