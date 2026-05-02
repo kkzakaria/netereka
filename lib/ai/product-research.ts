@@ -141,6 +141,12 @@ export async function* researchProduct(
     const parsed = parseAiToolInput(submitInput);
     if (parsed.kind === "ok") { yield { type: "done", output: parsed.output }; return; }
     if (parsed.kind === "not_found") { yield { type: "not_found", reason: parsed.reason }; return; }
+    // Diagnostic: surface why submit_product input failed validation. Without this,
+    // operators see "invalid_ai_output" with no way to tell which fields are wrong.
+    console.error("[ai-product] invalid_ai_output", {
+      issues: parsed.issues,
+      submitInput: JSON.stringify(submitInput).slice(0, 4000),
+    });
     yield { type: "error", code: "invalid_ai_output" };
   } catch (err) {
     console.error("[ai-product] researchProduct failed:", err);
