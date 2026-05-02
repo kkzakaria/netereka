@@ -113,6 +113,12 @@ describe("SUBMIT_PRODUCT_TOOL_SCHEMA", () => {
     ).toBe(true);
   });
 
+  it("accepte image_candidates vide", () => {
+    const ok = validate({ ...validOutput, image_candidates: [] });
+    expect(validate.errors ?? []).toEqual([]);
+    expect(ok).toBe(true);
+  });
+
   it("rejette image_candidates avec une URL non valide", () => {
     const ok = validate({
       ...validOutput,

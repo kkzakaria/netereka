@@ -39,6 +39,18 @@ describe("fetchAndUploadImage", () => {
     if (!r.ok) expect(r.reason).toBe("ssrf");
   });
 
+  it("inclut le status HTTP dans bad_status (404 vs 403)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response("not found", { status: 404, headers: { "content-type": "image/png" } }),
+    ));
+    const r = await fetchAndUploadImage("draft-1", "https://example.test/x.png");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("bad_status");
+      expect(r.status).toBe(404);
+    }
+  });
+
   it("rejette les content-types non-image", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
       makeImageResponse({ contentType: "text/html" }),

@@ -87,6 +87,11 @@ describe("aiProductOutputSchema", () => {
     };
     expect(aiProductOutputSchema.safeParse(bad).success).toBe(false);
   });
+
+  it("accepte image_candidates vide (Claude doit pouvoir admettre l'absence d'URLs sûres)", () => {
+    const out = { name: "X", category_suggestion: "y", image_candidates: [] };
+    expect(aiProductOutputSchema.safeParse(out).success).toBe(true);
+  });
 });
 
 describe("parseAiToolInput", () => {

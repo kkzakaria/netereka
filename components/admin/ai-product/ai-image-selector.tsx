@@ -11,7 +11,10 @@ interface AiImageSelectorProps {
   busy: boolean;
 }
 
-const MIN = 1;
+// MIN = 0 — Claude is allowed to return image_candidates: [] when web_search
+// didn't surface any URL it can copy verbatim; admin then proceeds without
+// images and adds them manually after the draft is created.
+const MIN = 0;
 const MAX = 8;
 
 export function AiImageSelector({ output, onConfirm, onCancel, busy }: AiImageSelectorProps) {
@@ -28,6 +31,7 @@ export function AiImageSelector({ output, onConfirm, onCancel, busy }: AiImageSe
   }
 
   const canConfirm = selected.length >= MIN && !busy;
+  const noCandidates = output.image_candidates.length === 0;
 
   return (
     <div className="space-y-6">
@@ -38,7 +42,9 @@ export function AiImageSelector({ output, onConfirm, onCancel, busy }: AiImageSe
           {output.attributes.colors.length > 0 && ` · ${output.attributes.colors.length} couleurs détectées`}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Choisissez {MIN} à {MAX} images. La 1re cochée sera l&apos;image principale.
+          {noCandidates
+            ? "L'IA n'a pas trouvé d'images fiables. Continuez sans images puis ajoutez-les manuellement après création."
+            : `Choisissez jusqu'à ${MAX} images. La 1re cochée sera l'image principale.`}
         </p>
       </div>
 
@@ -87,7 +93,11 @@ export function AiImageSelector({ output, onConfirm, onCancel, busy }: AiImageSe
           Annuler
         </Button>
         <Button type="button" disabled={!canConfirm} onClick={() => onConfirm(selected)}>
-          {busy ? "Importation…" : `Importer et continuer (${selected.length})`}
+          {busy
+            ? "Importation…"
+            : selected.length === 0
+              ? "Continuer sans images"
+              : `Importer et continuer (${selected.length})`}
         </Button>
       </div>
     </div>
