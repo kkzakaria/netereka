@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { parseAiToolInput, type AiProductOutput } from "@/lib/validations/product-ai";
 import { HIGHLIGHT_ICON_NAMES } from "@/lib/validations/product-story";
+import { SUBMIT_PRODUCT_TOOL_SCHEMA } from "@/lib/ai/submit-tool-schema";
 
 export type ResearchErrorCode =
   | "invalid_ai_output"       // Claude returned a submit_product payload we couldn't parse
@@ -41,10 +42,13 @@ export function buildSystemPrompt(): string {
     "2. Si le produit est introuvable ou trop ambigu, appelle submit_product avec { \"not_found\": true, \"reason\": \"…\" }.",
     "3. Sinon, appelle submit_product avec une fiche complète.",
     "Règles :",
+    "- Respecte STRICTEMENT le schéma JSON du tool submit_product (champs, nesting, types). En cas de doute, omets le champ.",
     "- N'invente aucune caractéristique. Omets plutôt.",
     "- Ne génère PAS de prix ni de stock (ne sont pas dans le schéma).",
+    "- short_description est un RÉSUMÉ court (≤120 caractères), pas une description complète. La description longue va dans description_html.",
+    "- tagline, highlights, feature_blocks, faq sont nestés sous story (ex : { story: { tagline, highlights: [...] } }).",
     "- Pour chaque highlight, choisis un icône parmi cette liste exacte : " + icons + ".",
-    "- image_candidates : 6 à 10 URLs d'images directes (jpg/png/webp), privilégie les sites constructeurs et la presse ; évite les watermarks.",
+    "- image_candidates est un tableau d'OBJETS de la forme { url, source_domain, alt? } — JAMAIS un tableau de strings. 6 à 10 entrées, images directes (jpg/png/webp), sites constructeurs/presse, évite les watermarks.",
     "- Les descriptions suivent un style Apple : tagline courte et percutante, highlights concis, feature_blocks éditoriaux avec un titre et un corps de 1-2 paragraphes.",
   ].join("\n");
 }
@@ -59,10 +63,7 @@ export function buildTools(): Anthropic.ToolUnion[] {
     {
       name: SUBMIT_TOOL_NAME,
       description: "Soumet la fiche produit complète (ou signale que le produit est introuvable).",
-      input_schema: {
-        type: "object",
-        additionalProperties: true,
-      },
+      input_schema: SUBMIT_PRODUCT_TOOL_SCHEMA,
     },
   ];
 }
