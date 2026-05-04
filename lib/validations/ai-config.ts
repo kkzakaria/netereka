@@ -8,6 +8,8 @@ import { z } from "zod";
 //   - random non-Anthropic strings (cheap typo guard before the API call)
 const isMaskShape = (v: string) => v.startsWith("••");
 const isAnthropicKey = (v: string) => v.startsWith("sk-ant-");
+// Brave keys start with `BSA` historically; we don't enforce the prefix
+// since Brave hasn't documented it as stable — only mask-shape vs raw.
 
 export const aiConfigSchema = z.object({
   anthropic_api_key: z
@@ -18,6 +20,11 @@ export const aiConfigSchema = z.object({
       (v) => !v || isMaskShape(v) || isAnthropicKey(v),
       { message: "La clé Anthropic doit commencer par sk-ant-" },
     )
+    .nullable(),
+  brave_api_key: z
+    .string()
+    .trim()
+    .max(200, "Clé API trop longue (max 200 caractères)")
     .nullable(),
   model: z
     .string()

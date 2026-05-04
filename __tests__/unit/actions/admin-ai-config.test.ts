@@ -163,6 +163,61 @@ describe("saveAiConfig", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/ai-settings");
   });
 
+  it("sauvegarde la clé Brave en plus de la clé Anthropic", async () => {
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "sk-ant-x-1234");
+    fd.set("brave_api_key", "BSA-realbravekey");
+    fd.set("enabled", "on");
+
+    const result = await saveAiConfig(fd);
+
+    expect(result.success).toBe(true);
+    expect(mocks.dbValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anthropic_api_key: "sk-ant-x-1234",
+        brave_api_key: "BSA-realbravekey",
+      }),
+    );
+  });
+
+  it("préserve la clé Brave existante quand son masque est renvoyé tel quel", async () => {
+    mocks.dbGet.mockResolvedValue({
+      id: 1,
+      anthropic_api_key: "sk-ant-existing-zzzz",
+      brave_api_key: "BSA-existing-9876",
+      model: null,
+      enabled: 1,
+    });
+
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "••••••••zzzz");
+    fd.set("brave_api_key", "••••••••9876");
+    fd.set("enabled", "on");
+
+    const result = await saveAiConfig(fd);
+
+    expect(result.success).toBe(true);
+    expect(mocks.dbValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anthropic_api_key: "sk-ant-existing-zzzz",
+        brave_api_key: "BSA-existing-9876",
+      }),
+    );
+  });
+
+  it("clé Brave vide → null (n'active pas image_search)", async () => {
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "sk-ant-x-1234");
+    fd.set("brave_api_key", "");
+    fd.set("enabled", "on");
+
+    await saveAiConfig(fd);
+
+    expect(mocks.dbValues).toHaveBeenCalledWith(
+      expect.objectContaining({ brave_api_key: null }),
+    );
+  });
+
   it("préserve la clé existante quand le masque est renvoyé tel quel", async () => {
     mocks.dbGet.mockResolvedValue({
       id: 1,

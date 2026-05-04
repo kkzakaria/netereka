@@ -65,15 +65,19 @@ describe("researchProduct", () => {
     expect(terminal.output.name).toBe("Galaxy A55");
   });
 
-  it("émet search → specs → images pour 3 recherches consécutives", async () => {
+  it("émet search → specs → images → finalize avec web_search puis image_search", async () => {
     const anthropic = makeAnthropicStub([
       { type: "content_block_start", content_block: { type: "server_tool_use", name: "web_search", input: { query: "a" } } },
       { type: "content_block_start", content_block: { type: "server_tool_use", name: "web_search", input: { query: "b" } } },
-      { type: "content_block_start", content_block: { type: "server_tool_use", name: "web_search", input: { query: "c" } } },
+      { type: "content_block_start", content_block: { type: "tool_use", name: "image_search", input: { query: "x photo" } } },
       { type: "content_block_start", content_block: { type: "tool_use", name: "submit_product", input: validOutput } },
     ]);
 
-    const events = await drain(researchProduct("x", anthropic));
+    // Note: submit_product is in the same turn as image_search, so the loop
+    // breaks before executing image_search. The progress emission still fires
+    // on content_block_start. braveApiKey is what makes image_search appear in
+    // the tools list — but the stub bypasses that, so we don't need a real key.
+    const events = await drain(researchProduct("x", anthropic, { braveApiKey: "test" }));
     const progressSteps = events
       .filter((e) => e.type === "progress")
       .map((e) => (e as { type: "progress"; step: string }).step);
@@ -94,6 +98,17 @@ describe("researchProduct", () => {
     ]);
     const events = await drain(researchProduct("x", anthropic));
     expect(events.at(-1)).toEqual({ type: "error", code: "invalid_ai_output" });
+  });
+
+  it("buildTools n'inclut pas image_search quand braveApiKey est absent", async () => {
+    // Even though the stub triggers an image_search progress event, the real
+    // production behavior is that without a Brave key, image_search isn't
+    // declared and the model can't call it. Pin via buildTools directly.
+    const { buildTools } = await import("@/lib/ai/product-research");
+    const without = buildTools({ hasImageSearch: false });
+    const withImage = buildTools({ hasImageSearch: true });
+    expect(without.find((t) => "name" in t && t.name === "image_search")).toBeUndefined();
+    expect(withImage.find((t) => "name" in t && t.name === "image_search")).toBeDefined();
   });
 
   it("émet error:api_error si submit_product jamais appelé", async () => {

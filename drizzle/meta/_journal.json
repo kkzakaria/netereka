@@ -85,6 +85,13 @@
       "when": 1777101305148,
       "tag": "0011_lowly_silver_sable",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1777883911156,
+      "tag": "0012_peaceful_flatman",
+      "breakpoints": true
     }
   ]
 }

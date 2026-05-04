@@ -436,6 +436,7 @@ export const aiConfig = sqliteTable(
   {
     id: integer("id").primaryKey(),
     anthropic_api_key: text("anthropic_api_key"),
+    brave_api_key: text("brave_api_key"),
     model: text("model"),
     enabled: integer("enabled").notNull().default(1),
     created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
