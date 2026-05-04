@@ -1,0 +1,1 @@
+ALTER TABLE `ai_config` ADD `brave_api_key` text;

@@ -33,6 +33,7 @@ describe("getAiSettings", () => {
     mocks.dbGet.mockResolvedValue({
       id: 1,
       anthropic_api_key: "sk-ant-db-key",
+      brave_api_key: "BSA-db-brave",
       model: "claude-opus-4-7",
       enabled: 1,
     });
@@ -41,6 +42,7 @@ describe("getAiSettings", () => {
 
     expect(result).toEqual({
       apiKey: "sk-ant-db-key",
+      braveApiKey: "BSA-db-brave",
       model: "claude-opus-4-7",
       enabled: true,
     });
@@ -73,9 +75,23 @@ describe("getAiSettings", () => {
 
     expect(result).toEqual({
       apiKey: null,
+      braveApiKey: null,
       model: null,
       enabled: true, // default-on preserved
     });
+  });
+
+  it("braveApiKey: DB win, env fallback, ou null", async () => {
+    mocks.dbGet.mockResolvedValue({
+      id: 1, anthropic_api_key: null, brave_api_key: null, model: null, enabled: 1,
+    });
+    mocks.getEnv.mockResolvedValue({ BRAVE_API_KEY: "BSA-env" });
+    expect((await getAiSettings()).braveApiKey).toBe("BSA-env");
+
+    mocks.dbGet.mockResolvedValue({
+      id: 1, anthropic_api_key: null, brave_api_key: "BSA-db", model: null, enabled: 1,
+    });
+    expect((await getAiSettings()).braveApiKey).toBe("BSA-db");
   });
 
   it("enabled=0 en DB override l'env var (DB est source de vérité si row existe)", async () => {

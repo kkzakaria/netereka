@@ -12,6 +12,8 @@ import type { ActionResult } from "@/lib/utils";
 export interface AiConfigView {
   apiKeyMask: string | null;
   apiKeyFromEnv: boolean;
+  braveApiKeyMask: string | null;
+  braveApiKeyFromEnv: boolean;
   model: string | null;
   modelFromEnv: boolean;
   enabled: boolean;
@@ -41,13 +43,17 @@ export async function getAiConfig(): Promise<AiConfigView> {
   }
 
   const dbKey = row?.anthropic_api_key || null;
+  const dbBraveKey = row?.brave_api_key || null;
   const dbModel = row?.model || null;
   const envKey = env.ANTHROPIC_API_KEY || null;
+  const envBraveKey = env.BRAVE_API_KEY || null;
   const envModel = env.AI_MODEL || null;
 
   return {
     apiKeyMask: dbKey ? maskKey(dbKey) : envKey ? maskKey(envKey) : null,
     apiKeyFromEnv: !dbKey && !!envKey,
+    braveApiKeyMask: dbBraveKey ? maskKey(dbBraveKey) : envBraveKey ? maskKey(envBraveKey) : null,
+    braveApiKeyFromEnv: !dbBraveKey && !!envBraveKey,
     model: dbModel || envModel,
     modelFromEnv: !dbModel && !!envModel,
     enabled: row
@@ -61,6 +67,7 @@ export async function saveAiConfig(formData: FormData): Promise<ActionResult> {
 
   const parsed = aiConfigSchema.safeParse({
     anthropic_api_key: formData.get("anthropic_api_key"),
+    brave_api_key: formData.get("brave_api_key"),
     model: formData.get("model"),
     enabled: formData.get("enabled") === "on",
   });
@@ -72,29 +79,45 @@ export async function saveAiConfig(formData: FormData): Promise<ActionResult> {
     const db = await getDrizzle();
     const existing = await db.select().from(aiConfig).where(eq(aiConfig.id, 1)).get();
 
-    // Detect "unchanged" by EXACT mask equality — gotcha from CLAUDE.md: startsWith("••")
-    // would falsely match a legit key that happens to start with bullets.
-    const expectedMask = existing?.anthropic_api_key ? maskKey(existing.anthropic_api_key) : null;
-    const incomingKeyRaw = parsed.data.anthropic_api_key ?? "";
-
-    let incomingKey: string | null;
-    if (expectedMask !== null && incomingKeyRaw === expectedMask) {
-      // Mask returned unchanged → preserve existing stored key
-      incomingKey = existing!.anthropic_api_key;
-    } else if (/^•{8}/.test(incomingKeyRaw)) {
-      // Looks like a mask but doesn't match an existing stored key — most often the
-      // env-fallback mask submitted as-is. Refuse rather than silently persist garbage.
-      return {
-        success: false,
-        fieldErrors: {
-          anthropic_api_key: [
-            "Cette valeur ressemble à un masque (••••••••...). Saisissez une vraie clé API ou laissez vide pour la supprimer.",
-          ],
-        },
-      };
-    } else {
-      incomingKey = incomingKeyRaw.trim() || null;
+    // Resolve a key field where the user may submit:
+    //   - raw new value → store as-is
+    //   - mask matching the EXACT current stored mask → preserve existing
+    //   - mask not matching (env-fallback mask submitted blindly) → reject
+    function resolveKey(
+      raw: string,
+      stored: string | null,
+      fieldName: string,
+    ): { ok: true; key: string | null } | { ok: false; error: string; fieldName: string } {
+      const expectedMask = stored ? maskKey(stored) : null;
+      if (expectedMask !== null && raw === expectedMask) return { ok: true, key: stored };
+      if (/^•{8}/.test(raw)) {
+        return {
+          ok: false,
+          fieldName,
+          error: "Cette valeur ressemble à un masque (••••••••...). Saisissez une vraie clé API ou laissez vide pour la supprimer.",
+        };
+      }
+      return { ok: true, key: raw.trim() || null };
     }
+
+    const anthropicResolved = resolveKey(
+      parsed.data.anthropic_api_key ?? "",
+      existing?.anthropic_api_key ?? null,
+      "anthropic_api_key",
+    );
+    if (!anthropicResolved.ok) {
+      return { success: false, fieldErrors: { [anthropicResolved.fieldName]: [anthropicResolved.error] } };
+    }
+    const braveResolved = resolveKey(
+      parsed.data.brave_api_key ?? "",
+      existing?.brave_api_key ?? null,
+      "brave_api_key",
+    );
+    if (!braveResolved.ok) {
+      return { success: false, fieldErrors: { [braveResolved.fieldName]: [braveResolved.error] } };
+    }
+    const incomingKey = anthropicResolved.key;
+    const incomingBraveKey = braveResolved.key;
 
     const incomingModel = parsed.data.model?.trim() || null;
     const enabledInt = parsed.data.enabled ? 1 : 0;
@@ -105,6 +128,7 @@ export async function saveAiConfig(formData: FormData): Promise<ActionResult> {
       .values({
         id: 1,
         anthropic_api_key: incomingKey,
+        brave_api_key: incomingBraveKey,
         model: incomingModel,
         enabled: enabledInt,
         updated_at: updated,
@@ -113,6 +137,7 @@ export async function saveAiConfig(formData: FormData): Promise<ActionResult> {
         target: aiConfig.id,
         set: {
           anthropic_api_key: incomingKey,
+          brave_api_key: incomingBraveKey,
           model: incomingModel,
           enabled: enabledInt,
           updated_at: updated,

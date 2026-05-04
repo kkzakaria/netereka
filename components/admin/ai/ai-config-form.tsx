@@ -16,6 +16,7 @@ interface AiConfigFormProps {
 export function AiConfigForm({ config }: AiConfigFormProps) {
   const [isPending, startTransition] = useTransition();
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showBraveKey, setShowBraveKey] = useState(false);
   const [enabled, setEnabled] = useState(config.enabled);
 
   function handleSubmit(formData: FormData) {
@@ -99,6 +100,61 @@ export function AiConfigForm({ config }: AiConfigFormProps) {
                 Quand une clé est enregistrée, ce champ affiche son masque
                 (8 puces + 4 derniers caractères). Laissez le masque tel quel pour
                 conserver la clé existante, ou saisissez une nouvelle valeur.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Clé API Brave Search</CardTitle>
+            <p className="text-muted-foreground text-sm">
+              Active l&apos;outil de recherche d&apos;images. Sans clé, l&apos;IA renverra
+              <code> image_candidates: []</code> et l&apos;admin ajoutera les images manuellement.
+              Récupérée depuis{" "}
+              <a
+                href="https://api-dashboard.search.brave.com/app/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                api-dashboard.search.brave.com
+              </a>
+              .
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {config.braveApiKeyFromEnv && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                Clé chargée depuis la variable d&apos;environnement (legacy):{" "}
+                <code>{config.braveApiKeyMask}</code>. Saisissez-la ici pour la gérer
+                depuis l&apos;administration. Tant que ce champ reste vide, la valeur
+                de l&apos;environnement continue d&apos;être utilisée.
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="brave_api_key">Clé API Brave</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="brave_api_key"
+                  name="brave_api_key"
+                  type={showBraveKey ? "text" : "password"}
+                  defaultValue={config.braveApiKeyFromEnv ? "" : (config.braveApiKeyMask ?? "")}
+                  placeholder="BSA..."
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowBraveKey((v) => !v)}
+                  className="shrink-0"
+                >
+                  {showBraveKey ? "Masquer" : "Afficher"}
+                </Button>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Optionnelle. Forfait gratuit&nbsp;: 2&nbsp;000 requêtes/mois.
               </p>
             </div>
           </CardContent>

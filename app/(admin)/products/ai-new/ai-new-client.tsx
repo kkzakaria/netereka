@@ -26,6 +26,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   timeout: "La génération a dépassé le délai maximum. Réessayez avec un prompt plus précis.",
   invalid_ai_output: "Le modèle n'a pas produit une fiche exploitable. Réessayez.",
   feature_disabled: "La génération IA est désactivée. Contactez un administrateur.",
+  model_no_submit: "L'IA s'est arrêtée sans générer de fiche. Reformulez le prompt et réessayez.",
+  loop_exhausted: "L'IA n'a pas pu générer de fiche après plusieurs tentatives. Reformulez ou ajoutez du contexte (marque + modèle complet).",
+  internal_error: "Erreur interne. Signalez-le à un administrateur si le problème persiste.",
 };
 
 function errorMessageFor(code: string | undefined): string {

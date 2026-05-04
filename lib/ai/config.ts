@@ -5,6 +5,7 @@ import { aiConfig } from "@/lib/db/schema";
 
 export interface AiSettings {
   apiKey: string | null;
+  braveApiKey: string | null;
   model: string | null;
   enabled: boolean;
 }
@@ -36,10 +37,12 @@ export async function getAiSettings(): Promise<AiSettings> {
   }
 
   const dbKey = row?.anthropic_api_key || null;
+  const dbBraveKey = row?.brave_api_key || null;
   const dbModel = row?.model || null;
 
   return {
     apiKey: dbKey || env.ANTHROPIC_API_KEY || null,
+    braveApiKey: dbBraveKey || env.BRAVE_API_KEY || null,
     model: dbModel || env.AI_MODEL || null,
     enabled: row
       ? row.enabled === 1
