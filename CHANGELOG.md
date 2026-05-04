@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.11.0](https://github.com/kkzakaria/netereka/compare/v1.10.0...v1.11.0) (2026-05-04)
+
+
+### Features
+
+* **admin:** give Claude an image_search tool (Brave) for product creation ([#209](https://github.com/kkzakaria/netereka/issues/209)) ([a93ed48](https://github.com/kkzakaria/netereka/commit/a93ed486f4120a22ef21663fa86a09a7a52eb4a2))
+
+
+### Bug Fixes
+
+* **admin:** constrain AI product output via strict JSON Schema ([#201](https://github.com/kkzakaria/netereka/issues/201)) ([dd52000](https://github.com/kkzakaria/netereka/commit/dd52000cadd634960c736e3e303d2d11605234c6))
+* **admin:** drop oneOf in submit_product schema (Anthropic constraint) ([#203](https://github.com/kkzakaria/netereka/issues/203)) ([0c4b644](https://github.com/kkzakaria/netereka/commit/0c4b6441e3965b82845fc27004087f4715f644fa))
+* **admin:** log Zod issues when AI product output fails validation ([#198](https://github.com/kkzakaria/netereka/issues/198)) ([3b6e879](https://github.com/kkzakaria/netereka/commit/3b6e8798f1e34b41f43d04831d54eee4aacd3a8f))
+* **admin:** stop AI from hallucinating image URLs ([#207](https://github.com/kkzakaria/netereka/issues/207)) ([411834b](https://github.com/kkzakaria/netereka/commit/411834bac2af08fa7a4d7230aeae313243b9fa77))
+* **admin:** unblock AI image preview + import (Referer / UA / diagnostics) ([#205](https://github.com/kkzakaria/netereka/issues/205)) ([aa9e1a2](https://github.com/kkzakaria/netereka/commit/aa9e1a25ee887aa8d7458b1c65f74bbe8eeb42b0))
+
 ## [1.10.0](https://github.com/kkzakaria/netereka/compare/v1.9.0...v1.10.0) (2026-04-25)
 
 
