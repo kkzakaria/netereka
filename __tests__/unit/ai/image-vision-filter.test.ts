@@ -71,6 +71,42 @@ describe("filterByVision", () => {
     expect(result.map((c) => c.url)).toEqual([candidates[0].url, candidates[1].url]);
   });
 
+  it("traduit display index → index original quand un no-thumb précède un thumb gardé", async () => {
+    // Anti-régression : si quelqu'un drop la translation et matche keep_indexes
+    // contre l'array original, ce test échoue car keep_indexes:[1] retournerait
+    // candidate(1) (no-thumb) au lieu de candidate(2) (display idx 1).
+    const anthropic = makeAnthropic({ keep_indexes: [1] });
+    const candidates = [
+      candidate(0), // display idx 0
+      candidate(1, { thumb: null }), // pass-through
+      candidate(2), // display idx 1
+    ];
+
+    const result = await filterByVision(candidates, anthropic);
+
+    // keep_indexes:[1] → candidate(2) (display idx 1)
+    // candidate(1) gardé car non-inspectable
+    // candidate(0) rejeté
+    expect(result.map((c) => c.url)).toEqual([candidates[1].url, candidates[2].url]);
+  });
+
+  it("retourne tous les candidats sans appel API si AUCUN n'a de thumbnail", async () => {
+    const createMock = vi.fn();
+    const anthropic = { messages: { create: createMock } } as unknown as Anthropic;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const candidates = [candidate(0, { thumb: null }), candidate(1, { thumb: null })];
+
+    const result = await filterByVision(candidates, anthropic);
+
+    expect(result).toEqual(candidates);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("no inspectable thumbnails"),
+      candidates.length,
+    );
+    warnSpy.mockRestore();
+  });
+
   it("retourne tous les candidats si vision API throws (graceful degradation)", async () => {
     const anthropic = makeAnthropic(undefined, { throws: new Error("network") });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

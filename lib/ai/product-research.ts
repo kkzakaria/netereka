@@ -235,14 +235,19 @@ export async function* researchProduct(
         clientToolUses.map(async (tu): Promise<Anthropic.ToolResultBlockParam> => {
           try {
             const result = await searchImages(tu.input as ImageSearchInput, braveApiKey);
-            // Vision pass: text-based filtering can't catch watermarks /
-            // surimprime­d text / banner overlays embedded in pixels. We send
-            // each thumbnail back to Claude with vision before handing the
-            // results to the research-loop model. Failures degrade silently —
-            // the unfiltered Brave list still reaches the model.
-            const finalResult = result.ok && result.results.length > 0
-              ? { ok: true as const, results: await filterByVision(result.results, anthropic, { model }) }
-              : result;
+            // Vision pass — see lib/ai/image-vision-filter.ts header for
+            // rationale + failure mode. Wrapped in its own try/catch so a
+            // post-processing throw never loses the Brave results we already
+            // have; the model gets the unfiltered list instead of api_error.
+            let finalResult = result;
+            if (result.ok && result.results.length > 0) {
+              try {
+                finalResult = { ok: true, results: await filterByVision(result.results, anthropic, { model }) };
+              } catch (visionErr) {
+                console.warn("[ai-product] vision filter threw outside its catch — using unfiltered Brave results", visionErr);
+                finalResult = result;
+              }
+            }
             // is_error: true tells the model the tool genuinely failed (vs.
             // returning empty results). Without this Claude may treat a
             // 429/auth_failed as "no images found" and blindly retry, exhausting
