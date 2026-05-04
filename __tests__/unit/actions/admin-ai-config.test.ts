@@ -205,6 +205,27 @@ describe("saveAiConfig", () => {
     );
   });
 
+  it("rejette une valeur masque-shape Brave quand aucune clé Brave existante en DB", async () => {
+    mocks.dbGet.mockResolvedValue({
+      id: 1,
+      anthropic_api_key: "sk-ant-existing-zzzz",
+      brave_api_key: null,
+      model: null,
+      enabled: 1,
+    });
+
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "••••••••zzzz");
+    fd.set("brave_api_key", "••••••••1234");
+    fd.set("enabled", "on");
+
+    const result = await saveAiConfig(fd);
+
+    expect(result.success).toBe(false);
+    expect(result.fieldErrors?.brave_api_key).toBeDefined();
+    expect(mocks.dbValues).not.toHaveBeenCalled();
+  });
+
   it("met à jour Brave seul, préserve Anthropic via masque", async () => {
     mocks.dbGet.mockResolvedValue({
       id: 1,
