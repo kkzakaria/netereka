@@ -3,6 +3,7 @@ import { parseAiToolInput, type AiProductOutput } from "@/lib/validations/produc
 import { HIGHLIGHT_ICON_NAMES } from "@/lib/validations/product-story";
 import { SUBMIT_PRODUCT_TOOL_SCHEMA } from "@/lib/ai/submit-tool-schema";
 import { searchImages, type ImageSearchInput } from "@/lib/ai/image-search";
+import { filterByVision } from "@/lib/ai/image-vision-filter";
 
 export type ResearchErrorCode =
   | "invalid_ai_output"       // Claude returned a submit_product payload we couldn't parse
@@ -234,6 +235,14 @@ export async function* researchProduct(
         clientToolUses.map(async (tu): Promise<Anthropic.ToolResultBlockParam> => {
           try {
             const result = await searchImages(tu.input as ImageSearchInput, braveApiKey);
+            // Vision pass: text-based filtering can't catch watermarks /
+            // surimprime­d text / banner overlays embedded in pixels. We send
+            // each thumbnail back to Claude with vision before handing the
+            // results to the research-loop model. Failures degrade silently —
+            // the unfiltered Brave list still reaches the model.
+            const finalResult = result.ok && result.results.length > 0
+              ? { ok: true as const, results: await filterByVision(result.results, anthropic, { model }) }
+              : result;
             // is_error: true tells the model the tool genuinely failed (vs.
             // returning empty results). Without this Claude may treat a
             // 429/auth_failed as "no images found" and blindly retry, exhausting
@@ -242,8 +251,8 @@ export async function* researchProduct(
             return {
               type: "tool_result",
               tool_use_id: tu.id,
-              content: JSON.stringify(result),
-              is_error: !result.ok,
+              content: JSON.stringify(finalResult),
+              is_error: !finalResult.ok,
             };
           } catch (err) {
             console.error("[ai-product] image_search threw", err);

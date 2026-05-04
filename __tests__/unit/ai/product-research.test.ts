@@ -23,12 +23,19 @@ interface StubTurn {
  * Tracks `passedMessages` so tests can assert the conversation thread shape
  * across turns (assistant content + tool_result echoes).
  */
-function makeAnthropicStub(turnsOrEvents: StubTurn[] | StubEvent[]): Anthropic & { calls(): unknown[] } {
+function makeAnthropicStub(
+  turnsOrEvents: StubTurn[] | StubEvent[],
+  opts: { visionToolInput?: unknown } = {},
+): Anthropic & { calls(): unknown[] } {
   const turns: StubTurn[] = Array.isArray(turnsOrEvents) && turnsOrEvents.length > 0 && "events" in (turnsOrEvents[0] as object)
     ? (turnsOrEvents as StubTurn[])
     : [{ events: turnsOrEvents as StubEvent[], stop_reason: "end_turn" }];
   let turnIdx = 0;
   const passedMessages: unknown[] = [];
+
+  // Vision filter calls `messages.create` (non-streaming) — return a stub
+  // tool_use with the configured keep_indexes so the candidates pass through.
+  const visionInput = opts.visionToolInput ?? { keep_indexes: [] };
 
   const stub = {
     messages: {
@@ -60,6 +67,12 @@ function makeAnthropicStub(turnsOrEvents: StubTurn[] | StubEvent[]): Anthropic &
           }),
         };
       },
+      create: async () => ({
+        content: [
+          { type: "tool_use", id: "vision_tu", name: "report_filtering", input: visionInput },
+        ],
+        stop_reason: "tool_use",
+      }),
     },
     calls: () => passedMessages,
   };
@@ -170,11 +183,19 @@ describe("researchProduct", () => {
   it("multi-turn happy path : image_search → tool_result → submit_product", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
-        results: [{ properties: { url: "https://samsung.com/a.jpg" }, source: "samsung.com", title: "x" }],
+        results: [{
+          properties: { url: "https://samsung.com/a.jpg" },
+          source: "samsung.com",
+          title: "x",
+          thumbnail: { src: "https://imgs.search.brave.com/a.jpg" },
+        }],
       }), { status: 200, headers: { "content-type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    // The stub's `messages.create` is called once by the vision filter inside
+    // image_search execution; we make it return keep_indexes:[0] so the
+    // candidate passes through.
     const anthropic = makeAnthropicStub([
       {
         events: [
@@ -189,7 +210,7 @@ describe("researchProduct", () => {
         ],
         stop_reason: "end_turn",
       },
-    ]);
+    ], { visionToolInput: { keep_indexes: [0] } });
 
     const events = await drain(researchProduct("Galaxy A55", anthropic, { braveApiKey: "test-key" }));
 
