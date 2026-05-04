@@ -12,7 +12,10 @@ export type ResearchErrorCode =
   | "auth_failed"             // Invalid or revoked API key
   | "upstream_rate_limited"   // Anthropic 429 — distinct from our per-admin quota
   | "upstream_unavailable"    // Anthropic 5xx / network reachability
-  | "timeout";                // our DEFAULT_TIMEOUT_MS AbortController fired
+  | "timeout"                 // our DEFAULT_TIMEOUT_MS AbortController fired
+  | "model_no_submit"         // model stopped (end_turn / max_tokens) without calling submit_product
+  | "loop_exhausted"          // hit MAX_LOOP_ITERATIONS — model is stuck (admin should not naively retry)
+  | "internal_error";         // defensive-impossible state in the loop — code defect, not a transient issue
 
 export type ResearchProgress =
   | { type: "progress"; step: "search" | "specs" | "images" | "finalize" }
@@ -26,7 +29,13 @@ export const MODEL = "claude-sonnet-4-6";
 /** Hard budget for the Anthropic call. With the tool-use loop (web_search + image_search round-trips), end-to-end can run 30-90s; 120s is a generous ceiling. */
 export const DEFAULT_TIMEOUT_MS = 120_000;
 
-/** Cap to prevent runaway tool-use loops if the model never reaches submit_product. */
+/**
+ * Cap on conversation turns (each turn = one Anthropic stream call). web_search
+ * `max_uses: 5` is per-call (not cumulative), so a turn can fire many tool calls;
+ * 8 turns covers worst legitimate flows (turn 1: web_search × 5 + 1st image_search;
+ * turn 2: more image_search; turn 3: submit_product) with margin. Bump if either
+ * tool's per-call limit grows.
+ */
 const MAX_LOOP_ITERATIONS = 8;
 
 export const SUBMIT_TOOL_NAME = "submit_product";
@@ -35,7 +44,7 @@ export const IMAGE_SEARCH_TOOL_NAME = "image_search";
 export interface ResearchOptions {
   model?: string;
   timeoutMs?: number;
-  /** Brave Search API key. When null, image_search returns reason:"no_api_key" and the model is expected to emit image_candidates: []. */
+  /** Brave Search API key. When null, the `image_search` tool is omitted from the tool list and the system prompt tells the model to emit `image_candidates: []`. */
   braveApiKey?: string | null;
 }
 
@@ -119,9 +128,13 @@ export function buildTools(opts: { hasImageSearch: boolean } = { hasImageSearch:
  *
  * Loop:
  *  - Stream a turn. As content blocks start, yield progress events.
- *  - At end of turn, if stop_reason="tool_use", execute every client tool (image_search)
- *    and append a tool_result message. If submit_product is in the turn, capture its input
- *    and exit the loop. Repeat (up to MAX_LOOP_ITERATIONS).
+ *  - At end of turn:
+ *    - If `submit_product` is in the turn, capture its input and exit (terminal
+ *      regardless of stop_reason).
+ *    - Else if stop_reason="tool_use", execute every client tool (image_search)
+ *      and append a tool_result message; loop.
+ *    - Else surface `model_no_submit` (refusal / max_tokens).
+ *  - Repeat up to MAX_LOOP_ITERATIONS, then yield `loop_exhausted`.
  *
  * Progress mapping (best-effort):
  *  - 1st web_search → "search"
@@ -193,10 +206,12 @@ export async function* researchProduct(
       }
 
       if (final.stop_reason !== "tool_use") {
-        // Model stopped without calling submit_product — most often max_tokens or end_turn
-        // after a refusal. Surface as api_error so the UI shows a generic retry message.
+        // Model stopped without calling submit_product — usually max_tokens or
+        // end_turn after a refusal. Distinct from `loop_exhausted`: here the
+        // model voluntarily stopped, so a naive retry may help; for
+        // loop_exhausted (below) the model is stuck and retry burns more tokens.
         console.error("[ai-product] stream ended without submit_product", { stop_reason: final.stop_reason });
-        yield { type: "error", code: "api_error" };
+        yield { type: "error", code: "model_no_submit" };
         return;
       }
 
@@ -206,10 +221,12 @@ export async function* researchProduct(
         (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === IMAGE_SEARCH_TOOL_NAME,
       );
       if (clientToolUses.length === 0) {
-        // stop_reason=tool_use but no client tool to run — should be impossible (submit_product
-        // was checked above). Defensive bail-out.
+        // stop_reason=tool_use but no client tool to run — should be impossible
+        // (submit_product was checked above; server_tool_use blocks are resolved
+        // by Anthropic and never end with tool_use stop_reason). If we get here,
+        // it's a code defect, not a transient failure — admin retrying won't help.
         console.error("[ai-product] tool_use stop without client-runnable tool");
-        yield { type: "error", code: "api_error" };
+        yield { type: "error", code: "internal_error" };
         return;
       }
 
@@ -217,6 +234,11 @@ export async function* researchProduct(
         clientToolUses.map(async (tu): Promise<Anthropic.ToolResultBlockParam> => {
           try {
             const result = await searchImages(tu.input as ImageSearchInput, braveApiKey);
+            // is_error: true tells the model the tool genuinely failed (vs.
+            // returning empty results). Without this Claude may treat a
+            // 429/auth_failed as "no images found" and blindly retry, exhausting
+            // the loop. Anthropic docs: is_error makes the model "try a
+            // different approach" — typically falling back to image_candidates: [].
             return {
               type: "tool_result",
               tool_use_id: tu.id,
@@ -228,7 +250,7 @@ export async function* researchProduct(
             return {
               type: "tool_result",
               tool_use_id: tu.id,
-              content: JSON.stringify({ ok: false, reason: "fetch_failed" }),
+              content: JSON.stringify({ ok: false, reason: "internal_error" }),
               is_error: true,
             };
           }
@@ -239,8 +261,18 @@ export async function* researchProduct(
     }
 
     if (submitInput === null) {
-      console.error("[ai-product] hit MAX_LOOP_ITERATIONS without submit_product");
-      yield { type: "error", code: "api_error" };
+      // Loop exhausted — the model called tools 8 times without calling
+      // submit_product. Usually means it's stuck retrying image_search after
+      // an is_error tool_result. Distinct from model_no_submit: here a retry
+      // will likely loop again and burn another 30-60s of tokens.
+      console.error("[ai-product] loop_exhausted", {
+        iterations: MAX_LOOP_ITERATIONS,
+        webSearchCount,
+        imagesEmitted,
+        finalizeEmitted,
+        messageCount: messages.length,
+      });
+      yield { type: "error", code: "loop_exhausted" };
       return;
     }
 

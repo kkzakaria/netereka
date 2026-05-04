@@ -205,6 +205,31 @@ describe("saveAiConfig", () => {
     );
   });
 
+  it("met à jour Brave seul, préserve Anthropic via masque", async () => {
+    mocks.dbGet.mockResolvedValue({
+      id: 1,
+      anthropic_api_key: "sk-ant-existing-aaaa",
+      brave_api_key: null,
+      model: null,
+      enabled: 1,
+    });
+
+    const fd = new FormData();
+    fd.set("anthropic_api_key", "••••••••aaaa");
+    fd.set("brave_api_key", "BSA-fresh-key");
+    fd.set("enabled", "on");
+
+    const result = await saveAiConfig(fd);
+
+    expect(result.success).toBe(true);
+    expect(mocks.dbValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anthropic_api_key: "sk-ant-existing-aaaa",
+        brave_api_key: "BSA-fresh-key",
+      }),
+    );
+  });
+
   it("clé Brave vide → null (n'active pas image_search)", async () => {
     const fd = new FormData();
     fd.set("anthropic_api_key", "sk-ant-x-1234");
