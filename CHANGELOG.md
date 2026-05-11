@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.12.0](https://github.com/kkzakaria/netereka/compare/v1.11.0...v1.12.0) (2026-05-09)
+
+
+### Features
+
+* **admin:** vision-based watermark filter on Brave candidates ([#211](https://github.com/kkzakaria/netereka/issues/211)) ([8d33a8f](https://github.com/kkzakaria/netereka/commit/8d33a8fd8277f481fa615d8b4cbb29a8eb5b9076))
+
+
+### Bug Fixes
+
+* **admin:** remove example chips from AI product creation prompt ([#215](https://github.com/kkzakaria/netereka/issues/215)) ([a054ce5](https://github.com/kkzakaria/netereka/commit/a054ce5c28b1b5324cb6c95c5f8a76ab6cd1de7e))
+
 ## [1.11.0](https://github.com/kkzakaria/netereka/compare/v1.10.0...v1.11.0) (2026-05-04)
 
 
