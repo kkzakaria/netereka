@@ -14,13 +14,12 @@ import {
   getPriceRangeInCategory,
 } from "@/lib/db/search";
 import type { SearchOptions } from "@/lib/db/types";
-import { ProductGrid } from "@/components/storefront/product-grid";
 import { FilterProvider } from "@/app/(storefront)/search/filter-context";
 import { SearchFilters } from "@/app/(storefront)/search/search-filters";
 import { SearchSort } from "@/app/(storefront)/search/search-sort";
 import { ActiveFilters } from "@/app/(storefront)/search/active-filters";
 import { MobileFilterSheet } from "@/app/(storefront)/search/mobile-filter-sheet";
-import { LoadMoreButton } from "./load-more-button";
+import { ProductListWithMore } from "@/components/storefront/product-list-with-more";
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
@@ -105,6 +104,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   ]);
 
   const hasMore = (currentPage - 1) * limit + products.length < total;
+  const searchOpts: SearchOptions = {
+    categoryIds: allCategoryIds,
+    brands: opts.brands,
+    minPrice: opts.minPrice,
+    maxPrice: opts.maxPrice,
+    sort: opts.sort,
+  };
+  const listKey = `${slug}-${sp.brand ?? ""}-${sp.min_price ?? ""}-${sp.max_price ?? ""}-${sp.sort ?? ""}`;
 
   // Build breadcrumb chain: Accueil > ...ancestors > current
   const breadcrumbItems = [
@@ -187,13 +194,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
           {/* Results */}
           <div className="min-w-0 flex-1">
-            <ProductGrid products={products} />
-
-            {hasMore && (
-              <div className="mt-8 flex justify-center">
-                <LoadMoreButton slug={slug} nextPage={currentPage + 1} />
-              </div>
-            )}
+            <ProductListWithMore
+              key={listKey}
+              initialProducts={products}
+              initialHasMore={hasMore}
+              searchOpts={searchOpts}
+              limit={limit}
+              initialNextOffset={currentPage * limit}
+            />
           </div>
         </div>
       </div>

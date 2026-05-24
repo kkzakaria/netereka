@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { searchProducts, countSearchResults, getBrandsInUse, getPriceRange } from "@/lib/db/search";
 import { getCategoryTree, minifyCategoryTree } from "@/lib/db/categories";
-import { ProductGrid } from "@/components/storefront/product-grid";
 import { SITE_NAME } from "@/lib/utils/constants";
 import type { SearchOptions } from "@/lib/db/types";
 import { FilterProvider } from "./filter-context";
@@ -9,7 +8,7 @@ import { SearchFilters } from "./search-filters";
 import { SearchSort } from "./search-sort";
 import { ActiveFilters } from "./active-filters";
 import { MobileFilterSheet } from "./mobile-filter-sheet";
-import { LoadMoreSearch } from "./load-more-search";
+import { ProductListWithMore } from "@/components/storefront/product-list-with-more";
 
 interface Props {
   searchParams: Promise<{
@@ -62,6 +61,15 @@ export default async function SearchPage({ searchParams }: Props) {
   ]);
 
   const hasMore = (currentPage - 1) * limit + products.length < total;
+  const searchOpts: SearchOptions = {
+    query: opts.query,
+    category: opts.category,
+    brands: opts.brands,
+    minPrice: opts.minPrice,
+    maxPrice: opts.maxPrice,
+    sort: opts.sort,
+  };
+  const listKey = `${sp.q ?? ""}-${sp.category ?? ""}-${sp.brand ?? ""}-${sp.min_price ?? ""}-${sp.max_price ?? ""}-${sp.sort ?? ""}`;
 
   return (
     <FilterProvider
@@ -101,13 +109,14 @@ export default async function SearchPage({ searchParams }: Props) {
 
           {/* Results */}
           <div className="min-w-0 flex-1">
-            <ProductGrid products={products} />
-
-            {hasMore && (
-              <div className="mt-8 flex justify-center">
-                <LoadMoreSearch nextPage={currentPage + 1} />
-              </div>
-            )}
+            <ProductListWithMore
+              key={listKey}
+              initialProducts={products}
+              initialHasMore={hasMore}
+              searchOpts={searchOpts}
+              limit={limit}
+              initialNextOffset={currentPage * limit}
+            />
           </div>
         </div>
       </div>

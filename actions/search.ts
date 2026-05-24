@@ -1,7 +1,19 @@
 "use server";
 
 import { query } from "@/lib/db";
-import type { SearchSuggestion } from "@/lib/db/types";
+import { searchProducts, countSearchResults } from "@/lib/db/search";
+import type { ProductCardData, SearchOptions, SearchSuggestion } from "@/lib/db/types";
+
+export async function loadMoreSearchProducts(
+  opts: SearchOptions
+): Promise<{ products: ProductCardData[]; hasMore: boolean }> {
+  const [products, total] = await Promise.all([
+    searchProducts(opts),
+    countSearchResults(opts),
+  ]);
+  const hasMore = (opts.offset ?? 0) + products.length < total;
+  return { products, hasMore };
+}
 
 export async function getSearchSuggestions(
   term: string
