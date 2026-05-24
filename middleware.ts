@@ -7,7 +7,7 @@ const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { hostname, pathname } = request.nextUrl;
 
   // Redirect www → apex for SEO canonicalization
@@ -43,7 +43,7 @@ export async function proxy(request: NextRequest) {
     } catch (err) {
       // Expected in local dev without wrangler bindings; should not fire in production.
       if (process.env.NODE_ENV === "production") {
-        console.error("[proxy] KV read failed for hero preload header:", err);
+        console.error("[middleware] KV read failed for hero preload header:", err);
       }
     }
   }
