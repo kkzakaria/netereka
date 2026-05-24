@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.0](https://github.com/kkzakaria/netereka/compare/v1.12.0...v1.13.0) (2026-05-24)
+
+
+### Features
+
+* **storefront:** fix "Charger plus" button to append products instead of paginating ([#218](https://github.com/kkzakaria/netereka/issues/218)) ([6106c19](https://github.com/kkzakaria/netereka/commit/6106c19faad9a16e13106f7f8971cf8c1ddeb377))
+
+
+### Bug Fixes
+
+* **storefront:** resolve Next.js 16 dev warnings ([#221](https://github.com/kkzakaria/netereka/issues/221)) ([7bf1b94](https://github.com/kkzakaria/netereka/commit/7bf1b9489e78048a72dc82c87508307404bea1c5))
+
 ## [1.12.0](https://github.com/kkzakaria/netereka/compare/v1.11.0...v1.12.0) (2026-05-09)
 
 
