@@ -47,7 +47,7 @@ jobs:
             # current canary. Sort by created_on desc and take the most recent
             # deployment, then pick the version in the canary split.
             VID=$(npx wrangler deployments list --json \
-              | jq -r 'sort_by(.created_on) | reverse | .[0].versions
+              | jq -r 'sort_by(.created_on) | reverse | (.[0].versions // [])
                        | map(select((.percentage // 0) > 0 and (.percentage // 0) < 100))
                        | first
                        | .version_id')
