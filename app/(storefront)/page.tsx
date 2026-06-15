@@ -20,6 +20,11 @@ export const metadata: Metadata = {
 };
 
 const HIGHLIGHTED_CATEGORIES = 3;
+// Cards rendered per horizontal section. Kept intentionally low to limit the
+// initial DOM / hydration cost on mobile (each card mounts a client island),
+// which is the main lever on homepage LCP. Sections are scrollable carousels
+// with a "Voir tout" link, so fewer initial cards has minimal UX impact.
+const PRODUCTS_PER_SECTION = 8;
 
 export default async function HomePage() {
   // Start categories early — category sections depend on it
@@ -30,7 +35,7 @@ export default async function HomePage() {
     Promise.all(
       cats.slice(0, HIGHLIGHTED_CATEGORIES).map(async (cat) => ({
         category: cat,
-        products: (await getProductsByCategorySlug(cat.slug, 10)).map(toProductCardData),
+        products: (await getProductsByCategorySlug(cat.slug, PRODUCTS_PER_SECTION)).map(toProductCardData),
       }))
     )
   );
@@ -39,8 +44,8 @@ export default async function HomePage() {
   const [categories, featured, latest, activeBanners, categorySections] =
     await Promise.all([
       categoriesPromise,
-      getFeaturedProducts(10),
-      getLatestProducts(10, true),
+      getFeaturedProducts(PRODUCTS_PER_SECTION),
+      getLatestProducts(PRODUCTS_PER_SECTION, true),
       getActiveBanners().catch((error) => {
         console.error("[homepage] Failed to fetch active banners:", error);
         return [] as Banner[];
