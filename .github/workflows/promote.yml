@@ -42,8 +42,12 @@ jobs:
             # whose `deployed_percentage` defaults to 0 — auto-promoting one of
             # those would bypass canary entirely and route 100% of traffic to
             # an untested version.
+            # `wrangler deployments list --json` returns ASCENDING order
+            # (oldest first), so `.[0]` is the oldest deployment — never the
+            # current canary. Sort by created_on desc and take the most recent
+            # deployment, then pick the version in the canary split.
             VID=$(npx wrangler deployments list --json \
-              | jq -r '.[0].versions
+              | jq -r 'sort_by(.created_on) | reverse | .[0].versions
                        | map(select((.percentage // 0) > 0 and (.percentage // 0) < 100))
                        | first
                        | .version_id')
