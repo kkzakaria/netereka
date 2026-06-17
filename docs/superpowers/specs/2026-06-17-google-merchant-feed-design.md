@@ -1,7 +1,7 @@
 # Spec — Flux produits Google Merchant Center
 
 **Date :** 2026-06-17
-**Statut :** Design validé, prêt pour planification
+**Statut :** Implémenté (2026-06-17)
 **Périmètre :** V1 — produit de base (pas de variantes)
 
 ---
