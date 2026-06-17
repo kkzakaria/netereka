@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { escapeXml, stripHtml, formatPrice, availabilityFor } from "@/lib/seo/merchant-feed";
-import { googleCategoryFor } from "@/lib/seo/merchant-feed";
-import { absolutize } from "@/lib/seo/merchant-feed";
-import { buildFeedItem, type FeedProduct } from "@/lib/seo/merchant-feed";
-import { buildFeed } from "@/lib/seo/merchant-feed";
+import { escapeXml, stripHtml, formatPrice, availabilityFor, googleCategoryFor, absolutize, buildFeedItem, buildFeed, type FeedProduct } from "@/lib/seo/merchant-feed";
 
 describe("escapeXml", () => {
   it("escapes XML-significant characters", () => {
@@ -12,6 +8,9 @@ describe("escapeXml", () => {
   it("returns empty string for null/undefined", () => {
     expect(escapeXml(null)).toBe("");
     expect(escapeXml(undefined)).toBe("");
+  });
+  it("strips XML-1.0-forbidden control characters", () => {
+    expect(escapeXml("a\x01b\x1Fc")).toBe("abc");
   });
 });
 
@@ -24,6 +23,9 @@ describe("stripHtml", () => {
   });
   it("returns empty string for null", () => {
     expect(stripHtml(null)).toBe("");
+  });
+  it("decodes numeric HTML entities", () => {
+    expect(stripHtml("Tom &#38; Jerry")).toBe("Tom & Jerry");
   });
 });
 
@@ -150,6 +152,21 @@ describe("buildFeedItem", () => {
     const xml = buildFeedItem({ ...base, name: longName }, "https://netereka.ci");
     const match = xml.match(/<g:title>([^<]*)<\/g:title>/);
     expect(match?.[1].length).toBe(150);
+  });
+
+  it("uses richtext description as-is without stripping", () => {
+    const xml = buildFeedItem(
+      { ...base, descriptionType: "richtext", shortDescription: null, description: "Texte simple sans balise" },
+      "https://netereka.ci"
+    );
+    expect(xml).toContain("<g:description>Texte simple sans balise</g:description>");
+  });
+
+  it("slices by code points before escaping — surrogate-safe truncation", () => {
+    const name = "A".repeat(149) + "&extra";
+    const xml = buildFeedItem({ ...base, name }, "https://netereka.ci");
+    const m = xml.match(/<g:title>([^<]*)<\/g:title>/);
+    expect(m?.[1]).toBe("A".repeat(149) + "&amp;");
   });
 });
 
