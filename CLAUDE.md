@@ -124,9 +124,9 @@ D1 SQLite with Drizzle ORM. Prices stored as integers (XOF, no decimals). Schema
 
 **Category hierarchy:** 2-level max depth (`MAX_CATEGORY_DEPTH = 2` in `lib/db/types.ts`). Categories use recursive CTEs for tree queries. URLs are flat (`/c/slug`) with breadcrumbs for hierarchy.
 
-Two DB access patterns coexist (gradual migration in progress):
-- **Raw SQL** (legacy): `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()` in `lib/db/index.ts`
-- **Drizzle ORM** (new code): `getDrizzle()` from `lib/db/drizzle.ts`
+**DB access standard: Drizzle ORM.** All new and modified queries MUST use `getDrizzle()` from `lib/db/drizzle.ts`. The schema (`lib/db/schema.ts`) is the source of truth, so Drizzle catches column/type mismatches at compile time (a raw-SQL `SELECT slug, updated_at FROM categories` once shipped a broken sitemap because the column didn't exist — Drizzle would have failed the build).
+
+The raw SQL helpers `query<T>()`, `queryFirst<T>()`, `execute()`, `batch()` (in `lib/db/index.ts`) are **legacy**, kept only until the ~31 remaining files are migrated. Do not write new raw SQL. Migration is tracked gradually, file by file (don't mix Drizzle and raw SQL within one file in a single PR — migrate the whole file or leave it). CodeRabbit flags raw SQL in changed code by design; when the finding is on a legacy file deferred to the migration backlog, acknowledge it rather than silencing the rule.
 
 **Schema changes workflow:** edit `lib/db/schema.ts` → `npm run db:generate` → review generated SQL in `drizzle/` → `npm run db:migrate` locally → commit (`schema.ts` + `drizzle/*.sql` + `drizzle/meta/`). Remote migrations run automatically on deploy via GitHub Actions.
 
