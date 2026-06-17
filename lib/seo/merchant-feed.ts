@@ -69,3 +69,63 @@ export function absolutize(url: string | null | undefined, siteUrl: string): str
   if (/^https?:\/\//.test(url)) return url;
   return url.startsWith("/") ? `${siteUrl}${url}` : `${siteUrl}/${url}`;
 }
+
+export interface FeedProduct {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  descriptionType: string;
+  shortDescription: string | null;
+  basePrice: number;
+  comparePrice: number | null;
+  sku: string | null;
+  brand: string | null;
+  stockQuantity: number;
+  categorySlug: string | null;
+  categoryName: string | null;
+  parentCategorySlug: string | null;
+  primaryImage: string; // absolute URL
+  additionalImages: string[]; // absolute URLs, already capped
+}
+
+const TITLE_MAX = 150;
+const DESCRIPTION_MAX = 5000;
+
+function feedDescription(p: FeedProduct): string {
+  const short = p.shortDescription?.trim();
+  if (short) return short;
+  const stripped = stripHtml(p.description);
+  return stripped || p.name;
+}
+
+export function buildFeedItem(p: FeedProduct, siteUrl: string): string {
+  const lines: string[] = [];
+  const push = (tag: string, value: string) => lines.push(`    <g:${tag}>${escapeXml(value)}</g:${tag}>`);
+
+  push("id", p.id);
+  push("title", p.name.slice(0, TITLE_MAX));
+  push("description", feedDescription(p).slice(0, DESCRIPTION_MAX));
+  push("link", `${siteUrl}/p/${p.slug}`);
+  push("image_link", p.primaryImage);
+  for (const img of p.additionalImages) {
+    push("additional_image_link", img);
+  }
+  push("availability", availabilityFor(p.stockQuantity));
+
+  const onSale = p.comparePrice !== null && p.comparePrice > p.basePrice;
+  push("price", formatPrice(onSale ? (p.comparePrice as number) : p.basePrice));
+  if (onSale) push("sale_price", formatPrice(p.basePrice));
+
+  push("condition", "new");
+
+  if (p.brand) push("brand", p.brand);
+  if (p.sku) push("mpn", p.sku);
+  if (!p.brand && !p.sku) push("identifier_exists", "no");
+
+  const gpc = googleCategoryFor(p.categorySlug, p.parentCategorySlug);
+  if (gpc !== undefined) push("google_product_category", String(gpc));
+  if (p.categoryName) push("product_type", p.categoryName);
+
+  return `  <item>\n${lines.join("\n")}\n  </item>`;
+}
