@@ -147,3 +147,55 @@ export async function getRelatedProducts(
   );
   return rows.map(hydrateProductStoryFields);
 }
+
+export interface FeedRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  description_type: string;
+  short_description: string | null;
+  base_price: number;
+  compare_price: number | null;
+  sku: string | null;
+  brand: string | null;
+  stock_quantity: number;
+  category_slug: string | null;
+  category_name: string | null;
+  parent_category_slug: string | null;
+  image_urls: string[];
+}
+
+/** All active, non-draft products with their images (primary first), for the
+ *  Google Merchant Center feed. Out-of-stock products are included. */
+export async function getProductsForFeed(): Promise<FeedRow[]> {
+  const products = await query<Omit<FeedRow, "image_urls">>(
+    `SELECT p.id, p.slug, p.name, p.description, p.description_type, p.short_description,
+            p.base_price, p.compare_price, p.sku, p.brand, p.stock_quantity,
+            c.slug AS category_slug, c.name AS category_name,
+            pc.slug AS parent_category_slug
+       FROM products p
+       LEFT JOIN categories c ON c.id = p.category_id
+       LEFT JOIN categories pc ON pc.id = c.parent_id
+      WHERE p.is_active = 1 AND p.is_draft = 0
+      ORDER BY p.created_at DESC`
+  );
+
+  const images = await query<{ product_id: string; url: string | null }>(
+    `SELECT pi.product_id, pi.url
+       FROM product_images pi
+       JOIN products p ON p.id = pi.product_id
+      WHERE p.is_active = 1 AND p.is_draft = 0 AND pi.variant_id IS NULL
+      ORDER BY pi.product_id, pi.is_primary DESC, pi.sort_order ASC`
+  );
+
+  const byProduct = new Map<string, string[]>();
+  for (const img of images) {
+    if (!img.url) continue;
+    const arr = byProduct.get(img.product_id) ?? [];
+    arr.push(img.url);
+    byProduct.set(img.product_id, arr);
+  }
+
+  return products.map((p) => ({ ...p, image_urls: byProduct.get(p.id) ?? [] }));
+}
