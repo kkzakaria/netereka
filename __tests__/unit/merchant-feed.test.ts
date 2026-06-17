@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { escapeXml, stripHtml, formatPrice, availabilityFor } from "@/lib/seo/merchant-feed";
+import { googleCategoryFor } from "@/lib/seo/merchant-feed";
 
 describe("escapeXml", () => {
   it("escapes XML-significant characters", () => {
@@ -36,5 +37,19 @@ describe("availabilityFor", () => {
   it("is out_of_stock when quantity is 0 or less", () => {
     expect(availabilityFor(0)).toBe("out_of_stock");
     expect(availabilityFor(-1)).toBe("out_of_stock");
+  });
+});
+
+describe("googleCategoryFor", () => {
+  it("maps a top-level category slug", () => {
+    expect(googleCategoryFor("smartphones", null)).toBe(267);
+    expect(googleCategoryFor("ecouteurs", null)).toBe(543626);
+  });
+  it("falls back to the parent slug when the child is unmapped", () => {
+    expect(googleCategoryFor("apple", "smartphones")).toBe(267);
+  });
+  it("returns undefined for an unmapped category", () => {
+    expect(googleCategoryFor("inconnu", null)).toBeUndefined();
+    expect(googleCategoryFor(null, null)).toBeUndefined();
   });
 });

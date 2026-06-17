@@ -31,3 +31,34 @@ export function formatPrice(amount: number): string {
 export function availabilityFor(stockQuantity: number): "in_stock" | "out_of_stock" {
   return stockQuantity > 0 ? "in_stock" : "out_of_stock";
 }
+
+/** Internal category slug → Google product category numeric ID.
+ *  IDs verified against taxonomy-with-ids.en-US.txt (2026-06-17). */
+export const GOOGLE_CATEGORY_MAP: Record<string, number> = {
+  smartphones: 267, // Electronics > Communications > Telephony > Mobile Phones
+  tablettes: 4745, // Electronics > Computers > Tablet Computers
+  ordinateurs: 278, // Electronics > Computers
+  televiseurs: 404, // Electronics > Video > Televisions
+  televisions: 404,
+  ecouteurs: 543626, // Electronics > Audio > ... > Headphones
+  "montres-connectees": 201, // Apparel & Accessories > Jewelry > Watches (closest leaf)
+  imprimantes: 500106, // Electronics > Print, Copy, Scan & Fax > Printers, Copiers & Fax Machines
+  projecteurs: 396, // Electronics > Video > Projectors
+  gaming: 1294, // Electronics > Video Game Consoles
+  jeux: 1279, // Software > Video Game Software
+  reseau: 342, // Electronics > Networking
+  accessoires: 2082, // Electronics > Electronics Accessories
+};
+
+export function googleCategoryFor(
+  categorySlug: string | null | undefined,
+  parentCategorySlug: string | null | undefined
+): number | undefined {
+  if (categorySlug && GOOGLE_CATEGORY_MAP[categorySlug] !== undefined) {
+    return GOOGLE_CATEGORY_MAP[categorySlug];
+  }
+  if (parentCategorySlug && GOOGLE_CATEGORY_MAP[parentCategorySlug] !== undefined) {
+    return GOOGLE_CATEGORY_MAP[parentCategorySlug];
+  }
+  return undefined;
+}
