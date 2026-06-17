@@ -10,15 +10,21 @@ export async function GET() {
   try {
     const rows = await getProductsForFeed();
     const items: string[] = [];
-    let skipped = 0;
+    let skippedNoImage = 0;
+    let skippedNoPrice = 0;
 
     for (const r of rows) {
+      if (r.base_price <= 0) {
+        skippedNoPrice++;
+        continue;
+      }
+
       const images = r.image_urls
         .map((u) => absolutize(getImageUrl(u), SITE_URL))
         .filter((u) => u.length > 0);
 
       if (images.length === 0) {
-        skipped++;
+        skippedNoImage++;
         continue;
       }
 
@@ -44,8 +50,11 @@ export async function GET() {
       items.push(buildFeedItem(product, SITE_URL));
     }
 
-    if (skipped > 0) {
-      console.warn(`[feed] ${skipped} produit(s) sans image exclu(s) du flux Merchant Center`);
+    if (skippedNoImage > 0) {
+      console.warn(`[feed] ${skippedNoImage} produit(s) sans image exclu(s) du flux Merchant Center`);
+    }
+    if (skippedNoPrice > 0) {
+      console.warn(`[feed] ${skippedNoPrice} produit(s) sans prix valide (<= 0) exclu(s) du flux Merchant Center`);
     }
 
     const xml = buildFeed(items, {
