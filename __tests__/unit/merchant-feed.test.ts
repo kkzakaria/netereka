@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { escapeXml, stripHtml, formatPrice, availabilityFor } from "@/lib/seo/merchant-feed";
 import { googleCategoryFor } from "@/lib/seo/merchant-feed";
+import { absolutize } from "@/lib/seo/merchant-feed";
 
 describe("escapeXml", () => {
   it("escapes XML-significant characters", () => {
@@ -51,5 +52,18 @@ describe("googleCategoryFor", () => {
   it("returns undefined for an unmapped category", () => {
     expect(googleCategoryFor("inconnu", null)).toBeUndefined();
     expect(googleCategoryFor(null, null)).toBeUndefined();
+  });
+});
+
+describe("absolutize", () => {
+  const site = "https://netereka.ci";
+  it("leaves absolute http(s) URLs untouched", () => {
+    expect(absolutize("https://cdn.example/x.jpg", site)).toBe("https://cdn.example/x.jpg");
+  });
+  it("prefixes the site URL for root-relative paths", () => {
+    expect(absolutize("/images/x.jpg", site)).toBe("https://netereka.ci/images/x.jpg");
+  });
+  it("returns empty string for empty input", () => {
+    expect(absolutize("", site)).toBe("");
   });
 });

@@ -62,3 +62,10 @@ export function googleCategoryFor(
   }
   return undefined;
 }
+
+/** Ensure a URL is absolute. `siteUrl` must have no trailing slash. */
+export function absolutize(url: string | null | undefined, siteUrl: string): string {
+  if (!url) return "";
+  if (/^https?:\/\//.test(url)) return url;
+  return url.startsWith("/") ? `${siteUrl}${url}` : `${siteUrl}/${url}`;
+}
