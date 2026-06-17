@@ -111,8 +111,8 @@ export async function createCategory(formData: FormData): Promise<ActionResult> 
   }
 
   await execute(
-    `INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    `INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
     [id, data.name, data.slug, data.description || null, parentId, data.sort_order, data.is_active]
   );
 
@@ -182,7 +182,7 @@ export async function updateCategory(
   }
 
   await execute(
-    `UPDATE categories SET name = ?, slug = ?, description = ?, parent_id = ?, sort_order = ?, is_active = ?
+    `UPDATE categories SET name = ?, slug = ?, description = ?, parent_id = ?, sort_order = ?, is_active = ?, updated_at = datetime('now')
      WHERE id = ?`,
     [data.name, data.slug, data.description || null, parentId, data.sort_order, data.is_active, id]
   );
