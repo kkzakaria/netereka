@@ -53,7 +53,7 @@ Google Merchant Center « fetch » le flux par URL (récupération planifiée, ~
 
 ### Mapping `google_product_category` (slug 1er niveau → ID Google)
 
-IDs **à vérifier** contre le fichier officiel `taxonomy-with-ids.en-US.txt` lors de l'implémentation.
+IDs **vérifiés** contre le fichier officiel `taxonomy-with-ids.en-US.txt` (2026-06-17) — valeurs finales telles qu'implémentées dans `GOOGLE_CATEGORY_MAP`.
 
 | slug | Google Product Category (ID) |
 |---|---|
@@ -61,13 +61,13 @@ IDs **à vérifier** contre le fichier officiel `taxonomy-with-ids.en-US.txt` lo
 | `tablettes` | Tablet Computers (4745) |
 | `ordinateurs` | Computers (278) |
 | `televiseurs`, `televisions` | Televisions (404) |
-| `ecouteurs` | Headphones (29) |
-| `montres-connectees` | Smart Watches *(vérifier)* |
-| `imprimantes` | Printers *(vérifier)* |
-| `projecteurs` | Projectors *(vérifier)* |
-| `gaming` | Video Game Consoles (234) |
+| `ecouteurs` | Headphones (543626) |
+| `montres-connectees` | Watches (201) |
+| `imprimantes` | Printers, Copiers & Fax Machines (500106) |
+| `projecteurs` | Projectors (396) |
+| `gaming` | Video Game Consoles (1294) |
 | `jeux` | Video Game Software (1279) |
-| `reseau` | Networking *(vérifier)* |
+| `reseau` | Networking (342) |
 | `accessoires` | Electronics Accessories (2082) |
 
 Les sous-catégories (`apple`, `samsung`, `xiaomi`, `redmi`…) héritent du mapping de leur parent ; elles n'ont aucun produit direct aujourd'hui.
