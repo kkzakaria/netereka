@@ -129,3 +129,18 @@ export function buildFeedItem(p: FeedProduct, siteUrl: string): string {
 
   return `  <item>\n${lines.join("\n")}\n  </item>`;
 }
+
+export function buildFeed(
+  items: string[],
+  opts: { siteUrl: string; title: string; description: string }
+): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">
+  <channel>
+    <title>${escapeXml(opts.title)}</title>
+    <link>${escapeXml(opts.siteUrl)}</link>
+    <description>${escapeXml(opts.description)}</description>
+${items.join("\n")}
+  </channel>
+</rss>`;
+}

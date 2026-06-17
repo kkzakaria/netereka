@@ -3,6 +3,7 @@ import { escapeXml, stripHtml, formatPrice, availabilityFor } from "@/lib/seo/me
 import { googleCategoryFor } from "@/lib/seo/merchant-feed";
 import { absolutize } from "@/lib/seo/merchant-feed";
 import { buildFeedItem, type FeedProduct } from "@/lib/seo/merchant-feed";
+import { buildFeed } from "@/lib/seo/merchant-feed";
 
 describe("escapeXml", () => {
   it("escapes XML-significant characters", () => {
@@ -149,5 +150,21 @@ describe("buildFeedItem", () => {
     const xml = buildFeedItem({ ...base, name: longName }, "https://netereka.ci");
     const match = xml.match(/<g:title>([^<]*)<\/g:title>/);
     expect(match?.[1].length).toBe(150);
+  });
+});
+
+describe("buildFeed", () => {
+  it("wraps items in a valid RSS 2.0 channel with the g: namespace", () => {
+    const xml = buildFeed(["  <item><g:id>a</g:id></item>"], {
+      siteUrl: "https://netereka.ci",
+      title: "NETEREKA",
+      description: "Boutique",
+    });
+    expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    expect(xml).toContain('<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">');
+    expect(xml).toContain("<title>NETEREKA</title>");
+    expect(xml).toContain("<link>https://netereka.ci</link>");
+    expect(xml).toContain("<g:id>a</g:id>");
+    expect(xml.trim().endsWith("</rss>")).toBe(true);
   });
 });
