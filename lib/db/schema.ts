@@ -128,6 +128,7 @@ export const categories = sqliteTable("categories", {
   sort_order: integer("sort_order").notNull().default(0),
   is_active: integer("is_active").notNull().default(1),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
 }, (table) => [
   index("idx_categories_slug").on(table.slug),
   index("idx_categories_parent").on(table.parent_id),

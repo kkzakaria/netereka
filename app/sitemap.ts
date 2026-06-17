@@ -2,7 +2,11 @@ import type { MetadataRoute } from "next";
 import { query } from "@/lib/db";
 import { SITE_URL } from "@/lib/utils/constants";
 
-export const revalidate = 3600;
+// Rendered at request time so the D1 binding (getCloudflareContext) is available.
+// With ISR/prerender the sitemap was generated at build time without the binding:
+// the categories/products query threw and the catch silently served only the
+// static pages — leaving the entire catalogue out of the sitemap.
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticLastModified = new Date("2026-02-01");
@@ -77,7 +81,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }));
 
     return [...staticPages, ...categoryPages, ...productPages];
-  } catch {
+  } catch (error) {
+    // Never swallow this silently: a tronqué sitemap (static pages only) drops the
+    // whole catalogue from search discovery. Log so it surfaces in Worker logs.
+    console.error("[sitemap] failed to load categories/products, serving static pages only:", error);
     return staticPages;
   }
 }
