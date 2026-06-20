@@ -64,7 +64,14 @@ export async function GET() {
     });
 
     return new Response(xml, {
-      headers: { "Content-Type": "application/xml; charset=utf-8" },
+      headers: {
+        "Content-Type": "application/xml; charset=utf-8",
+        // Public read-only feed: allow cross-origin readers (e.g. Merchant Center's
+        // in-browser URL validator does a fetch() from merchants.google.com).
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Cache-Control": "public, max-age=3600",
+      },
     });
   } catch (error) {
     // Never serve a partial feed: a 500 makes Merchant Center keep the last good feed.
