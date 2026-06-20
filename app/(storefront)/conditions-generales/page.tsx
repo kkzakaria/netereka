@@ -118,7 +118,7 @@ export default function CGVPage() {
           </p>
         </section>
 
-        <section>
+        <section id="retours" className="scroll-mt-24">
           <h2 className="text-xl font-semibold">7. Droit de rétractation et retours</h2>
           <p>
             Conformément à la réglementation en vigueur en Côte d&apos;Ivoire, le client
