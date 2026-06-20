@@ -70,7 +70,7 @@ export async function GET() {
         // in-browser URL validator does a fetch() from merchants.google.com).
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "public, max-age=600",
       },
     });
   } catch (error) {
