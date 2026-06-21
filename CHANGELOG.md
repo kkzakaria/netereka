@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.14.0](https://github.com/kkzakaria/netereka/compare/v1.13.0...v1.14.0) (2026-06-21)
+
+
+### Features
+
+* **seo:** add #retours anchor to CGV for Merchant Center return policy URL ([#237](https://github.com/kkzakaria/netereka/issues/237)) ([be2493e](https://github.com/kkzakaria/netereka/commit/be2493e1aa1071a846ac979fa97783a4c93ebedd))
+* **seo:** enrich Product schema with shippingRate, return policy & ratings ([#243](https://github.com/kkzakaria/netereka/issues/243)) ([e9d53b7](https://github.com/kkzakaria/netereka/commit/e9d53b721a857b8ce4f91666e93e5035d4f2bb09))
+* **seo:** Google Merchant Center product feed at /feed.xml ([#232](https://github.com/kkzakaria/netereka/issues/232)) ([cb11427](https://github.com/kkzakaria/netereka/commit/cb114270e938eeb382a0c04e62c47263fcad82f9))
+
+
+### Bug Fixes
+
+* **ci:** select most-recent deployment when resolving canary to promote ([#227](https://github.com/kkzakaria/netereka/issues/227)) ([531cc86](https://github.com/kkzakaria/netereka/commit/531cc86b9da7ba0889a453c1f9f81ff74f8fcde3))
+* **seo:** add CORS headers to /feed.xml for Merchant Center URL validation ([#239](https://github.com/kkzakaria/netereka/issues/239)) ([0e223a6](https://github.com/kkzakaria/netereka/commit/0e223a60e2474ef7d7155a261d552d913a45dae7))
+* **seo:** include products & categories in sitemap (catalogue invisible to Google) ([#229](https://github.com/kkzakaria/netereka/issues/229)) ([afee8d8](https://github.com/kkzakaria/netereka/commit/afee8d8b08690a341d15d6240741a07a91dc3399))
+* **storefront:** revert proxy.ts to middleware.ts for Cloudflare compatibility ([#222](https://github.com/kkzakaria/netereka/issues/222)) ([3b90edc](https://github.com/kkzakaria/netereka/commit/3b90edceb8be1f1c88a8dc67ef2e079a9d03ab16))
+
+
+### Performance
+
+* **seo:** reduce /feed.xml cache to 10min for fresher Merchant Center data ([#241](https://github.com/kkzakaria/netereka/issues/241)) ([897e55b](https://github.com/kkzakaria/netereka/commit/897e55b11bd513f4721a001c0e6f450cdee0b6d9))
+* **storefront:** reduce initial homepage cards to lower mobile LCP ([#225](https://github.com/kkzakaria/netereka/issues/225)) ([790655d](https://github.com/kkzakaria/netereka/commit/790655ddfa99e5467f992f1ad78e9eb8348c35a5))
+
+
+### Documentation
+
+* **db:** make Drizzle the standard for all DB access ([#233](https://github.com/kkzakaria/netereka/issues/233)) ([d1cd07a](https://github.com/kkzakaria/netereka/commit/d1cd07a88a444f5f0a899ad1b701c424d33237ad))
+
 ## [1.13.0](https://github.com/kkzakaria/netereka/compare/v1.12.0...v1.13.0) (2026-05-24)
 
 
