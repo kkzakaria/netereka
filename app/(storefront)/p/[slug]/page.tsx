@@ -23,6 +23,15 @@ export const revalidate = 3600;
 
 const getProductCached = cache(getProductBySlug);
 
+// SQLite stores timestamps as "YYYY-MM-DD HH:MM:SS" (UTC), which is not strict ISO 8601.
+// schema.org datePublished wants ISO 8601 — normalize, and drop the value if unparseable.
+function toIsoDate(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 interface Props {
   params: Promise<{ slug: string }>;
 }
@@ -153,6 +162,13 @@ export default async function ProductPage({ params }: Props) {
   const product = await getProductCached(slug);
   if (!product) notFound();
 
+  // Rating stats power the aggregateRating snippet. getProductRatingStats is React-cached,
+  // so this call is shared with the <ProductReviews> component below (no extra query).
+  // We only fetch review bodies when reviews actually exist — never fabricate ratings
+  // (fake review structured data violates Google policy and risks a manual action).
+  const ratingStats = await getProductRatingStats(product.id);
+  const schemaReviews = ratingStats.count > 0 ? await getProductReviews(product.id, 5) : [];
+
   const validUntil = new Date();
   validUntil.setDate(validUntil.getDate() + 60);
   const priceValidUntil = validUntil.toISOString().split("T")[0];
@@ -178,8 +194,24 @@ export default async function ProductPage({ params }: Props) {
           ? "https://schema.org/InStock"
           : "https://schema.org/OutOfStock",
       seller: { "@type": "Organization", name: SITE_NAME },
+      // 48h to report a defect/non-conformity (CGV §7). Mirrors the return policy
+      // declared to Google Merchant Center (/conditions-generales#retours) for consistency.
+      hasMerchantReturnPolicy: {
+        "@type": "MerchantReturnPolicy",
+        applicableCountry: "CI",
+        returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow",
+        merchantReturnDays: 2,
+        returnMethod: "https://schema.org/ReturnInStore",
+        returnFees: "https://schema.org/FreeReturn",
+      },
       shippingDetails: {
         "@type": "OfferShippingDetails",
+        // In-house fleet, fee varies by commune (Plateau 1 000 → 3 000 XOF). Advertise the floor.
+        shippingRate: {
+          "@type": "MonetaryAmount",
+          value: 1000,
+          currency: "XOF",
+        },
         shippingDestination: {
           "@type": "DefinedRegion",
           addressCountry: "CI",
@@ -201,6 +233,23 @@ export default async function ProductPage({ params }: Props) {
         },
       },
     },
+    // Only emitted when real reviews exist — see schemaReviews guard above.
+    ...(ratingStats.count > 0 && {
+      aggregateRating: {
+        "@type": "AggregateRating",
+        ratingValue: Math.round(ratingStats.average * 10) / 10,
+        reviewCount: ratingStats.count,
+        bestRating: 5,
+        worstRating: 1,
+      },
+      review: schemaReviews.map((r) => ({
+        "@type": "Review",
+        reviewRating: { "@type": "Rating", ratingValue: r.rating, bestRating: 5, worstRating: 1 },
+        author: { "@type": "Person", name: r.user_name },
+        ...(toIsoDate(r.created_at) && { datePublished: toIsoDate(r.created_at) }),
+        ...(r.comment && { reviewBody: r.comment }),
+      })),
+    }),
   };
 
   const comparePrice = product.compare_price;
