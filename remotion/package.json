@@ -1,0 +1,23 @@
+{
+  "name": "netereka-banners-bench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion motion-design bench for NETEREKA storefront banners. Self-contained — not part of the Next.js / Cloudflare Workers build. Used to author and preview banner animations, then render MP4/GIF when a shareable asset is needed. The production banners live as CSS/SVG React components in components/storefront/banners/.",
+  "scripts": {
+    "dev": "remotion studio",
+    "render": "remotion render DeliveryBannerAbidjan out/delivery-abidjan.mp4",
+    "gif": "remotion render DeliveryBannerAbidjan out/delivery-abidjan.gif --codec=gif",
+    "still": "remotion still DeliveryBannerAbidjan out/delivery-abidjan.png --frame=90",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.380",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.380"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}

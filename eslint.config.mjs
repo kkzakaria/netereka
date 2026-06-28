@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "NETEREKA_Homepage_Concept.jsx",
     "scripts/**",
+    // Self-contained Remotion motion bench — own package.json, not part of the build.
+    "remotion/**",
   ]),
 ]);
 
