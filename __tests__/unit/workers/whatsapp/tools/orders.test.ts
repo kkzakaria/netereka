@@ -22,7 +22,8 @@ function createMockD1() {
 
 function createMockCtx(
   mockDb: ReturnType<typeof createMockD1>,
-  userId: string | null = "user-1"
+  userId: string | null = "user-1",
+  isVerified: 0 | 1 = 1
 ): ToolContext {
   return {
     db: mockDb as unknown as D1Database,
@@ -30,7 +31,8 @@ function createMockCtx(
       id: "session-1",
       wa_phone: "2250700000000",
       user_id: userId,
-      is_verified: 1,
+      pending_user_id: null,
+      is_verified: isVerified,
       otp_code: null,
       otp_expires_at: null,
       status: "active" as const,
@@ -61,6 +63,24 @@ describe("createOrder", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/link/i);
+  });
+
+  // Security regression: a session that carries a user_id but is NOT verified
+  // (the state produced by linkAccount before OTP) must be refused. Gating on
+  // user_id alone was the OTP-bypass vuln (GHSA).
+  it("refuses an unverified session even when user_id is present", async () => {
+    const ctx = createMockCtx(mockDb, "victim-999", 0);
+
+    const result = await createOrder(ctx, {
+      address: "123 Rue Principale",
+      commune: "Cocody",
+      phone: "0700000000",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/link/i);
+    // Must short-circuit before touching the DB.
+    expect(mockDb.prepare).not.toHaveBeenCalled();
   });
 
   it("returns error if cart is empty", async () => {
@@ -237,6 +257,15 @@ describe("getOrderStatus", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/link/i);
   });
+
+  it("refuses an unverified session even when user_id is present", async () => {
+    const ctx = createMockCtx(mockDb, "victim-999", 0);
+
+    const result = await getOrderStatus(ctx, { order_number: "ORD-ABC123" });
+
+    expect(result.success).toBe(false);
+    expect(mockDb.prepare).not.toHaveBeenCalled();
+  });
 });
 
 // ─── listOrders ───────────────────────────────────────────────────────────────
@@ -255,6 +284,15 @@ describe("listOrders", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/link/i);
+  });
+
+  it("refuses an unverified session even when user_id is present", async () => {
+    const ctx = createMockCtx(mockDb, "victim-999", 0);
+
+    const result = await listOrders(ctx, {});
+
+    expect(result.success).toBe(false);
+    expect(mockDb.prepare).not.toHaveBeenCalled();
   });
 
   it("returns list of recent orders", async () => {

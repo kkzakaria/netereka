@@ -43,7 +43,7 @@ export async function createOrder(
   ctx: ToolContext,
   params: { address: string; commune: string; phone: string; instructions?: string }
 ): Promise<ToolResult & { data?: unknown }> {
-  if (!ctx.session.user_id) {
+  if (ctx.session.is_verified !== 1 || !ctx.session.user_id) {
     return {
       success: false,
       error: "Your account is not linked. Please link your account before placing an order.",
@@ -193,7 +193,7 @@ export async function getOrderStatus(
   ctx: ToolContext,
   params: { order_number: string }
 ): Promise<ToolResult & { data?: unknown }> {
-  if (!ctx.session.user_id) {
+  if (ctx.session.is_verified !== 1 || !ctx.session.user_id) {
     return {
       success: false,
       error: "Your account is not linked. Please link your account to view orders.",
@@ -232,7 +232,7 @@ export async function listOrders(
   ctx: ToolContext,
   params: { limit?: number }
 ): Promise<ToolResult & { data?: unknown }> {
-  if (!ctx.session.user_id) {
+  if (ctx.session.is_verified !== 1 || !ctx.session.user_id) {
     return {
       success: false,
       error: "Your account is not linked. Please link your account to view orders.",
