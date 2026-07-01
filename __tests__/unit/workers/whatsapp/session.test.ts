@@ -39,34 +39,17 @@ describe("findOrCreateSession", () => {
     expect(mockDb.prepare).toHaveBeenCalledTimes(1);
   });
 
-  it("creates new session and auto-links if phone matches a user", async () => {
-    mockDb._statement.first.mockResolvedValueOnce(null);
-    mockDb._statement.first.mockResolvedValueOnce({ id: "usr_42" });
-    mockDb._statement.run.mockResolvedValueOnce({ success: true });
-    mockDb._statement.first.mockResolvedValueOnce({
-      id: "new_sess",
-      wa_phone: "2250700000000",
-      user_id: "usr_42",
-      is_verified: 1,
-      status: "active",
-      created_at: "2026-04-13T10:00:00Z",
-      updated_at: "2026-04-13T10:00:00Z",
-    });
-
-    const session = await findOrCreateSession(mockDb as unknown as D1Database, "2250700000000");
-
-    expect(session.user_id).toBe("usr_42");
-    expect(session.is_verified).toBe(1);
-  });
-
-  it("creates unlinked session if no user matches", async () => {
-    mockDb._statement.first.mockResolvedValueOnce(null);
-    mockDb._statement.first.mockResolvedValueOnce(null);
-    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+  // Security regression (GHSA-4v42): a new session must NEVER be auto-linked or
+  // auto-verified from a user.phone match — phone is a self-asserted, unverified
+  // signup field. Linking must go through the email-OTP flow instead.
+  it("creates an unlinked, unverified session even when a phone would match", async () => {
+    mockDb._statement.first.mockResolvedValueOnce(null); // no existing session
+    mockDb._statement.run.mockResolvedValueOnce({ success: true }); // INSERT
     mockDb._statement.first.mockResolvedValueOnce({
       id: "new_sess",
       wa_phone: "2250700000000",
       user_id: null,
+      pending_user_id: null,
       is_verified: 0,
       status: "active",
       created_at: "2026-04-13T10:00:00Z",
@@ -77,5 +60,16 @@ describe("findOrCreateSession", () => {
 
     expect(session.user_id).toBeNull();
     expect(session.is_verified).toBe(0);
+    // It must not query the `user` table by phone at all.
+    const phoneLookup = mockDb.prepare.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => /FROM user\b/i.test(sql) && /phone/i.test(sql));
+    expect(phoneLookup).toBeUndefined();
+    // The INSERT must hard-code an unlinked/unverified row.
+    const insertSql = mockDb.prepare.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => sql.includes("INSERT OR IGNORE INTO whatsapp_sessions"));
+    expect(insertSql).toContain("user_id, is_verified");
+    expect(insertSql).toMatch(/VALUES\s*\(\?,\s*\?,\s*NULL,\s*0,/);
   });
 });
