@@ -456,6 +456,10 @@ export const whatsappSessions = sqliteTable("whatsapp_sessions", {
   id: text("id").primaryKey(),
   wa_phone: text("wa_phone").unique().notNull(),
   user_id: text("user_id").references(() => user.id),
+  // Account pending OTP verification. Written by linkAccount BEFORE the OTP is
+  // confirmed; promoted to user_id only by verifyOtp on success. Order tools
+  // must never trust pending_user_id — see is_verified gating.
+  pending_user_id: text("pending_user_id").references(() => user.id),
   otp_code: text("otp_code"),
   otp_expires_at: text("otp_expires_at"),
   is_verified: integer("is_verified").notNull().default(0),

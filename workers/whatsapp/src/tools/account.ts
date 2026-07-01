@@ -9,7 +9,7 @@ interface UserRow {
 interface SessionOtpRow {
   otp_code: string | null;
   otp_expires_at: string | null;
-  user_id: string | null;
+  pending_user_id: string | null;
 }
 
 function generateOtp(): string {
@@ -38,10 +38,14 @@ export async function linkAccount(
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
+  // Stage the target account as PENDING only. It must not become the trusted
+  // ctx.session.user_id until the OTP emailed below is confirmed in verifyOtp;
+  // otherwise an attacker who merely knows a victim's email would be linked
+  // before proving ownership. See GHSA (OTP account-linking bypass).
   await ctx.db
     .prepare(
       `UPDATE whatsapp_sessions
-       SET otp_code = ?, otp_expires_at = ?, user_id = ?, updated_at = ?
+       SET otp_code = ?, otp_expires_at = ?, pending_user_id = ?, updated_at = ?
        WHERE id = ?`
     )
     .bind(otp, expiresAt, user.id, new Date().toISOString(), ctx.session.id)
@@ -69,11 +73,11 @@ export async function verifyOtp(
   params: { code: string }
 ): Promise<ToolResult> {
   const row = await ctx.db
-    .prepare("SELECT otp_code, otp_expires_at, user_id FROM whatsapp_sessions WHERE id = ?")
+    .prepare("SELECT otp_code, otp_expires_at, pending_user_id FROM whatsapp_sessions WHERE id = ?")
     .bind(ctx.session.id)
     .first<SessionOtpRow>();
 
-  if (!row?.otp_code || !row?.otp_expires_at) {
+  if (!row?.otp_code || !row?.otp_expires_at || !row?.pending_user_id) {
     return { success: false, error: "No verification pending. Please use the link account command first." };
   }
 
@@ -101,10 +105,13 @@ export async function verifyOtp(
     return { success: false, error: `Code incorrect (tentative ${attempts}/5). Vérifiez votre email et réessayez.` };
   }
 
+  // OTP confirmed: promote the pending account to the trusted user_id and mark
+  // the session verified atomically, clearing the OTP + pending staging.
   await ctx.db
     .prepare(
       `UPDATE whatsapp_sessions
-       SET is_verified = 1, otp_code = NULL, otp_expires_at = NULL, updated_at = ?
+       SET is_verified = 1, user_id = pending_user_id, pending_user_id = NULL,
+           otp_code = NULL, otp_expires_at = NULL, updated_at = ?
        WHERE id = ?`
     )
     .bind(new Date().toISOString(), ctx.session.id)
@@ -112,7 +119,8 @@ export async function verifyOtp(
 
   // Update in-memory session
   ctx.session.is_verified = 1;
-  ctx.session.user_id = row.user_id;
+  ctx.session.user_id = row.pending_user_id;
+  ctx.session.pending_user_id = null;
 
   return {
     success: true,

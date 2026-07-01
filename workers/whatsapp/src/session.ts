@@ -12,22 +12,22 @@ export async function findOrCreateSession(
 
   if (existing) return existing;
 
-  // Auto-link by phone number if a user matches
-  const matchedUser = await db
-    .prepare("SELECT id FROM user WHERE phone = ? OR phone = ?")
-    .bind(waPhone, `+${waPhone}`)
-    .first<{ id: string }>();
-
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // INSERT OR IGNORE to handle race condition (concurrent first messages)
+  // Always create sessions UNLINKED and UNVERIFIED. Account linking must go
+  // through the email-OTP flow (link_account + verifyOtp). We must NOT auto-link
+  // or auto-verify from a user.phone match: phone is a self-asserted, unverified,
+  // non-unique signup field, so trusting it would hand account access (order
+  // history + order creation) to whoever controls a matching WhatsApp number
+  // (e.g. telecom number recycling). See GHSA-4v42.
+  // INSERT OR IGNORE to handle race condition (concurrent first messages).
   await db
     .prepare(
       `INSERT OR IGNORE INTO whatsapp_sessions (id, wa_phone, user_id, is_verified, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', ?, ?)`
+       VALUES (?, ?, NULL, 0, 'active', ?, ?)`
     )
-    .bind(id, waPhone, matchedUser?.id ?? null, matchedUser ? 1 : 0, now, now)
+    .bind(id, waPhone, now, now)
     .run();
 
   // Always re-fetch by wa_phone (works whether our INSERT succeeded or was ignored)
