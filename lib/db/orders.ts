@@ -222,14 +222,35 @@ export async function cancelOrder(
   reason: string
 ): Promise<boolean> {
   const db = await getDB();
+
+  // Resolve the pending order owned by this user first, so we can release its
+  // reserved stock. Without this, a customer self-cancel left stock permanently
+  // decremented ('cancelled' is a terminal state, so no admin path could ever
+  // refund it) — a cost-free denial-of-inventory. See GHSA (stock-refund gap).
+  const order = await db
+    .prepare(
+      "SELECT id FROM orders WHERE order_number = ? AND user_id = ? AND status = 'pending'"
+    )
+    .bind(orderNumber, userId)
+    .first<{ id: string }>();
+  if (!order) return false;
+
   const result = await db
     .prepare(
       `UPDATE orders SET status = 'cancelled', cancelled_at = datetime('now'), cancellation_reason = ?, updated_at = datetime('now')
-       WHERE order_number = ? AND user_id = ? AND status = 'pending'`
+       WHERE id = ? AND status = 'pending'`
     )
-    .bind(reason, orderNumber, userId)
+    .bind(reason, order.id)
     .run();
-  return result.meta.changes > 0;
+
+  // Refund only when THIS call performed the pending→cancelled transition. The
+  // status guard makes the UPDATE affect the row exactly once, so concurrent
+  // cancels cannot double-refund.
+  if (result.meta.changes > 0) {
+    await refundOrderStock(order.id);
+    return true;
+  }
+  return false;
 }
 
 /**
