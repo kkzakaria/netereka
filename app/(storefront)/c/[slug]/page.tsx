@@ -23,6 +23,7 @@ import { ProductListWithMore } from "@/components/storefront/product-list-with-m
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
+import { getCategorySeoContent } from "@/lib/seo/category-content";
 
 export const revalidate = 300;
 
@@ -46,6 +47,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (!category) return {};
 
   const description =
+    getCategorySeoContent(slug)?.metaDescription ??
     category.description ??
     `Découvrez notre sélection de ${category.name} en Côte d'Ivoire. Livraison rapide à Abidjan. Paiement à la livraison.`;
 
@@ -75,6 +77,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const category = await getCategoryCached(slug);
   if (!category) notFound();
 
+  const seoContent = getCategorySeoContent(slug);
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
@@ -136,6 +139,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             "@type": "CollectionPage",
             name: category.name,
             description:
+              seoContent?.metaDescription ??
               category.description ??
               `Découvrez notre sélection de ${category.name} en Côte d'Ivoire.`,
             url: `${SITE_URL}/c/${slug}`,
@@ -204,6 +208,21 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             />
           </div>
         </div>
+
+        {/* Texte éditorial SEO */}
+        {seoContent && (
+          <section
+            aria-label={`À propos de la catégorie ${category.name}`}
+            className="mt-14 max-w-3xl border-t pt-8"
+          >
+            <h2 className="text-lg font-semibold">{seoContent.heading}</h2>
+            {seoContent.paragraphs.map((p, i) => (
+              <p key={i} className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                {p}
+              </p>
+            ))}
+          </section>
+        )}
       </div>
     </FilterProvider>
   );
