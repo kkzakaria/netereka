@@ -6,6 +6,8 @@ import {
   getCategoryBySlug,
   getCategoryAncestors,
   getCategoryDescendantIds,
+  getCategoryChildren,
+  getTopLevelCategories,
 } from "@/lib/db/categories";
 import {
   searchProducts,
@@ -23,6 +25,7 @@ import { ProductListWithMore } from "@/components/storefront/product-list-with-m
 import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
+import { getCategorySeoContent } from "@/lib/seo/category-content";
 
 export const revalidate = 300;
 
@@ -46,6 +49,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (!category) return {};
 
   const description =
+    getCategorySeoContent(slug)?.metaDescription ??
     category.description ??
     `Découvrez notre sélection de ${category.name} en Côte d'Ivoire. Livraison rapide à Abidjan. Paiement à la livraison.`;
 
@@ -75,13 +79,20 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const category = await getCategoryCached(slug);
   if (!category) notFound();
 
+  const seoContent = getCategorySeoContent(slug);
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
-  const [ancestors, descendantIds] = await Promise.all([
+  const [ancestors, descendantIds, childCategories, siblingSource] = await Promise.all([
     getCategoryAncestors(category.id),
     getCategoryDescendantIds(category.id),
+    getCategoryChildren(category.id),
+    category.parent_id ? getCategoryChildren(category.parent_id) : getTopLevelCategories(),
   ]);
+
+  const siblingCategories = siblingSource
+    .filter((c) => c.id !== category.id)
+    .slice(0, 10);
 
   // Aggregate category IDs: current + all descendants
   const allCategoryIds = [category.id, ...descendantIds];
@@ -136,6 +147,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             "@type": "CollectionPage",
             name: category.name,
             description:
+              seoContent?.metaDescription ??
               category.description ??
               `Découvrez notre sélection de ${category.name} en Côte d'Ivoire.`,
             url: `${SITE_URL}/c/${slug}`,
@@ -204,6 +216,63 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             />
           </div>
         </div>
+
+        {/* Maillage interne : sous-catégories et catégories liées */}
+        {(childCategories.length > 0 || siblingCategories.length > 0) && (
+          <nav aria-label="Catégories liées" className="mt-12 space-y-4">
+            {childCategories.length > 0 && (
+              <div>
+                <h2 className="mb-2 text-sm font-semibold">
+                  Affiner dans {category.name}
+                </h2>
+                <ul className="flex flex-wrap gap-2">
+                  {childCategories.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        href={`/c/${c.slug}`}
+                        className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm hover:bg-accent"
+                      >
+                        {c.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {siblingCategories.length > 0 && (
+              <div>
+                <h2 className="mb-2 text-sm font-semibold">Voir aussi</h2>
+                <ul className="flex flex-wrap gap-2">
+                  {siblingCategories.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        href={`/c/${c.slug}`}
+                        className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm hover:bg-accent"
+                      >
+                        {c.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </nav>
+        )}
+
+        {/* Texte éditorial SEO */}
+        {seoContent && (
+          <section
+            aria-label={`À propos de la catégorie ${category.name}`}
+            className="mt-14 max-w-3xl border-t pt-8"
+          >
+            <h2 className="text-lg font-semibold">{seoContent.heading}</h2>
+            {seoContent.paragraphs.map((p, i) => (
+              <p key={i} className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                {p}
+              </p>
+            ))}
+          </section>
+        )}
       </div>
     </FilterProvider>
   );
