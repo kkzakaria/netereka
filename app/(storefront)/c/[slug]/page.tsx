@@ -6,6 +6,8 @@ import {
   getCategoryBySlug,
   getCategoryAncestors,
   getCategoryDescendantIds,
+  getCategoryChildren,
+  getTopLevelCategories,
 } from "@/lib/db/categories";
 import {
   searchProducts,
@@ -81,10 +83,16 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const limit = 20;
 
-  const [ancestors, descendantIds] = await Promise.all([
+  const [ancestors, descendantIds, childCategories, siblingSource] = await Promise.all([
     getCategoryAncestors(category.id),
     getCategoryDescendantIds(category.id),
+    getCategoryChildren(category.id),
+    category.parent_id ? getCategoryChildren(category.parent_id) : getTopLevelCategories(),
   ]);
+
+  const siblingCategories = siblingSource
+    .filter((c) => c.id !== category.id)
+    .slice(0, 10);
 
   // Aggregate category IDs: current + all descendants
   const allCategoryIds = [category.id, ...descendantIds];
@@ -208,6 +216,48 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             />
           </div>
         </div>
+
+        {/* Maillage interne : sous-catégories et catégories liées */}
+        {(childCategories.length > 0 || siblingCategories.length > 0) && (
+          <nav aria-label="Catégories liées" className="mt-12 space-y-4">
+            {childCategories.length > 0 && (
+              <div>
+                <h2 className="mb-2 text-sm font-semibold">
+                  Affiner dans {category.name}
+                </h2>
+                <ul className="flex flex-wrap gap-2">
+                  {childCategories.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        href={`/c/${c.slug}`}
+                        className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm hover:bg-accent"
+                      >
+                        {c.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {siblingCategories.length > 0 && (
+              <div>
+                <h2 className="mb-2 text-sm font-semibold">Voir aussi</h2>
+                <ul className="flex flex-wrap gap-2">
+                  {siblingCategories.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        href={`/c/${c.slug}`}
+                        className="inline-flex min-h-11 items-center rounded-full border px-4 text-sm hover:bg-accent"
+                      >
+                        {c.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </nav>
+        )}
 
         {/* Texte éditorial SEO */}
         {seoContent && (
