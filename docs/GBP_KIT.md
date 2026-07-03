@@ -81,9 +81,9 @@ Tous nos produits sont neufs et garantis. 🚚 Livraison dès 1 000 F à Abidjan
 ```
 Bouton : « En savoir plus » → https://netereka.ci/livraison?utm_source=gbp
 
-## 6. Questions & Réponses à pré-remplir (Q&A seeding)
+## 6. Questions & Réponses (FAQ officielles)
 
-Poster ces questions depuis un autre compte Google, puis y répondre depuis le compte propriétaire (pratique recommandée : la section Q&A vide est remplie par n'importe qui sinon).
+Publier ces questions **et** leurs réponses directement depuis le compte propriétaire de la fiche — Google autorise explicitement les commerçants à publier leurs FAQ dans la section Q&A. ⚠️ Ne jamais utiliser de compte secondaire ni solliciter de fausses questions : Google traite la manipulation multi-comptes comme du faux engagement (suppression de contenu, voire restriction de la fiche). Au-delà de ces FAQ, laisser la section vivre avec les vraies questions des clients et y répondre vite.
 
 1. **Q : Comment se passe le paiement ?** → R : Uniquement à la livraison : vous vérifiez votre produit, puis vous payez en espèces. Aucun paiement en ligne exigé.
 2. **Q : Livrez-vous dans toutes les communes d'Abidjan ?** → R : Oui — Cocody, Plateau, Yopougon, Marcory, Treichville et toutes les autres, dès 1 000 F. Nous livrons aussi les grandes villes de l'intérieur.

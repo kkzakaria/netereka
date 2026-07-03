@@ -43,6 +43,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!product) return { title: "Produit non trouvé" };
 
   const price = formatPrice(product.base_price);
+  // Au-delà du budget d'affichage SERP, le tail « - Prix X » serait tronqué :
+  // on garde le nom seul (le prix reste dans la meta description et le schéma Offer).
+  const titleWithPrice = `${product.name} - Prix ${price}`;
+  const title = titleWithPrice.length <= 65 ? titleWithPrice : product.name;
   const description = buildProductMetaDescription(
     product.name,
     price,
@@ -58,10 +62,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     }));
 
   return {
-    title: `${product.name} - Prix ${price}`,
+    title,
     description,
     openGraph: {
-      title: `${product.name} - Prix ${price} | ${SITE_NAME}`,
+      title: `${title} | ${SITE_NAME}`,
       description,
       url: `${SITE_URL}/p/${slug}`,
       siteName: SITE_NAME,

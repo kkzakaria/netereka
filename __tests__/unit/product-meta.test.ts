@@ -30,4 +30,23 @@ describe("buildProductMetaDescription", () => {
     const d = buildProductMetaDescription("Test", "1 000 F CFA", "   ");
     expect(d).toContain("Achetez Test au prix de 1 000 F CFA");
   });
+
+  it("ne double pas la ponctuation avec !, ? ou …", () => {
+    for (const ending of ["Super produit !", "Un bijou ?", "Incroyable…", "Top,"]) {
+      const d = buildProductMetaDescription("Test", "1 000 F CFA", ending);
+      expect(d, ending).not.toMatch(/[!?,…]\./);
+      expect(d, ending).not.toContain("..");
+    }
+  });
+
+  it("clippe une short_description longue : ≤160 caractères ET signaux locaux préservés", () => {
+    const longDesc =
+      "Ordinateur de bureau Dell Vostro 3030MT Intel Core i7 14e génération 8 Go RAM SSD 512 Go DVD DOS plus écran 22 pouces FHD parfait pour la bureautique et les études supérieures";
+    const d = buildProductMetaDescription("Dell Vostro 3030MT", "450 000 F CFA", longDesc);
+    expect(d.length).toBeLessThanOrEqual(160);
+    expect(d).toContain("450 000 F CFA");
+    expect(d).toContain("Abidjan");
+    expect(d).toContain("paiement à la livraison");
+    expect(d).not.toMatch(/\s\./u);
+  });
 });
