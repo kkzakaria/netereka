@@ -18,6 +18,7 @@ import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 import { formatPrice, formatDate } from "@/lib/utils/format";
 import { getProductReviews, getProductRatingStats } from "@/lib/db/reviews";
+import { buildProductMetaDescription } from "@/lib/seo/product-meta";
 
 export const revalidate = 3600;
 
@@ -42,9 +43,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!product) return { title: "Produit non trouvé" };
 
   const price = formatPrice(product.base_price);
-  const description =
-    product.short_description ??
-    `Achetez ${product.name} en Côte d'Ivoire. ${price}. Livraison rapide à Abidjan. Paiement à la livraison.`;
+  const description = buildProductMetaDescription(
+    product.name,
+    price,
+    product.short_description
+  );
   const images = product.images
     .filter((img) => img.url)
     .map((img) => ({
@@ -55,10 +58,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     }));
 
   return {
-    title: `${product.name} - ${price}`,
+    title: `${product.name} - Prix ${price}`,
     description,
     openGraph: {
-      title: `${product.name} - ${price} | ${SITE_NAME}`,
+      title: `${product.name} - Prix ${price} | ${SITE_NAME}`,
       description,
       url: `${SITE_URL}/p/${slug}`,
       siteName: SITE_NAME,
