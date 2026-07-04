@@ -109,18 +109,25 @@ export async function createOrderWithItems(
     );
   }
 
-  // 4. Increment promo code used_count
+  // 4. Increment promo code used_count. The WHERE guard re-checks max_uses at
+  //    write time so a capped code cannot be redeemed beyond its limit under
+  //    concurrency (the read-side check in validatePromoCode is not atomic with
+  //    this increment). The result is verified after the batch.
+  let promoUpdateIndex = -1;
   if (orderData.promoCodeId) {
+    promoUpdateIndex = statements.length;
     statements.push(
       db
         .prepare(
-          "UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?"
+          "UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ? AND (max_uses IS NULL OR used_count < max_uses)"
         )
         .bind(orderData.promoCodeId)
     );
   }
 
   const results = await db.batch(statements);
+  const promoApplied =
+    promoUpdateIndex !== -1 && results[promoUpdateIndex].meta.changes > 0;
 
   // 5. Verify all stock decrements succeeded
   for (let i = 0; i < stockUpdateIndices.length; i++) {
@@ -145,8 +152,8 @@ export async function createOrderWithItems(
             )
             .bind(prev.quantity, prev.productId);
         }),
-        // Restore promo used_count if it was incremented
-        ...(orderData.promoCodeId
+        // Restore promo used_count only if the guarded increment actually applied
+        ...(promoApplied && orderData.promoCodeId
           ? [
               db
                 .prepare(
@@ -160,6 +167,34 @@ export async function createOrderWithItems(
         `Stock insuffisant pour ${items[i].productName} (mise a jour concurrente)`
       );
     }
+  }
+
+  // 6. Verify the promo increment applied. If a promo was requested but the
+  //    guarded UPDATE affected no rows, the code hit max_uses concurrently
+  //    between validation and now — roll the whole order back (delete order +
+  //    items, restore every stock decrement) so a capped promo can never be
+  //    over-redeemed. The promo was NOT incremented, so it needs no restore.
+  if (promoUpdateIndex !== -1 && !promoApplied) {
+    await db.batch([
+      db.prepare("DELETE FROM order_items WHERE order_id = ?").bind(orderId),
+      db.prepare("DELETE FROM orders WHERE id = ?").bind(orderId),
+      ...items.map((it) =>
+        it.variantId
+          ? db
+              .prepare(
+                "UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?"
+              )
+              .bind(it.quantity, it.variantId)
+          : db
+              .prepare(
+                "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?"
+              )
+              .bind(it.quantity, it.productId)
+      ),
+    ]);
+    throw new Error(
+      "Ce code promo n'est plus disponible (limite d'utilisation atteinte)."
+    );
   }
 
   return { orderId, orderNumber: orderData.orderNumber };
