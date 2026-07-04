@@ -180,4 +180,20 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).toContain("color:red");
     expect(result).toContain("font-weight:bold");
   });
+
+  it("strips an UNTERMINATED url( from an inline style attribute", () => {
+    const result = sanitizeDescriptionHtml(
+      '<div style="background:url(https://evil.example/leak">x</div>'
+    );
+    expect(result).not.toContain("url(");
+    expect(result).not.toContain("evil.example");
+  });
+
+  it("strips an UNTERMINATED url( from a <style> block", () => {
+    const result = sanitizeDescriptionHtml(
+      "<style>p { background: url(https://evil.example/leak }</style><p>x</p>"
+    );
+    expect(result).not.toContain("url(");
+    expect(result).not.toContain("evil.example");
+  });
 });
