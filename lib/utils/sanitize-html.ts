@@ -60,9 +60,14 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
     },
   );
 
-  // 3. Process all HTML tags: strip disallowed tags, strip dangerous attributes
+  // 3. Process all HTML tags: strip disallowed tags, strip dangerous attributes.
+  // The attribute section may be separated from the tag name by whitespace OR a
+  // solidus ("/") — the HTML tokenizer treats "/" as an attribute separator, so
+  // <img/src=x/onerror=alert(1)> is a valid <img> with an onerror handler. The
+  // separator class MUST include "/" ([\s/]); matching only \s let such tags
+  // pass through verbatim and defeated sanitization entirely (GHSA-92r4).
   result = result.replace(
-    /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^>]*)?)\s*\/?>/g,
+    /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:[\s/][^>]*)?)\s*\/?>/g,
     (match, tagName: string, attrsStr: string) => {
       const tag = tagName.toLowerCase();
       if (tag === "style") return match; // already processed
@@ -81,7 +86,17 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
         if ((attrName === "href" || attrName === "src") && DANGEROUS_URI_RE.test(attrValue)) continue;
-        const safeValue = attrValue.replace(/"/g, "&quot;");
+        let cleanValue = attrValue;
+        if (attrName === "style") {
+          // Inline style values were not filtered, unlike <style> blocks, so
+          // style="background:url(https://evil/…)" exfiltrated visitor requests
+          // on load (GHSA-m888). Strip the same dangerous CSS constructs here.
+          cleanValue = cleanValue
+            .replace(/@import\b[^;]*;?/gi, "")
+            .replace(/url\s*\([^)]*\)/gi, "")
+            .replace(/expression\s*\([^)]*\)/gi, "");
+        }
+        const safeValue = cleanValue.replace(/"/g, "&quot;");
         attrs.push(`${attrName}="${safeValue}"`);
       }
 
