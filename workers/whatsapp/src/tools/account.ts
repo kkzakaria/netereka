@@ -58,6 +58,12 @@ export async function linkAccount(
 
   // Advance the per-session counter for every attempt (registered or not) so
   // blind enumeration is throttled regardless of the lookup result.
+  // NOTE: KV has no atomic increment, so these caps are best-effort — a tight
+  // burst of concurrent messages can slip a few extra through. That is an
+  // acceptable defense-in-depth throttle here (the existence oracle and the
+  // unbounded-bombing primitive are already closed by the uniform response and
+  // these caps); a strictly atomic limit would need the Cloudflare Rate
+  // Limiting API or a Durable Object, which is overkill for this throttle.
   await ctx.env.KV.put(sessionKey, String(sessionCount + 1), { expirationTtl: LINK_WINDOW_TTL });
 
   const user = await ctx.db
@@ -76,6 +82,12 @@ export async function linkAccount(
     console.error("[account] RESEND_API_KEY not configured, cannot send OTP");
     return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
   }
+
+  // Reserve the per-target-email slot BEFORE sending, so the send happens only
+  // once the counter is advanced — a burst can't fire many emails and then
+  // increment. Combined with the uniform response, this caps how many real OTP
+  // emails any single address can receive per window.
+  await ctx.env.KV.put(emailKey, String(emailCount + 1), { expirationTtl: LINK_WINDOW_TTL });
 
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
@@ -99,9 +111,6 @@ export async function linkAccount(
     // Uniform response — do not turn a delivery failure into an oracle.
     return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
   }
-
-  // Count successful sends per target email to cap bombing of that address.
-  await ctx.env.KV.put(emailKey, String(emailCount + 1), { expirationTtl: LINK_WINDOW_TTL });
 
   return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
 }
