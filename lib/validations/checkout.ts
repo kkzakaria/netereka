@@ -30,7 +30,10 @@ export const checkoutSchema = z
 
     promoCode: z.string().max(50).optional(),
 
-    items: z.array(cartItemSchema).min(1, "Le panier est vide"),
+    // Cap the number of distinct line items to mirror the cart's MAX_CART_ITEMS
+    // (actions/cart.ts). Without this, a direct createOrder call could submit an
+    // unbounded items array, producing an oversized IN (...) query and D1 batch.
+    items: z.array(cartItemSchema).min(1, "Le panier est vide").max(50, "Trop d'articles dans le panier"),
   })
   .refine(
     (data) => {
