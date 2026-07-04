@@ -18,6 +18,18 @@ function generateOtp(): string {
   return String(100000 + (arr[0] % 900000));
 }
 
+// Uniform response used for every non-error outcome of linkAccount so the tool
+// never reveals whether an email is registered (no account-existence oracle).
+const LINK_UNIFORM_MESSAGE =
+  "Si un compte existe pour cette adresse, un code de vérification a été envoyé. Envoyez-moi le code à 6 chiffres pour lier votre compte.";
+
+// Rate-limit windows (KV TTL, seconds) and caps. Per-session throttles blind
+// enumeration attempts; per-target-email throttles OTP email bombing of a
+// specific victim across attacker-controlled numbers. See GHSA-6m6p.
+const LINK_WINDOW_TTL = 3600;
+const LINK_MAX_PER_SESSION = 5;
+const LINK_MAX_PER_EMAIL = 3;
+
 export async function linkAccount(
   ctx: ToolContext,
   params: { email: string }
@@ -26,13 +38,43 @@ export async function linkAccount(
     return { success: false, error: "Account already linked to this WhatsApp session." };
   }
 
+  const email = params.email.trim().toLowerCase();
+  const sessionKey = `wa:link_attempts:session:${ctx.session.id}`;
+  const emailKey = `wa:link_attempts:email:${email}`;
+
+  const [sessionCountStr, emailCountStr] = await Promise.all([
+    ctx.env.KV.get(sessionKey),
+    ctx.env.KV.get(emailKey),
+  ]);
+  const sessionCount = sessionCountStr ? parseInt(sessionCountStr, 10) : 0;
+  const emailCount = emailCountStr ? parseInt(emailCountStr, 10) : 0;
+
+  if (sessionCount >= LINK_MAX_PER_SESSION || emailCount >= LINK_MAX_PER_EMAIL) {
+    return {
+      success: false,
+      error: "Trop de demandes de vérification. Veuillez réessayer plus tard.",
+    };
+  }
+
+  // Advance the per-session counter for every attempt (registered or not) so
+  // blind enumeration is throttled regardless of the lookup result.
+  await ctx.env.KV.put(sessionKey, String(sessionCount + 1), { expirationTtl: LINK_WINDOW_TTL });
+
   const user = await ctx.db
     .prepare("SELECT id, email FROM user WHERE LOWER(email) = LOWER(?)")
-    .bind(params.email)
+    .bind(email)
     .first<UserRow>();
 
+  // Uniform response for unregistered emails — never disclose non-existence.
   if (!user) {
-    return { success: false, error: "No account found with that email address." };
+    return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
+  }
+
+  if (!ctx.env.RESEND_API_KEY) {
+    // Return the uniform message (not a distinct error) so a missing key can't
+    // be combined into an existence oracle; the failure is only logged.
+    console.error("[account] RESEND_API_KEY not configured, cannot send OTP");
+    return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
   }
 
   const otp = generateOtp();
@@ -51,21 +93,17 @@ export async function linkAccount(
     .bind(otp, expiresAt, user.id, new Date().toISOString(), ctx.session.id)
     .run();
 
-  if (!ctx.env.RESEND_API_KEY) {
-    console.error("[account] RESEND_API_KEY not configured, cannot send OTP");
-    return { success: false, error: "Le service email n'est pas disponible. Veuillez réessayer plus tard." };
-  }
-
   const emailResult = await sendOtpEmail(ctx.env.RESEND_API_KEY, user.email, otp);
   if (!emailResult.success) {
     console.error(`[account] OTP email failed for ${user.email}: ${emailResult.error}`);
-    return { success: false, error: "Impossible d'envoyer l'email de vérification. Veuillez réessayer." };
+    // Uniform response — do not turn a delivery failure into an oracle.
+    return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
   }
 
-  return {
-    success: true,
-    data: { message: `Un code de vérification a été envoyé à ${user.email}. Envoyez-moi le code à 6 chiffres pour lier votre compte.` },
-  };
+  // Count successful sends per target email to cap bombing of that address.
+  await ctx.env.KV.put(emailKey, String(emailCount + 1), { expirationTtl: LINK_WINDOW_TTL });
+
+  return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
 }
 
 export async function verifyOtp(

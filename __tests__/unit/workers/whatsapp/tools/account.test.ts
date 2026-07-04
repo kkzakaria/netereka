@@ -63,14 +63,19 @@ describe("linkAccount", () => {
     expect(result.error).toMatch(/already linked/i);
   });
 
-  it("returns error if no user found with that email", async () => {
+  it("does not reveal whether an account exists (uniform response, no OTP sent)", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
     const ctx = createMockCtx(mockDb);
-    mockDb._statement.first.mockResolvedValueOnce(null);
+    mockDb._statement.first.mockResolvedValueOnce(null); // no user
 
     const result = await linkAccount(ctx, { email: "unknown@example.com" });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/no account found/i);
+    // Uniform success — must NOT disclose that the account does not exist.
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    const data = result.data as { message: string };
+    expect(data.message).toMatch(/si un compte existe/i);
+    expect(sendOtpEmail).not.toHaveBeenCalled();
   });
 
   it("sends OTP and returns success when user is found", async () => {
@@ -118,17 +123,38 @@ describe("linkAccount", () => {
     expect(ctx.session.is_verified).toBe(0);
   });
 
-  it("returns error when RESEND_API_KEY is not configured", async () => {
+  it("returns the uniform message (not an oracle) when RESEND_API_KEY is missing", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
     const ctx = createMockCtx(mockDb);
     ctx.env.RESEND_API_KEY = undefined;
 
     mockDb._statement.first.mockResolvedValueOnce({ id: "user-123", email: "user@example.com" });
-    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+
+    const result = await linkAccount(ctx, { email: "user@example.com" });
+
+    // A missing key must not become an existence oracle: same uniform message,
+    // no send attempted.
+    expect(result.success).toBe(true);
+    const data = result.data as { message: string };
+    expect(data.message).toMatch(/si un compte existe/i);
+    expect(sendOtpEmail).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits repeated link attempts (per session) without disclosing existence", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
+    const ctx = createMockCtx(mockDb);
+    // Session already at the cap.
+    (ctx.env.KV.get as ReturnType<typeof vi.fn>).mockImplementation((key: string) =>
+      Promise.resolve(key.includes(":session:") ? "5" : null)
+    );
 
     const result = await linkAccount(ctx, { email: "user@example.com" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("email");
+    expect(result.error).toMatch(/trop de demandes/i);
+    // Must short-circuit before any DB lookup or email send.
+    expect(mockDb.prepare).not.toHaveBeenCalled();
+    expect(sendOtpEmail).not.toHaveBeenCalled();
   });
 });
 
