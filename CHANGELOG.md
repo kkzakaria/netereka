@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.15.0](https://github.com/kkzakaria/netereka/compare/v1.14.0...v1.15.0) (2026-07-04)
+
+
+### Features
+
+* **seo:** on-page category content, product meta, internal linking + GBP kit ([#247](https://github.com/kkzakaria/netereka/issues/247)) ([b755108](https://github.com/kkzakaria/netereka/commit/b75510862f97fdfd0c76228cc49b139c74c03687))
+
+
+### Bug Fixes
+
+* remediate security audit findings — WhatsApp bypasses, stored XSS, inventory denial ([#246](https://github.com/kkzakaria/netereka/issues/246)) ([0185b16](https://github.com/kkzakaria/netereka/commit/0185b16a0bce0abacb6596778ab67a4dd698668d))
+
 ## [1.14.0](https://github.com/kkzakaria/netereka/compare/v1.13.0...v1.14.0) (2026-06-21)
 
 
