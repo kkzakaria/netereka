@@ -109,18 +109,25 @@ export async function createOrderWithItems(
     );
   }
 
-  // 4. Increment promo code used_count
+  // 4. Increment promo code used_count. The WHERE guard re-checks max_uses at
+  //    write time so a capped code cannot be redeemed beyond its limit under
+  //    concurrency (the read-side check in validatePromoCode is not atomic with
+  //    this increment). The result is verified after the batch.
+  let promoUpdateIndex = -1;
   if (orderData.promoCodeId) {
+    promoUpdateIndex = statements.length;
     statements.push(
       db
         .prepare(
-          "UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?"
+          "UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ? AND (max_uses IS NULL OR used_count < max_uses)"
         )
         .bind(orderData.promoCodeId)
     );
   }
 
   const results = await db.batch(statements);
+  const promoApplied =
+    promoUpdateIndex !== -1 && results[promoUpdateIndex].meta.changes > 0;
 
   // 5. Verify all stock decrements succeeded
   for (let i = 0; i < stockUpdateIndices.length; i++) {
@@ -145,8 +152,8 @@ export async function createOrderWithItems(
             )
             .bind(prev.quantity, prev.productId);
         }),
-        // Restore promo used_count if it was incremented
-        ...(orderData.promoCodeId
+        // Restore promo used_count only if the guarded increment actually applied
+        ...(promoApplied && orderData.promoCodeId
           ? [
               db
                 .prepare(
@@ -160,6 +167,34 @@ export async function createOrderWithItems(
         `Stock insuffisant pour ${items[i].productName} (mise a jour concurrente)`
       );
     }
+  }
+
+  // 6. Verify the promo increment applied. If a promo was requested but the
+  //    guarded UPDATE affected no rows, the code hit max_uses concurrently
+  //    between validation and now — roll the whole order back (delete order +
+  //    items, restore every stock decrement) so a capped promo can never be
+  //    over-redeemed. The promo was NOT incremented, so it needs no restore.
+  if (promoUpdateIndex !== -1 && !promoApplied) {
+    await db.batch([
+      db.prepare("DELETE FROM order_items WHERE order_id = ?").bind(orderId),
+      db.prepare("DELETE FROM orders WHERE id = ?").bind(orderId),
+      ...items.map((it) =>
+        it.variantId
+          ? db
+              .prepare(
+                "UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?"
+              )
+              .bind(it.quantity, it.variantId)
+          : db
+              .prepare(
+                "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?"
+              )
+              .bind(it.quantity, it.productId)
+      ),
+    ]);
+    throw new Error(
+      "Ce code promo n'est plus disponible (limite d'utilisation atteinte)."
+    );
   }
 
   return { orderId, orderNumber: orderData.orderNumber };
@@ -222,14 +257,51 @@ export async function cancelOrder(
   reason: string
 ): Promise<boolean> {
   const db = await getDB();
+
+  // Resolve the pending order owned by this user first, so we can release its
+  // reserved stock. Without this, a customer self-cancel left stock permanently
+  // decremented ('cancelled' is a terminal state, so no admin path could ever
+  // refund it) — a cost-free denial-of-inventory. See GHSA (stock-refund gap).
+  const order = await db
+    .prepare(
+      "SELECT id FROM orders WHERE order_number = ? AND user_id = ? AND status = 'pending'"
+    )
+    .bind(orderNumber, userId)
+    .first<{ id: string }>();
+  if (!order) return false;
+
   const result = await db
     .prepare(
       `UPDATE orders SET status = 'cancelled', cancelled_at = datetime('now'), cancellation_reason = ?, updated_at = datetime('now')
-       WHERE order_number = ? AND user_id = ? AND status = 'pending'`
+       WHERE id = ? AND status = 'pending'`
     )
-    .bind(reason, orderNumber, userId)
+    .bind(reason, order.id)
     .run();
-  return result.meta.changes > 0;
+
+  // Refund only when THIS call performed the pending→cancelled transition. The
+  // status guard makes the UPDATE affect the row exactly once, so concurrent
+  // cancels cannot double-refund.
+  if (result.meta.changes === 0) return false;
+
+  try {
+    await refundOrderStock(order.id);
+  } catch (err) {
+    // Compensate to keep cancellation and stock consistent: if the refund
+    // fails, revert the order to 'pending' so its stock stays reserved
+    // (invariant: a cancelled order has always had its reserved stock
+    // returned). The status guard means only this call transitioned the row,
+    // so the revert targets exactly the row we just cancelled.
+    await db
+      .prepare(
+        `UPDATE orders SET status = 'pending', cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
+         WHERE id = ? AND status = 'cancelled'`
+      )
+      .bind(order.id)
+      .run();
+    console.error(`cancelOrder: stock refund failed for order ${order.id}, reverted to pending`, err);
+    return false;
+  }
+  return true;
 }
 
 /**

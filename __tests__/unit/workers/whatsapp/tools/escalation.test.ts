@@ -30,6 +30,7 @@ function createMockCtx(mockDb: ReturnType<typeof createMockD1>): ToolContext {
       id: "session-1",
       wa_phone: "2250700000000",
       user_id: null,
+      pending_user_id: null,
       is_verified: 0,
       otp_code: null,
       otp_expires_at: null,

@@ -48,6 +48,34 @@ describe("checkoutSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  // Security regression (GHSA-7f5h): the items array must be bounded to mirror
+  // the cart cap so a direct createOrder call can't submit an unbounded list.
+  it("rejette un panier de plus de 50 articles distincts", () => {
+    const many = Array.from({ length: 51 }, (_, i) => ({
+      productId: `prod-${i}`,
+      variantId: null,
+      quantity: 1,
+    }));
+    const result = checkoutSchema.safeParse({
+      ...validCheckoutWithSavedAddress,
+      items: many,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepte exactement 50 articles distincts", () => {
+    const fifty = Array.from({ length: 50 }, (_, i) => ({
+      productId: `prod-${i}`,
+      variantId: null,
+      quantity: 1,
+    }));
+    const result = checkoutSchema.safeParse({
+      ...validCheckoutWithSavedAddress,
+      items: fifty,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejette une quantité à 0", () => {
     const result = checkoutSchema.safeParse({
       ...validCheckoutWithSavedAddress,

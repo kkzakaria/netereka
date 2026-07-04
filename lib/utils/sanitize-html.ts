@@ -15,6 +15,24 @@ const DANGEROUS_URI_RE = /^\s*(javascript|data|vbscript)\s*:/i;
 const EVENT_HANDLER_RE = /^on[a-z]/i;
 
 /**
+ * Remove dangerous CSS constructs from a style value or <style> block body.
+ * Strips @import, url(...) and expression(...) — including UNTERMINATED forms
+ * (a bare `url(` with no closing paren), because browsers recover from an
+ * unclosed url() and would still issue the request, so matching only the
+ * balanced form would leave an exfiltration bypass.
+ */
+function stripDangerousCss(css: string): string {
+  // The optional closing paren (\)?) makes each pattern consume BOTH balanced
+  // forms — url(x) — and unterminated ones — url(x  — up to the next ")" or the
+  // end of the value, so a bare `url(https://evil/…` is removed entirely rather
+  // than leaving the host behind.
+  return css
+    .replace(/@import\b[^;]*;?/gi, "")
+    .replace(/url\s*\([^)]*\)?/gi, "")
+    .replace(/expression\s*\([^)]*\)?/gi, "");
+}
+
+/**
  * Sanitize admin-authored HTML for product descriptions.
  */
 const MAX_INPUT_LENGTH = 512_000; // 500KB — reject oversized input
@@ -38,9 +56,7 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   result = result.replace(
     /<style[^>]*>([\s\S]*?)<\/style>/gi,
     (_match, cssContent: string) => {
-      let css = cssContent;
-      css = css.replace(/@import\b[^;]*;?/gi, "");
-      css = css.replace(/url\s*\([^)]*\)/gi, "");
+      let css = stripDangerousCss(cssContent);
       css = css.trim();
       if (!css) return "";
       if (productId) {
@@ -60,9 +76,14 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
     },
   );
 
-  // 3. Process all HTML tags: strip disallowed tags, strip dangerous attributes
+  // 3. Process all HTML tags: strip disallowed tags, strip dangerous attributes.
+  // The attribute section may be separated from the tag name by whitespace OR a
+  // solidus ("/") — the HTML tokenizer treats "/" as an attribute separator, so
+  // <img/src=x/onerror=alert(1)> is a valid <img> with an onerror handler. The
+  // separator class MUST include "/" ([\s/]); matching only \s let such tags
+  // pass through verbatim and defeated sanitization entirely (GHSA-92r4).
   result = result.replace(
-    /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^>]*)?)\s*\/?>/g,
+    /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:[\s/][^>]*)?)\s*\/?>/g,
     (match, tagName: string, attrsStr: string) => {
       const tag = tagName.toLowerCase();
       if (tag === "style") return match; // already processed
@@ -81,7 +102,14 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
         if ((attrName === "href" || attrName === "src") && DANGEROUS_URI_RE.test(attrValue)) continue;
-        const safeValue = attrValue.replace(/"/g, "&quot;");
+        let cleanValue = attrValue;
+        if (attrName === "style") {
+          // Inline style values were not filtered, unlike <style> blocks, so
+          // style="background:url(https://evil/…)" exfiltrated visitor requests
+          // on load (GHSA-m888). Strip the same dangerous CSS constructs here.
+          cleanValue = stripDangerousCss(cleanValue);
+        }
+        const safeValue = cleanValue.replace(/"/g, "&quot;");
         attrs.push(`${attrName}="${safeValue}"`);
       }
 

@@ -1,0 +1,1 @@
+ALTER TABLE `whatsapp_sessions` ADD `pending_user_id` text REFERENCES user(id);

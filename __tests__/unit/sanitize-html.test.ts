@@ -129,4 +129,71 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).toContain(".desc-p1 h2");
     expect(result).toContain(".desc-p1 .promo");
   });
+
+  // Security regression (GHSA-92r4): tags using "/" as the attribute separator
+  // must NOT bypass sanitization. Previously the tag regex only matched
+  // whitespace-separated attributes, so these passed through verbatim.
+  it("neutralizes onerror when '/' is used as the attribute separator", () => {
+    const result = sanitizeDescriptionHtml("<img/src=x/onerror=alert(document.domain)>");
+    // The tag is now parsed: the unquoted src value folds the rest of the
+    // payload inside the quoted src attribute, so onerror is inert (not a
+    // standalone attribute) and cannot fire. Crucially it does NOT pass through
+    // verbatim as it did before the fix.
+    expect(result).toBe('<img src="x/onerror=alert(document.domain)">');
+    expect(result).not.toBe("<img/src=x/onerror=alert(document.domain)>");
+  });
+
+  it("strips a disallowed tag written with a '/' separator", () => {
+    const result = sanitizeDescriptionHtml("<svg/onload=alert(1)>content");
+    expect(result).not.toContain("<svg");
+    expect(result).not.toMatch(/\bonload\s*=/i);
+    expect(result).toContain("content");
+  });
+
+  it("neutralizes an onmouseover handler after a '/' separator on an allowed tag", () => {
+    const result = sanitizeDescriptionHtml("<p/onmouseover=alert(1)>hi</p>");
+    expect(result).not.toMatch(/\bonmouseover\s*=/i);
+    expect(result).toContain("hi");
+  });
+
+  // Security regression (GHSA-m888): inline style must not carry url()/@import/
+  // expression(), which leak outbound requests or execute legacy CSS.
+  it("strips url() from an inline style attribute", () => {
+    const result = sanitizeDescriptionHtml(
+      '<div style="background:url(https://evil.example/leak)">x</div>'
+    );
+    expect(result).not.toContain("url(");
+    expect(result).not.toContain("evil.example");
+    expect(result).toContain("<div");
+  });
+
+  it("strips @import and expression() from an inline style attribute", () => {
+    const result = sanitizeDescriptionHtml(
+      '<div style="width:expression(alert(1));@import \'evil.css\'">x</div>'
+    );
+    expect(result).not.toContain("expression(");
+    expect(result).not.toContain("@import");
+  });
+
+  it("keeps benign inline style declarations intact", () => {
+    const result = sanitizeDescriptionHtml('<div style="color:red;font-weight:bold">x</div>');
+    expect(result).toContain("color:red");
+    expect(result).toContain("font-weight:bold");
+  });
+
+  it("strips an UNTERMINATED url( from an inline style attribute", () => {
+    const result = sanitizeDescriptionHtml(
+      '<div style="background:url(https://evil.example/leak">x</div>'
+    );
+    expect(result).not.toContain("url(");
+    expect(result).not.toContain("evil.example");
+  });
+
+  it("strips an UNTERMINATED url( from a <style> block", () => {
+    const result = sanitizeDescriptionHtml(
+      "<style>p { background: url(https://evil.example/leak }</style><p>x</p>"
+    );
+    expect(result).not.toContain("url(");
+    expect(result).not.toContain("evil.example");
+  });
 });

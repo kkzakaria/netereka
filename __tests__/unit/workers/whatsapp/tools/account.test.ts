@@ -29,6 +29,7 @@ function createMockCtx(
       id: "session-1",
       wa_phone: "2250700000000",
       user_id: null,
+      pending_user_id: null,
       is_verified: 0,
       otp_code: null,
       otp_expires_at: null,
@@ -62,14 +63,19 @@ describe("linkAccount", () => {
     expect(result.error).toMatch(/already linked/i);
   });
 
-  it("returns error if no user found with that email", async () => {
+  it("does not reveal whether an account exists (uniform response, no OTP sent)", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
     const ctx = createMockCtx(mockDb);
-    mockDb._statement.first.mockResolvedValueOnce(null);
+    mockDb._statement.first.mockResolvedValueOnce(null); // no user
 
     const result = await linkAccount(ctx, { email: "unknown@example.com" });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/no account found/i);
+    // Uniform success — must NOT disclose that the account does not exist.
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    const data = result.data as { message: string };
+    expect(data.message).toMatch(/si un compte existe/i);
+    expect(sendOtpEmail).not.toHaveBeenCalled();
   });
 
   it("sends OTP and returns success when user is found", async () => {
@@ -87,17 +93,68 @@ describe("linkAccount", () => {
     expect(sendOtpEmail).toHaveBeenCalledWith("test-key", "user@example.com", expect.stringMatching(/^\d{6}$/));
   });
 
-  it("returns error when RESEND_API_KEY is not configured", async () => {
+  // Security regression: linkAccount must stage the account as PENDING only and
+  // must NOT link/verify the session before the OTP is confirmed. Otherwise an
+  // attacker knowing a victim's email would gain access (GHSA OTP-bypass).
+  it("stages pending_user_id (not user_id) and does NOT verify before OTP", async () => {
+    const ctx = createMockCtx(mockDb);
+    mockDb._statement.first.mockResolvedValueOnce({ id: "victim-999", email: "victim@example.com" });
+    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+
+    await linkAccount(ctx, { email: "victim@example.com" });
+
+    // The staging UPDATE must write pending_user_id, never user_id.
+    const updateSql = mockDb.prepare.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => sql.includes("UPDATE whatsapp_sessions"));
+    expect(updateSql).toBeDefined();
+    expect(updateSql).toContain("pending_user_id");
+    expect(updateSql).not.toMatch(/\buser_id\s*=/);
+    // The victim id is bound (as pending), but the in-memory session stays
+    // unlinked and unverified until verifyOtp runs.
+    expect(mockDb._statement.bind).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{6}$/),
+      expect.any(String),
+      "victim-999",
+      expect.any(String),
+      "session-1"
+    );
+    expect(ctx.session.user_id).toBeNull();
+    expect(ctx.session.is_verified).toBe(0);
+  });
+
+  it("returns the uniform message (not an oracle) when RESEND_API_KEY is missing", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
     const ctx = createMockCtx(mockDb);
     ctx.env.RESEND_API_KEY = undefined;
 
     mockDb._statement.first.mockResolvedValueOnce({ id: "user-123", email: "user@example.com" });
-    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+
+    const result = await linkAccount(ctx, { email: "user@example.com" });
+
+    // A missing key must not become an existence oracle: same uniform message,
+    // no send attempted.
+    expect(result.success).toBe(true);
+    const data = result.data as { message: string };
+    expect(data.message).toMatch(/si un compte existe/i);
+    expect(sendOtpEmail).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits repeated link attempts (per session) without disclosing existence", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
+    const ctx = createMockCtx(mockDb);
+    // Session already at the cap.
+    (ctx.env.KV.get as ReturnType<typeof vi.fn>).mockImplementation((key: string) =>
+      Promise.resolve(key.includes(":session:") ? "5" : null)
+    );
 
     const result = await linkAccount(ctx, { email: "user@example.com" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("email");
+    expect(result.error).toMatch(/trop de demandes/i);
+    // Must short-circuit before any DB lookup or email send.
+    expect(mockDb.prepare).not.toHaveBeenCalled();
+    expect(sendOtpEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -115,7 +172,7 @@ describe("verifyOtp", () => {
     mockDb._statement.first.mockResolvedValueOnce({
       otp_code: null,
       otp_expires_at: null,
-      user_id: null,
+      pending_user_id: null,
     });
 
     const result = await verifyOtp(ctx, { code: "123456" });
@@ -130,7 +187,7 @@ describe("verifyOtp", () => {
     mockDb._statement.first.mockResolvedValueOnce({
       otp_code: "123456",
       otp_expires_at: expiredTime,
-      user_id: "user-123",
+      pending_user_id: "user-123",
     });
 
     const result = await verifyOtp(ctx, { code: "123456" });
@@ -145,7 +202,7 @@ describe("verifyOtp", () => {
     mockDb._statement.first.mockResolvedValueOnce({
       otp_code: "999999",
       otp_expires_at: futureTime,
-      user_id: "user-123",
+      pending_user_id: "user-123",
     });
 
     const result = await verifyOtp(ctx, { code: "111111" });
@@ -160,15 +217,42 @@ describe("verifyOtp", () => {
     mockDb._statement.first.mockResolvedValueOnce({
       otp_code: "654321",
       otp_expires_at: futureTime,
-      user_id: "user-456",
+      pending_user_id: "user-456",
     });
-    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+    mockDb._statement.run.mockResolvedValueOnce({ meta: { changes: 1 } });
 
     const result = await verifyOtp(ctx, { code: "654321" });
 
     expect(result.success).toBe(true);
-    // In-memory session should be updated
+    // In-memory session should be updated: the pending account is promoted to
+    // the trusted user_id only now, after the OTP was confirmed.
     expect(ctx.session.is_verified).toBe(1);
     expect(ctx.session.user_id).toBe("user-456");
+    expect(ctx.session.pending_user_id).toBeNull();
+    // The promotion UPDATE must copy pending_user_id → user_id and be guarded.
+    const promoteSql = mockDb.prepare.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => sql.includes("is_verified = 1"));
+    expect(promoteSql).toContain("user_id = pending_user_id");
+    expect(promoteSql).toContain("pending_user_id IS NOT NULL");
+  });
+
+  // If the pending/OTP state was cleared concurrently, the guarded UPDATE
+  // affects 0 rows: the session must NOT be marked verified/linked.
+  it("does not verify when the promotion UPDATE affects no rows", async () => {
+    const ctx = createMockCtx(mockDb);
+    const futureTime = new Date(Date.now() + 600000).toISOString();
+    mockDb._statement.first.mockResolvedValueOnce({
+      otp_code: "654321",
+      otp_expires_at: futureTime,
+      pending_user_id: "user-456",
+    });
+    mockDb._statement.run.mockResolvedValueOnce({ meta: { changes: 0 } });
+
+    const result = await verifyOtp(ctx, { code: "654321" });
+
+    expect(result.success).toBe(false);
+    expect(ctx.session.is_verified).toBe(0);
+    expect(ctx.session.user_id).toBeNull();
   });
 });

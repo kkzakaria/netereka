@@ -90,6 +90,9 @@ export interface WhatsAppSession {
   id: string;
   wa_phone: string;
   user_id: string | null;
+  // Account awaiting OTP confirmation. Promoted to user_id by verifyOtp on
+  // success. Never trusted by order tools — those gate on is_verified.
+  pending_user_id: string | null;
   is_verified: number;
   otp_code: string | null;
   otp_expires_at: string | null;
