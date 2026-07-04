@@ -106,16 +106,24 @@ export async function verifyOtp(
   }
 
   // OTP confirmed: promote the pending account to the trusted user_id and mark
-  // the session verified atomically, clearing the OTP + pending staging.
-  await ctx.db
+  // the session verified, clearing the OTP + pending staging. The WHERE guard
+  // requires the OTP/pending state we validated to still be present, so a
+  // concurrent re-link or parallel verify that cleared pending_user_id cannot
+  // cause us to persist user_id = NULL and still report success.
+  const promote = await ctx.db
     .prepare(
       `UPDATE whatsapp_sessions
        SET is_verified = 1, user_id = pending_user_id, pending_user_id = NULL,
            otp_code = NULL, otp_expires_at = NULL, updated_at = ?
-       WHERE id = ?`
+       WHERE id = ? AND otp_code = ? AND pending_user_id IS NOT NULL`
     )
-    .bind(new Date().toISOString(), ctx.session.id)
+    .bind(new Date().toISOString(), ctx.session.id, row.otp_code)
     .run();
+
+  if (promote.meta.changes === 0) {
+    // Pending/OTP state changed underneath us — do not mark the session verified.
+    return { success: false, error: "La vérification a échoué. Veuillez demander un nouveau code." };
+  }
 
   // Update in-memory session
   ctx.session.is_verified = 1;

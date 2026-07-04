@@ -193,7 +193,7 @@ describe("verifyOtp", () => {
       otp_expires_at: futureTime,
       pending_user_id: "user-456",
     });
-    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+    mockDb._statement.run.mockResolvedValueOnce({ meta: { changes: 1 } });
 
     const result = await verifyOtp(ctx, { code: "654321" });
 
@@ -203,10 +203,30 @@ describe("verifyOtp", () => {
     expect(ctx.session.is_verified).toBe(1);
     expect(ctx.session.user_id).toBe("user-456");
     expect(ctx.session.pending_user_id).toBeNull();
-    // The promotion UPDATE must copy pending_user_id → user_id.
+    // The promotion UPDATE must copy pending_user_id → user_id and be guarded.
     const promoteSql = mockDb.prepare.mock.calls
       .map((c) => String(c[0]))
       .find((sql) => sql.includes("is_verified = 1"));
     expect(promoteSql).toContain("user_id = pending_user_id");
+    expect(promoteSql).toContain("pending_user_id IS NOT NULL");
+  });
+
+  // If the pending/OTP state was cleared concurrently, the guarded UPDATE
+  // affects 0 rows: the session must NOT be marked verified/linked.
+  it("does not verify when the promotion UPDATE affects no rows", async () => {
+    const ctx = createMockCtx(mockDb);
+    const futureTime = new Date(Date.now() + 600000).toISOString();
+    mockDb._statement.first.mockResolvedValueOnce({
+      otp_code: "654321",
+      otp_expires_at: futureTime,
+      pending_user_id: "user-456",
+    });
+    mockDb._statement.run.mockResolvedValueOnce({ meta: { changes: 0 } });
+
+    const result = await verifyOtp(ctx, { code: "654321" });
+
+    expect(result.success).toBe(false);
+    expect(ctx.session.is_verified).toBe(0);
+    expect(ctx.session.user_id).toBeNull();
   });
 });

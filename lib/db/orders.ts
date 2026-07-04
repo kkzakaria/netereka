@@ -246,11 +246,27 @@ export async function cancelOrder(
   // Refund only when THIS call performed the pending→cancelled transition. The
   // status guard makes the UPDATE affect the row exactly once, so concurrent
   // cancels cannot double-refund.
-  if (result.meta.changes > 0) {
+  if (result.meta.changes === 0) return false;
+
+  try {
     await refundOrderStock(order.id);
-    return true;
+  } catch (err) {
+    // Compensate to keep cancellation and stock consistent: if the refund
+    // fails, revert the order to 'pending' so its stock stays reserved
+    // (invariant: a cancelled order has always had its reserved stock
+    // returned). The status guard means only this call transitioned the row,
+    // so the revert targets exactly the row we just cancelled.
+    await db
+      .prepare(
+        `UPDATE orders SET status = 'pending', cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
+         WHERE id = ? AND status = 'cancelled'`
+      )
+      .bind(order.id)
+      .run();
+    console.error(`cancelOrder: stock refund failed for order ${order.id}, reverted to pending`, err);
+    return false;
   }
-  return false;
+  return true;
 }
 
 /**
