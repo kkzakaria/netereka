@@ -2,7 +2,14 @@ import type { AdminOrder } from "@/lib/db/types";
 
 function escapeCSV(value: string | null | undefined): string {
   if (value == null) return "";
-  const str = String(value);
+  let str = String(value);
+  // Neutralize spreadsheet formula/DDE injection: a cell that begins with
+  // = + - @ (or a leading tab/CR) is evaluated as a formula by Excel/Google
+  // Sheets. Customer-controlled fields (name, address, commune) flow here, so
+  // prefix any such value with a single quote to force literal-text rendering.
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
   if (str.includes('"') || str.includes(",") || str.includes("\n")) {
     return `"${str.replace(/"/g, '""')}"`;
   }

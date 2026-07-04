@@ -91,4 +91,28 @@ describe("ordersToCSV", () => {
     const lines = csv.split("\n");
     expect(lines).toHaveLength(1);
   });
+
+  // Security regression (GHSA-v4c5): customer-controlled fields starting with a
+  // formula trigger must be neutralized so they are not evaluated by Excel/Sheets.
+  it("neutralise l'injection de formule dans les champs client", () => {
+    const csv = ordersToCSV([
+      makeOrder({ user_name: '=HYPERLINK("https://evil.example")' }),
+    ]);
+    // The value is quoted (contains a paren/quote) AND prefixed with a single
+    // quote so it renders as text, not a live formula.
+    expect(csv).toContain("'=HYPERLINK");
+    expect(csv).not.toMatch(/(^|,)=HYPERLINK/);
+  });
+
+  it("préfixe les valeurs commençant par + - @ ", () => {
+    expect(ordersToCSV([makeOrder({ delivery_commune: "+225Cocody" })])).toContain("'+225Cocody");
+    expect(ordersToCSV([makeOrder({ delivery_address: "@SUM(A1)" })])).toContain("'@SUM(A1)");
+    expect(ordersToCSV([makeOrder({ user_name: "-2+3" })])).toContain("'-2+3");
+  });
+
+  it("ne modifie pas les valeurs bénignes", () => {
+    const csv = ordersToCSV([makeOrder({ user_name: "Koné Amadou" })]);
+    expect(csv).toContain("Koné Amadou");
+    expect(csv).not.toContain("'Koné");
+  });
 });
