@@ -9,7 +9,7 @@
 export const errorCodeMessages: Record<string, string> = {
   INVALID_EMAIL_OR_PASSWORD: "Email ou mot de passe incorrect.",
   EMAIL_NOT_VERIFIED:
-    "Votre adresse e-mail n'est pas encore vérifiée. Vérifiez votre boîte de réception ou demandez un nouveau code.",
+    "Votre adresse email n'est pas encore vérifiée. Vérifiez votre boîte de réception ou demandez un nouveau code.",
 };
 
 export const errorTextMessages: Record<string, string> = {
@@ -36,7 +36,7 @@ export const GENERIC_ERROR_MESSAGE = "Une erreur est survenue. Veuillez réessay
 // already have.
 const oauthCallbackErrorMessages: Record<string, string> = {
   account_not_linked:
-    "Un compte existe déjà avec cette adresse e-mail. Connectez-vous avec votre mot de passe.",
+    "Un compte existe déjà avec cette adresse email. Connectez-vous avec votre mot de passe.",
 };
 
 /**
