@@ -34,3 +34,24 @@ describe("auth configuration — account linking", () => {
     expect(opts.emailAndPassword?.requireEmailVerification).toBe(true);
   });
 });
+
+describe("auth configuration — rate limiting", () => {
+  it("derives the client IP from Cloudflare's trusted header, not X-Forwarded-For", () => {
+    const opts = buildAuthOptions(env);
+    expect(opts.advanced?.ipAddress?.ipAddressHeaders).toEqual(["cf-connecting-ip"]);
+  });
+
+  it("does not fall back to the in-memory store", () => {
+    const opts = buildAuthOptions(env);
+    expect(opts.rateLimit?.storage).toBe("secondary-storage");
+    expect(opts.secondaryStorage).toBeDefined();
+  });
+
+  it("keeps the sensitive endpoint rules", () => {
+    const opts = buildAuthOptions(env);
+    expect(opts.rateLimit?.customRules?.["/sign-in/email"]).toMatchObject({ max: 5 });
+    expect(opts.rateLimit?.customRules?.["/email-otp/send-verification-otp"]).toMatchObject({
+      max: 3,
+    });
+  });
+});
