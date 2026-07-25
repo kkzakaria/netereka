@@ -155,7 +155,7 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
         />
 
         {serverError ? (
-          <p className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive">
             {serverError}
             {unverifiedEmail ? (
               <>

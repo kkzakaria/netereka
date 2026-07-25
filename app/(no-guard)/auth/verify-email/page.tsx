@@ -137,6 +137,13 @@ function VerifyEmailForm() {
         key={captchaKey}
         onVerify={setCaptchaToken}
         onExpire={() => setCaptchaToken("")}
+        onError={() => {
+          console.error("[verify-email] Turnstile captcha widget error");
+          resetCaptcha();
+          setError(
+            "La vérification de sécurité a rencontré un problème. Rechargez la page."
+          );
+        }}
       />
 
       {error ? (
