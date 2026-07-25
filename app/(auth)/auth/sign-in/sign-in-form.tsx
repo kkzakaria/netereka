@@ -18,6 +18,7 @@ import {
   errorCodeMessages,
   errorTextMessages,
   getOAuthCallbackErrorMessage,
+  lookupMessage,
   GENERIC_ERROR_MESSAGE,
 } from "@/lib/auth/sign-in-errors";
 
@@ -88,8 +89,8 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
           setUnverifiedEmail(data.email);
         }
         setServerError(
-          errorCodeMessages[code] ??
-            errorTextMessages[error.message ?? ""] ??
+          lookupMessage(errorCodeMessages, code) ??
+            lookupMessage(errorTextMessages, error.message) ??
             GENERIC_ERROR_MESSAGE
         );
       } else if (onSuccess) {

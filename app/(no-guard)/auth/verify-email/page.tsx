@@ -138,8 +138,11 @@ function VerifyEmailForm() {
         onVerify={setCaptchaToken}
         onExpire={() => setCaptchaToken("")}
         onError={() => {
+          // Deliberately no resetCaptcha() here: it bumps captchaKey, which
+          // remounts the widget. A widget that errors on mount would then
+          // error again, looping. Matches sign-in-form.tsx, which logs and
+          // surfaces the failure without remounting.
           console.error("[verify-email] Turnstile captcha widget error");
-          resetCaptcha();
           setError(
             "La vérification de sécurité a rencontré un problème. Rechargez la page."
           );

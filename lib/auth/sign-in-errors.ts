@@ -40,6 +40,23 @@ const oauthCallbackErrorMessages: Record<string, string> = {
 };
 
 /**
+ * Looks a key up in a message map without inheriting from Object.prototype.
+ *
+ * A plain `map[key]` resolves inherited keys ("toString", "constructor",
+ * "valueOf", …) to prototype members rather than undefined, so `?? fallback`
+ * never fires and a *function* is returned instead of a string. Every lookup
+ * here is fed by an attacker-influenceable value — a query param or a
+ * server-supplied error code — so all of them go through this.
+ */
+export function lookupMessage(
+  map: Record<string, string>,
+  key: string | null | undefined
+): string | undefined {
+  if (!key) return undefined;
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
+}
+
+/**
  * Maps the `error` query param appended by better-auth's OAuth callback
  * redirect to a user-facing French message.
  *
@@ -49,5 +66,5 @@ const oauthCallbackErrorMessages: Record<string, string> = {
  */
 export function getOAuthCallbackErrorMessage(code: string | null): string | null {
   if (!code) return null;
-  return oauthCallbackErrorMessages[code] ?? GENERIC_ERROR_MESSAGE;
+  return lookupMessage(oauthCallbackErrorMessages, code) ?? GENERIC_ERROR_MESSAGE;
 }
