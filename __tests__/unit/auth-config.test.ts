@@ -75,6 +75,12 @@ describe("auth configuration — captcha coverage", () => {
     expect(CAPTCHA_ENDPOINTS).toContain("/request-password-reset");
     expect(CAPTCHA_ENDPOINTS).toContain("/email-otp/send-verification-otp");
     expect(CAPTCHA_ENDPOINTS).toContain("/email-otp/request-password-reset");
+    // Core better-auth endpoint (api/routes/email-verification.mjs), not part
+    // of the email-otp plugin. Unconditionally mounted; sends a real OTP
+    // email in this app because emailOTP({ overrideDefaultEmailVerification:
+    // true }) wires its init() hook to emailVerification.sendVerificationEmail.
+    // No client code in this app calls it, but nothing stops a direct POST.
+    expect(CAPTCHA_ENDPOINTS).toContain("/send-verification-email");
   });
 
   it("wires the constant into the captcha plugin's endpoint list", () => {

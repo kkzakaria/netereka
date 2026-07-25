@@ -36,6 +36,21 @@ const noPermsRole = ac.newRole({ user: [], session: [] });
 // NETEREKA's UI never calls it, but nothing stops a direct POST to it, so the
 // entry is kept intentionally as defense-in-depth for that legacy route, not
 // copied blindly.
+//
+// "/send-verification-email" is a separate, core (not email-otp-plugin)
+// better-auth endpoint (api/routes/email-verification.mjs) that is always
+// mounted regardless of plugin config. It only no-ops when
+// options.emailVerification.sendVerificationEmail is unset — but this app
+// sets emailOTP({ overrideDefaultEmailVerification: true }), whose init()
+// hook wires exactly that callback to the OTP sender. So an unauthenticated
+// POST here with an arbitrary email sends a real OTP email; nothing in this
+// app's own client code calls it (grepped — no hits), but the route is live
+// and reachable directly, and closing it is the same one-string change as
+// the other entries above. Checked for substring collisions against every
+// route string registered anywhere in better-auth@1.6.25 (101 routes,
+// including plugins this app doesn't enable) — none contain
+// "/send-verification-email" as a substring and it doesn't contain any of
+// them, so this entry over-matches nothing.
 export const CAPTCHA_ENDPOINTS = [
   "/sign-up/email",
   "/sign-in/email",
@@ -43,6 +58,7 @@ export const CAPTCHA_ENDPOINTS = [
   "/request-password-reset",
   "/email-otp/send-verification-otp",
   "/email-otp/request-password-reset",
+  "/send-verification-email",
 ] as const;
 
 // Extracted from initAuth() so the options literal can be asserted in unit
