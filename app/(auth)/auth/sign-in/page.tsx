@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
@@ -20,7 +21,12 @@ export default function SignInPage() {
         </p>
       }
     >
-      <SignInForm />
+      {/* SignInForm reads the OAuth callback's `error` query param via
+          useSearchParams, which requires a Suspense boundary — same pattern
+          as verify-email and reset-password. */}
+      <Suspense>
+        <SignInForm />
+      </Suspense>
     </AuthCard>
   );
 }

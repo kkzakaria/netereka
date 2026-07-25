@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
@@ -14,6 +14,12 @@ import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { SocialLoginButtons } from "@/components/storefront/auth/social-login-buttons";
 import { authClient } from "@/lib/auth/client";
 import { signInSchema, type SignInValues } from "@/lib/validations/sign-in";
+import {
+  errorCodeMessages,
+  errorTextMessages,
+  getOAuthCallbackErrorMessage,
+  GENERIC_ERROR_MESSAGE,
+} from "@/lib/auth/sign-in-errors";
 
 const TurnstileCaptcha = dynamic(
   () =>
@@ -23,28 +29,25 @@ const TurnstileCaptcha = dynamic(
   { ssr: false }
 );
 
-// better-auth synthesizes error.code from the message via better-call's APIError.
-// Rate limiter and captcha plugin bypass this path and return error.message directly.
-const errorCodeMessages: Record<string, string> = {
-  INVALID_EMAIL_OR_PASSWORD: "Email ou mot de passe incorrect.",
-};
-
-const errorTextMessages: Record<string, string> = {
-  "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
-  "Captcha verification failed": "La vérification captcha a échoué. Veuillez réessayer.",
-  "Missing CAPTCHA response": "Veuillez compléter la vérification de sécurité.",
-  "Something went wrong": "Une erreur est survenue. Veuillez réessayer.",
-};
-
 interface SignInFormProps {
   onSuccess?: () => Promise<void>;
 }
 
 export function SignInForm({ onSuccess }: SignInFormProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaToken, setCaptchaToken] = useState("");
-  const [serverError, setServerError] = useState("");
+  // Picks up the `error` query param better-auth's OAuth callback appends
+  // when it redirects back here on failure (e.g. no social account linked
+  // to an existing local account — see lib/auth/sign-in-errors.ts).
+  const [serverError, setServerError] = useState(
+    () => getOAuthCallbackErrorMessage(searchParams.get("error")) ?? ""
+  );
+  // Tracks an EMAIL_NOT_VERIFIED failure so the message can offer a direct
+  // link to /auth/verify-email carrying the email the user just typed
+  // (that page reads the address from the URL, not from the session).
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
 
   const {
     register,
@@ -61,6 +64,7 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
 
   const onSubmit = async (data: SignInValues) => {
     setServerError("");
+    setUnverifiedEmail("");
 
     if (!captchaToken) {
       setServerError("Veuillez compléter la vérification de sécurité.");
@@ -79,10 +83,14 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
 
       if (error) {
         resetCaptcha();
+        const code = error.code ?? "";
+        if (code === "EMAIL_NOT_VERIFIED") {
+          setUnverifiedEmail(data.email);
+        }
         setServerError(
-          errorCodeMessages[error.code ?? ""] ??
+          errorCodeMessages[code] ??
             errorTextMessages[error.message ?? ""] ??
-            "Une erreur est survenue. Veuillez réessayer."
+            GENERIC_ERROR_MESSAGE
         );
       } else if (onSuccess) {
         await onSuccess();
@@ -147,7 +155,20 @@ export function SignInForm({ onSuccess }: SignInFormProps) {
         />
 
         {serverError ? (
-          <p className="text-sm text-destructive">{serverError}</p>
+          <p className="text-sm text-destructive">
+            {serverError}
+            {unverifiedEmail ? (
+              <>
+                {" "}
+                <Link
+                  href={`/auth/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+                  className="font-semibold underline"
+                >
+                  Vérifier mon email
+                </Link>
+              </>
+            ) : null}
+          </p>
         ) : null}
 
         <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
