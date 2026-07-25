@@ -139,12 +139,104 @@ describe("changePassword", () => {
     );
   });
 
-  it("réapplique le nouveau cookie de session renvoyé par better-auth", async () => {
+  it("réapplique tous les cookies de session renvoyés par better-auth", async () => {
     // revokeOtherSessions:true fait tourner TOUTES les sessions, y compris celle
     // de l'appelant : better-auth renvoie un nouveau cookie de session via les
     // en-têtes de réponse plutôt que de l'exclure de la révocation. Sans ce
     // report, le navigateur qui vient de changer son mot de passe pointerait
     // vers une session supprimée et serait déconnecté à la prochaine vérification.
+    //
+    // En production, cookieCache.enabled est actif : setSessionCookie émet
+    // toujours DEUX cookies (session_token + session_data), avec Secure,
+    // Max-Age et le préfixe __Secure- une fois déployé. Un rejeu qui ne
+    // traiterait que le premier cookie du Set-Cookie serait une régression
+    // critique — ce test couvre donc les deux, avec leurs attributs complets.
+    const setCookieHeaders = new Headers();
+    setCookieHeaders.append(
+      "set-cookie",
+      "__Secure-better-auth.session_token=new-token-value; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax"
+    );
+    setCookieHeaders.append(
+      "set-cookie",
+      "__Secure-better-auth.session_data=new-session-payload; Max-Age=300; Path=/; HttpOnly; Secure; SameSite=Lax"
+    );
+    mocks.changePasswordApi.mockResolvedValue({
+      response: { token: "new-token-value", user: mockCustomerSession.user },
+      headers: setCookieHeaders,
+    });
+
+    const result = await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.cookieStoreSet).toHaveBeenCalledTimes(2);
+    expect(mocks.cookieStoreSet).toHaveBeenNthCalledWith(
+      1,
+      "__Secure-better-auth.session_token",
+      "new-token-value",
+      {
+        maxAge: 604800,
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+      }
+    );
+    expect(mocks.cookieStoreSet).toHaveBeenNthCalledWith(
+      2,
+      "__Secure-better-auth.session_data",
+      "new-session-payload",
+      {
+        maxAge: 300,
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+      }
+    );
+  });
+
+  it("journalise un avertissement mais réussit tout de même si better-auth ne renvoie aucun cookie à réappliquer", async () => {
+    // revokeOtherSessions est désormais toujours à true, donc l'absence d'un
+    // set-cookie n'est plus un cas bénin : la rotation de session n'a pas été
+    // exposée et le cookie de l'appelant pointe vers une session supprimée.
+    // Le changement de mot de passe a néanmoins réussi côté serveur — échouer
+    // l'action serait pire pour l'utilisateur — donc ce cas doit rester
+    // observable (avertissement journalisé) plutôt qu'invisible.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.changePasswordApi.mockResolvedValue({
+      response: { token: null, user: mockCustomerSession.user },
+      headers: new Headers(),
+    });
+
+    const result = await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.cookieStoreSet).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("[changePassword]"));
+
+    warnSpy.mockRestore();
+  });
+
+  it("réussit et journalise l'erreur si la réapplication du cookie échoue après un changement de mot de passe déjà effectué", async () => {
+    // Le mot de passe a déjà changé et les sessions ont déjà été révoquées
+    // côté serveur avant que ce rejeu ne s'exécute (setSessionCookie a déjà
+    // tourné dans update-user.mjs). Si cookies().set() lève ici — ce que
+    // Next.js fait hors d'un contexte de mutation autorisé, la raison même
+    // pour laquelle nextCookies() en amont capture la même opération — cela
+    // ne doit jamais être rapporté comme « mot de passe incorrect » : ce
+    // serait faire croire à l'appelant que rien ne s'est passé.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.cookieStoreSet.mockImplementation(() => {
+      throw new Error("cookies() called outside a mutable context");
+    });
     const setCookieHeaders = new Headers();
     setCookieHeaders.append(
       "set-cookie",
@@ -162,26 +254,9 @@ describe("changePassword", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(mocks.cookieStoreSet).toHaveBeenCalledWith(
-      "better-auth.session_token",
-      "new-token-value",
-      expect.objectContaining({ httpOnly: true })
-    );
-  });
+    expect(result.error).toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("[changePassword]"), expect.any(Error));
 
-  it("n'échoue pas si better-auth ne renvoie aucun cookie à réappliquer", async () => {
-    mocks.changePasswordApi.mockResolvedValue({
-      response: { token: null, user: mockCustomerSession.user },
-      headers: new Headers(),
-    });
-
-    const result = await changePassword({
-      currentPassword: "ancien123",
-      newPassword: "nouveau123",
-      confirmPassword: "nouveau123",
-    });
-
-    expect(result.success).toBe(true);
-    expect(mocks.cookieStoreSet).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

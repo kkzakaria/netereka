@@ -45,9 +45,10 @@ export async function changePassword(input: ChangePasswordInput): Promise<Action
     };
   }
 
+  const auth = await initAuth();
+  let responseHeaders: Headers;
   try {
-    const auth = await initAuth();
-    const { headers: responseHeaders } = await auth.api.changePassword({
+    ({ headers: responseHeaders } = await auth.api.changePassword({
       headers: await headers(),
       body: {
         currentPassword: parsed.data.currentPassword,
@@ -57,24 +58,45 @@ export async function changePassword(input: ChangePasswordInput): Promise<Action
         revokeOtherSessions: true,
       },
       returnHeaders: true,
-    });
+    }));
+  } catch {
+    return { success: false, error: "Mot de passe actuel incorrect" };
+  }
 
-    // revokeOtherSessions rotates every session for the user, including the
-    // caller's, and better-auth reissues a fresh one on responseHeaders. This
-    // app has no nextCookies plugin to forward that Set-Cookie automatically,
-    // so without this the browser that just changed its password would keep
-    // pointing at a session row that no longer exists and get signed out on
-    // the next cache-bypassing check — apply it the same way nextCookies does.
-    const setCookieHeader = responseHeaders.get("set-cookie");
-    if (setCookieHeader) {
+  // À partir d'ici, le mot de passe a déjà été changé et toutes les sessions
+  // ont déjà été supprimées côté serveur : revokeOtherSessions fait tourner
+  // TOUTES les sessions de l'utilisateur, y compris celle de l'appelant, et
+  // better-auth en réémet une nouvelle via responseHeaders. Une erreur dans
+  // ce qui suit ne doit donc jamais être signalée comme « mot de passe
+  // incorrect » — ce serait faire croire à l'appelant que rien ne s'est
+  // passé, alors que son mot de passe a changé et que sa session a été
+  // révoquée.
+  const setCookieHeader = responseHeaders.get("set-cookie");
+  if (setCookieHeader) {
+    try {
       const cookieStore = await cookies();
       parseSetCookieHeader(setCookieHeader).forEach((value, key) => {
         if (!key) return;
         cookieStore.set(key, value.value, toCookieOptions(value));
       });
+    } catch (error) {
+      // Même posture que le plugin nextCookies() en amont : Next.js lève une
+      // exception depuis ResponseCookies.set en dehors d'un contexte de
+      // mutation autorisé. Le changement de mot de passe et la rotation de
+      // session ont déjà réussi côté serveur ; échouer à rejouer le nouveau
+      // cookie ici ne doit pas être remonté comme un échec, mais cela laisse
+      // le navigateur de l'appelant pointer vers une session morte — journaliser
+      // pour que ce ne soit pas invisible.
+      console.error("[changePassword] échec de réapplication du cookie de session", error);
     }
-  } catch {
-    return { success: false, error: "Mot de passe actuel incorrect" };
+  } else {
+    // revokeOtherSessions est désormais toujours à true, donc l'endpoint
+    // better-auth appelle toujours setSessionCookie : l'absence d'un
+    // set-cookie signifie que la rotation n'a pas été exposée et que le
+    // cookie de l'appelant pointe maintenant vers une session supprimée.
+    // Pas fatal (le changement de mot de passe a bien réussi), mais ne doit
+    // pas rester silencieux.
+    console.warn("[changePassword] revokeOtherSessions n'a produit aucun set-cookie à réappliquer");
   }
 
   return { success: true };
