@@ -10,10 +10,14 @@ const mocks = vi.hoisted(() => ({
   }),
   updateUser: vi.fn(),
   changePasswordApi: vi.fn(),
+  cookieStoreSet: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
-vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers()) }));
+vi.mock("next/headers", () => ({
+  headers: vi.fn().mockResolvedValue(new Headers()),
+  cookies: vi.fn().mockResolvedValue({ set: mocks.cookieStoreSet }),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth", () => ({
   initAuth: vi.fn().mockResolvedValue({
@@ -65,7 +69,10 @@ describe("changePassword", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSession.mockResolvedValue(mockCustomerSession);
-    mocks.changePasswordApi.mockResolvedValue({});
+    mocks.changePasswordApi.mockResolvedValue({
+      response: { token: null, user: mockCustomerSession.user },
+      headers: new Headers(),
+    });
   });
 
   it("change le mot de passe avec des données valides", async () => {
@@ -104,5 +111,77 @@ describe("changePassword", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Mot de passe actuel incorrect");
+  });
+
+  it("révoque les autres sessions de l'utilisateur", async () => {
+    await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(mocks.changePasswordApi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ revokeOtherSessions: true }),
+      })
+    );
+  });
+
+  it("demande les en-têtes de réponse pour pouvoir réappliquer le cookie de session", async () => {
+    await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(mocks.changePasswordApi).toHaveBeenCalledWith(
+      expect.objectContaining({ returnHeaders: true })
+    );
+  });
+
+  it("réapplique le nouveau cookie de session renvoyé par better-auth", async () => {
+    // revokeOtherSessions:true fait tourner TOUTES les sessions, y compris celle
+    // de l'appelant : better-auth renvoie un nouveau cookie de session via les
+    // en-têtes de réponse plutôt que de l'exclure de la révocation. Sans ce
+    // report, le navigateur qui vient de changer son mot de passe pointerait
+    // vers une session supprimée et serait déconnecté à la prochaine vérification.
+    const setCookieHeaders = new Headers();
+    setCookieHeaders.append(
+      "set-cookie",
+      "better-auth.session_token=new-token-value; Path=/; HttpOnly; SameSite=Lax"
+    );
+    mocks.changePasswordApi.mockResolvedValue({
+      response: { token: "new-token-value", user: mockCustomerSession.user },
+      headers: setCookieHeaders,
+    });
+
+    const result = await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.cookieStoreSet).toHaveBeenCalledWith(
+      "better-auth.session_token",
+      "new-token-value",
+      expect.objectContaining({ httpOnly: true })
+    );
+  });
+
+  it("n'échoue pas si better-auth ne renvoie aucun cookie à réappliquer", async () => {
+    mocks.changePasswordApi.mockResolvedValue({
+      response: { token: null, user: mockCustomerSession.user },
+      headers: new Headers(),
+    });
+
+    const result = await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.cookieStoreSet).not.toHaveBeenCalled();
   });
 });
