@@ -250,4 +250,14 @@ describe("privileged guards bypass the session cookie cache", () => {
 
     expect(session.user.role).toBe("admin");
   });
+
+  it("rejects an admin whose ban has not expired yet (banExpires in the future)", async () => {
+    mocks.getSession.mockResolvedValue({
+      ...mockAdminSession,
+      user: { ...mockAdminSession.user, banned: true, banExpires: new Date(Date.now() + 60_000) },
+    });
+
+    await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
 });

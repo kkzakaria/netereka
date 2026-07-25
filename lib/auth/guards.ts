@@ -24,17 +24,13 @@ export async function requireAuth(): Promise<Session> {
   return session as Session;
 }
 
-// Privileged guards cannot accept the signed session cookie at face value:
-// session.cookieCache (lib/auth/index.ts) is enabled with a 5-minute
-// lifetime so ordinary storefront requests skip a D1 round trip. A ban or
-// role change made from the admin UI does not invalidate that cookie, so
-// requireAuth()'s cached read could keep authorizing a revoked principal
-// for up to 300s. `query: { disableCookieCache: true }` makes better-auth's
-// /get-session handler skip its cache branch and re-read session + user
-// from D1 (better-auth/dist/api/routes/session.mjs), so a revocation is
-// enforced on the very next admin request. This intentionally bypasses
-// requireAuth() rather than calling it, so the storefront's cache-backed
-// path is untouched.
+// Privileged guards require an authoritative read of session state rather
+// than the signed cookie's last-known snapshot, so a ban or role change is
+// enforced starting with the very next admin request. `disableCookieCache`
+// makes better-auth's /get-session handler skip its cache branch and
+// re-read session + user from D1 (better-auth/dist/api/routes/session.mjs).
+// This intentionally bypasses requireAuth() rather than calling it, so the
+// storefront keeps its existing cache-backed read path.
 async function getFreshSession() {
   const auth = await initAuth();
   return auth.api.getSession({
@@ -47,7 +43,7 @@ async function getFreshSession() {
 // session is created (sign-in) — an already-open session that reads as
 // banned:true keeps that value forever unless banExpires has since passed,
 // in which case it should no longer block access here.
-function isActivelyBanned(user: { banned?: boolean | null; banExpires?: Date | null }): boolean {
+function isActivelyBanned(user: Pick<Session["user"], "banned" | "banExpires">): boolean {
   if (!user.banned) return false;
   if (!user.banExpires) return true;
   return new Date(user.banExpires).getTime() > Date.now();
