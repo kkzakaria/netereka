@@ -73,4 +73,4 @@ scripts/images/
 # security audit artefacts — must never be committed to a public repo
 security-audit/
 *security*audit*.tar.gz
-*.tar.gz
+/*.tar.gz
