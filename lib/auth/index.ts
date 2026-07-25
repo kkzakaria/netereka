@@ -97,6 +97,18 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
+      // Password *reset* (forgot-password → OTP) is the path a user takes
+      // when they cannot sign in — the likelier compromise-recovery route of
+      // the two, more so than the in-account password *change*. Without this,
+      // resetPasswordEmailOTP (better-auth/dist/plugins/email-otp/routes.mjs)
+      // writes the new hash but never calls deleteUserSessions, so an
+      // attacker's still-open session survives a reset meant to recover from
+      // exactly that compromise. Verified in 1.6.25 source: the handler for
+      // POST /email-otp/reset-password (authClient.emailOtp.resetPassword,
+      // used by app/(auth)/auth/reset-password) reads this exact option off
+      // ctx.context.options.emailAndPassword and calls
+      // internalAdapter.deleteUserSessions(user.user.id) when it's true.
+      revokeSessionsOnPasswordReset: true,
     },
 
     // Implicit linking would let an OAuth sign-in merge into a pre-existing

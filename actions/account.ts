@@ -3,10 +3,27 @@
 import { cookies, headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { parseSetCookieHeader, toCookieOptions } from "better-auth/cookies";
+import { APIError } from "better-auth";
 import { requireAuth } from "@/lib/auth/guards";
 import { initAuth } from "@/lib/auth";
 import { profileSchema, changePasswordSchema, type ProfileInput, type ChangePasswordInput } from "@/lib/validations/account";
 import type { ActionResult } from "@/lib/types/actions";
+
+// better-auth's /change-password handler (update-user.mjs) throws this exact
+// shape — APIError with status "BAD_REQUEST" and body.code "INVALID_PASSWORD"
+// — only from the current-password verify step, which runs BEFORE the new
+// hash is written. Every other failure in that handler (including
+// deleteUserSessions/createSession, which run AFTER the write when
+// revokeOtherSessions is set) is a different code, a different status, or not
+// an APIError at all — so only this exact match may be reported to the user
+// as "your current password was wrong".
+function isInvalidCurrentPasswordError(error: unknown): boolean {
+  return (
+    error instanceof APIError &&
+    error.status === "BAD_REQUEST" &&
+    error.body?.code === "INVALID_PASSWORD"
+  );
+}
 
 export async function updateProfile(input: ProfileInput): Promise<ActionResult> {
   await requireAuth();
@@ -59,8 +76,21 @@ export async function changePassword(input: ChangePasswordInput): Promise<Action
       },
       returnHeaders: true,
     }));
-  } catch {
-    return { success: false, error: "Mot de passe actuel incorrect" };
+  } catch (error) {
+    if (isInvalidCurrentPasswordError(error)) {
+      return { success: false, error: "Mot de passe actuel incorrect" };
+    }
+    // Anything else here happened after the new hash was already persisted
+    // (revokeOtherSessions:true runs deleteUserSessions then createSession
+    // after that write — a transient D1 error or a session.create.before hook
+    // throwing lands here too). Reporting "mot de passe incorrect" would tell
+    // the caller nothing changed, when in fact their password did.
+    console.error("[changePassword] échec après l'écriture du nouveau mot de passe", error);
+    return {
+      success: false,
+      error:
+        "Une erreur est survenue après la mise à jour de votre mot de passe. Réessayez de vous connecter avec le nouveau mot de passe.",
+    };
   }
 
   // À partir d'ici, le mot de passe a déjà été changé et toutes les sessions

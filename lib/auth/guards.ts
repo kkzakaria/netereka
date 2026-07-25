@@ -99,6 +99,10 @@ export async function requireSuperAdmin(): Promise<SuperAdminSession> {
   return session as SuperAdminSession;
 }
 
+// Deliberately does not check isActivelyBanned(): this only gates *guest-only*
+// pages (redirects an authenticated caller away). A banned user is still an
+// authenticated user for this purpose. If a caller ever needs "authenticated
+// and not banned", use requireAuth() instead of this function.
 export async function requireGuest(): Promise<void> {
   const auth = await initAuth();
   const session = await auth.api.getSession({
@@ -107,6 +111,10 @@ export async function requireGuest(): Promise<void> {
   if (session) redirect("/");
 }
 
+// Deliberately does not check isActivelyBanned(): this returns whatever
+// session exists, banned or not, for callers that only need to know who (if
+// anyone) is signed in. A caller that needs "authenticated and not banned"
+// must check isActivelyBanned() itself or use requireAuth() instead.
 export async function getOptionalSession(): Promise<Session | null> {
   const auth = await initAuth();
   const session = await auth.api.getSession({

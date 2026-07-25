@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { APIError } from "better-auth";
 import { mockCustomerSession } from "../../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
@@ -103,7 +104,11 @@ describe("changePassword", () => {
   });
 
   it("retourne une erreur si le mot de passe actuel est incorrect", async () => {
-    mocks.changePasswordApi.mockRejectedValue(new Error("Invalid"));
+    // Forme réelle levée par better-auth (update-user.mjs) avant toute
+    // écriture — APIError.from("BAD_REQUEST", BASE_ERROR_CODES.INVALID_PASSWORD).
+    mocks.changePasswordApi.mockRejectedValue(
+      new APIError("BAD_REQUEST", { code: "INVALID_PASSWORD", message: "Invalid password" })
+    );
     const result = await changePassword({
       currentPassword: "mauvais",
       newPassword: "nouveau123",
@@ -111,6 +116,49 @@ describe("changePassword", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Mot de passe actuel incorrect");
+  });
+
+  it("ne signale pas « mot de passe incorrect » quand l'échec survient après l'écriture du nouveau mot de passe", async () => {
+    // revokeOtherSessions:true fait tourner deleteUserSessions puis
+    // createSession APRÈS que le nouveau hash a été écrit (update-user.mjs) :
+    // une erreur ici (D1 transitoire, hook admin qui échoue) ne doit jamais
+    // être confondue avec l'échec de vérification du mot de passe actuel.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.changePasswordApi.mockRejectedValue(
+      new APIError("INTERNAL_SERVER_ERROR", { code: "FAILED_TO_GET_SESSION" })
+    );
+
+    const result = await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).not.toContain("Mot de passe actuel incorrect");
+    expect(result.error).toMatch(/nouveau mot de passe/i);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[changePassword]"),
+      expect.anything()
+    );
+
+    errorSpy.mockRestore();
+  });
+
+  it("ne signale pas « mot de passe incorrect » pour une erreur qui n'est pas une APIError", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.changePasswordApi.mockRejectedValue(new Error("D1 transient failure"));
+
+    const result = await changePassword({
+      currentPassword: "ancien123",
+      newPassword: "nouveau123",
+      confirmPassword: "nouveau123",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).not.toContain("Mot de passe actuel incorrect");
+
+    errorSpy.mockRestore();
   });
 
   it("révoque les autres sessions de l'utilisateur", async () => {
