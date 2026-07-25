@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { captcha, emailOTP, admin } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
@@ -18,19 +18,77 @@ const ac = createAccessControl(adminStatements);
 const staffRole = ac.newRole({ user: [...adminStatements.user], session: [...adminStatements.session] });
 const noPermsRole = ac.newRole({ user: [], session: [] });
 
-export async function initAuth() {
-  const { env } = await getCloudflareContext();
-  const cfEnv = env as CloudflareEnv;
+// better-auth's captcha plugin defaults to only
+// ["/sign-up/email", "/sign-in/email", "/request-password-reset"]
+// (better-auth/dist/plugins/captcha/constants.mjs). This app's forgot-password
+// and email-verification-resend flows both go through the email-otp plugin
+// instead (authClient.emailOtp.sendVerificationOtp -> POST
+// /email-otp/send-verification-otp), which the default list misses entirely —
+// every OTP send was reachable without a captcha token.
+//
+// The plugin matches with `pathname.includes(endpoint)` — a substring test,
+// not an exact path match like rateLimit.customRules uses. That changes how
+// "/forget-password" behaves here versus in the rate-limit config: as an
+// exact route it does not exist in 1.6.25 (rateLimit.customRules deliberately
+// has no rule for it, see below), but as a substring it also matches
+// "/forget-password/email-otp" — a deprecated-but-still-mounted endpoint
+// (email-otp/routes.mjs: forgetPasswordEmailOTP) that does send an email.
+// NETEREKA's UI never calls it, but nothing stops a direct POST to it, so the
+// entry is kept intentionally as defense-in-depth for that legacy route, not
+// copied blindly.
+//
+// "/send-verification-email" is a separate, core (not email-otp-plugin)
+// better-auth endpoint (api/routes/email-verification.mjs) that is always
+// mounted regardless of plugin config. It only no-ops when
+// options.emailVerification.sendVerificationEmail is unset — but this app
+// sets emailOTP({ overrideDefaultEmailVerification: true }), whose init()
+// hook wires exactly that callback to the OTP sender. So an unauthenticated
+// POST here with an arbitrary email sends a real OTP email; nothing in this
+// app's own client code calls it (grepped — no hits), but the route is live
+// and reachable directly, and closing it is the same one-string change as
+// the other entries above. Checked for substring collisions against every
+// route string registered anywhere in better-auth@1.6.25 (101 routes,
+// including plugins this app doesn't enable) — none contain
+// "/send-verification-email" as a substring and it doesn't contain any of
+// them, so this entry over-matches nothing.
+export const CAPTCHA_ENDPOINTS = [
+  "/sign-up/email",
+  "/sign-in/email",
+  "/forget-password",
+  "/request-password-reset",
+  "/email-otp/send-verification-otp",
+  "/email-otp/request-password-reset",
+  "/send-verification-email",
+] as const;
 
+// Extracted from initAuth() so the options literal can be asserted in unit
+// tests without instantiating a Cloudflare runtime (getCloudflareContext()
+// only resolves inside a Workers request context). Pure function of cfEnv —
+// no behaviour change versus the previous inline object literal.
+export function buildAuthOptions(cfEnv: CloudflareEnv) {
   const db = new Kysely({ dialect: new D1Dialect({ database: cfEnv.DB }) });
 
-  return betterAuth({
+  return {
     baseURL: cfEnv.SITE_URL,
     secret: cfEnv.BETTER_AUTH_SECRET,
     database: { db, type: "sqlite" },
     emailAndPassword: {
       enabled: true,
+      requireEmailVerification: true,
     },
+
+    // Implicit linking would let an OAuth sign-in merge into a pre-existing
+    // local account on the strength of the provider's "verified" email claim
+    // alone. Linking must instead go through an authenticated /link-social call.
+    account: {
+      accountLinking: {
+        enabled: true,
+        disableImplicitLinking: true,
+        trustedProviders: [],
+        allowDifferentEmails: false,
+      },
+    },
+
     socialProviders: {
       google: {
         clientId: cfEnv.GOOGLE_CLIENT_ID,
@@ -54,15 +112,44 @@ export async function initAuth() {
         },
       },
     },
+    // better-auth derives the rate-limit key from the first token of
+    // X-Forwarded-For by default, and Cloudflare appends to that header
+    // instead of replacing it — so the client controls the leftmost value.
+    // CF-Connecting-IP is set by the edge and cannot be spoofed by the client.
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["cf-connecting-ip"],
+      },
+    },
+
     rateLimit: {
+      enabled: true,
       window: 60,
       max: 30,
+      // The default storage is a Map per Worker isolate: counters survive
+      // neither isolate recycling nor sharing across isolates, so the limit
+      // is trivially bypassed. "database" persists counters in D1's
+      // rateLimit table (lib/db/schema.ts) instead, via better-auth's Kysely
+      // adapter — the only backend with an atomic consume in 1.6.25
+      // (createDatabaseStorageWrapper's conditional incrementOne). The
+      // alternative "secondary-storage" backend falls through to a
+      // non-atomic check-then-write path without a custom `increment`, so it
+      // was rejected: session/verification records also live in
+      // secondaryStorage once configured, and KV's eventual consistency is
+      // unsafe for state checked on every request.
+      storage: "database",
       customRules: {
         "/sign-in/email": { window: 60, max: 5 },
         "/sign-up/email": { window: 60, max: 5 },
         "/email-otp/send-verification-otp": { window: 60, max: 3 },
+        // NOTE: no rule for "/forget-password" — better-auth 1.6.25 has no
+        // such route (verified against node_modules/better-auth/dist). The
+        // forgot-password page (app/(auth)/auth/forgot-password) calls
+        // authClient.emailOtp.sendVerificationOtp, which posts to
+        // "/email-otp/send-verification-otp" — already rate-limited above.
       },
     },
+
     session: {
       expiresIn: 7 * 24 * 60 * 60,
       cookieCache: {
@@ -84,6 +171,7 @@ export async function initAuth() {
       captcha({
         provider: "cloudflare-turnstile",
         secretKey: cfEnv.TURNSTILE_SECRET_KEY,
+        endpoints: [...CAPTCHA_ENDPOINTS],
       }),
       emailOTP({
         sendVerificationOTP: async ({ email, otp, type }) => {
@@ -113,7 +201,14 @@ export async function initAuth() {
     trustedOrigins: [
       "https://appleid.apple.com",
     ],
-  });
+  } satisfies BetterAuthOptions;
+}
+
+export async function initAuth() {
+  const { env } = await getCloudflareContext();
+  const cfEnv = env as CloudflareEnv;
+
+  return betterAuth(buildAuthOptions(cfEnv));
 }
 
 export type Auth = Awaited<ReturnType<typeof initAuth>>;

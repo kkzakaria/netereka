@@ -60,7 +60,7 @@ const faqs = [
   {
     question: "Comment créer un compte ?",
     answer:
-      "Cliquez sur « S'inscrire » en haut de la page. Renseignez votre nom, votre email et un mot de passe. Votre compte est créé instantanément et vous pouvez commencer à commander.",
+      "Cliquez sur « S'inscrire » en haut de la page. Renseignez votre nom, votre email et un mot de passe. Votre compte est créé instantanément ; confirmez ensuite votre adresse email avec le code que nous vous envoyons pour pouvoir commander.",
   },
   {
     question: "Comment utiliser un code promo ?",

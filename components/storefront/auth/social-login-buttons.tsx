@@ -60,7 +60,16 @@ export function SocialLoginButtons() {
     setLoading(provider);
     setServerError("");
     try {
-      const { error } = await authClient.signIn.social({ provider, callbackURL: "/" });
+      const { error } = await authClient.signIn.social({
+        provider,
+        callbackURL: "/",
+        // Sends the user back to a page they can act on when the provider
+        // callback fails server-side (e.g. no existing social link for this
+        // email) instead of the default better-auth error page, which this
+        // app does not define. The sign-in form reads the resulting `error`
+        // query param and shows a matching message.
+        errorCallbackURL: "/auth/sign-in",
+      });
       if (error) {
         console.error("[social-login] provider error:", provider, error);
         setServerError("La connexion avec ce service a échoué. Veuillez réessayer.");

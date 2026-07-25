@@ -69,3 +69,8 @@ next-env.d.ts
 # downloaded product images (uploaded to R2)
 scripts/images/
 .superpowers/
+
+# security audit artefacts — must never be committed to a public repo
+security-audit/
+*security*audit*.tar.gz
+/*.tar.gz
