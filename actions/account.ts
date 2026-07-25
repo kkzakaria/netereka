@@ -101,14 +101,23 @@ export async function changePassword(input: ChangePasswordInput): Promise<Action
   // incorrect » — ce serait faire croire à l'appelant que rien ne s'est
   // passé, alors que son mot de passe a changé et que sa session a été
   // révoquée.
-  const setCookieHeader = responseHeaders.get("set-cookie");
-  if (setCookieHeader) {
+  // cookieCache is enabled (lib/auth/index.ts), so a session rotation emits
+  // TWO separate Set-Cookie headers (session_token + session_data).
+  // Headers.get("set-cookie") joins multi-value headers with ", " per the
+  // Fetch spec, leaving parseSetCookieHeader to split that string back apart
+  // heuristically. Headers.getSetCookie() is the WHATWG-standard API that
+  // returns each Set-Cookie header as its own entry — read through it instead
+  // so replaying the rotation never depends on a comma-splitting heuristic.
+  const setCookies = responseHeaders.getSetCookie();
+  if (setCookies.length > 0) {
     try {
       const cookieStore = await cookies();
-      parseSetCookieHeader(setCookieHeader).forEach((value, key) => {
-        if (!key) return;
-        cookieStore.set(key, value.value, toCookieOptions(value));
-      });
+      for (const setCookie of setCookies) {
+        parseSetCookieHeader(setCookie).forEach((value, key) => {
+          if (!key) return;
+          cookieStore.set(key, value.value, toCookieOptions(value));
+        });
+      }
     } catch (error) {
       // Même posture que le plugin nextCookies() en amont : Next.js lève une
       // exception depuis ResponseCookies.set en dehors d'un contexte de

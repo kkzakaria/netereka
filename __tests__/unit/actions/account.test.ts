@@ -199,15 +199,26 @@ describe("changePassword", () => {
     // Max-Age et le préfixe __Secure- une fois déployé. Un rejeu qui ne
     // traiterait que le premier cookie du Set-Cookie serait une régression
     // critique — ce test couvre donc les deux, avec leurs attributs complets.
-    const setCookieHeaders = new Headers();
-    setCookieHeaders.append(
-      "set-cookie",
-      "__Secure-better-auth.session_token=new-token-value; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax"
-    );
-    setCookieHeaders.append(
-      "set-cookie",
-      "__Secure-better-auth.session_data=new-session-payload; Max-Age=300; Path=/; HttpOnly; Secure; SameSite=Lax"
-    );
+    //
+    // headers.get("set-cookie") joins multi-value headers with ", " and would
+    // make this test pass "by accident" via that heuristic even for an
+    // implementation that never calls getSetCookie(). To prove the
+    // implementation actually reads through getSetCookie() — and not a
+    // join-then-split fallback — get("set-cookie") is made to throw here: any
+    // regression back to it fails loudly instead of silently degrading.
+    const setCookieHeaders = {
+      get: (name: string) => {
+        throw new Error(
+          `get(${JSON.stringify(name)}) was called — the implementation must read ` +
+            "Set-Cookie via getSetCookie(), not get(), to avoid the comma-joined " +
+            "multi-header parsing hazard."
+        );
+      },
+      getSetCookie: () => [
+        "__Secure-better-auth.session_token=new-token-value; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax",
+        "__Secure-better-auth.session_data=new-session-payload; Max-Age=300; Path=/; HttpOnly; Secure; SameSite=Lax",
+      ],
+    } as unknown as Headers;
     mocks.changePasswordApi.mockResolvedValue({
       response: { token: "new-token-value", user: mockCustomerSession.user },
       headers: setCookieHeaders,
