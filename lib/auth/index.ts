@@ -6,15 +6,6 @@ import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 import { sendEmail } from "@/lib/notifications/email";
 import { otpEmail } from "@/lib/notifications/templates";
-import { getKV } from "@/lib/cloudflare/context";
-
-// Cloudflare KV rejects expirationTtl below 60s (400 "Expiration TTL must be
-// at least 60"). better-auth's own default rate-limit window for
-// sign-in/sign-up-family paths not covered by customRules is 10s, so a
-// literal pass-through would throw on every social sign-in / password /
-// email-change attempt. Floor every write at KV's minimum instead of trusting
-// the caller's TTL.
-const KV_MIN_TTL_SECONDS = 60;
 
 // ACL for the better-auth admin plugin — mirrors the library's defaultStatements.
 // Required to declare super_admin, agent, and customer as known roles so the
@@ -94,8 +85,16 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
       max: 30,
       // The default storage is a Map per Worker isolate: counters survive
       // neither isolate recycling nor sharing across isolates, so the limit
-      // is trivially bypassed. secondaryStorage (below) backs this with KV.
-      storage: "secondary-storage",
+      // is trivially bypassed. "database" persists counters in D1's
+      // rateLimit table (lib/db/schema.ts) instead, via better-auth's Kysely
+      // adapter — the only backend with an atomic consume in 1.6.25
+      // (createDatabaseStorageWrapper's conditional incrementOne). The
+      // alternative "secondary-storage" backend falls through to a
+      // non-atomic check-then-write path without a custom `increment`, so it
+      // was rejected: session/verification records also live in
+      // secondaryStorage once configured, and KV's eventual consistency is
+      // unsafe for state checked on every request.
+      storage: "database",
       customRules: {
         "/sign-in/email": { window: 60, max: 5 },
         "/sign-up/email": { window: 60, max: 5 },
@@ -108,41 +107,11 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
       },
     },
 
-    // secondaryStorage is also better-auth's session/verification cache, not
-    // just a rate-limit backend (confirmed in
-    // node_modules/better-auth/dist/db/internal-adapter.mjs): once it's
-    // defined, session and OTP-verification writes skip the D1 write
-    // entirely unless storeSessionInDatabase / storeInDatabase are set,
-    // making KV the sole store for both. KV is only eventually consistent
-    // across edge locations, which is unsafe for state checked on every
-    // request. storeSessionInDatabase/storeInDatabase keep D1 as the
-    // source of truth — secondaryStorage becomes a cache in front of it
-    // (findSession falls back to D1 on a KV miss) — so only the rate
-    // limiter's behaviour changes here, not session or OTP handling.
     session: {
       expiresIn: 7 * 24 * 60 * 60,
       cookieCache: {
         enabled: true,
         maxAge: 5 * 60,
-      },
-      storeSessionInDatabase: true,
-    },
-    verification: {
-      storeInDatabase: true,
-    },
-    secondaryStorage: {
-      get: async (key: string) => {
-        const kv = await getKV();
-        return (await kv.get(key)) ?? null;
-      },
-      set: async (key: string, value: string, ttl?: number) => {
-        const kv = await getKV();
-        const expirationTtl = Math.max(ttl ?? KV_MIN_TTL_SECONDS, KV_MIN_TTL_SECONDS);
-        await kv.put(key, value, { expirationTtl });
-      },
-      delete: async (key: string) => {
-        const kv = await getKV();
-        await kv.delete(key);
       },
     },
     plugins: [

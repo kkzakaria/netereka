@@ -83,6 +83,19 @@ export const verification = sqliteTable("verification", {
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
 });
 
+// better-auth's database-backed rate limiter (rateLimit.storage: "database" in
+// lib/auth/index.ts). Columns mirror the model in
+// node_modules/@better-auth/core/dist/db/get-tables.mjs exactly — better-auth
+// talks to this table through its own Kysely adapter, not Drizzle, so a
+// column-name mismatch here would fail silently at request time rather than
+// at compile time.
+export const rateLimit = sqliteTable("rateLimit", {
+  id: text("id").primaryKey(),
+  key: text("key").unique().notNull(),
+  count: integer("count").notNull(),
+  lastRequest: integer("lastRequest").notNull(),
+});
+
 // =============================================================================
 // Delivery Zones
 // =============================================================================

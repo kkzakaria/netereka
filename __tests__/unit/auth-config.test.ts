@@ -43,8 +43,7 @@ describe("auth configuration — rate limiting", () => {
 
   it("does not fall back to the in-memory store", () => {
     const opts = buildAuthOptions(env);
-    expect(opts.rateLimit?.storage).toBe("secondary-storage");
-    expect(opts.secondaryStorage).toBeDefined();
+    expect(opts.rateLimit?.storage).toBe("database");
   });
 
   it("keeps the sensitive endpoint rules", () => {
