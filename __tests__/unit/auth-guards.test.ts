@@ -6,6 +6,8 @@ import {
   mockAgentSession,
   mockBannedAdminSession,
   mockExpiredBanAdminSession,
+  mockBannedCustomerSession,
+  mockExpiredBanCustomerSession,
 } from "../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
@@ -38,6 +40,18 @@ describe("requireAuth", () => {
     mocks.getSession.mockResolvedValue(null);
     await expect(requireAuth()).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.redirect).toHaveBeenCalledWith("/auth/sign-in");
+  });
+
+  it("redirige vers / pour un client activement banni", async () => {
+    mocks.getSession.mockResolvedValue(mockBannedCustomerSession);
+    await expect(requireAuth()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("ne bloque pas un client dont le bannissement a expiré", async () => {
+    mocks.getSession.mockResolvedValue(mockExpiredBanCustomerSession);
+    const session = await requireAuth();
+    expect(session).toEqual(mockExpiredBanCustomerSession);
   });
 });
 

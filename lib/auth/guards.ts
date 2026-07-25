@@ -21,6 +21,14 @@ export async function requireAuth(): Promise<Session> {
     headers: await headers(),
   });
   if (!session) redirect("/auth/sign-in");
+  // Storefront read stays on the cache-backed path (no `query` key — see the
+  // dedicated test pinning this) rather than paying a D1 read on every
+  // authenticated request. That cached cookie payload already carries
+  // `banned`/`banExpires` (better-auth's admin plugin declares them without
+  // `returned: false`, so the cache-write and cache-read parsers both keep
+  // them), so this check is free: it enforces a ban within the cache's
+  // configured TTL instead of forcing a fresh read on the storefront.
+  if (isActivelyBanned(session.user)) redirect("/");
   return session as Session;
 }
 

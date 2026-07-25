@@ -74,3 +74,33 @@ export const mockExpiredBanAdminSession = {
   },
   session: { id: "sess-6", expiresAt: new Date("2099-01-01") },
 };
+
+// Same rationale as the admin fixtures above, for the storefront guard
+// (requireAuth), which reads the cached cookie payload rather than a fresh
+// D1 row — see lib/auth/guards.ts for why that cached payload still carries
+// banned/banExpires.
+export const mockBannedCustomerSession = {
+  user: {
+    id: "user-2",
+    name: "Banned Customer",
+    email: "banned-customer@example.com",
+    role: "customer",
+    phone: "0102030406",
+    banned: true,
+    banExpires: null,
+  },
+  session: { id: "sess-7", expiresAt: new Date("2099-01-01") },
+};
+
+export const mockExpiredBanCustomerSession = {
+  user: {
+    id: "user-3",
+    name: "Formerly Banned Customer",
+    email: "formerly-banned-customer@example.com",
+    role: "customer",
+    phone: "0102030407",
+    banned: true,
+    banExpires: new Date("2020-01-01"),
+  },
+  session: { id: "sess-8", expiresAt: new Date("2099-01-01") },
+};
