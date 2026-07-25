@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { captcha, emailOTP, admin } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
@@ -18,19 +18,34 @@ const ac = createAccessControl(adminStatements);
 const staffRole = ac.newRole({ user: [...adminStatements.user], session: [...adminStatements.session] });
 const noPermsRole = ac.newRole({ user: [], session: [] });
 
-export async function initAuth() {
-  const { env } = await getCloudflareContext();
-  const cfEnv = env as CloudflareEnv;
-
+// Extracted from initAuth() so the options literal can be asserted in unit
+// tests without instantiating a Cloudflare runtime (getCloudflareContext()
+// only resolves inside a Workers request context). Pure function of cfEnv —
+// no behaviour change versus the previous inline object literal.
+export function buildAuthOptions(cfEnv: CloudflareEnv) {
   const db = new Kysely({ dialect: new D1Dialect({ database: cfEnv.DB }) });
 
-  return betterAuth({
+  return {
     baseURL: cfEnv.SITE_URL,
     secret: cfEnv.BETTER_AUTH_SECRET,
     database: { db, type: "sqlite" },
     emailAndPassword: {
       enabled: true,
+      requireEmailVerification: true,
     },
+
+    // Implicit linking would let an OAuth sign-in merge into a pre-existing
+    // local account on the strength of the provider's "verified" email claim
+    // alone. Linking must instead go through an authenticated /link-social call.
+    account: {
+      accountLinking: {
+        enabled: true,
+        disableImplicitLinking: true,
+        trustedProviders: [],
+        allowDifferentEmails: false,
+      },
+    },
+
     socialProviders: {
       google: {
         clientId: cfEnv.GOOGLE_CLIENT_ID,
@@ -113,7 +128,14 @@ export async function initAuth() {
     trustedOrigins: [
       "https://appleid.apple.com",
     ],
-  });
+  } satisfies BetterAuthOptions;
+}
+
+export async function initAuth() {
+  const { env } = await getCloudflareContext();
+  const cfEnv = env as CloudflareEnv;
+
+  return betterAuth(buildAuthOptions(cfEnv));
 }
 
 export type Auth = Awaited<ReturnType<typeof initAuth>>;
