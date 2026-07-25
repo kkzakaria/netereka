@@ -15,7 +15,27 @@ const adminStatements = {
   session: ["list", "revoke", "delete"],
 } as const;
 const ac = createAccessControl(adminStatements);
-const staffRole = ac.newRole({ user: [...adminStatements.user], session: [...adminStatements.session] });
+
+// super_admin keeps the full staff-management set: it is the only role
+// allowed to change roles, set passwords, delete accounts or impersonate —
+// capabilities that must never be reachable through the raw
+// /api/auth/admin/* endpoints by anyone below super_admin, since those
+// endpoints are gated only by this ACL (the app's requireSuperAdmin() guard
+// only covers the Server Actions, not the plugin's own routes).
+export const superAdminRole = ac.newRole({
+  user: ["create", "list", "set-role", "set-password", "ban", "delete", "impersonate"],
+  session: ["list", "revoke", "delete"],
+});
+
+// admin manages the storefront and can moderate customers (ban/list), but
+// not staff accounts. Omitting set-role/set-password/delete/impersonate here
+// is what closes self-promotion through the raw endpoint — the plugin's own
+// permission check is the only gate on that route.
+export const adminRole = ac.newRole({
+  user: ["create", "list", "ban"],
+  session: ["list", "revoke"],
+});
+
 const noPermsRole = ac.newRole({ user: [], session: [] });
 
 // better-auth's captcha plugin defaults to only
@@ -162,8 +182,8 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         defaultRole: "customer",
         adminRoles: ["admin", "super_admin"],
         roles: {
-          admin: staffRole,
-          super_admin: staffRole,
+          admin: adminRole,
+          super_admin: superAdminRole,
           agent: noPermsRole,
           customer: noPermsRole,
         },
