@@ -104,3 +104,25 @@ export const mockExpiredBanCustomerSession = {
   },
   session: { id: "sess-8", expiresAt: new Date("2099-01-01") },
 };
+
+// requireAuth's normal (cache-hit) read never sees the shape above. better-auth's
+// cache branch (session.mjs) only re-hydrates createdAt/updatedAt into Date
+// objects when reading the cookie payload back out of JSON — banExpires comes
+// through as whatever JSON.parse produced, i.e. an ISO string (or null), not a
+// Date. A privileged guard's fresh D1 read gets a real Date instead (the D1
+// Kysely adapter's output transform converts stored date columns back to Date
+// for dialects with supportsDates: false, which sqlite/D1 is). This fixture
+// pins the string shape so requireAuth is tested at the shape it actually
+// receives on its hot path, not just the shape the privileged guards receive.
+export const mockExpiredBanCustomerSessionFromCache = {
+  user: {
+    id: "user-4",
+    name: "Formerly Banned Customer (cache shape)",
+    email: "formerly-banned-customer-cache@example.com",
+    role: "customer",
+    phone: "0102030408",
+    banned: true,
+    banExpires: "2020-01-01T00:00:00.000Z",
+  },
+  session: { id: "sess-9", expiresAt: new Date("2099-01-01") },
+};

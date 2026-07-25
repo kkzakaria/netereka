@@ -8,6 +8,7 @@ import {
   mockExpiredBanAdminSession,
   mockBannedCustomerSession,
   mockExpiredBanCustomerSession,
+  mockExpiredBanCustomerSessionFromCache,
 } from "../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
@@ -52,6 +53,17 @@ describe("requireAuth", () => {
     mocks.getSession.mockResolvedValue(mockExpiredBanCustomerSession);
     const session = await requireAuth();
     expect(session).toEqual(mockExpiredBanCustomerSession);
+  });
+
+  // requireAuth reads the cookie-cache branch of getSession, where banExpires
+  // comes back as an ISO string (not a Date — see the fixture's comment in
+  // __tests__/helpers/mocks.ts). This is the actual runtime shape on the
+  // storefront's hot path, distinct from the Date shape the privileged
+  // guards' fresh D1 reads receive.
+  it("ne bloque pas un client dont le bannissement a expiré (forme cache : banExpires en chaîne ISO)", async () => {
+    mocks.getSession.mockResolvedValue(mockExpiredBanCustomerSessionFromCache);
+    const session = await requireAuth();
+    expect(session).toEqual(mockExpiredBanCustomerSessionFromCache);
   });
 });
 

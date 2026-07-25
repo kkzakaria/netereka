@@ -51,7 +51,21 @@ async function getFreshSession() {
 // session is created (sign-in) — an already-open session that reads as
 // banned:true keeps that value forever unless banExpires has since passed,
 // in which case it should no longer block access here.
-function isActivelyBanned(user: Pick<Session["user"], "banned" | "banExpires">): boolean {
+//
+// `banExpires` is typed `Date | string | null` rather than following
+// `Session["user"]["banExpires"]` (which better-auth types as `Date`)
+// because that type only holds on a fresh D1 read. requireAuth's normal
+// path reads the session-cache cookie instead: better-auth's cache-hit
+// branch (better-auth/dist/api/routes/session.mjs) re-hydrates only
+// `createdAt`/`updatedAt` into `Date`s when it deserialises the cached
+// payload — `banExpires` comes straight out of `JSON.parse` as an ISO
+// string (or null). `new Date(...)` normalizes either shape, so behavior
+// is correct either way, but the annotation must say so or it lies about
+// what a caller on the cache path actually receives.
+function isActivelyBanned(user: {
+  banned?: Session["user"]["banned"];
+  banExpires?: Date | string | null;
+}): boolean {
   if (!user.banned) return false;
   if (!user.banExpires) return true;
   return new Date(user.banExpires).getTime() > Date.now();
