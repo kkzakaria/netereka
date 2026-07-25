@@ -37,6 +37,22 @@ describe("role access control", () => {
     expect(userPerms).toContain("ban");
   });
 
+  // list-user-sessions / revoke-user-session / revoke-user-sessions
+  // (admin.mjs routes.mjs) let the holder enumerate and revoke ANY user's
+  // sessions, including a super_admin's — staff-management, not customer
+  // moderation. Reserved for super_admin like the other staff-only grants.
+  it("does not let the admin role list or revoke sessions", () => {
+    const sessionPerms = adminRole.statements.session ?? [];
+    expect(sessionPerms).not.toContain("list");
+    expect(sessionPerms).not.toContain("revoke");
+  });
+
+  it("reserves session list/revoke for super_admin", () => {
+    const sessionPerms = superAdminRole.statements.session ?? [];
+    expect(sessionPerms).toContain("list");
+    expect(sessionPerms).toContain("revoke");
+  });
+
   // The vulnerable state was never a bad role object — adminRole/superAdminRole
   // above can both be correct while the plugin config still wires the wrong
   // one to "admin" (e.g. `admin: superAdminRole`). This pins the wiring

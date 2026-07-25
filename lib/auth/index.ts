@@ -32,10 +32,17 @@ export const superAdminRole = ac.newRole({
 
 // admin manages the storefront and can moderate customers (ban/list), but
 // not staff accounts — set-role, set-password, delete and impersonate stay
-// with super_admin (see above).
+// with super_admin (see above). Session management (list-user-sessions,
+// revoke-user-session, revoke-user-sessions — admin.mjs routes.mjs) is also
+// staff-management: those endpoints let the holder enumerate and revoke ANY
+// user's sessions, including a super_admin's. No app code calls them
+// (grepped actions/, lib/, app/, components/, workers/ for
+// revokeUserSession(s)/listUserSessions/listSessions/revokeSession — only
+// hit is the unrelated revokeSessionsOnPasswordReset flag below), so admin
+// keeps none of the session statements; they stay with super_admin.
 export const adminRole = ac.newRole({
   user: ["create", "list", "ban"],
-  session: ["list", "revoke"],
+  session: [],
 });
 
 const noPermsRole = ac.newRole({ user: [], session: [] });
