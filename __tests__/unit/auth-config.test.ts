@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAuthOptions } from "@/lib/auth/index";
+import { buildAuthOptions, CAPTCHA_ENDPOINTS } from "@/lib/auth/index";
 
 const env = {
   BETTER_AUTH_SECRET: "test-secret",
@@ -52,5 +52,36 @@ describe("auth configuration — rate limiting", () => {
     expect(opts.rateLimit?.customRules?.["/email-otp/send-verification-otp"]).toMatchObject({
       max: 3,
     });
+  });
+
+  it("keeps D1 as the sole session/verification store (no secondaryStorage)", () => {
+    const opts = buildAuthOptions(env);
+    // Cast: the literal return type of buildAuthOptions has no
+    // secondaryStorage key at all (it was removed, not set to undefined), so
+    // TS rejects a direct property access. BetterAuthOptions declares it as
+    // optional — this asserts the invariant it stays that way.
+    expect((opts as { secondaryStorage?: unknown }).secondaryStorage).toBeUndefined();
+  });
+});
+
+describe("auth configuration — captcha coverage", () => {
+  it("protects every endpoint that can trigger an outbound email", () => {
+    // Asserted against the exported constant rather than the plugin's
+    // internal structure — stable across better-auth internals, per the
+    // brief's preferred variant.
+    expect(CAPTCHA_ENDPOINTS).toContain("/sign-up/email");
+    expect(CAPTCHA_ENDPOINTS).toContain("/sign-in/email");
+    expect(CAPTCHA_ENDPOINTS).toContain("/forget-password");
+    expect(CAPTCHA_ENDPOINTS).toContain("/request-password-reset");
+    expect(CAPTCHA_ENDPOINTS).toContain("/email-otp/send-verification-otp");
+    expect(CAPTCHA_ENDPOINTS).toContain("/email-otp/request-password-reset");
+  });
+
+  it("wires the constant into the captcha plugin's endpoint list", () => {
+    const opts = buildAuthOptions(env);
+    const captchaPlugin = opts.plugins?.find((p) => p.id === "captcha");
+    const endpoints = (captchaPlugin as { options?: { endpoints?: string[] } })?.options?.endpoints;
+
+    expect(endpoints).toEqual([...CAPTCHA_ENDPOINTS]);
   });
 });

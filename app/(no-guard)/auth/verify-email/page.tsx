@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/storefront/auth/auth-card";
+import { TurnstileCaptcha } from "@/components/storefront/auth/turnstile-captcha";
 import { authClient } from "@/lib/auth/client";
 
 const errorMessages: Record<string, string> = {
@@ -15,6 +16,8 @@ const errorMessages: Record<string, string> = {
   INVALID_EMAIL: "Lien de vérification invalide. Retournez à la page d'inscription.",
   USER_NOT_FOUND: "Compte introuvable. Retournez à la page d'inscription.",
   "Too many requests. Please try again later.": "Trop de tentatives. Réessayez plus tard.",
+  "Captcha verification failed": "La vérification captcha a échoué. Veuillez réessayer.",
+  "Missing CAPTCHA response": "Veuillez compléter la vérification de sécurité.",
 };
 
 // Hoisted to module scope — compiled once, not on every keystroke.
@@ -31,6 +34,20 @@ function VerifyEmailForm() {
   const [resendSuccess, setResendSuccess] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [isResending, startResend] = useTransition();
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const [captchaToken, setCaptchaToken] = useState("");
+
+  // Turnstile tokens are single-use: the server consumes the token on the
+  // request it protects, so a second resend with the same token would be
+  // rejected. Remounting the widget (via the key bump) forces a fresh
+  // challenge for the next attempt — same pattern as forgot-password/page.tsx,
+  // but applied after every resend outcome (not just errors): unlike
+  // forgot-password, this page doesn't navigate away on success, so the user
+  // can click "Renvoyer" again and needs a new token every time.
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaKey((k) => k + 1);
+  };
 
   if (!email) {
     return (
@@ -66,12 +83,22 @@ function VerifyEmailForm() {
   const handleResend = () => {
     setError("");
     setResendSuccess(false);
+
+    if (!captchaToken) {
+      setError("Veuillez compléter la vérification de sécurité.");
+      return;
+    }
+
     startResend(async () => {
       try {
         const { error } = await authClient.emailOtp.sendVerificationOtp({
           email,
           type: "email-verification",
+          fetchOptions: {
+            headers: { "x-captcha-response": captchaToken },
+          },
         });
+        resetCaptcha();
         if (error) {
           setError(
             errorMessages[error.code ?? ""] ??
@@ -83,6 +110,7 @@ function VerifyEmailForm() {
         }
       } catch (err) {
         console.error("[verify-email] unexpected error during resend:", err);
+        resetCaptcha();
         setError("Impossible d'envoyer le code. Réessayez.");
       }
     });
@@ -104,6 +132,12 @@ function VerifyEmailForm() {
           onChange={(e) => setOtp(e.target.value.replace(DIGITS_ONLY, ""))}
         />
       </div>
+
+      <TurnstileCaptcha
+        key={captchaKey}
+        onVerify={setCaptchaToken}
+        onExpire={() => setCaptchaToken("")}
+      />
 
       {error ? (
         <p className="text-sm text-destructive">{error}</p>

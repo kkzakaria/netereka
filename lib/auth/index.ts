@@ -18,6 +18,33 @@ const ac = createAccessControl(adminStatements);
 const staffRole = ac.newRole({ user: [...adminStatements.user], session: [...adminStatements.session] });
 const noPermsRole = ac.newRole({ user: [], session: [] });
 
+// better-auth's captcha plugin defaults to only
+// ["/sign-up/email", "/sign-in/email", "/request-password-reset"]
+// (better-auth/dist/plugins/captcha/constants.mjs). This app's forgot-password
+// and email-verification-resend flows both go through the email-otp plugin
+// instead (authClient.emailOtp.sendVerificationOtp -> POST
+// /email-otp/send-verification-otp), which the default list misses entirely —
+// every OTP send was reachable without a captcha token.
+//
+// The plugin matches with `pathname.includes(endpoint)` — a substring test,
+// not an exact path match like rateLimit.customRules uses. That changes how
+// "/forget-password" behaves here versus in the rate-limit config: as an
+// exact route it does not exist in 1.6.25 (rateLimit.customRules deliberately
+// has no rule for it, see below), but as a substring it also matches
+// "/forget-password/email-otp" — a deprecated-but-still-mounted endpoint
+// (email-otp/routes.mjs: forgetPasswordEmailOTP) that does send an email.
+// NETEREKA's UI never calls it, but nothing stops a direct POST to it, so the
+// entry is kept intentionally as defense-in-depth for that legacy route, not
+// copied blindly.
+export const CAPTCHA_ENDPOINTS = [
+  "/sign-up/email",
+  "/sign-in/email",
+  "/forget-password",
+  "/request-password-reset",
+  "/email-otp/send-verification-otp",
+  "/email-otp/request-password-reset",
+] as const;
+
 // Extracted from initAuth() so the options literal can be asserted in unit
 // tests without instantiating a Cloudflare runtime (getCloudflareContext()
 // only resolves inside a Workers request context). Pure function of cfEnv —
@@ -128,6 +155,7 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
       captcha({
         provider: "cloudflare-turnstile",
         secretKey: cfEnv.TURNSTILE_SECRET_KEY,
+        endpoints: [...CAPTCHA_ENDPOINTS],
       }),
       emailOTP({
         sendVerificationOTP: async ({ email, otp, type }) => {
