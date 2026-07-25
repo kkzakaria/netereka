@@ -43,3 +43,34 @@ export const mockAgentSession = {
   },
   session: { id: "sess-4", expiresAt: new Date("2099-01-01") },
 };
+
+// better-auth's admin plugin only auto-clears an expired ban at session
+// *creation* (sign-in) — an existing session's cached/fresh read can still
+// carry banned: true past banExpires. These fixtures exercise both cases:
+// an active ban (no expiry, or expiry in the future) and one that has
+// already lapsed but was never re-signed-in.
+export const mockBannedAdminSession = {
+  user: {
+    id: "admin-2",
+    name: "Banned Admin",
+    email: "banned-admin@netereka.ci",
+    role: "admin",
+    phone: "0708091012",
+    banned: true,
+    banExpires: null,
+  },
+  session: { id: "sess-5", expiresAt: new Date("2099-01-01") },
+};
+
+export const mockExpiredBanAdminSession = {
+  user: {
+    id: "admin-3",
+    name: "Formerly Banned Admin",
+    email: "formerly-banned-admin@netereka.ci",
+    role: "admin",
+    phone: "0708091013",
+    banned: true,
+    banExpires: new Date("2020-01-01"),
+  },
+  session: { id: "sess-6", expiresAt: new Date("2099-01-01") },
+};

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mockCustomerSession, mockAdminSession, mockSuperAdminSession, mockAgentSession } from "../helpers/mocks";
+import {
+  mockCustomerSession,
+  mockAdminSession,
+  mockSuperAdminSession,
+  mockAgentSession,
+  mockBannedAdminSession,
+  mockExpiredBanAdminSession,
+} from "../helpers/mocks";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -164,5 +171,83 @@ describe("requireSuperAdmin", () => {
     mocks.getSession.mockResolvedValue(null);
     await expect(requireSuperAdmin()).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.redirect).toHaveBeenCalledWith("/auth/sign-in");
+  });
+});
+
+describe("privileged guards bypass the session cookie cache", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("requireAdmin reads session state fresh", async () => {
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+
+    await requireAdmin();
+
+    expect(mocks.getSession).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { disableCookieCache: true } })
+    );
+  });
+
+  it("requireSuperAdmin reads session state fresh", async () => {
+    mocks.getSession.mockResolvedValue(mockSuperAdminSession);
+
+    await requireSuperAdmin();
+
+    expect(mocks.getSession).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { disableCookieCache: true } })
+    );
+  });
+
+  it("requireAnyAdmin reads session state fresh", async () => {
+    mocks.getSession.mockResolvedValue(mockAgentSession);
+
+    await requireAnyAdmin();
+
+    expect(mocks.getSession).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { disableCookieCache: true } })
+    );
+  });
+
+  it("requireAuth keeps using the cookie cache (storefront perf path is untouched)", async () => {
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+
+    await requireAuth();
+
+    const call = mocks.getSession.mock.calls[0][0];
+    expect(call).not.toHaveProperty("query");
+  });
+
+  it("rejects a banned admin even when the session says role=admin", async () => {
+    mocks.getSession.mockResolvedValue(mockBannedAdminSession);
+
+    await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("rejects a banned super_admin", async () => {
+    mocks.getSession.mockResolvedValue({
+      ...mockSuperAdminSession,
+      user: { ...mockSuperAdminSession.user, banned: true, banExpires: null },
+    });
+
+    await expect(requireSuperAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("rejects a banned staff member via requireAnyAdmin", async () => {
+    mocks.getSession.mockResolvedValue({
+      ...mockAgentSession,
+      user: { ...mockAgentSession.user, banned: true, banExpires: null },
+    });
+
+    await expect(requireAnyAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("does not lock out an admin whose ban already expired", async () => {
+    mocks.getSession.mockResolvedValue(mockExpiredBanAdminSession);
+
+    const session = await requireAdmin();
+
+    expect(session.user.role).toBe("admin");
   });
 });
