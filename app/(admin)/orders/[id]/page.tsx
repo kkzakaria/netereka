@@ -8,6 +8,7 @@ import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { getAdminOrderById } from "@/lib/db/admin/orders";
 import { OrderMainContent } from "./_components/order-main-content";
 import { OrderSidebarAsync, OrderSidebarSkeleton } from "./_components/order-sidebar";
+import { requireAdmin } from "@/lib/auth/guards";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -17,6 +18,8 @@ interface Props {
 const backIcon = <HugeiconsIcon icon={ArrowLeft02Icon} size={20} />;
 
 export default async function OrderDetailPage({ params }: Props) {
+  await requireAdmin();
+
   const { id } = await params;
   const order = await getAdminOrderById(id);
 
