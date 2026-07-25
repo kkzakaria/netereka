@@ -7,30 +7,32 @@ import { D1Dialect } from "kysely-d1";
 import { sendEmail } from "@/lib/notifications/email";
 import { otpEmail } from "@/lib/notifications/templates";
 
-// ACL for the better-auth admin plugin — mirrors the library's defaultStatements.
-// Required to declare super_admin, agent, and customer as known roles so the
-// plugin's hasPermission() check can resolve them (defaultRoles only knows "admin" + "user").
+// Statement universe for the better-auth admin plugin's ACL: every action
+// any role declared below may be granted. Scoped to what a role in this app
+// actually needs, not the plugin's full defaultStatements — e.g. "get" and
+// "update" (admin/get-user, admin/update-user) are left out because no role
+// holds them and nothing in this app calls those endpoints; a future task
+// wiring one in should add the statement here deliberately. Also declares
+// super_admin, agent, and customer as known roles so the plugin's
+// hasPermission() check can resolve them (defaultRoles only knows "admin" + "user").
 const adminStatements = {
-  user: ["create", "list", "set-role", "ban", "impersonate", "delete", "set-password", "get", "update"],
+  user: ["create", "list", "set-role", "ban", "impersonate", "delete", "set-password"],
   session: ["list", "revoke", "delete"],
 } as const;
 const ac = createAccessControl(adminStatements);
 
-// super_admin keeps the full staff-management set: it is the only role
-// allowed to change roles, set passwords, delete accounts or impersonate —
-// capabilities that must never be reachable through the raw
-// /api/auth/admin/* endpoints by anyone below super_admin, since those
-// endpoints are gated only by this ACL (the app's requireSuperAdmin() guard
-// only covers the Server Actions, not the plugin's own routes).
+// Staff-management capabilities — changing roles, setting passwords,
+// deleting or impersonating accounts — are reserved for super_admin,
+// because this roles map is the authorization boundary the better-auth
+// admin plugin enforces for /api/auth/admin/*.
 export const superAdminRole = ac.newRole({
   user: ["create", "list", "set-role", "set-password", "ban", "delete", "impersonate"],
   session: ["list", "revoke", "delete"],
 });
 
 // admin manages the storefront and can moderate customers (ban/list), but
-// not staff accounts. Omitting set-role/set-password/delete/impersonate here
-// is what closes self-promotion through the raw endpoint — the plugin's own
-// permission check is the only gate on that route.
+// not staff accounts — set-role, set-password, delete and impersonate stay
+// with super_admin (see above).
 export const adminRole = ac.newRole({
   user: ["create", "list", "ban"],
   session: ["list", "revoke"],
