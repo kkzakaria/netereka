@@ -75,3 +75,69 @@ export function calculateSubtotal(
 ): number {
   return items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 }
+
+// ─── resolveOrderLine ───
+
+export interface OrderLineProductInput {
+  name: string;
+  base_price: number;
+  stock_quantity: number;
+  /** Count of active (is_active = 1) variants for this product. */
+  activeVariantCount: number;
+}
+
+export interface OrderLineVariantInput {
+  name: string;
+  price: number;
+  stock_quantity: number;
+}
+
+export interface OrderLineInput {
+  product: OrderLineProductInput;
+  variant: OrderLineVariantInput | null;
+  quantity: number;
+}
+
+export type OrderLineResult =
+  | { ok: true; unitPrice: number; availableStock: number }
+  | { ok: false; error: string };
+
+/**
+ * Resolves the unit price and stock check for a single order line.
+ *
+ * Security invariant: `base_price` is a display-only figure for products
+ * sold through variants (the lowest of the variant prices), never an
+ * actual sellable price. A null variant is only accepted when the product
+ * has zero active variants; otherwise the caller must supply one of the
+ * product's own active variants (ownership is the caller's responsibility —
+ * this function only receives a variant already verified to belong to the
+ * product).
+ */
+export function resolveOrderLine(input: OrderLineInput): OrderLineResult {
+  const { product, variant, quantity } = input;
+
+  if (variant) {
+    if (variant.stock_quantity < quantity) {
+      return {
+        ok: false,
+        error: `Stock insuffisant pour ${product.name} - ${variant.name} (${variant.stock_quantity} disponible(s))`,
+      };
+    }
+    return { ok: true, unitPrice: variant.price, availableStock: variant.stock_quantity };
+  }
+
+  if (product.activeVariantCount > 0) {
+    return {
+      ok: false,
+      error: `Veuillez sélectionner une variante pour ${product.name}`,
+    };
+  }
+
+  if (product.stock_quantity < quantity) {
+    return {
+      ok: false,
+      error: `Stock insuffisant pour ${product.name} (${product.stock_quantity} disponible(s))`,
+    };
+  }
+  return { ok: true, unitPrice: product.base_price, availableStock: product.stock_quantity };
+}

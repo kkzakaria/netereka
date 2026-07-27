@@ -14,6 +14,7 @@ import {
   calculateDiscount,
   calculateOrderTotal,
   calculateSubtotal,
+  resolveOrderLine,
 } from "@/lib/utils/checkout";
 
 // ---------- internal promo validation (no auth check) ----------
@@ -93,20 +94,20 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
 
   // 2. Start products + variants fetch early (independent of address)
   const productIds = data.items.map((i) => i.productId);
-  const variantIds = data.items.map((i) => i.variantId).filter(Boolean) as string[];
 
   const placeholdersP = productIds.map(() => "?").join(",");
   const productsPromise = query<Product>(
     `SELECT * FROM products WHERE id IN (${placeholdersP}) AND is_active = 1`,
     productIds
   );
-  const variantsPromise =
-    variantIds.length > 0
-      ? query<ProductVariant>(
-          `SELECT * FROM product_variants WHERE id IN (${variantIds.map(() => "?").join(",")}) AND is_active = 1`,
-          variantIds
-        )
-      : Promise.resolve([] as ProductVariant[]);
+  // Fetch every active variant for every product in the cart — not just the
+  // ones referenced by a variantId. This is what lets us compute each
+  // product's activeVariantCount below without a second COUNT query, and it
+  // guarantees a variant can only resolve for a product actually in this cart.
+  const variantsPromise = query<ProductVariant>(
+    `SELECT * FROM product_variants WHERE product_id IN (${placeholdersP}) AND is_active = 1`,
+    productIds
+  );
 
   // 3. Resolve address
   let addressStreet: string;
@@ -142,7 +143,14 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   const productMap = new Map(products.map((p) => [p.id, p]));
 
   const variantMap = new Map<string, ProductVariant>();
-  for (const v of variantsRaw) variantMap.set(v.id, v);
+  const activeVariantCountByProduct = new Map<string, number>();
+  for (const v of variantsRaw) {
+    variantMap.set(v.id, v);
+    activeVariantCountByProduct.set(
+      v.product_id,
+      (activeVariantCountByProduct.get(v.product_id) ?? 0) + 1
+    );
+  }
 
   // 6. Validate each cart item
   const validatedItems: Array<{
@@ -160,41 +168,40 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
       return { success: false, error: "Produit introuvable ou indisponible" };
     }
 
+    let variant: ProductVariant | null = null;
     if (cartItem.variantId) {
-      const variant = variantMap.get(cartItem.variantId);
-      if (!variant || variant.product_id !== cartItem.productId) {
+      const candidate = variantMap.get(cartItem.variantId);
+      if (!candidate || candidate.product_id !== cartItem.productId) {
         return { success: false, error: `Variante introuvable pour ${product.name}` };
       }
-      if (variant.stock_quantity < cartItem.quantity) {
-        return {
-          success: false,
-          error: `Stock insuffisant pour ${product.name} - ${variant.name} (${variant.stock_quantity} disponible(s))`,
-        };
-      }
-      validatedItems.push({
-        productId: product.id,
-        variantId: variant.id,
-        productName: product.name,
-        variantName: variant.name,
-        unitPrice: variant.price,
-        quantity: cartItem.quantity,
-      });
-    } else {
-      if (product.stock_quantity < cartItem.quantity) {
-        return {
-          success: false,
-          error: `Stock insuffisant pour ${product.name} (${product.stock_quantity} disponible(s))`,
-        };
-      }
-      validatedItems.push({
-        productId: product.id,
-        variantId: null,
-        productName: product.name,
-        variantName: null,
-        unitPrice: product.base_price,
-        quantity: cartItem.quantity,
-      });
+      variant = candidate;
     }
+
+    const result = resolveOrderLine({
+      product: {
+        name: product.name,
+        base_price: product.base_price,
+        stock_quantity: product.stock_quantity,
+        activeVariantCount: activeVariantCountByProduct.get(product.id) ?? 0,
+      },
+      variant: variant
+        ? { name: variant.name, price: variant.price, stock_quantity: variant.stock_quantity }
+        : null,
+      quantity: cartItem.quantity,
+    });
+
+    if (!result.ok) {
+      return { success: false, error: result.error };
+    }
+
+    validatedItems.push({
+      productId: product.id,
+      variantId: variant?.id ?? null,
+      productName: product.name,
+      variantName: variant?.name ?? null,
+      unitPrice: result.unitPrice,
+      quantity: cartItem.quantity,
+    });
   }
 
   // 7. Calculate totals

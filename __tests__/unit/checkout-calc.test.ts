@@ -4,6 +4,8 @@ import {
   calculateDiscount,
   calculateOrderTotal,
   calculateSubtotal,
+  resolveOrderLine,
+  type OrderLineInput,
 } from "@/lib/utils/checkout";
 import type { PromoCode } from "@/lib/db/types";
 
@@ -218,5 +220,99 @@ describe("calculateSubtotal", () => {
 
   it("gère une quantité de 1", () => {
     expect(calculateSubtotal([{ unitPrice: 99000, quantity: 1 }])).toBe(99000);
+  });
+});
+
+// ─── resolveOrderLine ───
+
+function makeLine(overrides: Partial<OrderLineInput> = {}): OrderLineInput {
+  return {
+    product: {
+      name: "Casque Bluetooth XYZ",
+      base_price: 10000,
+      stock_quantity: 5,
+      activeVariantCount: 0,
+    },
+    variant: null,
+    quantity: 1,
+    ...overrides,
+  };
+}
+
+describe("resolveOrderLine", () => {
+  it("rejette un variantId nul quand le produit a des variantes actives", () => {
+    const result = resolveOrderLine(
+      makeLine({ product: { ...makeLine().product, activeVariantCount: 3 } })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/variante/i);
+  });
+
+  it("accepte un variantId nul quand le produit n'a aucune variante", () => {
+    const result = resolveOrderLine(makeLine());
+
+    expect(result.ok).toBe(true);
+    expect(result.ok === true && result.unitPrice).toBe(10000);
+  });
+
+  it("facture depuis la variante quand elle est fournie", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: { ...makeLine().product, activeVariantCount: 3 },
+        variant: { name: "Rouge", price: 15000, stock_quantity: 2 },
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok === true && result.unitPrice).toBe(15000);
+  });
+
+  it("rejette une variante dont le stock est insuffisant", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: { ...makeLine().product, activeVariantCount: 1 },
+        variant: { name: "Rouge", price: 15000, stock_quantity: 1 },
+        quantity: 2,
+      })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/stock/i);
+  });
+
+  it("accepte une variante quand le stock est exactement suffisant", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: { ...makeLine().product, activeVariantCount: 1 },
+        variant: { name: "Rouge", price: 15000, stock_quantity: 2 },
+        quantity: 2,
+      })
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejette un produit sans variante dont le stock est insuffisant", () => {
+    const result = resolveOrderLine(makeLine({ quantity: 10 }));
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/stock/i);
+  });
+
+  it("mentionne le nom du produit dans le message de garde variante", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: {
+          name: "Enceinte Portable ABC",
+          base_price: 20000,
+          stock_quantity: 5,
+          activeVariantCount: 2,
+        },
+      })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain("Enceinte Portable ABC");
   });
 });
