@@ -7,15 +7,44 @@ import { D1Dialect } from "kysely-d1";
 import { sendEmail } from "@/lib/notifications/email";
 import { otpEmail } from "@/lib/notifications/templates";
 
-// ACL for the better-auth admin plugin — mirrors the library's defaultStatements.
-// Required to declare super_admin, agent, and customer as known roles so the
-// plugin's hasPermission() check can resolve them (defaultRoles only knows "admin" + "user").
+// Statement universe for the better-auth admin plugin's ACL: every action
+// any role declared below may be granted. Scoped to what a role in this app
+// actually needs, not the plugin's full defaultStatements — e.g. "get" and
+// "update" (admin/get-user, admin/update-user) are left out because no role
+// holds them and nothing in this app calls those endpoints; a future task
+// wiring one in should add the statement here deliberately. Also declares
+// super_admin, agent, and customer as known roles so the plugin's
+// hasPermission() check can resolve them (defaultRoles only knows "admin" + "user").
 const adminStatements = {
-  user: ["create", "list", "set-role", "ban", "impersonate", "delete", "set-password", "get", "update"],
+  user: ["create", "list", "set-role", "ban", "impersonate", "delete", "set-password"],
   session: ["list", "revoke", "delete"],
 } as const;
 const ac = createAccessControl(adminStatements);
-const staffRole = ac.newRole({ user: [...adminStatements.user], session: [...adminStatements.session] });
+
+// Staff-management capabilities — changing roles, setting passwords,
+// deleting or impersonating accounts — are reserved for super_admin,
+// because this roles map is the authorization boundary the better-auth
+// admin plugin enforces for /api/auth/admin/*.
+export const superAdminRole = ac.newRole({
+  user: ["create", "list", "set-role", "set-password", "ban", "delete", "impersonate"],
+  session: ["list", "revoke", "delete"],
+});
+
+// admin manages the storefront and can moderate customers (ban/list), but
+// not staff accounts — set-role, set-password, delete and impersonate stay
+// with super_admin (see above). Session management (list-user-sessions,
+// revoke-user-session, revoke-user-sessions — admin.mjs routes.mjs) is also
+// staff-management: those endpoints let the holder enumerate and revoke ANY
+// user's sessions, including a super_admin's. No app code calls them
+// (grepped actions/, lib/, app/, components/, workers/ for
+// revokeUserSession(s)/listUserSessions/listSessions/revokeSession — only
+// hit is the unrelated revokeSessionsOnPasswordReset flag below), so admin
+// keeps none of the session statements; they stay with super_admin.
+export const adminRole = ac.newRole({
+  user: ["create", "list", "ban"],
+  session: [],
+});
+
 const noPermsRole = ac.newRole({ user: [], session: [] });
 
 // better-auth's captcha plugin defaults to only
@@ -75,6 +104,18 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
+      // Password *reset* (forgot-password → OTP) is the path a user takes
+      // when they cannot sign in — the likelier compromise-recovery route of
+      // the two, more so than the in-account password *change*. Without this,
+      // resetPasswordEmailOTP (better-auth/dist/plugins/email-otp/routes.mjs)
+      // writes the new hash but never calls deleteUserSessions, so an
+      // attacker's still-open session survives a reset meant to recover from
+      // exactly that compromise. Verified in 1.6.25 source: the handler for
+      // POST /email-otp/reset-password (authClient.emailOtp.resetPassword,
+      // used by app/(auth)/auth/reset-password) reads this exact option off
+      // ctx.context.options.emailAndPassword and calls
+      // internalAdapter.deleteUserSessions(user.user.id) when it's true.
+      revokeSessionsOnPasswordReset: true,
     },
 
     // Implicit linking would let an OAuth sign-in merge into a pre-existing
@@ -162,8 +203,8 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         defaultRole: "customer",
         adminRoles: ["admin", "super_admin"],
         roles: {
-          admin: staffRole,
-          super_admin: staffRole,
+          admin: adminRole,
+          super_admin: superAdminRole,
           agent: noPermsRole,
           customer: noPermsRole,
         },

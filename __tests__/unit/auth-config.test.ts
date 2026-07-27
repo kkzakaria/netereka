@@ -35,6 +35,16 @@ describe("auth configuration — account linking", () => {
   });
 });
 
+describe("auth configuration — password reset", () => {
+  it("revokes every other session when a user resets their password via OTP", () => {
+    // Without this, resetPasswordEmailOTP (email-otp/routes.mjs) writes the
+    // new hash but never calls deleteUserSessions — an attacker's session
+    // would survive the very recovery step meant to end it.
+    const opts = buildAuthOptions(env);
+    expect(opts.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
+  });
+});
+
 describe("auth configuration — rate limiting", () => {
   it("derives the client IP from Cloudflare's trusted header, not X-Forwarded-For", () => {
     const opts = buildAuthOptions(env);

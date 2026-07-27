@@ -8,6 +8,7 @@ import {
   getAdminCustomers,
   getAdminCustomerCount,
 } from "@/lib/db/admin/customers";
+import { requireAdmin } from "@/lib/auth/guards";
 
 interface Props {
   searchParams: Promise<{
@@ -21,6 +22,8 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function CustomersPage({ searchParams }: Props) {
+  await requireAdmin();
+
   const params = await searchParams;
   const requestedPage = Math.max(1, Number(params.page) || 1);
 

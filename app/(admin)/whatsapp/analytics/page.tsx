@@ -1,3 +1,4 @@
+// Guard: no requireAdmin() on this page — getWhatsAppStats() (actions/admin/whatsapp.ts) calls it.
 import { getWhatsAppStats } from "@/actions/admin/whatsapp";
 import { WhatsAppAnalytics } from "@/components/admin/whatsapp/whatsapp-analytics";
 

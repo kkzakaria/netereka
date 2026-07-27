@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { getAdminOrderById } from "@/lib/db/admin/orders";
 import { formatPrice } from "@/lib/utils";
 import { InvoicePrintButton } from "./print-button";
+import { requireAdmin } from "@/lib/auth/guards";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -20,6 +21,8 @@ function formatDate(dateStr: string): string {
 }
 
 export default async function InvoicePage({ params }: Props) {
+  await requireAdmin();
+
   const { id } = await params;
   const order = await getAdminOrderById(id);
 

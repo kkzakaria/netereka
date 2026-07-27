@@ -2,8 +2,11 @@ import { getDashboardStats } from "@/lib/db/admin/dashboard";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatsCard } from "@/components/admin/stats-card";
+import { requireAdmin } from "@/lib/auth/guards";
 
 export default async function DashboardPage() {
+  await requireAdmin();
+
   const stats = await getDashboardStats();
 
   return (

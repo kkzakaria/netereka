@@ -1,3 +1,4 @@
+// Guard: no requireAdmin() on this page — getConversations() (actions/admin/whatsapp.ts) calls it.
 import Link from "next/link";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";

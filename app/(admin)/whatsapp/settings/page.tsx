@@ -1,3 +1,4 @@
+// Guard: no requireAdmin() on this page — getWhatsAppConfig() (actions/admin/whatsapp.ts) calls it.
 import { getWhatsAppConfig } from "@/actions/admin/whatsapp";
 import { WhatsAppConfigForm } from "@/components/admin/whatsapp/whatsapp-config-form";
 

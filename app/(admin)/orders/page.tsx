@@ -10,6 +10,7 @@ import {
   getDistinctCommunes,
 } from "@/lib/db/admin/orders";
 import type { OrderListItem } from "@/lib/db/types";
+import { requireAdmin } from "@/lib/auth/guards";
 
 interface Props {
   searchParams: Promise<{
@@ -25,6 +26,8 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export default async function OrdersPage({ searchParams }: Props) {
+  await requireAdmin();
+
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
   const filters = {

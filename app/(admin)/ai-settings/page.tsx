@@ -1,3 +1,4 @@
+// Guard: no requireAdmin() on this page — getAiConfig() (actions/admin/ai-config.ts) calls it.
 import { getAiConfig } from "@/actions/admin/ai-config";
 import { AiConfigForm } from "@/components/admin/ai/ai-config-form";
 
