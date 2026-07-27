@@ -22,7 +22,10 @@ const mocks = vi.hoisted(() => ({
   getAddressById: vi.fn(),
   createAddress: vi.fn(),
   createOrderWithItems: vi.fn(),
+  countPendingOrdersForUser: vi.fn(),
   notifyOrderConfirmation: vi.fn(),
+  checkOrderRateLimit: vi.fn(),
+  getKV: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -44,9 +47,17 @@ vi.mock("@/lib/db/addresses", () => ({
 }));
 vi.mock("@/lib/db/orders", () => ({
   createOrderWithItems: mocks.createOrderWithItems,
+  countPendingOrdersForUser: mocks.countPendingOrdersForUser,
+  MAX_PENDING_ORDERS_PER_USER: 3,
 }));
 vi.mock("@/lib/notifications", () => ({
   notifyOrderConfirmation: mocks.notifyOrderConfirmation,
+}));
+vi.mock("@/lib/rate-limit/orders", () => ({
+  checkOrderRateLimit: mocks.checkOrderRateLimit,
+}));
+vi.mock("@/lib/cloudflare/context", () => ({
+  getKV: mocks.getKV,
 }));
 // Deliberately NOT mocked: @/lib/utils/checkout (resolveOrderLine,
 // countActiveVariantsByProduct, calculate*) and @/lib/validations/checkout
@@ -123,6 +134,45 @@ describe("createOrder", () => {
     mocks.createOrderWithItems.mockResolvedValue({ orderId: "order-1", orderNumber: "ORD-TEST01" });
     mocks.notifyOrderConfirmation.mockResolvedValue(undefined);
     mocks.queryFirst.mockResolvedValue(null); // no promo code lookups in these tests
+    mocks.checkOrderRateLimit.mockResolvedValue(true);
+    mocks.getKV.mockResolvedValue({});
+    mocks.countPendingOrdersForUser.mockResolvedValue(0);
+  });
+
+  it("rejette la creation quand le debit de commandes est depasse — sans toucher au stock", async () => {
+    mocks.checkOrderRateLimit.mockResolvedValue(false);
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM products")) return [NO_VARIANT_PRODUCT];
+      if (sql.includes("FROM product_variants")) return [];
+      return [];
+    });
+
+    const result = await createOrder(
+      baseInput([{ productId: "prod-no-variant", variantId: null, quantity: 1 }])
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/commandes/i);
+    expect(mocks.createOrderWithItems).not.toHaveBeenCalled();
+    // The throttle short-circuits before any product/stock lookup runs.
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("rejette la creation quand l'utilisateur a deja trop de commandes en attente", async () => {
+    mocks.countPendingOrdersForUser.mockResolvedValue(3);
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM products")) return [NO_VARIANT_PRODUCT];
+      if (sql.includes("FROM product_variants")) return [];
+      return [];
+    });
+
+    const result = await createOrder(
+      baseInput([{ productId: "prod-no-variant", variantId: null, quantity: 1 }])
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/attente/i);
+    expect(mocks.createOrderWithItems).not.toHaveBeenCalled();
   });
 
   it("accepte un variantId nul pour un produit sans variante, facturé au base_price", async () => {

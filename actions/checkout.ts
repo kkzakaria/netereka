@@ -3,9 +3,15 @@
 import { requireAuth } from "@/lib/auth/guards";
 import { checkoutSchema, type CheckoutInput, type CheckoutOutput } from "@/lib/validations/checkout";
 import { query, queryFirst } from "@/lib/db";
+import { getKV } from "@/lib/cloudflare/context";
+import { checkOrderRateLimit } from "@/lib/rate-limit/orders";
 import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
 import { getAddressById, createAddress } from "@/lib/db/addresses";
-import { createOrderWithItems } from "@/lib/db/orders";
+import {
+  createOrderWithItems,
+  countPendingOrdersForUser,
+  MAX_PENDING_ORDERS_PER_USER,
+} from "@/lib/db/orders";
 import { generateOrderNumber } from "@/lib/utils/order-number";
 import type { Product, ProductVariant, PromoCode } from "@/lib/db/types";
 import { notifyOrderConfirmation } from "@/lib/notifications";
@@ -81,6 +87,31 @@ interface CreateOrderResult {
 export async function createOrder(input: CheckoutInput): Promise<CreateOrderResult> {
   const session = await requireAuth();
   const userId = session.user.id;
+
+  // Throttle: no limiter previously governed order creation — better-auth's
+  // rate limiting only covers /api/auth/* routes, never this Server Action.
+  // Keyed on userId alone (every caller is authenticated), not IP: see
+  // lib/rate-limit/orders.ts for why.
+  const withinRateLimit = await checkOrderRateLimit(await getKV(), userId);
+  if (!withinRateLimit) {
+    return {
+      success: false,
+      error: "Trop de commandes recentes. Merci de reessayer dans un moment.",
+    };
+  }
+
+  // Cap concurrently-open pending orders per user. The rate limit above
+  // bounds creation *velocity* but not how many reservations a single
+  // account can hold open at once; this bounds that directly (see
+  // countPendingOrdersForUser's doc comment in lib/db/orders.ts).
+  const pendingCount = await countPendingOrdersForUser(userId);
+  if (pendingCount >= MAX_PENDING_ORDERS_PER_USER) {
+    return {
+      success: false,
+      error:
+        "Vous avez deja plusieurs commandes en attente de confirmation. Merci d'attendre leur traitement avant d'en passer une nouvelle.",
+    };
+  }
 
   // 1. Validate
   const parsed = checkoutSchema.safeParse(input);

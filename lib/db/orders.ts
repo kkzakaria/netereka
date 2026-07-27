@@ -1,8 +1,14 @@
-import { queryFirst, query } from "@/lib/db";
+import { queryFirst, query, execute } from "@/lib/db";
 import { getDB } from "@/lib/cloudflare/context";
 import { nanoid } from "nanoid";
 import type { Order, OrderItem } from "@/lib/db/types";
 export type { Order, OrderItem };
+
+/** Concurrently-open pending orders allowed per user (see createOrder). */
+export const MAX_PENDING_ORDERS_PER_USER = 3;
+
+/** Pending orders older than this are reaped automatically (see reapStalePendingOrders). */
+export const REAP_STALE_AFTER_HOURS = 24;
 
 interface CreateOrderData {
   userId: string;
@@ -251,57 +257,120 @@ export async function getOrderDetail(
   return { order, items };
 }
 
-export async function cancelOrder(
-  orderNumber: string,
-  userId: string,
-  reason: string
-): Promise<boolean> {
-  const db = await getDB();
+/**
+ * Guarded pending→cancelled transition, shared by every caller that needs to
+ * cancel a pending order and release its reserved stock: the customer
+ * self-cancel path (cancelOrder below) and the stale-pending reaper
+ * (reapStalePendingOrders below). Do not duplicate this logic elsewhere —
+ * two independent "cancel and refund" implementations would drift and one
+ * of them would eventually double-refund.
+ *
+ * The single UPDATE statement carries `AND status = 'pending'` as part of
+ * its WHERE clause, so it can affect the row at most once no matter how many
+ * callers race to cancel the same order (a customer clicking "cancel" at the
+ * same moment the reaper sweeps it, or two reaper runs overlapping): only
+ * the caller whose UPDATE actually flips the status sees `meta.changes > 0`
+ * and proceeds to refund; every other concurrent caller sees `changes === 0`
+ * and returns false without touching stock. This is what makes the
+ * transition safe under concurrency — refund is conditioned on this call
+ * having performed the transition, not on the row having been pending
+ * beforehand.
+ */
+async function cancelPendingOrderById(orderId: string, reason: string): Promise<boolean> {
+  const result = await execute(
+    `UPDATE orders SET status = 'cancelled', cancelled_at = datetime('now'), cancellation_reason = ?, updated_at = datetime('now')
+     WHERE id = ? AND status = 'pending'`,
+    [reason, orderId]
+  );
 
-  // Resolve the pending order owned by this user first, so we can release its
-  // reserved stock. Without this, a customer self-cancel left stock permanently
-  // decremented ('cancelled' is a terminal state, so no admin path could ever
-  // refund it) — a cost-free denial-of-inventory. See GHSA (stock-refund gap).
-  const order = await db
-    .prepare(
-      "SELECT id FROM orders WHERE order_number = ? AND user_id = ? AND status = 'pending'"
-    )
-    .bind(orderNumber, userId)
-    .first<{ id: string }>();
-  if (!order) return false;
-
-  const result = await db
-    .prepare(
-      `UPDATE orders SET status = 'cancelled', cancelled_at = datetime('now'), cancellation_reason = ?, updated_at = datetime('now')
-       WHERE id = ? AND status = 'pending'`
-    )
-    .bind(reason, order.id)
-    .run();
-
-  // Refund only when THIS call performed the pending→cancelled transition. The
-  // status guard makes the UPDATE affect the row exactly once, so concurrent
-  // cancels cannot double-refund.
   if (result.meta.changes === 0) return false;
 
   try {
-    await refundOrderStock(order.id);
+    await refundOrderStock(orderId);
   } catch (err) {
     // Compensate to keep cancellation and stock consistent: if the refund
     // fails, revert the order to 'pending' so its stock stays reserved
     // (invariant: a cancelled order has always had its reserved stock
     // returned). The status guard means only this call transitioned the row,
     // so the revert targets exactly the row we just cancelled.
-    await db
-      .prepare(
-        `UPDATE orders SET status = 'pending', cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
-         WHERE id = ? AND status = 'cancelled'`
-      )
-      .bind(order.id)
-      .run();
-    console.error(`cancelOrder: stock refund failed for order ${order.id}, reverted to pending`, err);
+    await execute(
+      `UPDATE orders SET status = 'pending', cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
+       WHERE id = ? AND status = 'cancelled'`,
+      [orderId]
+    );
+    console.error(`cancelPendingOrderById: stock refund failed for order ${orderId}, reverted to pending`, err);
     return false;
   }
   return true;
+}
+
+export async function cancelOrder(
+  orderNumber: string,
+  userId: string,
+  reason: string
+): Promise<boolean> {
+  // Resolve the pending order owned by this user first, so we can release its
+  // reserved stock. Without this, a customer self-cancel left stock permanently
+  // decremented ('cancelled' is a terminal state, so no admin path could ever
+  // refund it) — a cost-free denial-of-inventory. See GHSA (stock-refund gap).
+  const order = await queryFirst<{ id: string }>(
+    "SELECT id FROM orders WHERE order_number = ? AND user_id = ? AND status = 'pending'",
+    [orderNumber, userId]
+  );
+  if (!order) return false;
+
+  return cancelPendingOrderById(order.id, reason);
+}
+
+/**
+ * Counts a user's currently-open pending orders. Backs the concurrent-pending
+ * cap in createOrder: the hourly rate limit only bounds *velocity*, not the
+ * number of orders simultaneously holding reserved stock — at 5 orders/hour,
+ * an account could otherwise keep ~120 orders perpetually pending (steady
+ * state against the 24h reaper window). Capping concurrently-open pending
+ * orders bounds worst-case reserved stock per user to a small constant
+ * regardless of rate or reaper cadence.
+ */
+export async function countPendingOrdersForUser(userId: string): Promise<number> {
+  const row = await queryFirst<{ total: number }>(
+    "SELECT COUNT(*) as total FROM orders WHERE user_id = ? AND status = 'pending'",
+    [userId]
+  );
+  return row?.total ?? 0;
+}
+
+/**
+ * Cancels every pending order older than `olderThanHours` and releases its
+ * reserved stock, reusing the exact guarded transition customers use to
+ * self-cancel (cancelPendingOrderById) — see that function's doc comment for
+ * why concurrent cancellation of the same order can never double-refund.
+ *
+ * Each order is cancelled independently (not as a single D1 batch): the
+ * guard-then-refund sequence for one order must complete (including its
+ * compensating revert on refund failure) before affecting the next, so a
+ * failure on one stale order never blocks or corrupts the others.
+ */
+export async function reapStalePendingOrders(
+  olderThanHours: number = REAP_STALE_AFTER_HOURS
+): Promise<{ cancelled: number; skipped: number; total: number }> {
+  const staleOrders = await query<{ id: string }>(
+    "SELECT id FROM orders WHERE status = 'pending' AND created_at < datetime('now', ?)",
+    [`-${olderThanHours} hours`]
+  );
+
+  let cancelled = 0;
+  let skipped = 0;
+
+  for (const order of staleOrders) {
+    const ok = await cancelPendingOrderById(
+      order.id,
+      "Commande annulée automatiquement : délai de confirmation dépassé."
+    );
+    if (ok) cancelled++;
+    else skipped++;
+  }
+
+  return { cancelled, skipped, total: staleOrders.length };
 }
 
 /**
