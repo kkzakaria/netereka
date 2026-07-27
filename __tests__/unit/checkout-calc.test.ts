@@ -5,6 +5,7 @@ import {
   calculateOrderTotal,
   calculateSubtotal,
   resolveOrderLine,
+  countActiveVariantsByProduct,
   type OrderLineInput,
 } from "@/lib/utils/checkout";
 import type { PromoCode } from "@/lib/db/types";
@@ -314,5 +315,80 @@ describe("resolveOrderLine", () => {
 
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toContain("Enceinte Portable ABC");
+  });
+});
+
+// ─── countActiveVariantsByProduct ───
+
+describe("countActiveVariantsByProduct", () => {
+  it("compte les variantes actives par produit", () => {
+    const counts = countActiveVariantsByProduct([
+      { product_id: "p1" },
+      { product_id: "p1" },
+      { product_id: "p2" },
+    ]);
+
+    expect(counts.get("p1")).toBe(2);
+    expect(counts.get("p2")).toBe(1);
+  });
+
+  it("retourne une map vide pour une liste vide", () => {
+    const counts = countActiveVariantsByProduct([]);
+    expect(counts.size).toBe(0);
+  });
+
+  it("un produit absent de la liste n'a pas d'entrée dans la map", () => {
+    const counts = countActiveVariantsByProduct([{ product_id: "p1" }]);
+    expect(counts.get("p2")).toBeUndefined();
+  });
+});
+
+// ─── resolveOrderLine wired through countActiveVariantsByProduct ───
+//
+// These pin the exact composition actions/checkout.ts uses:
+// `countActiveVariantsByProduct(variantsRaw).get(product.id) ?? 0` feeding
+// `resolveOrderLine`'s `activeVariantCount`. If that wiring were ever
+// reduced to a literal 0 (or the counting function stopped counting), these
+// fail — unlike the resolveOrderLine-only tests above, which pass literals
+// directly and can't detect that class of regression.
+
+describe("resolveOrderLine + countActiveVariantsByProduct (wiring)", () => {
+  it("rejette un variantId nul quand le comptage réel détecte des variantes actives", () => {
+    const activeVariantCountByProduct = countActiveVariantsByProduct([
+      { product_id: "p1" },
+      { product_id: "p1" },
+    ]);
+
+    const result = resolveOrderLine({
+      product: {
+        name: "Casque Bluetooth XYZ",
+        base_price: 10000,
+        stock_quantity: 5,
+        activeVariantCount: activeVariantCountByProduct.get("p1") ?? 0,
+      },
+      variant: null,
+      quantity: 1,
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepte un variantId nul quand le comptage réel ne trouve aucune variante pour ce produit", () => {
+    const activeVariantCountByProduct = countActiveVariantsByProduct([
+      { product_id: "other-product" },
+    ]);
+
+    const result = resolveOrderLine({
+      product: {
+        name: "Casque Bluetooth XYZ",
+        base_price: 10000,
+        stock_quantity: 5,
+        activeVariantCount: activeVariantCountByProduct.get("p1") ?? 0,
+      },
+      variant: null,
+      quantity: 1,
+    });
+
+    expect(result.ok).toBe(true);
   });
 });

@@ -39,7 +39,7 @@ export function ProductCardActions({ product }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const add = useCartStore((s) => s.add);
 
-  const hasVariants = (product.variant_count ?? 0) > 1;
+  const hasVariants = (product.variant_count ?? 0) > 0;
   const isOutOfStock = product.stock_quantity <= 0;
 
   function handleCartClick(e: React.MouseEvent) {

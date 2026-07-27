@@ -15,6 +15,7 @@ import {
   calculateOrderTotal,
   calculateSubtotal,
   resolveOrderLine,
+  countActiveVariantsByProduct,
 } from "@/lib/utils/checkout";
 
 // ---------- internal promo validation (no auth check) ----------
@@ -143,14 +144,8 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   const productMap = new Map(products.map((p) => [p.id, p]));
 
   const variantMap = new Map<string, ProductVariant>();
-  const activeVariantCountByProduct = new Map<string, number>();
-  for (const v of variantsRaw) {
-    variantMap.set(v.id, v);
-    activeVariantCountByProduct.set(
-      v.product_id,
-      (activeVariantCountByProduct.get(v.product_id) ?? 0) + 1
-    );
-  }
+  for (const v of variantsRaw) variantMap.set(v.id, v);
+  const activeVariantCountByProduct = countActiveVariantsByProduct(variantsRaw);
 
   // 6. Validate each cart item
   const validatedItems: Array<{

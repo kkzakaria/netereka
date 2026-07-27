@@ -11,7 +11,7 @@ interface Props {
 }
 
 export function ProductCard({ product }: Props) {
-  const hasVariants = (product.variant_count ?? 0) > 1;
+  const hasVariants = (product.variant_count ?? 0) > 0;
   const isOutOfStock = product.stock_quantity <= 0;
   const comparePrice = product.compare_price;
   const hasDiscount = comparePrice != null && comparePrice > product.base_price;

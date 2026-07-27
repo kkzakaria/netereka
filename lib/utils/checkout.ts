@@ -141,3 +141,22 @@ export function resolveOrderLine(input: OrderLineInput): OrderLineResult {
   }
   return { ok: true, unitPrice: product.base_price, availableStock: product.stock_quantity };
 }
+
+/**
+ * Groups a flat list of already-active-filtered variants by their
+ * product_id, returning how many active variants each product has.
+ *
+ * Pulled out of actions/checkout.ts (which builds this from a single query
+ * fetching every active variant for every product in the cart) so the
+ * counting logic that feeds resolveOrderLine's `activeVariantCount` guard
+ * is itself unit-testable, independent of D1.
+ */
+export function countActiveVariantsByProduct(
+  variants: Array<{ product_id: string }>
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const v of variants) {
+    counts.set(v.product_id, (counts.get(v.product_id) ?? 0) + 1);
+  }
+  return counts;
+}
