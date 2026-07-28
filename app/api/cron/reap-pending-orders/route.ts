@@ -8,7 +8,7 @@ import { reapStalePendingOrders } from "@/lib/db/orders";
 // main worker. Instead, an external scheduler — the "Reap Pending Orders"
 // GitHub Actions workflow (.github/workflows/reap-pending-orders.yml) —
 // calls this route on a schedule (and on manual dispatch) with a bearer
-// secret. See task-3.2-report.md for the full rationale.
+// secret.
 export const dynamic = "force-dynamic";
 
 /** Constant-time string comparison — avoids leaking the secret via response timing. */
