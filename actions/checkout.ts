@@ -39,19 +39,15 @@ function invalidPromo(error: string): PromoResult {
   return { valid: false, discount: 0, promoCodeId: null, label: null, error };
 }
 
-// A code that doesn't exist, one that's expired, one that hasn't started
-// yet, one that hit its usage cap, and one whose minimum order isn't met
-// all resolve through validatePromoEligibility/queryFirst below with a
-// distinct, specific message each. Surfacing any of that distinction to the
-// caller turns validatePromoCode into an oracle over the promo_codes table:
-// an authenticated customer could tell "this code doesn't exist" apart from
-// "this code exists but isn't active yet", revealing unpublished campaigns
-// and their eligibility thresholds one probe at a time. Collapsing every
-// failure reason — including the rate-limit rejection below — onto this one
-// string closes that channel. validatePromoEligibility itself still returns
-// the specific reason (kept for its own unit tests and internal callers);
-// it's only discarded here, at the boundary that talks back to the client.
-const GENERIC_PROMO_ERROR = "Ce code promo n'est pas applicable à votre commande.";
+// Every failure below returns this exact string, and the same PromoResult
+// shape (via invalidPromo), no matter which check rejected the code — and
+// so does the throttle rejection in validatePromoCode/createOrder. The
+// response must never let a caller distinguish *why* a code was rejected,
+// only *whether* it worked. validatePromoEligibility (lib/utils/checkout.ts)
+// still returns its own specific reason for its own callers and unit tests;
+// it is discarded only here, at the boundary that answers the client.
+const GENERIC_PROMO_ERROR =
+  "Ce code promo est invalide ou n'est pas applicable à votre commande.";
 
 async function resolvePromoCode(
   code: string,
@@ -268,9 +264,28 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   let promoCodeId: string | null = null;
 
   if (data.promoCode) {
+    // Shares validatePromoCode's exact key (promo:rate:${userId}) and
+    // ceiling rather than getting its own — this entry point resolves a
+    // promo code just as directly as validatePromoCode does, and the two
+    // must draw from one combined budget or a caller could get validatePromoCode's
+    // 20/hour here *again* on top of the 20/hour already spent there.
+    // Checked before resolvePromoCode, mirroring validatePromoCode: a
+    // rejected check must never reach the promo_codes table, and must
+    // return the exact same GENERIC_PROMO_ERROR an ordinary invalid code
+    // gets. This sits ahead of createOrder's own throttle (step 9 below)
+    // deliberately, not in spite of it — step 9 exists specifically so a
+    // typo or a stock-out doesn't cost one of the 5 hourly order slots, and
+    // that must still hold for a mistyped promo code. Gating promo
+    // resolution on its own limiter here preserves that while still
+    // bounding how many times this path can resolve a promo code.
+    const withinPromoRateLimit = await checkPromoRateLimit(await getKV(), userId);
+    if (!withinPromoRateLimit) {
+      return { success: false, error: GENERIC_PROMO_ERROR };
+    }
+
     const promoResult = await resolvePromoCode(data.promoCode, subtotal);
     if (!promoResult.valid) {
-      return { success: false, error: promoResult.error ?? "Code promo invalide" };
+      return { success: false, error: GENERIC_PROMO_ERROR };
     }
     discountAmount = promoResult.discount;
     promoCodeId = promoResult.promoCodeId;
