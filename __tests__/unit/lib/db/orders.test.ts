@@ -113,6 +113,35 @@ describe("cancelOrder", () => {
     expect(mocks.execute.mock.calls[1][0]).toMatch(/SET status = \?/);
     expect(mocks.execute.mock.calls[1][1]).toEqual(["pending", "order-1"]);
   });
+
+  // The compensating revert is a second, independent D1 call, so it can fail
+  // on its own — a failure the first refund-failure test never reaches. It
+  // must collapse to the same `false` the contract already returns rather
+  // than escaping as an unhandled rejection, and both errors must be logged
+  // so the causal chain survives the boolean return.
+  it("returns false instead of throwing when the compensating revert also fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst.mockResolvedValue({ id: "order-1" });
+    mocks.execute
+      .mockResolvedValueOnce({ meta: { changes: 1 } })
+      .mockRejectedValueOnce(new Error("D1 unavailable during revert"));
+    mocks.query.mockResolvedValue([ITEM("order-1")]);
+    mocks.dbBatch.mockRejectedValue(new Error("D1 batch failed"));
+
+    await expect(cancelOrder("ORD-1", "user-1", "changed my mind")).resolves.toBe(false);
+
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    // refundOrderStock logs its own failure first, so select the compensation
+    // log by content rather than by position.
+    const call = errorSpy.mock.calls.find((c) => /revert also failed/i.test(String(c[0])));
+    expect(call).toBeDefined();
+    const [message, context, refundErr, revertErr] = call!;
+    expect(message).toMatch(/revert also failed/i);
+    expect(context).toMatchObject({ orderId: "order-1", intendedRevertTo: "pending" });
+    expect(refundErr).toBeInstanceOf(Error);
+    expect(revertErr).toBeInstanceOf(Error);
+    errorSpy.mockRestore();
+  });
 });
 
 describe("cancelOrderFromStatus", () => {

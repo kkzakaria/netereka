@@ -150,6 +150,67 @@ describe("updateOrderStatus", () => {
     expect(mocks.notifyOrderStatusUpdate).not.toHaveBeenCalled();
   });
 
+  // A cancelled order whose stock was never returned is the state the
+  // compensation exists to prevent, so the revert must actually run and the
+  // action must report failure rather than a success it did not achieve.
+  it("revient au statut précédent et signale l'échec si le remboursement du stock échoue", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst
+      .mockReset()
+      .mockResolvedValueOnce({ ...mockOrder, status: "confirmed" })
+      .mockResolvedValue({ email: "c@t.com", name: "C" });
+    mocks.refundOrderStock.mockRejectedValue(new Error("D1 batch failed"));
+    const bindMock = vi.fn().mockReturnValue({
+      run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+    });
+    mocks.dbPrepare.mockReturnValue({ bind: bindMock });
+
+    const result = await updateOrderStatus("order-1", "cancelled");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/remise à son statut précédent/i);
+    // Second prepare/bind = the compensating revert back to 'confirmed',
+    // guarded on the status this call just wrote.
+    expect(bindMock).toHaveBeenCalledWith("confirmed", "order-1", "cancelled");
+    expect(mocks.notifyOrderStatusUpdate).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  // The revert is a second, independent D1 call and can fail on its own.
+  // It must not escape as an unhandled rejection: the caller still needs an
+  // ActionResult, and its wording must not claim a revert that never
+  // happened — "reverted" and "could not revert" are different incidents.
+  it("renvoie un échec explicite, sans lever, si la tentative de retour arrière échoue aussi", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst
+      .mockReset()
+      .mockResolvedValueOnce({ ...mockOrder, status: "confirmed" })
+      .mockResolvedValue({ email: "c@t.com", name: "C" });
+    mocks.refundOrderStock.mockRejectedValue(new Error("D1 batch failed"));
+    mocks.dbPrepare.mockReturnValue({
+      bind: vi.fn().mockReturnValue({
+        run: vi
+          .fn()
+          .mockResolvedValueOnce({ meta: { changes: 1 } })
+          .mockRejectedValueOnce(new Error("D1 unavailable during revert")),
+      }),
+    });
+
+    const result = await updateOrderStatus("order-1", "cancelled");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/vérification manuelle/i);
+    expect(result.error).not.toMatch(/remise à son statut précédent/i);
+    const call = errorSpy.mock.calls.find((c) => /revert also failed/i.test(String(c[0])));
+    expect(call).toBeDefined();
+    const [message, context, refundErr, revertErr] = call!;
+    expect(message).toMatch(/revert also failed/i);
+    expect(context).toMatchObject({ orderId: "order-1", intendedRevertTo: "confirmed" });
+    expect(refundErr).toBeInstanceOf(Error);
+    expect(revertErr).toBeInstanceOf(Error);
+    errorSpy.mockRestore();
+  });
+
   it("redirige si non admin", async () => {
     mocks.getSession.mockResolvedValue(mockCustomerSession);
     await expect(updateOrderStatus("order-1", "confirmed")).rejects.toThrow("NEXT_REDIRECT");
