@@ -92,9 +92,17 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       if (!css) return "";
       if (productId) {
         const scopePrefix = `.desc-${productId}`;
+        // The "{" is captured as an OPTIONAL group so a run of declaration
+        // text that never reaches one is returned untouched instead of making
+        // the engine re-walk it from every following position. Requiring the
+        // "{" made a brace-free block cost time proportional to the SQUARE of
+        // its length; the selector text a run covers now cannot overlap the
+        // next run's, so the pass is one sweep. Behaviour is unchanged: a run
+        // with no "{" is not a selector and was already left alone.
         css = css.replace(
-          /([^{}]+)\{/g,
-          (_m, selectors: string) => {
+          /([^{}]+)(\{)?/g,
+          (match, selectors: string, brace: string | undefined) => {
+            if (brace === undefined) return match;
             const scoped = selectors
               .split(",")
               .map((s: string) => `${scopePrefix} ${s.trim()}`)
@@ -132,11 +140,15 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   //    for successive candidate tags cannot overlap — a run started at one
   //    "<" always stops at or before the next one. With the trailing ">"
   //    optional the match can never fail once the leading letter is seen, so
-  //    the engine never re-walks a run it has already walked. The whole pass
-  //    is a single left-to-right sweep whose cost is proportional to the input
-  //    length. The earlier form could re-walk the remainder of the input once
-  //    per "<", which on a large stored description turned every page view
-  //    into a long CPU burn inside a CPU-metered Worker.
+  //    the engine never re-walks a run it has already walked. The earlier form
+  //    could re-walk the remainder of the input once per "<", which on a large
+  //    stored description turned every page view into a long CPU burn inside a
+  //    CPU-metered Worker.
+  //    Scope of that guarantee: it covers THIS regex's own sweep — finding tag
+  //    boundaries — and nothing else. The work the callback below does per tag
+  //    (attribute parsing) is bounded separately, at `attrRegex`; each pass in
+  //    this file carries its own note, and none of them may be read as a
+  //    statement about the function as a whole.
   //
   //  * Excluding "<" from the name does NOT re-admit the class of tag the
   //    widened name class was introduced to catch. When a run stops at a "<"
@@ -166,11 +178,24 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       if (isClosing) return `</${tag}>`;
 
       const attrs: string[] = [];
-      const attrRegex = /([a-zA-Z_][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+      // The "= value" part is an OPTIONAL group, and a name that turns out to
+      // carry no value is skipped below. That keeps exactly the same set of
+      // name/value pairs as requiring the "=" did — a name run always ends at
+      // the same character whichever position inside it the scan starts from,
+      // so if the "=" is missing it is missing for every start inside that run
+      // and no pair was ever found there — while removing the re-walk of the
+      // run from each of those positions. Requiring the "=" made an attribute
+      // section with no "=" cost time proportional to the SQUARE of its
+      // length, and this pass runs on every storefront render of a product
+      // description inside a CPU-metered Worker.
+      const attrRegex = /([a-zA-Z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
       let attrMatch: RegExpExecArray | null;
       while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
         const attrName = attrMatch[1].toLowerCase();
-        const attrValue = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? "";
+        const rawValue = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4];
+        // Valueless attribute ("<div hidden>"): never emitted before either.
+        if (rawValue === undefined) continue;
+        const attrValue = rawValue;
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
         if ((attrName === "href" || attrName === "src") && DANGEROUS_URI_RE.test(attrValue)) continue;

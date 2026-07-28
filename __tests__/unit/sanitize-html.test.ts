@@ -323,19 +323,63 @@ describe("sanitizeDescriptionHtml", () => {
   // a product description inside a CPU-metered Worker. The budget is ~40x the
   // measured cost so ordinary CI noise cannot trip it, while a return to
   // seconds fails immediately.
+  // The attribute scanner treats the "= value" part as optional so it does not
+  // re-walk a name run; these lock in that the set of surviving attributes is
+  // unchanged by that.
+  describe("attribute scanning", () => {
+    it("ignores a valueless attribute but keeps its neighbours", () => {
+      expect(sanitizeDescriptionHtml('<div hidden class="a">x</div>')).toBe('<div class="a">x</div>');
+    });
+
+    it("still drops a handler that has no value", () => {
+      const result = sanitizeDescriptionHtml('<div onclick class="a">x</div>');
+      expect(result).toBe('<div class="a">x</div>');
+    });
+
+    it("keeps an attribute whose '=' is padded with spaces", () => {
+      expect(sanitizeDescriptionHtml('<div class = "a">x</div>')).toBe('<div class="a">x</div>');
+    });
+
+    it("still drops a handler buried after unparsable text", () => {
+      const result = sanitizeDescriptionHtml('<div abc onclick=alert(1) class=b>x</div>');
+      expect(result).not.toMatch(/onclick/i);
+      expect(result).toBe('<div class="b">x</div>');
+    });
+  });
+
+  it("leaves brace-free CSS unscoped and intact", () => {
+    // A run of style-block text that never reaches a "{" is not a selector.
+    const result = sanitizeDescriptionHtml("<style>this is not css</style>", "prod-1");
+    expect(result).toBe("<style>this is not css</style>");
+  });
+
   it("sanitizes adversarial tag-soup in linear time", () => {
-    const shapes = [
-      "<a-".repeat(40000),
-      "<a<".repeat(40000),
-      "<a ".repeat(40000),
-      "<style".repeat(40000),
-      "<script>".repeat(40000),
-      "<a" + "x".repeat(400000),
+    // [input, productId]. The productId matters: selector scoping only runs
+    // when one is supplied, so the <style> shapes below exercise nothing
+    // without it.
+    const shapes: [string, string | undefined][] = [
+      // tag-boundary scan
+      ["<a-".repeat(40000), undefined],
+      ["<a<".repeat(40000), undefined],
+      ["<a ".repeat(40000), undefined],
+      ["<style".repeat(40000), undefined],
+      ["<script>".repeat(40000), undefined],
+      ["<a" + "x".repeat(400000), undefined],
+      ["<p a<".repeat(80000), undefined],
+      // attribute scan
+      ["<p " + "a".repeat(400000) + ">", undefined],
+      ["<p " + "a-".repeat(200000) + ">", undefined],
+      ["<p " + "a=x ".repeat(100000) + ">", undefined],
+      // <style> selector scoping
+      ["<style>" + "a".repeat(400000), "prod-1"],
+      ["<style>".repeat(70000), "prod-1"],
+      ["<style>a{" + "b".repeat(400000), "prod-1"],
+      ["<style>" + "a{}".repeat(130000), "prod-1"],
     ];
     const started = Date.now();
-    for (const shape of shapes) sanitizeDescriptionHtml(shape);
+    for (const [shape, productId] of shapes) sanitizeDescriptionHtml(shape, productId);
     const elapsed = Date.now() - started;
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(3000);
   }, 30000);
 
   it("keeps a long generated style block byte-identical", () => {
