@@ -196,75 +196,75 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).not.toContain("url(");
     expect(result).not.toContain("evil.example");
   });
-});
 
-describe("style tag handling", () => {
-  it("strips event handlers from a style tag closed with trailing whitespace", () => {
-    const input = '<style onload="alert(1)">body{}</style >';
-    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+  describe("style tag handling", () => {
+    it("strips event handlers from a style tag closed with trailing whitespace", () => {
+      const input = '<style onload="alert(1)">body{}</style >';
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+    });
+
+    it("strips event handlers from an unterminated style tag", () => {
+      const input = '<style onload="alert(1)">body{}';
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+    });
+
+    it("strips unquoted event handlers on a style tag", () => {
+      const input = "<style onload=alert(1)>body{}</style >";
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+    });
+
+    it("strips event handlers regardless of tag case", () => {
+      const input = '<STYLE ONLOAD="alert(1)">x</STYLE >';
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+    });
+
+    it("still filters @import when the closing tag has trailing whitespace", () => {
+      const input = '<style>@import url("//evil.example/x.css");</style >';
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/@import/i);
+    });
   });
 
-  it("strips event handlers from an unterminated style tag", () => {
-    const input = '<style onload="alert(1)">body{}';
-    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
-  });
+  // Hardening: the generic tag pass only recognized [a-zA-Z][a-zA-Z0-9]* as a
+  // tag name, but a browser's tokenizer appends ANY character other than
+  // whitespace, "/" or ">" to a tag name once it starts with an ASCII letter.
+  // Tags containing "-", "_", ":" or "." never matched that narrower class and
+  // so never reached the allowlist check at all — they passed through with
+  // their attributes completely untouched.
+  describe("non-alphanumeric tag names", () => {
+    it("strips a hyphenated tag and its event handler", () => {
+      const input = '<my-tag onclick="alert(1)">x</my-tag>';
+      const result = sanitizeDescriptionHtml(input);
+      expect(result).not.toContain("<my-tag");
+      expect(result).not.toMatch(/onclick/i);
+      expect(result).toContain("x");
+    });
 
-  it("strips unquoted event handlers on a style tag", () => {
-    const input = "<style onload=alert(1)>body{}</style >";
-    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
-  });
+    it("strips a tag name containing an underscore and its event handler", () => {
+      const input = '<a_b onclick="alert(1)">x</a_b>';
+      const result = sanitizeDescriptionHtml(input);
+      expect(result).not.toContain("<a_b");
+      expect(result).not.toMatch(/onclick/i);
+    });
 
-  it("strips event handlers regardless of tag case", () => {
-    const input = '<STYLE ONLOAD="alert(1)">x</STYLE >';
-    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
-  });
+    it("strips a tag name containing a colon and its event handler", () => {
+      const input = '<a:b onclick="alert(1)">x</a:b>';
+      const result = sanitizeDescriptionHtml(input);
+      expect(result).not.toContain("<a:b");
+      expect(result).not.toMatch(/onclick/i);
+    });
 
-  it("still filters @import when the closing tag has trailing whitespace", () => {
-    const input = '<style>@import url("//evil.example/x.css");</style >';
-    expect(sanitizeDescriptionHtml(input)).not.toMatch(/@import/i);
-  });
-});
+    it("strips a tag name containing a dot and its event handler", () => {
+      const input = '<a.b onclick="alert(1)">x</a.b>';
+      const result = sanitizeDescriptionHtml(input);
+      expect(result).not.toContain("<a.b");
+      expect(result).not.toMatch(/onclick/i);
+    });
 
-// Hardening: the generic tag pass only recognized [a-zA-Z][a-zA-Z0-9]* as a
-// tag name, but a browser's tokenizer appends ANY character other than
-// whitespace, "/" or ">" to a tag name once it starts with an ASCII letter.
-// Tags containing "-", "_", ":" or "." never matched that narrower class and
-// so never reached the allowlist check at all — they passed through with
-// their attributes completely untouched.
-describe("non-alphanumeric tag names", () => {
-  it("strips a hyphenated tag and its event handler", () => {
-    const input = '<my-tag onclick="alert(1)">x</my-tag>';
-    const result = sanitizeDescriptionHtml(input);
-    expect(result).not.toContain("<my-tag");
-    expect(result).not.toMatch(/onclick/i);
-    expect(result).toContain("x");
-  });
-
-  it("strips a tag name containing an underscore and its event handler", () => {
-    const input = '<a_b onclick="alert(1)">x</a_b>';
-    const result = sanitizeDescriptionHtml(input);
-    expect(result).not.toContain("<a_b");
-    expect(result).not.toMatch(/onclick/i);
-  });
-
-  it("strips a tag name containing a colon and its event handler", () => {
-    const input = '<a:b onclick="alert(1)">x</a:b>';
-    const result = sanitizeDescriptionHtml(input);
-    expect(result).not.toContain("<a:b");
-    expect(result).not.toMatch(/onclick/i);
-  });
-
-  it("strips a tag name containing a dot and its event handler", () => {
-    const input = '<a.b onclick="alert(1)">x</a.b>';
-    const result = sanitizeDescriptionHtml(input);
-    expect(result).not.toContain("<a.b");
-    expect(result).not.toMatch(/onclick/i);
-  });
-
-  it("still allows a plain allowed tag through unchanged (control)", () => {
-    const input = '<h1 onclick="alert(1)">ok</h1>';
-    const result = sanitizeDescriptionHtml(input);
-    expect(result).toBe("<h1>ok</h1>");
+    it("still allows a plain allowed tag through unchanged (control)", () => {
+      const input = '<h1 onclick="alert(1)">ok</h1>';
+      const result = sanitizeDescriptionHtml(input);
+      expect(result).toBe("<h1>ok</h1>");
+    });
   });
 
   // Hardening: a malformed <style> block whose @import is stripped mid-string
@@ -272,7 +272,7 @@ describe("non-alphanumeric tag names", () => {
   // exist in the original input, closing the block early. Whatever follows is
   // then parsed as ordinary markup by a real browser, not as inert CSS text —
   // so it must still be caught by the generic tag pass. Confirms the widened
-  // tag-name class above closes this residual path.
+  // tag-name class (above) closes this residual path.
   it("neutralizes a handler exposed by an @import splice inside a style block", () => {
     const input = "<style>a{}</st@import 1;yle><my-tag onclick=alert(1)";
     const result = sanitizeDescriptionHtml(input);

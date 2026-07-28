@@ -57,6 +57,12 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   // and browsers accept it — as well as a missing closing tag entirely, by
   // falling back to the end of input. Either form previously left the block
   // unmatched, so it fell through to the tag-by-tag pass below untouched.
+  // Note: when the "$" branch fires (no closing tag found), the callback below
+  // still appends a synthetic "</style>" to its output — the emitted markup
+  // always balances even though the input didn't. That synthetic close is
+  // itself just text at this point; step 3 below re-scans the whole result
+  // and is what actually keeps the rest of the pipeline honest regardless of
+  // how this pass reshuffled tag boundaries.
   result = result.replace(
     /<style[^>]*>([\s\S]*?)(?:<\/style\s*>|$)/gi,
     (_match, cssContent: string) => {
