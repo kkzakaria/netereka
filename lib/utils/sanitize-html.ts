@@ -52,9 +52,13 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   result = result.replace(/<(script|iframe)[^>]*>[\s\S]*?<\/\1>/gi, "");
   result = result.replace(/<(script|iframe)[^>]*\/?>/gi, "");
 
-  // 2. Process <style> blocks: scope selectors, block @import and url()
+  // 2. Process <style> blocks: scope selectors, block @import and url().
+  // Tolerate whitespace before the closing tag's ">" — the HTML spec allows it
+  // and browsers accept it — as well as a missing closing tag entirely, by
+  // falling back to the end of input. Either form previously left the block
+  // unmatched, so it fell through to the tag-by-tag pass below untouched.
   result = result.replace(
-    /<style[^>]*>([\s\S]*?)<\/style>/gi,
+    /<style[^>]*>([\s\S]*?)(?:<\/style\s*>|$)/gi,
     (_match, cssContent: string) => {
       let css = stripDangerousCss(cssContent);
       css = css.trim();
@@ -86,7 +90,6 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
     /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:[\s/][^>]*)?)\s*\/?>/g,
     (match, tagName: string, attrsStr: string) => {
       const tag = tagName.toLowerCase();
-      if (tag === "style") return match; // already processed
       if (tag === "script" || tag === "iframe") return "";
 
       const isClosing = match.startsWith("</");

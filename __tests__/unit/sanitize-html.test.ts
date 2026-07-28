@@ -197,3 +197,30 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).not.toContain("evil.example");
   });
 });
+
+describe("style tag handling", () => {
+  it("strips event handlers from a style tag closed with trailing whitespace", () => {
+    const input = '<style onload="alert(1)">body{}</style >';
+    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+  });
+
+  it("strips event handlers from an unterminated style tag", () => {
+    const input = '<style onload="alert(1)">body{}';
+    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+  });
+
+  it("strips unquoted event handlers on a style tag", () => {
+    const input = "<style onload=alert(1)>body{}</style >";
+    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+  });
+
+  it("strips event handlers regardless of tag case", () => {
+    const input = '<STYLE ONLOAD="alert(1)">x</STYLE >';
+    expect(sanitizeDescriptionHtml(input)).not.toMatch(/onload/i);
+  });
+
+  it("still filters @import when the closing tag has trailing whitespace", () => {
+    const input = '<style>@import url("//evil.example/x.css");</style >';
+    expect(sanitizeDescriptionHtml(input)).not.toMatch(/@import/i);
+  });
+});
