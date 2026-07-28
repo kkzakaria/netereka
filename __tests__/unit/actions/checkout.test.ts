@@ -139,7 +139,7 @@ describe("createOrder", () => {
     mocks.countPendingOrdersForUser.mockResolvedValue(0);
   });
 
-  it("rejette la creation quand le debit de commandes est depasse — sans creer de commande", async () => {
+  it("rejette la creation quand le debit de commandes est depasse — sans creer de commande ni d'adresse", async () => {
     mocks.checkOrderRateLimit.mockResolvedValue(false);
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("FROM products")) return [NO_VARIANT_PRODUCT];
@@ -147,17 +147,22 @@ describe("createOrder", () => {
       return [];
     });
 
-    const result = await createOrder(
-      baseInput([{ productId: "prod-no-variant", variantId: null, quantity: 1 }])
-    );
+    const result = await createOrder({
+      ...baseInput([{ productId: "prod-no-variant", variantId: null, quantity: 1 }]),
+      // saveAddress: true exercises the exact bypass a throttled call must not
+      // reach: createAddress is an unconditional INSERT with no dedup and no
+      // per-user cap of its own, and it used to run before the quota check.
+      saveAddress: true,
+    });
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/commandes/i);
-    // The throttle is checked right before the write (see actions/checkout.ts's
-    // comment on why: it should only cost a slot on attempts that clear every
-    // other check), so validation/product lookups above it still run — only
-    // the actual order creation is blocked.
+    // The throttle is checked right before the first persistent write (see
+    // actions/checkout.ts's comment on why: it should only cost a slot on
+    // attempts that clear every other check), so read-only validation and
+    // product lookups above it still run — but nothing that writes does.
     expect(mocks.createOrderWithItems).not.toHaveBeenCalled();
+    expect(mocks.createAddress).not.toHaveBeenCalled();
     expect(mocks.checkOrderRateLimit).toHaveBeenCalledTimes(1);
   });
 

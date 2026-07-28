@@ -242,7 +242,37 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
 
   const total = calculateOrderTotal(subtotal, deliveryFee, discountAmount);
 
-  // 9. Optionally save new address
+  // 9. Throttle: no limiter previously governed order creation — better-auth's
+  //    rate limiting only covers /api/auth/* routes, never this Server Action.
+  //    Keyed on userId alone (every caller is authenticated), not IP: see
+  //    lib/rate-limit/orders.ts for why. Checked here — after every read-only
+  //    validation step (schema, address lookup, delivery zone, product/
+  //    variant/stock resolution, promo code) but strictly BEFORE the first
+  //    persistent write (createAddress, right below) — rather than at the
+  //    top of the action, so ordinary user error (a typo, an item that just
+  //    sold out, an invalid promo code) doesn't cost one of the 5 hourly
+  //    slots on retry. It must not move any later than this, though: every
+  //    step from here on can write (createAddress unconditionally inserts a
+  //    row with no dedup or per-user cap of its own) or is the order write
+  //    itself, so a throttled call must never reach any of them — otherwise
+  //    an attacker who has already exhausted their 5 slots gets unlimited
+  //    free address-table writes and product/variant read load by looping
+  //    with saveAddress: true, since no order is ever created to trip the
+  //    pending-count fast path either.
+  //    Best-effort by design: KV is eventually consistent, so very
+  //    concurrent requests can slip past this check slightly over the cap —
+  //    accepted here the same way the WhatsApp bot accepts it elsewhere in
+  //    this codebase. It is not the hard boundary; the atomic guard in
+  //    createOrderWithItems is.
+  const withinRateLimit = await checkOrderRateLimit(await getKV(), userId);
+  if (!withinRateLimit) {
+    return {
+      success: false,
+      error: "Trop de commandes recentes. Merci de reessayer dans un moment.",
+    };
+  }
+
+  // 10. Optionally save new address
   if (!data.savedAddressId && data.saveAddress) {
     await createAddress({
       userId,
@@ -257,34 +287,10 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
     });
   }
 
-  // 10. Estimated delivery
+  // 11. Estimated delivery
   const estimatedDate = new Date();
   estimatedDate.setHours(estimatedDate.getHours() + zone.estimated_hours);
   const estimatedDelivery = estimatedDate.toISOString();
-
-  // 11. Throttle: no limiter previously governed order creation — better-auth's
-  //     rate limiting only covers /api/auth/* routes, never this Server Action.
-  //     Keyed on userId alone (every caller is authenticated), not IP: see
-  //     lib/rate-limit/orders.ts for why. Checked here — immediately before the
-  //     actual write — rather than at the top of the action: every check above
-  //     this point (schema, address, delivery zone, product/variant/stock
-  //     resolution, promo code) can legitimately fail on ordinary user error
-  //     (a typo, an item that just sold out) and retrying after fixing it
-  //     should not cost one of the 5 hourly slots. Only attempts that clear
-  //     every other check consume the quota, so it bounds actual
-  //     order-creation attempts without also penalizing failed validation.
-  //     Best-effort by design: KV is eventually consistent, so very
-  //     concurrent requests can slip past this check slightly over the cap —
-  //     accepted here the same way the WhatsApp bot accepts it elsewhere in
-  //     this codebase. It is not the hard boundary; the atomic guard in
-  //     createOrderWithItems is.
-  const withinRateLimit = await checkOrderRateLimit(await getKV(), userId);
-  if (!withinRateLimit) {
-    return {
-      success: false,
-      error: "Trop de commandes recentes. Merci de reessayer dans un moment.",
-    };
-  }
 
   // 12. Create order atomically
   const orderNumber = generateOrderNumber();
