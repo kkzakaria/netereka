@@ -1,0 +1,64 @@
+name: Reap Pending Orders
+
+# Triggers the /api/cron/reap-pending-orders route on a schedule.
+# @opennextjs/cloudflare does not expose a Workers scheduled() handler
+# alongside the main Next.js worker, so that route cannot be a native
+# Cloudflare Cron Trigger — see app/api/cron/reap-pending-orders/route.ts's
+# top comment and task-3.2-report.md for the full rationale. This workflow
+# is the external scheduler instead: it authenticates with a bearer secret
+# and does nothing else, so it needs no GitHub API access.
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: reap-pending-orders
+  cancel-in-progress: false
+
+jobs:
+  reap:
+    name: Sweep stale pending orders
+    runs-on: ubuntu-latest
+
+    steps:
+      # Inputs/secrets are routed through env: and read back as shell
+      # variables, never interpolated into the run: script body — the same
+      # discipline deploy.yml and rollback.yml already apply (see
+      # GHSA-rgmp-r8hv-xf4h for what happens when that rule is skipped).
+      #
+      # The bearer secret is passed to curl via a piped `-K -` config
+      # (stdin), not as a `-H` argv value: on a shared machine, argv is
+      # visible to other processes via the process list, and the secret in
+      # a plain -H flag would be too. -K - keeps it out of argv entirely.
+      - name: Call the reaper endpoint
+        env:
+          CRON_TARGET_URL: ${{ vars.CRON_REAP_ORDERS_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_TARGET_URL" ]; then
+            echo "::error::CRON_REAP_ORDERS_URL repository variable is not set — configure it in Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET repository secret is not set — configure it in Settings > Secrets and variables > Actions > Secrets (same value as the CRON_SECRET Worker secret)."
+            exit 1
+          fi
+
+          RESPONSE_FILE=$(mktemp)
+          HTTP_CODE=$(printf 'header = "Authorization: Bearer %s"\n' "$CRON_SECRET" | \
+            curl -sS -K - -o "$RESPONSE_FILE" -w "%{http_code}" \
+              --connect-timeout 5 --max-time 30 \
+              -X POST "$CRON_TARGET_URL")
+
+          echo "HTTP status: $HTTP_CODE"
+          echo "Response body:"
+          cat "$RESPONSE_FILE"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Reaper endpoint returned HTTP $HTTP_CODE — see response body above. A wrong/missing secret on either side is the most common cause."
+            exit 1
+          fi
