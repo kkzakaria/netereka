@@ -168,7 +168,8 @@ export async function updateOrderStatus(
         .bind(currentStatus, orderId, newStatus)
         .run();
       console.error(
-        `updateOrderStatus: stock refund failed for order ${orderId}, reverted to ${currentStatus}`,
+        "updateOrderStatus: stock refund failed, reverted",
+        { orderId, revertedTo: currentStatus },
         err
       );
       return {
@@ -404,7 +405,8 @@ export async function processReturn(
       [currentStatus, orderId]
     );
     console.error(
-      `processReturn: stock refund failed for order ${orderId}, reverted to ${currentStatus}`,
+      "processReturn: stock refund failed, reverted",
+      { orderId, revertedTo: currentStatus },
       err
     );
     return {

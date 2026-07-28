@@ -390,7 +390,7 @@ export async function cancelOrderFromStatus(
        WHERE id = ? AND status = 'cancelled'`,
       [fromStatus, orderId]
     );
-    console.error(`cancelOrderFromStatus: stock refund failed for order ${orderId}, reverted to ${fromStatus}`, err);
+    console.error("cancelOrderFromStatus: stock refund failed, reverted", { orderId, fromStatus }, err);
     return false;
   }
   return true;
