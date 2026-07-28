@@ -88,22 +88,15 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   const session = await requireAuth();
   const userId = session.user.id;
 
-  // Throttle: no limiter previously governed order creation — better-auth's
-  // rate limiting only covers /api/auth/* routes, never this Server Action.
-  // Keyed on userId alone (every caller is authenticated), not IP: see
-  // lib/rate-limit/orders.ts for why.
-  const withinRateLimit = await checkOrderRateLimit(await getKV(), userId);
-  if (!withinRateLimit) {
-    return {
-      success: false,
-      error: "Trop de commandes recentes. Merci de reessayer dans un moment.",
-    };
-  }
-
-  // Cap concurrently-open pending orders per user. The rate limit above
-  // bounds creation *velocity* but not how many reservations a single
-  // account can hold open at once; this bounds that directly (see
-  // countPendingOrdersForUser's doc comment in lib/db/orders.ts).
+  // Fast-path cap on concurrently-open pending orders per user — cheap, good
+  // UX (a customer who genuinely already has several orders pending gets a
+  // clear message before spending effort on the rest of validation), but NOT
+  // the authoritative enforcement: this is a plain read, so a burst of
+  // parallel createOrder calls could all read the same under-cap count
+  // before any of them writes. The actual guard against that race is the
+  // atomic guarded INSERT inside createOrderWithItems (see its doc comment
+  // in lib/db/orders.ts) — this check can only ever reject early or agree
+  // with that guard, never let something through it would block.
   const pendingCount = await countPendingOrdersForUser(userId);
   if (pendingCount >= MAX_PENDING_ORDERS_PER_USER) {
     return {
@@ -269,7 +262,31 @@ export async function createOrder(input: CheckoutInput): Promise<CreateOrderResu
   estimatedDate.setHours(estimatedDate.getHours() + zone.estimated_hours);
   const estimatedDelivery = estimatedDate.toISOString();
 
-  // 11. Create order atomically
+  // 11. Throttle: no limiter previously governed order creation — better-auth's
+  //     rate limiting only covers /api/auth/* routes, never this Server Action.
+  //     Keyed on userId alone (every caller is authenticated), not IP: see
+  //     lib/rate-limit/orders.ts for why. Checked here — immediately before the
+  //     actual write — rather than at the top of the action: every check above
+  //     this point (schema, address, delivery zone, product/variant/stock
+  //     resolution, promo code) can legitimately fail on ordinary user error
+  //     (a typo, an item that just sold out) and retrying after fixing it
+  //     should not cost one of the 5 hourly slots. Only attempts that clear
+  //     every other check consume the quota, so it bounds actual
+  //     order-creation attempts without also penalizing failed validation.
+  //     Best-effort by design: KV is eventually consistent, so very
+  //     concurrent requests can slip past this check slightly over the cap —
+  //     accepted here the same way the WhatsApp bot accepts it elsewhere in
+  //     this codebase. It is not the hard boundary; the atomic guard in
+  //     createOrderWithItems is.
+  const withinRateLimit = await checkOrderRateLimit(await getKV(), userId);
+  if (!withinRateLimit) {
+    return {
+      success: false,
+      error: "Trop de commandes recentes. Merci de reessayer dans un moment.",
+    };
+  }
+
+  // 12. Create order atomically
   const orderNumber = generateOrderNumber();
   const deliveryAddressFormatted = `${addressFullName}, ${addressStreet}, ${addressCommune}, ${addressCity}`;
 

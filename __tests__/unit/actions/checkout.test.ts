@@ -139,7 +139,7 @@ describe("createOrder", () => {
     mocks.countPendingOrdersForUser.mockResolvedValue(0);
   });
 
-  it("rejette la creation quand le debit de commandes est depasse — sans toucher au stock", async () => {
+  it("rejette la creation quand le debit de commandes est depasse — sans creer de commande", async () => {
     mocks.checkOrderRateLimit.mockResolvedValue(false);
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("FROM products")) return [NO_VARIANT_PRODUCT];
@@ -153,9 +153,12 @@ describe("createOrder", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/commandes/i);
+    // The throttle is checked right before the write (see actions/checkout.ts's
+    // comment on why: it should only cost a slot on attempts that clear every
+    // other check), so validation/product lookups above it still run — only
+    // the actual order creation is blocked.
     expect(mocks.createOrderWithItems).not.toHaveBeenCalled();
-    // The throttle short-circuits before any product/stock lookup runs.
-    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.checkOrderRateLimit).toHaveBeenCalledTimes(1);
   });
 
   it("rejette la creation quand l'utilisateur a deja trop de commandes en attente", async () => {

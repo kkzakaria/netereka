@@ -2,26 +2,13 @@ import { NextResponse } from "next/server";
 import { getEnv } from "@/lib/cloudflare/context";
 import { reapStalePendingOrders } from "@/lib/db/orders";
 
-// IMPORTANT — this route has no automatic trigger.
-//
-// @opennextjs/cloudflare 1.19.1 does not expose a Workers `scheduled()`
-// handler alongside the Next.js app: the generated `.open-next/worker.js`
-// entry (regenerated on every `build:worker`, from
-// node_modules/@opennextjs/cloudflare/dist/cli/templates/worker.js) only
-// exports `fetch`, and `defineCloudflareConfig`'s `CloudflareOverrides` type
-// has no hook to add one. Wiring a `triggers.crons` entry into the main
-// wrangler.jsonc would therefore point Cloudflare's Cron Triggers at a
-// worker with no `scheduled()` export — a cron that is configured but never
-// actually fires (Cloudflare's own docs list "missing scheduled() export" as
-// the #1 cause of "cron not executing"), which is worse than no cron at all
-// because it looks like protection.
-//
-// This route is the reaper's securable, invokable surface instead: it can
-// be called by whatever triggering mechanism is chosen (most likely a small
-// companion Worker with its own wrangler cron trigger that does a `fetch()`
-// here, mirroring the separate `workers/whatsapp/` deploy already used in
-// this repo — or a scheduled CI job). That decision is intentionally left
-// open; see task-3.2-report.md.
+// @opennextjs/cloudflare does not expose a Workers `scheduled()` handler
+// alongside the Next.js app (the generated worker entry only implements
+// `fetch`), so this sweep cannot be a native Cloudflare Cron Trigger on the
+// main worker. Instead, an external scheduler — the "Reap Pending Orders"
+// GitHub Actions workflow (.github/workflows/reap-pending-orders.yml) —
+// calls this route on a schedule (and on manual dispatch) with a bearer
+// secret. See task-3.2-report.md for the full rationale.
 export const dynamic = "force-dynamic";
 
 /** Constant-time string comparison — avoids leaking the secret via response timing. */
@@ -46,6 +33,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await reapStalePendingOrders();
-  return NextResponse.json(result);
+  try {
+    const result = await reapStalePendingOrders();
+    return NextResponse.json(result);
+  } catch (error) {
+    // A batch that has already cancelled some orders and refunded their
+    // stock before hitting an error on a later one is not something to
+    // surface as a silent, uninformative 500 — log what we know and tell
+    // the caller (the scheduled workflow) plainly that the run failed, so
+    // it fails the job instead of reporting a false "nothing to do" green.
+    console.error("reap-pending-orders route: reapStalePendingOrders threw", error);
+    return NextResponse.json({ error: "Internal error while reaping pending orders" }, { status: 500 });
+  }
 }

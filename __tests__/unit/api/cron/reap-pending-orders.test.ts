@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// This route has no automatic trigger yet (see route.ts's top comment for
-// why: OpenNext 1.19.1 does not expose a scheduled() handler alongside the
-// Next.js worker). It exists as the securable, invokable surface for the
-// reaper regardless of what ends up calling it.
+// This route is invoked by the "Reap Pending Orders" scheduled GitHub
+// Actions workflow (.github/workflows/reap-pending-orders.yml), not by a
+// native Cloudflare Cron Trigger — see route.ts's top comment for why
+// (OpenNext does not expose a scheduled() handler alongside the Next.js
+// worker).
 
 const mocks = vi.hoisted(() => ({
   getEnv: vi.fn(),
@@ -26,7 +27,7 @@ describe("POST /api/cron/reap-pending-orders", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getEnv.mockResolvedValue({ CRON_SECRET: "s3cr3t" });
-    mocks.reapStalePendingOrders.mockResolvedValue({ cancelled: 2, skipped: 0, total: 2 });
+    mocks.reapStalePendingOrders.mockResolvedValue({ cancelled: 2, skipped: 0, total: 2, hasMore: false });
   });
 
   it("rejects a request with no Authorization header", async () => {
@@ -52,7 +53,17 @@ describe("POST /api/cron/reap-pending-orders", () => {
     const res = await POST(req({ authorization: "Bearer s3cr3t" }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ cancelled: 2, skipped: 0, total: 2 });
+    expect(body).toEqual({ cancelled: 2, skipped: 0, total: 2, hasMore: false });
     expect(mocks.reapStalePendingOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 500 instead of an unhandled error when reapStalePendingOrders throws", async () => {
+    mocks.reapStalePendingOrders.mockRejectedValue(new Error("D1 unavailable"));
+
+    const res = await POST(req({ authorization: "Bearer s3cr3t" }));
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBeTruthy();
   });
 });

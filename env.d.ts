@@ -18,12 +18,10 @@ interface CloudflareEnv {
   // Turnstile
   TURNSTILE_SECRET_KEY: string;
 
-  // Bearer secret required to invoke /api/cron/reap-pending-orders. This
-  // route is not currently wired to any automatic scheduler (see that
-  // route's comment) — it exists so the stale-pending-order sweep can be
-  // triggered by whatever mechanism is chosen (a companion Worker's cron
-  // trigger, a scheduled CI job, or manual ops action) without exposing it
-  // unauthenticated.
+  // Bearer secret required to invoke /api/cron/reap-pending-orders. Set to
+  // the same value as the CRON_SECRET repository secret used by the
+  // "Reap Pending Orders" GitHub Actions workflow, which calls this route on
+  // a schedule.
   CRON_SECRET?: string;
 
   // Email (Resend)
