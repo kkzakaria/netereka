@@ -166,13 +166,25 @@ export async function updateOrderStatus(
       // Server Action as an unhandled error — the caller still needs a
       // structured ActionResult, and the wording must be honest about which
       // of the two very different outcomes actually happened.
+      //
+      // The revert is itself guarded on the status this call just wrote, so
+      // it can legitimately match zero rows if something else moved the order
+      // on in the meantime (the hourly stale-order sweep, a concurrent admin).
+      // That is a silent failure with exactly the same consequence as a
+      // throwing revert — order stuck, stock unreturned — so it must not be
+      // reported as a successful revert. Route it through the same branch.
       try {
-        await db
+        const revertResult = await db
           .prepare(
             `UPDATE orders SET status = ?${timestampField ? `, ${timestampField} = NULL` : ""}, updated_at = datetime('now') WHERE id = ? AND status = ?`
           )
           .bind(currentStatus, orderId, newStatus)
           .run();
+        if (revertResult.meta.changes === 0) {
+          throw new Error(
+            "compensating revert matched no row (order no longer at the status this call wrote)"
+          );
+        }
       } catch (revertErr) {
         console.error(
           "updateOrderStatus: stock refund failed AND compensating revert also failed — order left stuck",
@@ -421,13 +433,18 @@ export async function processReturn(
     // revert is a second, independent D1 call and gets its own try/catch so
     // its failure can never escape this Server Action unhandled — the caller
     // still needs a structured ActionResult, and the message must be honest
-    // about whether the revert actually happened.
+    // about whether the revert actually happened — including when it matches
+    // zero rows because something else moved the order on, which leaves the
+    // same stuck state as a throwing revert and must be reported the same way.
     try {
-      await execute(
+      const revertResult = await execute(
         `UPDATE orders SET status = ?, returned_at = NULL, return_reason = NULL, updated_at = datetime('now')
          WHERE id = ? AND status = 'returned'`,
         [currentStatus, orderId]
       );
+      if (revertResult.meta.changes === 0) {
+        throw new Error("compensating revert matched no row (order no longer 'returned')");
+      }
     } catch (revertErr) {
       console.error(
         "processReturn: stock refund failed AND compensating revert also failed — order left stuck",

@@ -142,6 +142,26 @@ describe("cancelOrder", () => {
     expect(revertErr).toBeInstanceOf(Error);
     errorSpy.mockRestore();
   });
+
+  // A revert that matches no row does not throw, but leaves the same stuck
+  // state, so it must collapse to the same failure rather than passing for a
+  // successful compensation.
+  it("traite un retour arrière sans ligne affectée comme un échec de compensation", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst.mockResolvedValue({ id: "order-1" });
+    mocks.execute
+      .mockResolvedValueOnce({ meta: { changes: 1 } })
+      .mockResolvedValueOnce({ meta: { changes: 0 } });
+    mocks.query.mockResolvedValue([ITEM("order-1")]);
+    mocks.dbBatch.mockRejectedValue(new Error("D1 batch failed"));
+
+    await expect(cancelOrder("ORD-1", "user-1", "changed my mind")).resolves.toBe(false);
+
+    const call = errorSpy.mock.calls.find((c) => /revert also failed/i.test(String(c[0])));
+    expect(call).toBeDefined();
+    expect(String(call![3])).toMatch(/matched no row/i);
+    errorSpy.mockRestore();
+  });
 });
 
 describe("cancelOrderFromStatus", () => {

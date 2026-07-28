@@ -211,6 +211,37 @@ describe("updateOrderStatus", () => {
     errorSpy.mockRestore();
   });
 
+  // The revert is guarded on the status this call just wrote, so it can match
+  // zero rows without throwing if something else moved the order on first.
+  // That leaves the same stuck state as a throwing revert and must not be
+  // reported as a successful one.
+  it("traite un retour arrière sans ligne affectée comme un échec de compensation", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst
+      .mockReset()
+      .mockResolvedValueOnce({ ...mockOrder, status: "confirmed" })
+      .mockResolvedValue({ email: "c@t.com", name: "C" });
+    mocks.refundOrderStock.mockRejectedValue(new Error("D1 batch failed"));
+    mocks.dbPrepare.mockReturnValue({
+      bind: vi.fn().mockReturnValue({
+        run: vi
+          .fn()
+          .mockResolvedValueOnce({ meta: { changes: 1 } })
+          .mockResolvedValueOnce({ meta: { changes: 0 } }),
+      }),
+    });
+
+    const result = await updateOrderStatus("order-1", "cancelled");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/vérification manuelle/i);
+    expect(result.error).not.toMatch(/remise à son statut précédent/i);
+    const call = errorSpy.mock.calls.find((c) => /revert also failed/i.test(String(c[0])));
+    expect(call).toBeDefined();
+    expect(String(call![3])).toMatch(/matched no row/i);
+    errorSpy.mockRestore();
+  });
+
   it("redirige si non admin", async () => {
     mocks.getSession.mockResolvedValue(mockCustomerSession);
     await expect(updateOrderStatus("order-1", "confirmed")).rejects.toThrow("NEXT_REDIRECT");

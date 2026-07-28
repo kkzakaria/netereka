@@ -395,12 +395,19 @@ export async function cancelOrderFromStatus(
     // collapsing to that same `false`. Both the original refund failure and
     // any revert failure are logged together so the causal chain survives
     // even though the boolean return can't carry it to the caller.
+    // A revert matching zero rows — because something else moved the order on
+    // between the cancel and here — leaves the same stuck state as a throwing
+    // revert, so it collapses to the same branch rather than passing for a
+    // successful revert.
     try {
-      await execute(
+      const revertResult = await execute(
         `UPDATE orders SET status = ?, cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
          WHERE id = ? AND status = 'cancelled'`,
         [fromStatus, orderId]
       );
+      if (revertResult.meta.changes === 0) {
+        throw new Error("compensating revert matched no row (order no longer 'cancelled')");
+      }
     } catch (revertErr) {
       console.error(
         "cancelOrderFromStatus: stock refund failed AND compensating revert also failed — order left stuck",
