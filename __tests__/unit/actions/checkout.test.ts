@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   countPendingOrdersForUser: vi.fn(),
   notifyOrderConfirmation: vi.fn(),
   checkOrderRateLimit: vi.fn(),
+  checkPromoRateLimit: vi.fn(),
   getKV: vi.fn(),
 }));
 
@@ -56,6 +57,9 @@ vi.mock("@/lib/notifications", () => ({
 vi.mock("@/lib/rate-limit/orders", () => ({
   checkOrderRateLimit: mocks.checkOrderRateLimit,
 }));
+vi.mock("@/lib/rate-limit/promo", () => ({
+  checkPromoRateLimit: mocks.checkPromoRateLimit,
+}));
 vi.mock("@/lib/cloudflare/context", () => ({
   getKV: mocks.getKV,
 }));
@@ -63,7 +67,8 @@ vi.mock("@/lib/cloudflare/context", () => ({
 // countActiveVariantsByProduct, calculate*) and @/lib/validations/checkout
 // (the real Zod schema) — this is the logic under test.
 
-import { createOrder } from "@/actions/checkout";
+import { createOrder, validatePromoCode } from "@/actions/checkout";
+import type { PromoCode } from "@/lib/db/types";
 
 const NO_VARIANT_PRODUCT = {
   id: "prod-no-variant",
@@ -135,6 +140,7 @@ describe("createOrder", () => {
     mocks.notifyOrderConfirmation.mockResolvedValue(undefined);
     mocks.queryFirst.mockResolvedValue(null); // no promo code lookups in these tests
     mocks.checkOrderRateLimit.mockResolvedValue(true);
+    mocks.checkPromoRateLimit.mockResolvedValue(true);
     mocks.getKV.mockResolvedValue({});
     mocks.countPendingOrdersForUser.mockResolvedValue(0);
   });
@@ -253,5 +259,102 @@ describe("createOrder", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/introuvable/i);
     expect(mocks.createOrderWithItems).not.toHaveBeenCalled();
+  });
+});
+
+// This suite closes GHSA-6949-v6px-4wpc: validatePromoCode used to return a
+// different message for "this code doesn't exist" vs "this code exists but
+// isn't applicable" (expired / not yet active / usage cap reached / below
+// the order minimum), which lets an authenticated customer enumerate the
+// promo-code namespace — including unpublished campaigns — one probe at a
+// time. It also had no rate limit, so that enumeration was unbounded.
+describe("validatePromoCode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockCustomerSession);
+    mocks.checkPromoRateLimit.mockResolvedValue(true);
+    mocks.getKV.mockResolvedValue({});
+  });
+
+  const BASE_PROMO: PromoCode = {
+    id: "promo-1",
+    code: "SOLDES2026",
+    description: null,
+    discount_type: "percentage",
+    discount_value: 10,
+    min_order_amount: null,
+    max_uses: null,
+    used_count: 0,
+    starts_at: null,
+    expires_at: null,
+    is_active: 1,
+    created_at: "2024-01-01T00:00:00Z",
+  };
+
+  it("renvoie exactement le même message quel que soit le motif d'échec (inexistant, expiré, pas encore actif, quota d'utilisation atteint, montant minimum non atteint)", async () => {
+    const now = Date.now();
+    const failureCases: Array<PromoCode | null> = [
+      null, // code doesn't exist at all
+      { ...BASE_PROMO, expires_at: new Date(now - 86_400_000).toISOString() }, // expired
+      { ...BASE_PROMO, starts_at: new Date(now + 86_400_000).toISOString() }, // not yet active
+      { ...BASE_PROMO, max_uses: 5, used_count: 5 }, // usage cap reached
+      { ...BASE_PROMO, min_order_amount: 50_000 }, // subtotal (10 000) below minimum
+    ];
+
+    const messages: string[] = [];
+    for (const promoRow of failureCases) {
+      mocks.queryFirst.mockResolvedValueOnce(promoRow);
+      const result = await validatePromoCode("SOLDES2026", 10_000);
+      expect(result.valid).toBe(false);
+      messages.push(result.error as string);
+    }
+
+    expect(new Set(messages).size).toBe(1);
+  });
+
+  it("ne révèle pas le montant minimum de commande dans le message d'échec", async () => {
+    mocks.queryFirst.mockResolvedValueOnce({ ...BASE_PROMO, min_order_amount: 50_000 });
+
+    const result = await validatePromoCode("SOLDES2026", 10_000);
+
+    expect(result.valid).toBe(false);
+    expect(result.error).not.toMatch(/50.?000/);
+  });
+
+  it("applique toujours la remise pour un code valide", async () => {
+    mocks.queryFirst.mockResolvedValueOnce(BASE_PROMO);
+
+    const result = await validatePromoCode("SOLDES2026", 10_000);
+
+    expect(result.valid).toBe(true);
+    expect(result.discount).toBe(1_000);
+    expect(result.promoCodeId).toBe("promo-1");
+  });
+
+  it("court-circuite avant toute lecture de la table promo_codes une fois le quota dépassé", async () => {
+    mocks.checkPromoRateLimit.mockResolvedValueOnce(false);
+
+    const result = await validatePromoCode("PEU-IMPORTE", 10_000);
+
+    expect(result.valid).toBe(false);
+    expect(mocks.queryFirst).not.toHaveBeenCalled();
+  });
+
+  it("renvoie, une fois le quota dépassé, le même message qu'un code inexistant", async () => {
+    mocks.queryFirst.mockResolvedValueOnce(null);
+    const unknown = await validatePromoCode("DOESNOTEXIST", 10_000);
+
+    mocks.checkPromoRateLimit.mockResolvedValueOnce(false);
+    const throttled = await validatePromoCode("PEU-IMPORTE", 10_000);
+
+    expect(throttled.error).toBe(unknown.error);
+  });
+
+  it("consulte le débit de codes promo avec l'id de l'utilisateur authentifié", async () => {
+    mocks.queryFirst.mockResolvedValueOnce(null);
+
+    await validatePromoCode("DOESNOTEXIST", 10_000);
+
+    expect(mocks.checkPromoRateLimit).toHaveBeenCalledWith(expect.anything(), "user-1");
   });
 });

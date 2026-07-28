@@ -5,6 +5,7 @@ import { checkoutSchema, type CheckoutInput, type CheckoutOutput } from "@/lib/v
 import { query, queryFirst } from "@/lib/db";
 import { getKV } from "@/lib/cloudflare/context";
 import { checkOrderRateLimit } from "@/lib/rate-limit/orders";
+import { checkPromoRateLimit } from "@/lib/rate-limit/promo";
 import { getDeliveryZoneByCommune } from "@/lib/db/delivery-zones";
 import { getAddressById, createAddress } from "@/lib/db/addresses";
 import {
@@ -38,10 +39,29 @@ function invalidPromo(error: string): PromoResult {
   return { valid: false, discount: 0, promoCodeId: null, label: null, error };
 }
 
+// A code that doesn't exist, one that's expired, one that hasn't started
+// yet, one that hit its usage cap, and one whose minimum order isn't met
+// all resolve through validatePromoEligibility/queryFirst below with a
+// distinct, specific message each. Surfacing any of that distinction to the
+// caller turns validatePromoCode into an oracle over the promo_codes table:
+// an authenticated customer could tell "this code doesn't exist" apart from
+// "this code exists but isn't active yet", revealing unpublished campaigns
+// and their eligibility thresholds one probe at a time. Collapsing every
+// failure reason — including the rate-limit rejection below — onto this one
+// string closes that channel. validatePromoEligibility itself still returns
+// the specific reason (kept for its own unit tests and internal callers);
+// it's only discarded here, at the boundary that talks back to the client.
+const GENERIC_PROMO_ERROR = "Ce code promo n'est pas applicable à votre commande.";
+
 async function resolvePromoCode(
   code: string,
   subtotal: number
 ): Promise<PromoResult> {
+  // An empty/blank code never reaches the promo_codes table, so returning a
+  // distinct message here doesn't leak anything about which codes exist —
+  // the caller already knows, locally, whether they typed anything. The
+  // storefront form also short-circuits on this before ever calling the
+  // server action, so this is a defence-in-depth path, not the common case.
   if (!code.trim()) {
     return invalidPromo("Veuillez saisir un code promo");
   }
@@ -51,10 +71,10 @@ async function resolvePromoCode(
     [code.trim().toUpperCase()]
   );
 
-  if (!promo) return invalidPromo("Code promo invalide");
+  if (!promo) return invalidPromo(GENERIC_PROMO_ERROR);
 
   const eligibilityError = validatePromoEligibility(promo, subtotal);
-  if (eligibilityError) return invalidPromo(eligibilityError);
+  if (eligibilityError) return invalidPromo(GENERIC_PROMO_ERROR);
 
   const { discount, label } = calculateDiscount(
     promo.discount_type,
@@ -71,7 +91,23 @@ export async function validatePromoCode(
   code: string,
   subtotal: number
 ): Promise<PromoResult> {
-  await requireAuth();
+  const session = await requireAuth();
+
+  // No limiter previously governed promo validation, so an authenticated
+  // account could probe the promo namespace as fast as the network allowed.
+  // Checked before the promo_codes lookup — a throttled call must return
+  // the exact same GENERIC_PROMO_ERROR without ever touching the table,
+  // otherwise the throttle's own rejection becomes a second oracle: a
+  // distinct "too many attempts" reply would confirm that probing was being
+  // counted, and a message that only appears once real lookups have run
+  // would leak the same "code doesn't exist yet" timing this fix closes.
+  // Ceiling is looser than order creation's (lib/rate-limit/promo.ts) since
+  // trying a promo code is a legitimate action customers repeat often.
+  const withinRateLimit = await checkPromoRateLimit(await getKV(), session.user.id);
+  if (!withinRateLimit) {
+    return invalidPromo(GENERIC_PROMO_ERROR);
+  }
+
   return resolvePromoCode(code, subtotal);
 }
 
