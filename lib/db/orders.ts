@@ -1,7 +1,8 @@
 import { queryFirst, query, execute } from "@/lib/db";
 import { getDB } from "@/lib/cloudflare/context";
 import { nanoid } from "nanoid";
-import type { Order, OrderItem } from "@/lib/db/types";
+import type { Order, OrderItem, OrderStatus } from "@/lib/db/types";
+import { notifyOrderStatusUpdate } from "@/lib/notifications";
 export type { Order, OrderItem };
 
 /** Concurrently-open pending orders allowed per user (see createOrder). */
@@ -330,50 +331,74 @@ export async function getOrderDetail(
 }
 
 /**
- * Guarded pending→cancelled transition, shared by every caller that needs to
- * cancel a pending order and release its reserved stock: the customer
- * self-cancel path (cancelOrder below) and the stale-pending reaper
- * (reapStalePendingOrders below). Do not duplicate this logic elsewhere —
- * two independent "cancel and refund" implementations would drift and one
- * of them would eventually double-refund.
+ * Guarded ->cancelled transition with stock refund, shared by every caller
+ * that cancels an order: the customer self-cancel path (cancelOrder below),
+ * the stale-pending reaper (reapStalePendingOrders below), and the admin
+ * cancel action (actions/admin/orders.ts::cancelOrderAdmin). Do not
+ * duplicate this logic elsewhere — two independent "cancel and refund"
+ * implementations would drift and one of them would eventually
+ * double-refund.
  *
- * The single UPDATE statement carries `AND status = 'pending'` as part of
- * its WHERE clause, so it can affect the row at most once no matter how many
- * callers race to cancel the same order (a customer clicking "cancel" at the
- * same moment the reaper sweeps it, or two reaper runs overlapping): only
- * the caller whose UPDATE actually flips the status sees `meta.changes > 0`
- * and proceeds to refund; every other concurrent caller sees `changes === 0`
- * and returns false without touching stock. This is what makes the
- * transition safe under concurrency — refund is conditioned on this call
- * having performed the transition, not on the row having been pending
- * beforehand.
+ * The single UPDATE statement carries `AND status = ?` (bound to
+ * `fromStatus`, the status the caller read the order in) as part of its
+ * WHERE clause, so it can affect the row at most once no matter how many
+ * callers race to cancel the same order — a customer clicking "cancel" the
+ * same moment an admin cancels it from the dashboard, or the hourly sweep
+ * cancelling a stale order an operator is clearing by hand at the same time.
+ * Only the caller whose UPDATE actually flips the status sees
+ * `meta.changes > 0` and proceeds to (optionally) refund; every other
+ * concurrent caller sees `changes === 0` and returns false without touching
+ * stock. This is what makes the transition safe under concurrency — refund
+ * is conditioned on *this call* having performed the transition, not on the
+ * row having been read as `fromStatus` moments earlier (a stale,
+ * non-atomic read that a TOCTOU race could invalidate before the write
+ * lands — exactly the shape that let two unguarded admin UPDATEs run
+ * against a row the sweep had already cancelled, double-crediting stock).
+ *
+ * `refund: false` (the admin "cancel without refund" option) skips
+ * refundOrderStock entirely but keeps the same guarded transition — the
+ * race-safety property does not depend on whether a refund happens.
  */
-async function cancelPendingOrderById(orderId: string, reason: string): Promise<boolean> {
+export async function cancelOrderFromStatus(
+  orderId: string,
+  fromStatus: OrderStatus,
+  reason: string,
+  opts: { refund?: boolean } = {}
+): Promise<boolean> {
+  const { refund = true } = opts;
+
   const result = await execute(
     `UPDATE orders SET status = 'cancelled', cancelled_at = datetime('now'), cancellation_reason = ?, updated_at = datetime('now')
-     WHERE id = ? AND status = 'pending'`,
-    [reason, orderId]
+     WHERE id = ? AND status = ?`,
+    [reason, orderId, fromStatus]
   );
 
   if (result.meta.changes === 0) return false;
+
+  if (!refund) return true;
 
   try {
     await refundOrderStock(orderId);
   } catch (err) {
     // Compensate to keep cancellation and stock consistent: if the refund
-    // fails, revert the order to 'pending' so its stock stays reserved
+    // fails, revert the order back to fromStatus so its stock stays reserved
     // (invariant: a cancelled order has always had its reserved stock
     // returned). The status guard means only this call transitioned the row,
     // so the revert targets exactly the row we just cancelled.
     await execute(
-      `UPDATE orders SET status = 'pending', cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
+      `UPDATE orders SET status = ?, cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
        WHERE id = ? AND status = 'cancelled'`,
-      [orderId]
+      [fromStatus, orderId]
     );
-    console.error(`cancelPendingOrderById: stock refund failed for order ${orderId}, reverted to pending`, err);
+    console.error(`cancelOrderFromStatus: stock refund failed for order ${orderId}, reverted to ${fromStatus}`, err);
     return false;
   }
   return true;
+}
+
+/** Cancels a pending order and refunds its stock. See cancelOrderFromStatus. */
+async function cancelPendingOrderById(orderId: string, reason: string): Promise<boolean> {
+  return cancelOrderFromStatus(orderId, "pending", reason);
 }
 
 export async function cancelOrder(
@@ -424,12 +449,48 @@ export async function countPendingOrdersForUser(userId: string): Promise<number>
   return row?.total ?? 0;
 }
 
+/** Reason recorded on orders (and echoed to the customer) when the sweep cancels them. */
+const REAP_CANCELLATION_REASON =
+  "Commande annulée automatiquement : délai de confirmation dépassé.";
+
+/**
+ * Fire-and-forget-safe customer notification for an automatically-cancelled
+ * order. Every admin-triggered status change already notifies the customer
+ * (see actions/admin/orders.ts's sendStatusNotification); the sweep is the
+ * one path that flips an order to 'cancelled' with no human in the loop, so
+ * without this a customer only finds out by checking their account — on a
+ * cash-on-delivery site where the confirmation call *is* the fulfilment
+ * step, that reads as the shop silently losing their order.
+ *
+ * Awaited by the caller but never allowed to throw past this function:
+ * notifyOrderStatusUpdate itself already swallows send failures (it calls
+ * the Resend-backed sendEmail helper, which never throws, and logs instead),
+ * but the caller additionally wraps this in its own try/catch so a failure
+ * here — however it happens to surface — can never abort the order's
+ * (already-committed) cancellation, and, critically, can never stop the
+ * sweep from moving on to the next order in the batch.
+ */
+async function notifyStaleOrderCancelled(orderNumber: string, userId: string): Promise<void> {
+  const customer = await queryFirst<{ email: string; name: string }>(
+    "SELECT email, name FROM user WHERE id = ?",
+    [userId]
+  );
+  if (!customer) return;
+  await notifyOrderStatusUpdate(customer.email, {
+    customerName: customer.name,
+    orderNumber,
+    newStatus: "cancelled",
+    reason: REAP_CANCELLATION_REASON,
+  });
+}
+
 /**
  * Cancels up to `batchSize` pending orders older than `olderThanHours` and
  * releases their reserved stock, reusing the exact guarded transition
- * customers use to self-cancel (cancelPendingOrderById) — see that
- * function's doc comment for why concurrent cancellation of the same order
- * can never double-refund.
+ * customers use to self-cancel (cancelPendingOrderById, itself a thin
+ * wrapper over the shared cancelOrderFromStatus) — see that function's doc
+ * comment for why concurrent cancellation of the same order (by a customer,
+ * an admin, or another sweep run) can never double-refund.
  *
  * Bounded and resumable: nothing has ever reaped before this task, so the
  * first real invocation could otherwise face the entire historical backlog
@@ -448,14 +509,18 @@ export async function countPendingOrdersForUser(userId: string): Promise<number>
  * (e.g. a transient D1 failure on the guarded UPDATE itself, not just a
  * refund failure) is tallied as `skipped` and logged rather than aborting
  * the rest of the batch, so one bad row can't stop the sweep from reaping
- * everything else it fetched.
+ * everything else it fetched. The customer notification sent after a
+ * successful cancellation is inside that same try/catch and does not affect
+ * the cancelled/skipped tally either way — a notification failure is logged
+ * and the order still counts as cancelled (its stock was genuinely
+ * refunded; only the courtesy email failed).
  */
 export async function reapStalePendingOrders(
   olderThanHours: number = REAP_STALE_AFTER_HOURS,
   batchSize: number = REAP_BATCH_SIZE
 ): Promise<{ cancelled: number; skipped: number; total: number; hasMore: boolean }> {
-  const staleOrders = await query<{ id: string }>(
-    "SELECT id FROM orders WHERE status = 'pending' AND created_at < datetime('now', ?) ORDER BY created_at ASC LIMIT ?",
+  const staleOrders = await query<{ id: string; order_number: string; user_id: string }>(
+    "SELECT id, order_number, user_id FROM orders WHERE status = 'pending' AND created_at < datetime('now', ?) ORDER BY created_at ASC LIMIT ?",
     [`-${olderThanHours} hours`, batchSize + 1]
   );
 
@@ -467,12 +532,20 @@ export async function reapStalePendingOrders(
 
   for (const order of toProcess) {
     try {
-      const ok = await cancelPendingOrderById(
-        order.id,
-        "Commande annulée automatiquement : délai de confirmation dépassé."
-      );
-      if (ok) cancelled++;
-      else skipped++;
+      const ok = await cancelPendingOrderById(order.id, REAP_CANCELLATION_REASON);
+      if (ok) {
+        cancelled++;
+        try {
+          await notifyStaleOrderCancelled(order.order_number, order.user_id);
+        } catch (err) {
+          // The cancellation and refund already committed above — a failed
+          // courtesy email must not undo that, nor stop the loop from
+          // reaching the remaining orders in this batch.
+          console.error(`reapStalePendingOrders: notification failed for order ${order.id}`, err);
+        }
+      } else {
+        skipped++;
+      }
     } catch (err) {
       console.error(`reapStalePendingOrders: unexpected error cancelling order ${order.id}, skipping`, err);
       skipped++;

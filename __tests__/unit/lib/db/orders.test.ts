@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Exercises the guarded pending->cancelled transition shared by the customer
-// self-cancel path (cancelOrder) and the stale-pending reaper
-// (reapStalePendingOrders), plus the concurrent-pending counter that backs
-// the createOrder cap. Mocks @/lib/db (query/queryFirst/execute) and
+// Exercises the guarded ->cancelled transition shared by the customer
+// self-cancel path (cancelOrder), the stale-pending reaper
+// (reapStalePendingOrders), and the admin cancel action's
+// cancelOrderFromStatus, plus the concurrent-pending counter that backs the
+// createOrder cap. Mocks @/lib/db (query/queryFirst/execute),
 // @/lib/cloudflare/context (getDB, used only by refundOrderStock's batch
-// stock update) rather than a real D1 binding.
+// stock update), and @/lib/notifications (the sweep's customer notification)
+// rather than a real D1 binding or Resend call.
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   queryFirst: vi.fn(),
   execute: vi.fn(),
   dbBatch: vi.fn(),
+  notifyOrderStatusUpdate: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -27,9 +30,13 @@ vi.mock("@/lib/cloudflare/context", () => ({
     batch: mocks.dbBatch,
   }),
 }));
+vi.mock("@/lib/notifications", () => ({
+  notifyOrderStatusUpdate: mocks.notifyOrderStatusUpdate,
+}));
 
 import {
   cancelOrder,
+  cancelOrderFromStatus,
   countPendingOrdersForUser,
   reapStalePendingOrders,
   createOrderWithItems,
@@ -72,7 +79,10 @@ describe("cancelOrder", () => {
     expect(result).toBe(true);
     expect(mocks.execute).toHaveBeenCalledTimes(1);
     expect(mocks.execute.mock.calls[0][0]).toMatch(/status = 'cancelled'/);
-    expect(mocks.execute.mock.calls[0][0]).toMatch(/AND status = 'pending'/);
+    // The guard is parameterized (bound, not inlined) so it can be reused
+    // with any fromStatus, not just 'pending' — see cancelOrderFromStatus.
+    expect(mocks.execute.mock.calls[0][0]).toMatch(/AND status = \?/);
+    expect(mocks.execute.mock.calls[0][1]).toEqual(["changed my mind", "order-1", "pending"]);
     expect(mocks.dbBatch).toHaveBeenCalledTimes(1);
   });
 
@@ -100,7 +110,61 @@ describe("cancelOrder", () => {
     expect(result).toBe(false);
     // First execute = the cancel UPDATE, second = the compensating revert.
     expect(mocks.execute).toHaveBeenCalledTimes(2);
-    expect(mocks.execute.mock.calls[1][0]).toMatch(/status = 'pending'/);
+    expect(mocks.execute.mock.calls[1][0]).toMatch(/SET status = \?/);
+    expect(mocks.execute.mock.calls[1][1]).toEqual(["pending", "order-1"]);
+  });
+});
+
+describe("cancelOrderFromStatus", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Proves the admin cancel path (actions/admin/orders.ts::cancelOrderAdmin)
+  // gets the exact same race-safety as the customer/reaper path when it
+  // cancels an order that was NOT pending (e.g. 'confirmed') — the guard is
+  // not hardcoded to 'pending', it is parameterized on whatever fromStatus
+  // the caller passed in.
+  it("guards on an arbitrary fromStatus, not just 'pending'", async () => {
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
+    mocks.query.mockResolvedValue([ITEM("order-1")]);
+    mocks.dbBatch.mockResolvedValue([{ meta: { changes: 1 } }]);
+
+    const result = await cancelOrderFromStatus("order-1", "confirmed", "Rupture de stock");
+
+    expect(result).toBe(true);
+    expect(mocks.execute.mock.calls[0][1]).toEqual(["Rupture de stock", "order-1", "confirmed"]);
+  });
+
+  // This is the direct proof for the headline race: if an admin reads an
+  // order as 'confirmed' but the row was already flipped away from that
+  // status by the time the guarded UPDATE runs (e.g. the sweep cancelled the
+  // *pending* order underneath a stale admin read, or another admin tab beat
+  // this one to it), the guard must reject rather than silently cancelling
+  // and refunding a row this call never actually transitioned. Without the
+  // "AND status = ?" predicate (the pre-fix behavior), this UPDATE would run
+  // unconditionally and refundOrderStock would be called regardless.
+  it("does not refund when a concurrent caller already changed the row's status away from fromStatus", async () => {
+    mocks.execute.mockResolvedValue({ meta: { changes: 0 } });
+
+    const result = await cancelOrderFromStatus("order-1", "confirmed", "Rupture de stock");
+
+    expect(result).toBe(false);
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.dbBatch).not.toHaveBeenCalled();
+  });
+
+  // Backs the admin "cancel without refund" option (cancelOrderAdmin's
+  // refundStock=false): the guard still runs, but refundOrderStock must
+  // never be invoked at all when the caller opts out.
+  it("skips refundOrderStock entirely when refund: false", async () => {
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
+
+    const result = await cancelOrderFromStatus("order-1", "pending", "Doublon", { refund: false });
+
+    expect(result).toBe(true);
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.dbBatch).not.toHaveBeenCalled();
   });
 });
 
@@ -226,6 +290,68 @@ describe("reapStalePendingOrders", () => {
     const result = await reapStalePendingOrders(24);
 
     expect(result).toEqual({ cancelled: 1, skipped: 1, total: 2, hasMore: false });
+  });
+
+  it("notifies the customer after auto-cancelling their stale order", async () => {
+    mocks.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("FROM orders WHERE status = 'pending'")) {
+        return [{ id: "order-1", order_number: "ORD-ABC123", user_id: "user-1" }];
+      }
+      if (sql.includes("FROM order_items WHERE order_id = ?")) {
+        return [ITEM(params[0] as string)];
+      }
+      return [];
+    });
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
+    mocks.dbBatch.mockResolvedValue([{ meta: { changes: 1 } }]);
+    mocks.queryFirst.mockResolvedValue({ email: "client@example.com", name: "Awa" });
+    mocks.notifyOrderStatusUpdate.mockResolvedValue(undefined);
+
+    const result = await reapStalePendingOrders(24);
+
+    expect(result).toEqual({ cancelled: 1, skipped: 0, total: 1, hasMore: false });
+    expect(mocks.queryFirst).toHaveBeenCalledWith(
+      "SELECT email, name FROM user WHERE id = ?",
+      ["user-1"]
+    );
+    expect(mocks.notifyOrderStatusUpdate).toHaveBeenCalledWith(
+      "client@example.com",
+      expect.objectContaining({
+        customerName: "Awa",
+        orderNumber: "ORD-ABC123",
+        newStatus: "cancelled",
+      })
+    );
+  });
+
+  // The headline requirement for the customer-notification fix: a send
+  // failure must be visible only as a log line, never as a change to the
+  // cancelled/skipped tally, and it must not stop the sweep from reaching
+  // the next order in the same batch.
+  it("does not let a notification failure change the tally or abort the rest of the batch", async () => {
+    mocks.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("FROM orders WHERE status = 'pending'")) {
+        return [
+          { id: "order-1", order_number: "ORD-1", user_id: "user-1" },
+          { id: "order-2", order_number: "ORD-2", user_id: "user-2" },
+        ];
+      }
+      if (sql.includes("FROM order_items WHERE order_id = ?")) {
+        return [ITEM(params[0] as string)];
+      }
+      return [];
+    });
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
+    mocks.dbBatch.mockResolvedValue([{ meta: { changes: 1 } }]);
+    // Every attempt to look up the customer (or send the email) fails.
+    mocks.queryFirst.mockRejectedValue(new Error("D1 unavailable"));
+
+    const result = await reapStalePendingOrders(24);
+
+    // Both orders still count as cancelled — the refund already committed
+    // and is entirely independent of whether the courtesy email went out.
+    expect(result).toEqual({ cancelled: 2, skipped: 0, total: 2, hasMore: false });
+    expect(mocks.dbBatch).toHaveBeenCalledTimes(2);
   });
 });
 
