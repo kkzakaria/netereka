@@ -28,7 +28,12 @@ vi.mock("@/lib/cloudflare/context", () => ({
   }),
 }));
 
-import { cancelOrder, countPendingOrdersForUser, reapStalePendingOrders } from "@/lib/db/orders";
+import {
+  cancelOrder,
+  countPendingOrdersForUser,
+  reapStalePendingOrders,
+  createOrderWithItems,
+} from "@/lib/db/orders";
 
 const ITEM = (orderId: string) => ({
   id: `item-${orderId}`,
@@ -135,7 +140,7 @@ describe("reapStalePendingOrders", () => {
 
     const result = await reapStalePendingOrders(24);
 
-    expect(result).toEqual({ cancelled: 2, skipped: 0, total: 2 });
+    expect(result).toEqual({ cancelled: 2, skipped: 0, total: 2, hasMore: false });
     expect(mocks.execute).toHaveBeenCalledTimes(2);
     expect(mocks.dbBatch).toHaveBeenCalledTimes(2);
   });
@@ -161,7 +166,7 @@ describe("reapStalePendingOrders", () => {
 
     const result = await reapStalePendingOrders(24);
 
-    expect(result).toEqual({ cancelled: 1, skipped: 1, total: 2 });
+    expect(result).toEqual({ cancelled: 1, skipped: 1, total: 2, hasMore: false });
     // Refund (dbBatch) only ran for order-1 — order-2 was never touched.
     expect(mocks.dbBatch).toHaveBeenCalledTimes(1);
   });
@@ -171,7 +176,130 @@ describe("reapStalePendingOrders", () => {
 
     const result = await reapStalePendingOrders(24);
 
-    expect(result).toEqual({ cancelled: 0, skipped: 0, total: 0 });
+    expect(result).toEqual({ cancelled: 0, skipped: 0, total: 0, hasMore: false });
     expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it("caps a run at batchSize and reports hasMore when the backlog is larger", async () => {
+    // 5 stale orders exist, but the caller only wants batches of 2 at a time.
+    // The SELECT is mocked to honor LIMIT (batchSize + 1 = 3 rows back),
+    // exactly like the real "ORDER BY created_at ASC LIMIT ?" query would.
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM orders WHERE status = 'pending'")) {
+        return [{ id: "order-1" }, { id: "order-2" }, { id: "order-3" }].slice(0, 3);
+      }
+      if (sql.includes("FROM order_items WHERE order_id = ?")) {
+        return [ITEM("order-x")];
+      }
+      return [];
+    });
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
+    mocks.dbBatch.mockResolvedValue([{ meta: { changes: 1 } }]);
+
+    const result = await reapStalePendingOrders(24, 2);
+
+    // Only 2 of the 3 rows returned by the (LIMIT batchSize+1) query are
+    // actually processed; the 3rd's presence is what signals hasMore.
+    expect(result).toEqual({ cancelled: 2, skipped: 0, total: 2, hasMore: true });
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("tallies an unexpected per-order failure as skipped instead of aborting the rest of the sweep", async () => {
+    mocks.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("FROM orders WHERE status = 'pending'")) {
+        return [{ id: "order-1" }, { id: "order-2" }];
+      }
+      if (sql.includes("FROM order_items WHERE order_id = ?")) {
+        return [ITEM(params[0] as string)];
+      }
+      return [];
+    });
+    // order-1's guarded UPDATE itself throws (e.g. a transient D1 error) —
+    // not a refund failure, a failure in cancelPendingOrderById's own guard
+    // statement. order-2 must still be processed normally.
+    mocks.execute.mockImplementation(async (_sql: string, params: unknown[] = []) => {
+      if (params[1] === "order-1") throw new Error("transient D1 error");
+      return { meta: { changes: 1 } };
+    });
+    mocks.dbBatch.mockResolvedValue([{ meta: { changes: 1 } }]);
+
+    const result = await reapStalePendingOrders(24);
+
+    expect(result).toEqual({ cancelled: 1, skipped: 1, total: 2, hasMore: false });
+  });
+});
+
+describe("createOrderWithItems", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const orderData = {
+    userId: "user-1",
+    orderNumber: "ORD-TEST01",
+    subtotal: 10000,
+    deliveryFee: 1000,
+    discountAmount: 0,
+    total: 11000,
+    promoCodeId: null,
+    deliveryAddress: "Rue des Jardins, Plateau, Abidjan",
+    deliveryCommune: "Plateau",
+    deliveryPhone: "0102030405",
+    deliveryInstructions: null,
+    estimatedDelivery: null,
+  };
+
+  const items = [
+    {
+      productId: "prod-1",
+      variantId: null,
+      productName: "Casque",
+      variantName: null,
+      quantity: 1,
+      unitPrice: 10000,
+      totalPrice: 10000,
+    },
+  ];
+
+  it("reserves the order atomically, then decrements stock and inserts items", async () => {
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } }); // reservation guard passes
+    mocks.dbBatch.mockResolvedValue([
+      { meta: { changes: 1 } }, // stock decrement
+      { meta: { changes: 1 } }, // order_items insert
+    ]);
+
+    const result = await createOrderWithItems(orderData, items);
+
+    expect(result.orderNumber).toBe("ORD-TEST01");
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+    expect(mocks.execute.mock.calls[0][0]).toMatch(/INSERT INTO orders/);
+    expect(mocks.execute.mock.calls[0][0]).toMatch(/WHERE \(SELECT COUNT\(\*\) FROM orders/);
+    // The order row itself is no longer part of the stock/items batch.
+    expect(mocks.dbBatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dbBatch.mock.calls[0][0]).toHaveLength(2);
+  });
+
+  it("throws and touches neither stock nor items when the concurrent-pending cap guard blocks the reservation", async () => {
+    // This is the burst-safety property: the guard and the write are the
+    // same statement, so a race can only ever produce changes: 0 here — it
+    // cannot let stock or order_items get touched on a blocked reservation.
+    mocks.execute.mockResolvedValue({ meta: { changes: 0 } });
+
+    await expect(createOrderWithItems(orderData, items)).rejects.toThrow(/attente/i);
+
+    expect(mocks.dbBatch).not.toHaveBeenCalled();
+  });
+
+  it("still rolls back the reserved order when a later stock decrement fails", async () => {
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } }); // reservation succeeds
+    mocks.dbBatch
+      .mockResolvedValueOnce([{ meta: { changes: 0 } }, { meta: { changes: 1 } }]) // stock decrement fails
+      .mockResolvedValueOnce([{ meta: { changes: 1 } }]); // rollback batch (delete order + items, restore stock)
+
+    await expect(createOrderWithItems(orderData, items)).rejects.toThrow(/Stock insuffisant/);
+
+    // First call attempted the write, second call is the rollback — the
+    // order row created by the reservation is what gets deleted there.
+    expect(mocks.dbBatch).toHaveBeenCalledTimes(2);
   });
 });

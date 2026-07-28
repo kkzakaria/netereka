@@ -7,8 +7,29 @@ export type { Order, OrderItem };
 /** Concurrently-open pending orders allowed per user (see createOrder). */
 export const MAX_PENDING_ORDERS_PER_USER = 3;
 
-/** Pending orders older than this are reaped automatically (see reapStalePendingOrders). */
+/**
+ * Pending orders older than this are reaped automatically (see
+ * reapStalePendingOrders), AND are excluded from the concurrent-pending cap
+ * (see countPendingOrdersForUser). Sharing one constant for both keeps the
+ * cap self-releasing on its own clock: a customer who hits the cap is never
+ * stuck waiting on the sweep actually running (which depends on an external
+ * trigger, see app/api/cron/reap-pending-orders) — their oldest order simply
+ * stops counting once it turns this old, whether or not anything has swept
+ * it yet.
+ */
 export const REAP_STALE_AFTER_HOURS = 24;
+
+/**
+ * Max stale orders processed per reapStalePendingOrders() call. The sweep
+ * has never run before this task, so the first invocation could otherwise
+ * meet the entire historical backlog in one call — each order costs a
+ * guarded UPDATE, an order_items SELECT, and a stock-refund batch, so an
+ * unbounded loop risks the Workers subrequest ceiling or the invocation
+ * duration limit on a large backlog. Chosen conservatively; the caller
+ * checks `hasMore` and can invoke again to keep draining a large backlog
+ * across multiple runs.
+ */
+export const REAP_BATCH_SIZE = 25;
 
 interface CreateOrderData {
   userId: string;
@@ -42,6 +63,53 @@ export async function createOrderWithItems(
   const db = await getDB();
   const orderId = nanoid();
 
+  // 0. Reserve the order row itself, with the concurrent-pending cap embedded
+  //    in the same statement as the write. This is the actual enforcement
+  //    boundary for MAX_PENDING_ORDERS_PER_USER — actions/checkout.ts's own
+  //    countPendingOrdersForUser check is a read-then-act fast path (cheap,
+  //    good UX, skips the rest of validation for the common case) and is NOT
+  //    safe against a burst of parallel createOrder calls: every one of them
+  //    could read the same "under cap" count before any of them writes. This
+  //    INSERT ... SELECT ... WHERE form can't be raced the same way, because
+  //    the guard and the write are one atomic statement — each row that
+  //    actually commits raises the COUNT the next racing statement sees, so
+  //    only as many inserts as there is room for under the cap can ever
+  //    match the WHERE clause, no matter how many arrive at once. Mirrors the
+  //    existing guarded-UPDATE idiom this function already uses below for
+  //    stock and promo-code redemption.
+  const reservation = await execute(
+    `INSERT INTO orders (id, user_id, order_number, subtotal, delivery_fee, discount_amount, total, promo_code_id, delivery_address, delivery_commune, delivery_phone, delivery_instructions, estimated_delivery)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+     WHERE (SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'pending' AND created_at >= datetime('now', ?)) < ?`,
+    [
+      orderId,
+      orderData.userId,
+      orderData.orderNumber,
+      orderData.subtotal,
+      orderData.deliveryFee,
+      orderData.discountAmount,
+      orderData.total,
+      orderData.promoCodeId,
+      orderData.deliveryAddress,
+      orderData.deliveryCommune,
+      orderData.deliveryPhone,
+      orderData.deliveryInstructions,
+      orderData.estimatedDelivery,
+      orderData.userId,
+      `-${REAP_STALE_AFTER_HOURS} hours`,
+      MAX_PENDING_ORDERS_PER_USER,
+    ]
+  );
+
+  if (reservation.meta.changes === 0) {
+    // Nothing was written — no stock touched, no items inserted, nothing to
+    // roll back. A caller retrying immediately after will see the same
+    // (accurate, not stale) count on their next attempt.
+    throw new Error(
+      "Vous avez deja plusieurs commandes en attente de confirmation. Merci d'attendre leur traitement avant d'en passer une nouvelle."
+    );
+  }
+
   const statements: D1PreparedStatement[] = [];
   const stockUpdateIndices: number[] = [];
 
@@ -68,31 +136,8 @@ export async function createOrderWithItems(
     }
   }
 
-  // 2. Insert order
-  statements.push(
-    db
-      .prepare(
-        `INSERT INTO orders (id, user_id, order_number, subtotal, delivery_fee, discount_amount, total, promo_code_id, delivery_address, delivery_commune, delivery_phone, delivery_instructions, estimated_delivery)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        orderId,
-        orderData.userId,
-        orderData.orderNumber,
-        orderData.subtotal,
-        orderData.deliveryFee,
-        orderData.discountAmount,
-        orderData.total,
-        orderData.promoCodeId,
-        orderData.deliveryAddress,
-        orderData.deliveryCommune,
-        orderData.deliveryPhone,
-        orderData.deliveryInstructions,
-        orderData.estimatedDelivery
-      )
-  );
-
-  // 3. Insert order items
+  // 2. Insert order items (the order row itself was already inserted and
+  //    committed in step 0's guarded reservation, above)
   for (const item of items) {
     const itemId = nanoid();
     statements.push(
@@ -323,54 +368,91 @@ export async function cancelOrder(
 }
 
 /**
- * Counts a user's currently-open pending orders. Backs the concurrent-pending
- * cap in createOrder: the hourly rate limit only bounds *velocity*, not the
- * number of orders simultaneously holding reserved stock — at 5 orders/hour,
- * an account could otherwise keep ~120 orders perpetually pending (steady
- * state against the 24h reaper window). Capping concurrently-open pending
- * orders bounds worst-case reserved stock per user to a small constant
- * regardless of rate or reaper cadence.
+ * Counts a user's currently-open pending orders, scoped to the same
+ * REAP_STALE_AFTER_HOURS window the reaper uses. Backs the concurrent-pending
+ * cap: the hourly rate limit only bounds *velocity*, not the number of
+ * orders simultaneously holding reserved stock — at 5 orders/hour, an account
+ * could otherwise keep ~120 orders perpetually pending (steady state against
+ * the reaper window). Capping concurrently-open pending orders bounds
+ * worst-case reserved stock per user to a small constant regardless of rate
+ * or reaper cadence.
+ *
+ * Excluding orders older than the window (rather than counting every
+ * pending order ever created) makes the cap self-releasing on its own clock:
+ * a customer who legitimately hits the cap is never stuck waiting on staff
+ * action or on the sweep actually having run — their oldest order simply
+ * ages out of the count once it turns REAP_STALE_AFTER_HOURS old, the same
+ * moment it becomes eligible for the reaper to cancel it.
+ *
+ * This function is the fast-path, non-atomic check used by
+ * actions/checkout.ts for a cheap early rejection with a clear message; the
+ * actual enforcement of MAX_PENDING_ORDERS_PER_USER against a burst of
+ * concurrent requests is the guarded INSERT in createOrderWithItems, above.
  */
 export async function countPendingOrdersForUser(userId: string): Promise<number> {
   const row = await queryFirst<{ total: number }>(
-    "SELECT COUNT(*) as total FROM orders WHERE user_id = ? AND status = 'pending'",
-    [userId]
+    "SELECT COUNT(*) as total FROM orders WHERE user_id = ? AND status = 'pending' AND created_at >= datetime('now', ?)",
+    [userId, `-${REAP_STALE_AFTER_HOURS} hours`]
   );
   return row?.total ?? 0;
 }
 
 /**
- * Cancels every pending order older than `olderThanHours` and releases its
- * reserved stock, reusing the exact guarded transition customers use to
- * self-cancel (cancelPendingOrderById) — see that function's doc comment for
- * why concurrent cancellation of the same order can never double-refund.
+ * Cancels up to `batchSize` pending orders older than `olderThanHours` and
+ * releases their reserved stock, reusing the exact guarded transition
+ * customers use to self-cancel (cancelPendingOrderById) — see that
+ * function's doc comment for why concurrent cancellation of the same order
+ * can never double-refund.
+ *
+ * Bounded and resumable: nothing has ever reaped before this task, so the
+ * first real invocation could otherwise face the entire historical backlog
+ * in one call. `ORDER BY created_at ASC LIMIT batchSize + 1` fetches at most
+ * one row more than the batch — if that extra row comes back, there is more
+ * work than this call processed, reported via `hasMore` so the caller (the
+ * scheduled invoker) knows to run again rather than assuming the sweep is
+ * complete. `total` counts only the orders this call actually attempted, not
+ * the full backlog.
  *
  * Each order is cancelled independently (not as a single D1 batch): the
  * guard-then-refund sequence for one order must complete (including its
  * compensating revert on refund failure) before affecting the next, so a
- * failure on one stale order never blocks or corrupts the others.
+ * failure on one stale order never blocks or corrupts the others. The whole
+ * per-order call is additionally wrapped in try/catch — an unexpected error
+ * (e.g. a transient D1 failure on the guarded UPDATE itself, not just a
+ * refund failure) is tallied as `skipped` and logged rather than aborting
+ * the rest of the batch, so one bad row can't stop the sweep from reaping
+ * everything else it fetched.
  */
 export async function reapStalePendingOrders(
-  olderThanHours: number = REAP_STALE_AFTER_HOURS
-): Promise<{ cancelled: number; skipped: number; total: number }> {
+  olderThanHours: number = REAP_STALE_AFTER_HOURS,
+  batchSize: number = REAP_BATCH_SIZE
+): Promise<{ cancelled: number; skipped: number; total: number; hasMore: boolean }> {
   const staleOrders = await query<{ id: string }>(
-    "SELECT id FROM orders WHERE status = 'pending' AND created_at < datetime('now', ?)",
-    [`-${olderThanHours} hours`]
+    "SELECT id FROM orders WHERE status = 'pending' AND created_at < datetime('now', ?) ORDER BY created_at ASC LIMIT ?",
+    [`-${olderThanHours} hours`, batchSize + 1]
   );
+
+  const hasMore = staleOrders.length > batchSize;
+  const toProcess = hasMore ? staleOrders.slice(0, batchSize) : staleOrders;
 
   let cancelled = 0;
   let skipped = 0;
 
-  for (const order of staleOrders) {
-    const ok = await cancelPendingOrderById(
-      order.id,
-      "Commande annulée automatiquement : délai de confirmation dépassé."
-    );
-    if (ok) cancelled++;
-    else skipped++;
+  for (const order of toProcess) {
+    try {
+      const ok = await cancelPendingOrderById(
+        order.id,
+        "Commande annulée automatiquement : délai de confirmation dépassé."
+      );
+      if (ok) cancelled++;
+      else skipped++;
+    } catch (err) {
+      console.error(`reapStalePendingOrders: unexpected error cancelling order ${order.id}, skipping`, err);
+      skipped++;
+    }
   }
 
-  return { cancelled, skipped, total: staleOrders.length };
+  return { cancelled, skipped, total: toProcess.length, hasMore };
 }
 
 /**
