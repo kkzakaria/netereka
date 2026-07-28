@@ -279,4 +279,77 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).not.toMatch(/onclick/i);
     expect(result).not.toContain("<my-tag");
   });
+
+  // A "<" that never gets a matching ">" is not a tag. It used to be left in
+  // the output verbatim, which meant a real browser could still fold whatever
+  // followed into a live element. It is dropped instead.
+  describe("incomplete tags", () => {
+    it("drops a tag start that never closes, handler included", () => {
+      const result = sanitizeDescriptionHtml("<p>ok</p><img src=x onerror=alert(1)");
+      expect(result).toBe("<p>ok</p>");
+    });
+
+    it("drops a tag start interrupted by another '<'", () => {
+      const result = sanitizeDescriptionHtml("<a<b onclick=alert(1)>x");
+      expect(result).not.toMatch(/onclick/i);
+      expect(result).not.toContain("<a");
+      expect(result).not.toContain("<b");
+    });
+
+    it("neutralizes a handler hidden behind a '<' inside an attribute value", () => {
+      const result = sanitizeDescriptionHtml('<p a="<img src=x onerror=alert(1)>">');
+      expect(result).not.toMatch(/onerror/i);
+    });
+
+    // Removing a disallowed tag used to push the "<" in front of it against
+    // the text behind it, reassembling a live element that was never in the
+    // input: "<<x>img src=y onerror=…>" came back out as a working <img>.
+    it("does not reassemble a tag out of a leading '<' and trailing text", () => {
+      // The handler text may survive — inert, as text — but it must not be
+      // carried by an element, so no "<" may precede it.
+      const result = sanitizeDescriptionHtml("<<x>img src=y onerror=alert(1)>");
+      expect(result).toBe("&lt;img src=y onerror=alert(1)>");
+      expect(result).not.toContain("<");
+    });
+
+    it("leaves a lone '<' in prose alone", () => {
+      const input = "<p>5 < 10 et 20 > 3</p>";
+      expect(sanitizeDescriptionHtml(input)).toBe(input);
+    });
+  });
+
+  // Guard against a return of the pathological scan cost: these shapes used to
+  // take tens of seconds each, and the pass runs on every storefront render of
+  // a product description inside a CPU-metered Worker. The budget is ~40x the
+  // measured cost so ordinary CI noise cannot trip it, while a return to
+  // seconds fails immediately.
+  it("sanitizes adversarial tag-soup in linear time", () => {
+    const shapes = [
+      "<a-".repeat(40000),
+      "<a<".repeat(40000),
+      "<a ".repeat(40000),
+      "<style".repeat(40000),
+      "<script>".repeat(40000),
+      "<a" + "x".repeat(400000),
+    ];
+    const started = Date.now();
+    for (const shape of shapes) sanitizeDescriptionHtml(shape);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeLessThan(2000);
+  }, 30000);
+
+  it("keeps a long generated style block byte-identical", () => {
+    const id = "prod-7f3a91c2";
+    const rules: string[] = [];
+    for (let i = 0; i < 400; i++) {
+      rules.push(`.desc-${id} .blk-${i}, .desc-${id} .blk-${i} > p { margin: 0 0 ${i % 24}px; color: #183c78; }`);
+    }
+    const media = `@media (max-width: 640px) {\n.desc-${id} .blk-0 { padding: 0; }\n}`;
+    const input = `<style>\n${rules.join("\n")}\n${media}\n</style>\n<p>Autonomie 12 h.<br/>Livraison à Abidjan.</p>`;
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).toContain(`.desc-${id} .blk-399`);
+    expect(result).toContain("@media (max-width: 640px)");
+    expect(result).toContain("<p>Autonomie 12 h.<br>Livraison à Abidjan.</p>");
+    expect(result).not.toContain("<style><style>");
+  });
 });

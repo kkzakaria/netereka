@@ -48,9 +48,28 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
 
   let result = html;
 
-  // 1. Remove script/iframe tags and their content entirely
-  result = result.replace(/<(script|iframe)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  result = result.replace(/<(script|iframe)[^>]*\/?>/gi, "");
+  // 0. A "<" immediately followed by another "<" can never open a tag — the
+  // tokenizer treats it as literal text — so escape it up front. Leaving it
+  // raw let a removal splice a tag back together: in "<<x>img src=y
+  // onerror=…>", dropping the disallowed <x> pushed the leading "<" against
+  // the text after it and reconstituted a live <img>. Every later pass removes
+  // spans that start at a "<", so this is the one adjacency they cannot
+  // prevent on their own. Rendering is unchanged — a browser shows "&lt;" and
+  // a literal "<" identically — and a lone "<" in prose ("5 < 10") is
+  // untouched because it is not followed by another "<".
+  result = result.replace(/<(?=<)/g, "&lt;");
+
+  // 1. Remove script/iframe tags and their content entirely.
+  // The attribute run stops at "<" as well as ">" ([^<>]) so a "<" that never
+  // gets a matching ">" cannot make the engine re-walk the rest of the input
+  // once per candidate tag; see the note above step 3 on scan discipline.
+  // The "|$" fallback mirrors the <style> pass below and matches how browsers
+  // treat an unterminated raw-text element: everything to the end of input is
+  // element content, so it all goes. Without it, an unclosed <script> left its
+  // body behind as visible text. The closing tag tolerates attributes after
+  // the name (`</script foo>`), which the tokenizer also treats as a close.
+  result = result.replace(/<(script|iframe)[^<>]*>[\s\S]*?(?:<\/\1(?=[\s/>])[^<>]*>|$)/gi, "");
+  result = result.replace(/<(script|iframe)[^<>]*\/?>/gi, "");
 
   // 2. Process <style> blocks: scope selectors, block @import and url().
   // Tolerate whitespace before the closing tag's ">" — the HTML spec allows it
@@ -63,8 +82,10 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   // itself just text at this point; step 3 below re-scans the whole result
   // and is what actually keeps the rest of the pipeline honest regardless of
   // how this pass reshuffled tag boundaries.
+  // The attribute run is [^<>] rather than [^>] for the same scan-discipline
+  // reason as step 1 — see the note above step 3.
   result = result.replace(
-    /<style[^>]*>([\s\S]*?)(?:<\/style\s*>|$)/gi,
+    /<style[^<>]*>([\s\S]*?)(?:<\/style\s*>|$)/gi,
     (_match, cssContent: string) => {
       let css = stripDangerousCss(cssContent);
       css = css.trim();
@@ -101,9 +122,42 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   // name like "my-tag" previously matched neither this regex nor ALLOWED_TAGS,
   // so it never reached the replace callback at all and passed through the
   // sanitizer completely unfiltered, attributes included.
+  //
+  // Scan discipline — why the runs stop at "<" and why ">" is optional.
+  // Both runs below ([^\s/<>] for the name, [^<>] for the attribute section)
+  // exclude "<", and the closing ">" is captured as an OPTIONAL group. Two
+  // properties follow, and both matter:
+  //
+  //  * Every run is bounded by the next "<", and the regions those runs cover
+  //    for successive candidate tags cannot overlap — a run started at one
+  //    "<" always stops at or before the next one. With the trailing ">"
+  //    optional the match can never fail once the leading letter is seen, so
+  //    the engine never re-walks a run it has already walked. The whole pass
+  //    is a single left-to-right sweep whose cost is proportional to the input
+  //    length. The earlier form could re-walk the remainder of the input once
+  //    per "<", which on a large stored description turned every page view
+  //    into a long CPU burn inside a CPU-metered Worker.
+  //
+  //  * Excluding "<" from the name does NOT re-admit the class of tag the
+  //    widened name class was introduced to catch. When a run stops at a "<"
+  //    (or at end of input) there is no ">", so `gt` is undefined and the
+  //    whole "<"-plus-name-plus-attributes fragment is DROPPED rather than
+  //    matched — the fail-closed branch below. That pairing is the essential
+  //    part: bounding the name is only safe when whatever exceeds the bound is
+  //    removed. A dropped fragment always ends at the next "<" or at end of
+  //    input, so the removal cannot splice a live tag out of the surrounding
+  //    text — a tag can only start at a "<", and every "<" is examined here.
+  //
+  // The old trailing `\s*\/?` before ">" was dead weight: the greedy attribute
+  // run already absorbs any trailing whitespace and solidus.
   result = result.replace(
-    /<\/?([a-zA-Z][^\s/>]*)((?:[\s/][^>]*)?)\s*\/?>/g,
-    (match, tagName: string, attrsStr: string) => {
+    /<\/?([a-zA-Z][^\s/<>]*)((?:[\s/][^<>]*)?)(>)?/g,
+    (match, tagName: string, attrsStr: string, gt: string | undefined) => {
+      // No ">" reached before the next "<" or the end of input: not a complete
+      // tag, so drop the fragment rather than leave a live tag start (and its
+      // handlers) behind in the output.
+      if (gt === undefined) return "";
+
       const tag = tagName.toLowerCase();
       if (tag === "script" || tag === "iframe") return "";
 
