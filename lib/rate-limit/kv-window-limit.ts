@@ -9,6 +9,20 @@
  * Shared by every per-domain limiter (orders, promo codes, ...) so each one
  * only has to supply its own key prefix and ceiling — the counting logic
  * itself lives in one place.
+ *
+ * The window is genuinely fixed, not sliding: storage is `{ count, resetAt }`
+ * and `resetAt` is captured once, on the first accepted call of each window,
+ * then left untouched by every later call in that same window. This mirrors
+ * `lib/ai/rate-limit.ts`'s documented trade-off exactly (see that file for
+ * the fuller rationale) — an earlier version of this function re-`put` the
+ * entry with a fresh `expirationTtl: windowSeconds` on every accepted call,
+ * which slides the expiry forward each time and means a caller whose calls
+ * are spaced closer together than the window never actually resets: five
+ * calls at fifty-five-minute intervals blocks the sixth call four and a half
+ * hours after the first, not one hour after. Storing `resetAt` and computing
+ * the *remaining* TTL on each write (`resetAt - now`, never the full window)
+ * fixes that: the window closes on its original schedule regardless of how
+ * many accepted calls land inside it.
  */
 export interface KVRateLimitOptions {
   /** Maximum allowed calls within the window (inclusive). */
@@ -17,13 +31,55 @@ export interface KVRateLimitOptions {
   windowSeconds: number;
 }
 
+interface Bucket {
+  count: number;
+  /** Epoch ms at which this window closes and a fresh one starts. */
+  resetAt: number;
+}
+
 export async function checkKVRateLimit(
   kv: KVNamespace,
   key: string,
-  { max, windowSeconds }: KVRateLimitOptions
+  { max, windowSeconds }: KVRateLimitOptions,
+  now: number = Date.now()
 ): Promise<boolean> {
-  const current = Number((await kv.get(key)) ?? 0);
-  if (current >= max) return false;
-  await kv.put(key, String(current + 1), { expirationTtl: windowSeconds });
+  const raw = await kv.get(key);
+  const bucket = raw ? safeParseBucket(raw) : null;
+
+  // No bucket yet, or the previous window already closed: start a fresh
+  // fixed window. Also the safe fallback for a pre-migration value written
+  // by the old plain-counter format (a bare numeric string fails to parse
+  // as a Bucket) — same "repart à zéro" tolerance lib/ai/rate-limit.ts
+  // already applies to malformed KV values.
+  if (!bucket || bucket.resetAt <= now) {
+    const fresh: Bucket = { count: 1, resetAt: now + windowSeconds * 1000 };
+    await kv.put(key, JSON.stringify(fresh), { expirationTtl: windowSeconds });
+    return true;
+  }
+
+  if (bucket.count >= max) return false;
+
+  // Accepted: increment the count but never touch resetAt, and set the
+  // KV entry's TTL to the window's *remaining* time, not the full window —
+  // this is what keeps the window fixed instead of sliding.
+  const updated: Bucket = { count: bucket.count + 1, resetAt: bucket.resetAt };
+  const remainingSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  await kv.put(key, JSON.stringify(updated), { expirationTtl: remainingSeconds });
   return true;
+}
+
+function safeParseBucket(raw: string): Bucket | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      typeof parsed === "object" && parsed !== null &&
+      typeof (parsed as Bucket).count === "number" &&
+      typeof (parsed as Bucket).resetAt === "number"
+    ) {
+      return parsed as Bucket;
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
 }
