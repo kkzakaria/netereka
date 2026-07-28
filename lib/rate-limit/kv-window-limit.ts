@@ -62,8 +62,19 @@ export async function checkKVRateLimit(
   // Accepted: increment the count but never touch resetAt, and set the
   // KV entry's TTL to the window's *remaining* time, not the full window —
   // this is what keeps the window fixed instead of sliding.
+  //
+  // Floored at 60, not 1: Cloudflare KV rejects any expirationTtl below 60
+  // seconds outright (kv.put throws), and a call landing in the final 59
+  // seconds of a window would otherwise compute exactly that. Flooring is
+  // safe because resetAt, not the KV TTL, is what actually defines the
+  // window: the branch above already treats any bucket with `resetAt <= now`
+  // as expired and starts a fresh window regardless of whether the KV entry
+  // itself has expired yet. Over-extending the entry's real expiry a little
+  // past resetAt only means it lingers slightly longer before the next call
+  // naturally overwrites or lets it expire — it can never make the window
+  // look open past resetAt.
   const updated: Bucket = { count: bucket.count + 1, resetAt: bucket.resetAt };
-  const remainingSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  const remainingSeconds = Math.max(60, Math.ceil((bucket.resetAt - now) / 1000));
   await kv.put(key, JSON.stringify(updated), { expirationTtl: remainingSeconds });
   return true;
 }

@@ -16,7 +16,19 @@ function makeKV(initial: Map<string, string> = new Map()) {
   const store = new Map(initial);
   return {
     get: vi.fn(async (key: string) => store.get(key) ?? null),
-    put: vi.fn(async (key: string, value: string) => {
+    // Mirrors real Cloudflare KV's documented constraint: expirationTtl below
+    // 60 seconds is rejected outright (the put throws), it isn't silently
+    // accepted. Without this, the mock would happily store any TTL —
+    // including an invalid one — and no assertion in this suite could ever
+    // fail on that basis alone; a future regression that reintroduces a
+    // sub-60s TTL would need someone to notice a specific expected value,
+    // not the test double itself.
+    put: vi.fn(async (key: string, value: string, options?: KVNamespacePutOptions) => {
+      if (options?.expirationTtl !== undefined && options.expirationTtl < 60) {
+        throw new Error(
+          `KV rejects expirationTtl below 60 seconds (got ${options.expirationTtl})`
+        );
+      }
       store.set(key, value);
     }),
     _store: store,
@@ -83,7 +95,8 @@ describe("checkKVRateLimit", () => {
   // a call accepted late in the window would extend it instead of leaving it
   // fixed. This test fails against that implementation because it would
   // observe a `put` for the full 3600s TTL (and an implicit resetAt of
-  // `NOW + WINDOW_MS`) instead of the ~1s remaining in the real window.
+  // `NOW + WINDOW_MS`) instead of the floored TTL reflecting the real
+  // remaining window.
   it("does not extend the window on a call accepted late in it (fixed, not sliding)", async () => {
     const originalReset = NOW + 1_000; // 1 second left in the window
     const kv = makeKV(new Map([["k", bucket(2, originalReset)]]));
@@ -91,12 +104,34 @@ describe("checkKVRateLimit", () => {
     const ok = await checkKVRateLimit(kv, "k", { max: 5, windowSeconds: WINDOW_SECONDS }, NOW);
 
     expect(ok).toBe(true);
-    // resetAt is preserved from the original bucket, and the TTL written
-    // reflects only the ~1s actually remaining, not the full 3600s window.
+    // resetAt is preserved from the original bucket. The TTL written is
+    // floored at 60 (Cloudflare KV's documented minimum — see the mock's
+    // put() above, and the source's own comment) rather than the ~1s
+    // literally remaining; the fresh-window branch above, not the KV TTL,
+    // is what actually re-closes the window once resetAt passes, so
+    // over-extending past resetAt is harmless.
     expect(kv.put).toHaveBeenCalledWith(
       "k",
       bucket(3, originalReset),
-      expect.objectContaining({ expirationTtl: 1 })
+      expect.objectContaining({ expirationTtl: 60 })
+    );
+  });
+
+  // Direct pin for the floor itself: any remaining-time computation under
+  // 60 seconds must still write expirationTtl: 60, never the raw value —
+  // the mock's put() throws on anything below 60, so this test would fail
+  // loudly (not just assert a wrong number) if the floor were removed.
+  it("floors the written TTL at 60 seconds even when only a few seconds remain", async () => {
+    const originalReset = NOW + 5_000; // 5 seconds left in the window
+    const kv = makeKV(new Map([["k", bucket(1, originalReset)]]));
+
+    const ok = await checkKVRateLimit(kv, "k", { max: 5, windowSeconds: WINDOW_SECONDS }, NOW);
+
+    expect(ok).toBe(true);
+    expect(kv.put).toHaveBeenCalledWith(
+      "k",
+      bucket(2, originalReset),
+      expect.objectContaining({ expirationTtl: 60 })
     );
   });
 

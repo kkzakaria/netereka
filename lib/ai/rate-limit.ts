@@ -40,7 +40,13 @@ export async function checkRateLimit(
   }
 
   const updated: Bucket = { count: bucket.count + 1, resetAt: bucket.resetAt };
-  const remaining = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  // Floored at 60: Cloudflare KV rejects expirationTtl below 60 seconds
+  // outright (kv.put throws), and a call landing in the final 59 seconds of
+  // a window would otherwise compute exactly that. Safe to over-extend past
+  // resetAt because resetAt itself, not the KV TTL, is what defines the
+  // window — the `resetAt <= now` branch above already re-closes it on the
+  // next call regardless of whether the KV entry has expired yet.
+  const remaining = Math.max(60, Math.ceil((bucket.resetAt - now) / 1000));
   await kv.put(key, JSON.stringify(updated), { expirationTtl: remaining });
   return { ok: true };
 }
