@@ -320,9 +320,9 @@ describe("sanitizeDescriptionHtml", () => {
 
   // Guard against a return of the pathological scan cost: these shapes used to
   // take tens of seconds each, and the pass runs on every storefront render of
-  // a product description inside a CPU-metered Worker. The budget is ~40x the
-  // measured cost so ordinary CI noise cannot trip it, while a return to
-  // seconds fails immediately.
+  // a product description inside a CPU-metered Worker. The budget leaves ~24x
+  // headroom over the measured cost so ordinary CI noise cannot trip it, while
+  // a return to seconds fails immediately.
   // The attribute scanner treats the "= value" part as optional so it does not
   // re-walk a name run; these lock in that the set of surviving attributes is
   // unchanged by that.
