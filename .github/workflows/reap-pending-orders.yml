@@ -92,10 +92,32 @@ jobs:
               exit 1
             fi
 
-            CANCELLED=$(jq -r '.cancelled // 0' "$RESPONSE_FILE")
-            SKIPPED=$(jq -r '.skipped // 0' "$RESPONSE_FILE")
-            PROCESSED=$(jq -r '.total // 0' "$RESPONSE_FILE")
-            HAS_MORE=$(jq -r '.hasMore // false' "$RESPONSE_FILE")
+            # A 2xx response is not enough on its own: a body that is valid
+            # JSON but missing these fields (or carrying them with the wrong
+            # type — e.g. a string instead of a number) would otherwise fall
+            # through the `// default` operators below and produce a green
+            # run reporting all-zero counts, exactly the silent-failure mode
+            # this workflow's health reporting exists to catch. So the shape
+            # is validated explicitly before anything is extracted: `jq -e`
+            # exits non-zero both when the body isn't valid JSON at all and
+            # when this boolean expression evaluates to false, and the `and`
+            # chain short-circuits (a jq guarantee) so `floor` is never
+            # applied to a non-number.
+            if ! jq -e '
+                (type == "object")
+                and (has("cancelled") and ((.cancelled | type) == "number") and ((.cancelled | floor) == .cancelled))
+                and (has("skipped") and ((.skipped | type) == "number") and ((.skipped | floor) == .skipped))
+                and (has("total") and ((.total | type) == "number") and ((.total | floor) == .total))
+                and (has("hasMore") and ((.hasMore | type) == "boolean"))
+              ' "$RESPONSE_FILE" > /dev/null 2>&1; then
+              echo "::error::Reaper endpoint returned a 2xx response on call $CALLS_MADE whose body is not valid JSON, or is missing cancelled/skipped/total (integers) or hasMore (boolean), or carries them with the wrong type — see response body above. Treating this as a failure rather than defaulting to zero."
+              exit 1
+            fi
+
+            CANCELLED=$(jq -r '.cancelled' "$RESPONSE_FILE")
+            SKIPPED=$(jq -r '.skipped' "$RESPONSE_FILE")
+            PROCESSED=$(jq -r '.total' "$RESPONSE_FILE")
+            HAS_MORE=$(jq -r '.hasMore' "$RESPONSE_FILE")
 
             TOTAL_CANCELLED=$((TOTAL_CANCELLED + CANCELLED))
             TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKIPPED))
