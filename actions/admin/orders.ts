@@ -160,13 +160,32 @@ export async function updateOrderStatus(
       // Compensate: revert the transition so a failed refund never leaves a
       // cancelled/returned order with its stock silently unreturned. The
       // status guard above means only this call performed the transition,
-      // so the revert targets exactly the row this call just changed.
-      await db
-        .prepare(
-          `UPDATE orders SET status = ?${timestampField ? `, ${timestampField} = NULL` : ""}, updated_at = datetime('now') WHERE id = ? AND status = ?`
-        )
-        .bind(currentStatus, orderId, newStatus)
-        .run();
+      // so the revert targets exactly the row this call just changed. The
+      // revert itself gets its own try/catch: it is a second, independent D1
+      // call and can fail on its own, in which case it must not escape this
+      // Server Action as an unhandled error — the caller still needs a
+      // structured ActionResult, and the wording must be honest about which
+      // of the two very different outcomes actually happened.
+      try {
+        await db
+          .prepare(
+            `UPDATE orders SET status = ?${timestampField ? `, ${timestampField} = NULL` : ""}, updated_at = datetime('now') WHERE id = ? AND status = ?`
+          )
+          .bind(currentStatus, orderId, newStatus)
+          .run();
+      } catch (revertErr) {
+        console.error(
+          "updateOrderStatus: stock refund failed AND compensating revert also failed — order left stuck",
+          { orderId, stuckStatus: newStatus, intendedRevertTo: currentStatus },
+          err,
+          revertErr
+        );
+        return {
+          success: false,
+          error:
+            "Échec du remboursement du stock et échec de la tentative d'annulation du changement de statut : la commande est restée au nouveau statut sans que le stock ait été remboursé. Une vérification manuelle est nécessaire.",
+        };
+      }
       console.error(
         "updateOrderStatus: stock refund failed, reverted",
         { orderId, revertedTo: currentStatus },
@@ -398,12 +417,30 @@ export async function processReturn(
     await refundOrderStock(orderId);
   } catch (err) {
     // Compensate: revert to the prior status so a failed refund never
-    // leaves a "returned" order with its stock silently unreturned.
-    await execute(
-      `UPDATE orders SET status = ?, returned_at = NULL, return_reason = NULL, updated_at = datetime('now')
-       WHERE id = ? AND status = 'returned'`,
-      [currentStatus, orderId]
-    );
+    // leaves a "returned" order with its stock silently unreturned. The
+    // revert is a second, independent D1 call and gets its own try/catch so
+    // its failure can never escape this Server Action unhandled — the caller
+    // still needs a structured ActionResult, and the message must be honest
+    // about whether the revert actually happened.
+    try {
+      await execute(
+        `UPDATE orders SET status = ?, returned_at = NULL, return_reason = NULL, updated_at = datetime('now')
+         WHERE id = ? AND status = 'returned'`,
+        [currentStatus, orderId]
+      );
+    } catch (revertErr) {
+      console.error(
+        "processReturn: stock refund failed AND compensating revert also failed — order left stuck",
+        { orderId, stuckStatus: "returned", intendedRevertTo: currentStatus },
+        err,
+        revertErr
+      );
+      return {
+        success: false,
+        error:
+          "Échec du remboursement du stock et échec de la tentative d'annulation du retour : la commande est restée au statut « retournée » sans que le stock ait été remboursé. Une vérification manuelle est nécessaire.",
+      };
+    }
     console.error(
       "processReturn: stock refund failed, reverted",
       { orderId, revertedTo: currentStatus },

@@ -385,11 +385,31 @@ export async function cancelOrderFromStatus(
     // (invariant: a cancelled order has always had its reserved stock
     // returned). The status guard means only this call transitioned the row,
     // so the revert targets exactly the row we just cancelled.
-    await execute(
-      `UPDATE orders SET status = ?, cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
-       WHERE id = ? AND status = 'cancelled'`,
-      [fromStatus, orderId]
-    );
+    //
+    // The revert is a second, independent D1 call and gets its own
+    // try/catch: this function's contract is a plain boolean (every caller —
+    // the customer self-cancel path, the reaper, cancelOrderAdmin — expects
+    // that shape, so it is not changed here), so `false` is already this
+    // function's "structured failure". What must not happen is the revert's
+    // own error escaping as an unhandled rejection instead of also
+    // collapsing to that same `false`. Both the original refund failure and
+    // any revert failure are logged together so the causal chain survives
+    // even though the boolean return can't carry it to the caller.
+    try {
+      await execute(
+        `UPDATE orders SET status = ?, cancelled_at = NULL, cancellation_reason = NULL, updated_at = datetime('now')
+         WHERE id = ? AND status = 'cancelled'`,
+        [fromStatus, orderId]
+      );
+    } catch (revertErr) {
+      console.error(
+        "cancelOrderFromStatus: stock refund failed AND compensating revert also failed — order left stuck",
+        { orderId, stuckStatus: "cancelled", intendedRevertTo: fromStatus },
+        err,
+        revertErr
+      );
+      return false;
+    }
     console.error("cancelOrderFromStatus: stock refund failed, reverted", { orderId, fromStatus }, err);
     return false;
   }
