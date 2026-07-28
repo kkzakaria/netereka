@@ -86,8 +86,17 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   // <img/src=x/onerror=alert(1)> is a valid <img> with an onerror handler. The
   // separator class MUST include "/" ([\s/]); matching only \s let such tags
   // pass through verbatim and defeated sanitization entirely (GHSA-92r4).
+  //
+  // The tag-name class covers every character a browser's tokenizer will fold
+  // into a tag name, not just [a-zA-Z0-9]. Per the HTML tag-name tokenizer
+  // state, once the first character is an ASCII letter, EVERY subsequent
+  // character is appended to the tag name until whitespace, "/", or ">" is
+  // seen — that includes "-", "_", ":", "." and non-ASCII characters. A tag
+  // name like "my-tag" previously matched neither this regex nor ALLOWED_TAGS,
+  // so it never reached the replace callback at all and passed through the
+  // sanitizer completely unfiltered, attributes included.
   result = result.replace(
-    /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:[\s/][^>]*)?)\s*\/?>/g,
+    /<\/?([a-zA-Z][^\s/>]*)((?:[\s/][^>]*)?)\s*\/?>/g,
     (match, tagName: string, attrsStr: string) => {
       const tag = tagName.toLowerCase();
       if (tag === "script" || tag === "iframe") return "";

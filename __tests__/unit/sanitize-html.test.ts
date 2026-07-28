@@ -224,3 +224,59 @@ describe("style tag handling", () => {
     expect(sanitizeDescriptionHtml(input)).not.toMatch(/@import/i);
   });
 });
+
+// Hardening: the generic tag pass only recognized [a-zA-Z][a-zA-Z0-9]* as a
+// tag name, but a browser's tokenizer appends ANY character other than
+// whitespace, "/" or ">" to a tag name once it starts with an ASCII letter.
+// Tags containing "-", "_", ":" or "." never matched that narrower class and
+// so never reached the allowlist check at all — they passed through with
+// their attributes completely untouched.
+describe("non-alphanumeric tag names", () => {
+  it("strips a hyphenated tag and its event handler", () => {
+    const input = '<my-tag onclick="alert(1)">x</my-tag>';
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).not.toContain("<my-tag");
+    expect(result).not.toMatch(/onclick/i);
+    expect(result).toContain("x");
+  });
+
+  it("strips a tag name containing an underscore and its event handler", () => {
+    const input = '<a_b onclick="alert(1)">x</a_b>';
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).not.toContain("<a_b");
+    expect(result).not.toMatch(/onclick/i);
+  });
+
+  it("strips a tag name containing a colon and its event handler", () => {
+    const input = '<a:b onclick="alert(1)">x</a:b>';
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).not.toContain("<a:b");
+    expect(result).not.toMatch(/onclick/i);
+  });
+
+  it("strips a tag name containing a dot and its event handler", () => {
+    const input = '<a.b onclick="alert(1)">x</a.b>';
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).not.toContain("<a.b");
+    expect(result).not.toMatch(/onclick/i);
+  });
+
+  it("still allows a plain allowed tag through unchanged (control)", () => {
+    const input = '<h1 onclick="alert(1)">ok</h1>';
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).toBe("<h1>ok</h1>");
+  });
+
+  // Hardening: a malformed <style> block whose @import is stripped mid-string
+  // can splice surviving fragments into a literal "</style>" that did not
+  // exist in the original input, closing the block early. Whatever follows is
+  // then parsed as ordinary markup by a real browser, not as inert CSS text —
+  // so it must still be caught by the generic tag pass. Confirms the widened
+  // tag-name class above closes this residual path.
+  it("neutralizes a handler exposed by an @import splice inside a style block", () => {
+    const input = "<style>a{}</st@import 1;yle><my-tag onclick=alert(1)";
+    const result = sanitizeDescriptionHtml(input);
+    expect(result).not.toMatch(/onclick/i);
+    expect(result).not.toContain("<my-tag");
+  });
+});
