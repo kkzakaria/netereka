@@ -101,7 +101,13 @@ export async function createOrderWithItems(
     ]
   );
 
-  if (reservation.meta.changes === 0) {
+  // Fail closed: only a confirmed changes > 0 counts as "reserved". If a
+  // future D1 version ever returned `undefined` for `meta.changes` instead
+  // of `0`, `=== 0` would treat that as "reserved" and continue into stock
+  // decrements and item inserts for a row that was never actually written —
+  // `!(... > 0)` treats anything that isn't affirmatively a successful
+  // write as blocked instead.
+  if (!(reservation.meta.changes > 0)) {
     // Nothing was written — no stock touched, no items inserted, nothing to
     // roll back. A caller retrying immediately after will see the same
     // (accurate, not stale) count on their next attempt.
@@ -113,7 +119,10 @@ export async function createOrderWithItems(
   const statements: D1PreparedStatement[] = [];
   const stockUpdateIndices: number[] = [];
 
-  // 1. Stock decrements FIRST — if these fail, no order row is orphaned
+  // 1. Stock decrements — the order row itself is already committed at this
+  //    point (step 0's guarded reservation, above), so unlike the original
+  //    layout this can no longer prevent an orphaned order row by running
+  //    first; that is now the job of the try/catch around db.batch below.
   for (const item of items) {
     if (item.variantId) {
       stockUpdateIndices.push(statements.length);
@@ -176,7 +185,25 @@ export async function createOrderWithItems(
     );
   }
 
-  const results = await db.batch(statements);
+  let results: D1Result[];
+  try {
+    results = await db.batch(statements);
+  } catch (error) {
+    // db.batch runs as one implicit transaction: if it throws (a transient
+    // D1 error, a constraint failure on an item insert), NONE of the stock
+    // decrements or order_items inserts committed — but the order row itself
+    // was already committed by step 0's guarded reservation, *before* this
+    // batch ever ran. Left alone, that would surface to the customer and to
+    // admin as a `pending` order with a real order_number and total but zero
+    // items, occupying one of the three concurrent-pending-cap slots for up
+    // to REAP_STALE_AFTER_HOURS until the reaper cancels it. Delete the
+    // reservation here so a batch failure leaves nothing behind, mirroring
+    // the compensating-revert discipline cancelPendingOrderById already uses
+    // for the equivalent case on the cancellation path.
+    await execute("DELETE FROM orders WHERE id = ?", [orderId]);
+    console.error(`createOrderWithItems: batch failed for reserved order ${orderId}, reservation deleted`, error);
+    throw new Error(`Échec de la création de la commande ${orderData.orderNumber}`);
+  }
   const promoApplied =
     promoUpdateIndex !== -1 && results[promoUpdateIndex].meta.changes > 0;
 

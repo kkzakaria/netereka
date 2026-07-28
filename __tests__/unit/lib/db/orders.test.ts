@@ -302,4 +302,23 @@ describe("createOrderWithItems", () => {
     // order row created by the reservation is what gets deleted there.
     expect(mocks.dbBatch).toHaveBeenCalledTimes(2);
   });
+
+  it("deletes the reserved order row when the batch itself throws, leaving no phantom pending order", async () => {
+    // The reservation (step 0) committed the order row on its own, separate
+    // execute() call, before db.batch ever runs. If that batch throws — a
+    // transient D1 error, a constraint failure — db.batch's own implicit
+    // transaction rolls back the stock decrements and item inserts, but
+    // nothing automatically undoes the already-committed order row. Without
+    // the fix, this order would survive as `pending`, with a real total and
+    // order_number but zero items, holding a concurrent-pending-cap slot
+    // until the reaper cancels it.
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } }); // reservation succeeds
+    mocks.dbBatch.mockRejectedValue(new Error("D1 unavailable"));
+
+    await expect(createOrderWithItems(orderData, items)).rejects.toThrow(/création de la commande/i);
+
+    // First execute = the reservation INSERT, second = the cleanup DELETE.
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    expect(mocks.execute.mock.calls[1][0]).toMatch(/DELETE FROM orders WHERE id = \?/);
+  });
 });
