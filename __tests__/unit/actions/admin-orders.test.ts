@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   queryFirst: vi.fn(),
   execute: vi.fn(),
   refundOrderStock: vi.fn(),
+  cancelOrderFromStatus: vi.fn(),
   getAdminOrders: vi.fn(),
   getAdminOrderCount: vi.fn(),
   notifyOrderStatusUpdate: vi.fn(),
@@ -34,7 +35,10 @@ vi.mock("@/lib/cloudflare/context", () => ({
     }),
   }),
 }));
-vi.mock("@/lib/db/orders", () => ({ refundOrderStock: mocks.refundOrderStock }));
+vi.mock("@/lib/db/orders", () => ({
+  refundOrderStock: mocks.refundOrderStock,
+  cancelOrderFromStatus: mocks.cancelOrderFromStatus,
+}));
 vi.mock("@/lib/db/admin/orders", () => ({
   getAdminOrders: mocks.getAdminOrders,
   getAdminOrderCount: mocks.getAdminOrderCount,
@@ -70,6 +74,12 @@ describe("updateOrderStatus", () => {
       .mockResolvedValueOnce(mockOrder)
       .mockResolvedValue({ email: "c@t.com", name: "Client" });
     mocks.refundOrderStock.mockResolvedValue({ itemsRefunded: 2 });
+    // Fresh default for every test: the guarded UPDATE (and any other
+    // db.prepare(...).bind(...).run() call, e.g. addStatusHistory's INSERT)
+    // succeeds unless a specific test overrides it below.
+    mocks.dbPrepare.mockReturnValue({
+      bind: vi.fn().mockReturnValue({ run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }) }),
+    });
   });
 
   it("confirme une commande pending", async () => {
@@ -104,6 +114,134 @@ describe("updateOrderStatus", () => {
     expect(mocks.refundOrderStock).toHaveBeenCalledWith("order-1");
   });
 
+  // Proves the guarded UPDATE actually carries the current status as a WHERE
+  // predicate — this is the mechanism, not just its effect.
+  it("inclut le statut courant comme garde dans la clause WHERE de la transition", async () => {
+    const runMock = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
+    const bindMock = vi.fn().mockReturnValue({ run: runMock });
+    mocks.dbPrepare.mockReturnValue({ bind: bindMock });
+
+    await updateOrderStatus("order-1", "confirmed");
+
+    expect(bindMock).toHaveBeenCalledWith("confirmed", "order-1", "pending");
+  });
+
+  // This is the direct proof for the race the sweep introduced: if the row's
+  // status changed between this action's read and its write (e.g. the
+  // hourly stale-order sweep cancelled the same pending order concurrently),
+  // the guarded UPDATE affects 0 rows and this action must stop entirely —
+  // no history entry, no refund, no customer notification for a transition
+  // it never actually performed. The pre-fix code had no WHERE guard at all
+  // and no changes check, so this test fails against it (it always reached
+  // refund/notification unconditionally).
+  it("n'ajoute pas d'historique, ne rembourse pas et ne notifie pas si le statut a changé entre-temps", async () => {
+    mocks.queryFirst
+      .mockReset()
+      .mockResolvedValueOnce({ ...mockOrder, status: "confirmed" })
+      .mockResolvedValue({ email: "c@t.com", name: "C" });
+    mocks.dbPrepare.mockReturnValue({
+      bind: vi.fn().mockReturnValue({ run: vi.fn().mockResolvedValue({ meta: { changes: 0 } }) }),
+    });
+
+    const result = await updateOrderStatus("order-1", "cancelled");
+
+    expect(result.success).toBe(false);
+    expect(mocks.refundOrderStock).not.toHaveBeenCalled();
+    expect(mocks.notifyOrderStatusUpdate).not.toHaveBeenCalled();
+  });
+
+  // A cancelled order whose stock was never returned is the state the
+  // compensation exists to prevent, so the revert must actually run and the
+  // action must report failure rather than a success it did not achieve.
+  it("revient au statut précédent et signale l'échec si le remboursement du stock échoue", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst
+      .mockReset()
+      .mockResolvedValueOnce({ ...mockOrder, status: "confirmed" })
+      .mockResolvedValue({ email: "c@t.com", name: "C" });
+    mocks.refundOrderStock.mockRejectedValue(new Error("D1 batch failed"));
+    const bindMock = vi.fn().mockReturnValue({
+      run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
+    });
+    mocks.dbPrepare.mockReturnValue({ bind: bindMock });
+
+    const result = await updateOrderStatus("order-1", "cancelled");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/remise à son statut précédent/i);
+    // Second prepare/bind = the compensating revert back to 'confirmed',
+    // guarded on the status this call just wrote.
+    expect(bindMock).toHaveBeenCalledWith("confirmed", "order-1", "cancelled");
+    expect(mocks.notifyOrderStatusUpdate).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  // The revert is a second, independent D1 call and can fail on its own.
+  // It must not escape as an unhandled rejection: the caller still needs an
+  // ActionResult, and its wording must not claim a revert that never
+  // happened — "reverted" and "could not revert" are different incidents.
+  it("renvoie un échec explicite, sans lever, si la tentative de retour arrière échoue aussi", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst
+      .mockReset()
+      .mockResolvedValueOnce({ ...mockOrder, status: "confirmed" })
+      .mockResolvedValue({ email: "c@t.com", name: "C" });
+    mocks.refundOrderStock.mockRejectedValue(new Error("D1 batch failed"));
+    mocks.dbPrepare.mockReturnValue({
+      bind: vi.fn().mockReturnValue({
+        run: vi
+          .fn()
+          .mockResolvedValueOnce({ meta: { changes: 1 } })
+          .mockRejectedValueOnce(new Error("D1 unavailable during revert")),
+      }),
+    });
+
+    const result = await updateOrderStatus("order-1", "cancelled");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/vérification manuelle/i);
+    expect(result.error).not.toMatch(/remise à son statut précédent/i);
+    const call = errorSpy.mock.calls.find((c) => /revert also failed/i.test(String(c[0])));
+    expect(call).toBeDefined();
+    const [message, context, refundErr, revertErr] = call!;
+    expect(message).toMatch(/revert also failed/i);
+    expect(context).toMatchObject({ orderId: "order-1", intendedRevertTo: "confirmed" });
+    expect(refundErr).toBeInstanceOf(Error);
+    expect(revertErr).toBeInstanceOf(Error);
+    errorSpy.mockRestore();
+  });
+
+  // The revert is guarded on the status this call just wrote, so it can match
+  // zero rows without throwing if something else moved the order on first.
+  // That leaves the same stuck state as a throwing revert and must not be
+  // reported as a successful one.
+  it("traite un retour arrière sans ligne affectée comme un échec de compensation", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryFirst
+      .mockReset()
+      .mockResolvedValueOnce({ ...mockOrder, status: "confirmed" })
+      .mockResolvedValue({ email: "c@t.com", name: "C" });
+    mocks.refundOrderStock.mockRejectedValue(new Error("D1 batch failed"));
+    mocks.dbPrepare.mockReturnValue({
+      bind: vi.fn().mockReturnValue({
+        run: vi
+          .fn()
+          .mockResolvedValueOnce({ meta: { changes: 1 } })
+          .mockResolvedValueOnce({ meta: { changes: 0 } }),
+      }),
+    });
+
+    const result = await updateOrderStatus("order-1", "cancelled");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/vérification manuelle/i);
+    expect(result.error).not.toMatch(/remise à son statut précédent/i);
+    const call = errorSpy.mock.calls.find((c) => /revert also failed/i.test(String(c[0])));
+    expect(call).toBeDefined();
+    expect(String(call![3])).toMatch(/matched no row/i);
+    errorSpy.mockRestore();
+  });
+
   it("redirige si non admin", async () => {
     mocks.getSession.mockResolvedValue(mockCustomerSession);
     await expect(updateOrderStatus("order-1", "confirmed")).rejects.toThrow("NEXT_REDIRECT");
@@ -117,13 +255,15 @@ describe("cancelOrderAdmin", () => {
     mocks.queryFirst
       .mockResolvedValueOnce(mockOrder)
       .mockResolvedValue({ email: "c@t.com", name: "C" });
-    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
-    mocks.refundOrderStock.mockResolvedValue({ itemsRefunded: 1 });
+    mocks.cancelOrderFromStatus.mockResolvedValue(true);
   });
 
   it("annule une commande pending", async () => {
     const result = await cancelOrderAdmin("order-1", "Stock épuisé");
     expect(result.success).toBe(true);
+    expect(mocks.cancelOrderFromStatus).toHaveBeenCalledWith("order-1", "pending", "Stock épuisé", {
+      refund: true,
+    });
   });
 
   it("rejette une annulation depuis 'delivered'", async () => {
@@ -131,6 +271,7 @@ describe("cancelOrderAdmin", () => {
     const result = await cancelOrderAdmin("order-1", "Raison");
     expect(result.success).toBe(false);
     expect(result.error).toContain("Impossible");
+    expect(mocks.cancelOrderFromStatus).not.toHaveBeenCalled();
   });
 
   it("rejette sans raison", async () => {
@@ -140,12 +281,34 @@ describe("cancelOrderAdmin", () => {
 
   it("rembourse le stock par défaut", async () => {
     await cancelOrderAdmin("order-1", "Raison");
-    expect(mocks.refundOrderStock).toHaveBeenCalledWith("order-1");
+    expect(mocks.cancelOrderFromStatus).toHaveBeenCalledWith("order-1", "pending", "Raison", {
+      refund: true,
+    });
   });
 
   it("ne rembourse pas le stock si refundStock=false", async () => {
     await cancelOrderAdmin("order-1", "Raison", false);
-    expect(mocks.refundOrderStock).not.toHaveBeenCalled();
+    expect(mocks.cancelOrderFromStatus).toHaveBeenCalledWith("order-1", "pending", "Raison", {
+      refund: false,
+    });
+  });
+
+  // This is the direct proof for the headline race at the admin action's own
+  // boundary: cancelOrderFromStatus (lib/db/orders.ts) reports "did not
+  // transition this row" whenever a concurrent caller — the hourly
+  // stale-order sweep, or another admin tab — already changed the order's
+  // status. cancelOrderAdmin must treat that as a hard stop: no history
+  // entry, no notification, and (implicitly, since it never even calls
+  // refundOrderStock directly anymore) no second refund attempt layered on
+  // top of whatever cancelOrderFromStatus already did or didn't do.
+  it("échoue proprement, sans historique ni notification, si la transition a déjà eu lieu ailleurs (ex: la purge concurrente)", async () => {
+    mocks.cancelOrderFromStatus.mockResolvedValue(false);
+
+    const result = await cancelOrderAdmin("order-1", "Raison");
+
+    expect(result.success).toBe(false);
+    expect(mocks.dbPrepare).not.toHaveBeenCalled(); // addStatusHistory never ran
+    expect(mocks.notifyOrderStatusUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -175,6 +338,19 @@ describe("processReturn", () => {
   it("rejette sans raison", async () => {
     const result = await processReturn("order-1", "");
     expect(result.success).toBe(false);
+  });
+
+  // Same guard discipline as updateOrderStatus, applied directly (not via
+  // cancelOrderFromStatus, since "returned" isn't a cancellation): if the
+  // row's status changed between the read above and this UPDATE, the guard
+  // must reject rather than refund a transition this call never performed.
+  it("échoue et ne rembourse pas si le statut a changé entre-temps (garde perdue)", async () => {
+    mocks.execute.mockReset().mockResolvedValueOnce({ meta: { changes: 0 } });
+
+    const result = await processReturn("order-1", "Produit défectueux");
+
+    expect(result.success).toBe(false);
+    expect(mocks.refundOrderStock).not.toHaveBeenCalled();
   });
 });
 

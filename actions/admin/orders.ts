@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { execute, queryFirst } from "@/lib/db";
 import { getDB } from "@/lib/cloudflare/context";
-import { refundOrderStock } from "@/lib/db/orders";
+import { refundOrderStock, cancelOrderFromStatus } from "@/lib/db/orders";
 import {
   getAdminOrders,
   getAdminOrderCount,
@@ -107,37 +107,112 @@ export async function updateOrderStatus(
   if (!order) return { success: false, error: "Commande introuvable" };
 
   const currentStatus = order.status as OrderStatus;
+  const nextStatus = newStatus as OrderStatus;
   const allowed = ORDER_STATUS_TRANSITIONS[currentStatus] || [];
 
-  if (!allowed.includes(newStatus as OrderStatus)) {
+  if (!allowed.includes(nextStatus)) {
     return {
       success: false,
-      error: `Transition de "${ORDER_STATUS_LABELS[currentStatus]}" vers "${ORDER_STATUS_LABELS[newStatus as OrderStatus] || newStatus}" non autorisée`,
+      error: `Transition de "${ORDER_STATUS_LABELS[currentStatus]}" vers "${ORDER_STATUS_LABELS[nextStatus] || newStatus}" non autorisée`,
     };
   }
 
   const db = await getDB();
 
   // Get timestamp field for the new status
-  const timestampField = getStatusTimestampField(newStatus as OrderStatus);
+  const timestampField = getStatusTimestampField(nextStatus);
 
-  if (timestampField) {
-    await db
-      .prepare(
-        `UPDATE orders SET status = ?, ${timestampField} = datetime('now'), updated_at = datetime('now') WHERE id = ?`
-      )
-      .bind(newStatus, orderId)
-      .run();
-  } else {
-    await db
-      .prepare(
-        "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?"
-      )
-      .bind(newStatus, orderId)
-      .run();
+  // Guarded transition: "AND status = ?" bound to currentStatus (read just
+  // above) means this UPDATE can affect the row at most once, no matter how
+  // many callers race to change it concurrently — another admin tab acting
+  // on the same order, or, for a pending order, the hourly stale-order sweep
+  // cancelling it out from under this call. Without this predicate, a lost
+  // race would silently re-run history/refund/notification against a row
+  // this call never actually transitioned, which is exactly the shape that
+  // let an admin cancel double-refund stock the sweep had already returned.
+  const updateResult = timestampField
+    ? await db
+        .prepare(
+          `UPDATE orders SET status = ?, ${timestampField} = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = ?`
+        )
+        .bind(newStatus, orderId, currentStatus)
+        .run()
+    : await db
+        .prepare(
+          "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND status = ?"
+        )
+        .bind(newStatus, orderId, currentStatus)
+        .run();
+
+  if (!(updateResult.meta.changes > 0)) {
+    return {
+      success: false,
+      error: `La commande a changé de statut entre-temps (attendu "${ORDER_STATUS_LABELS[currentStatus]}"). Merci de rafraîchir la page.`,
+    };
   }
 
-  // Add history entry
+  // Refund stock for cancellations and returns.
+  // Note: Returns ALWAYS refund stock, even for delivered orders (items returned to warehouse)
+  if (nextStatus === "cancelled" || nextStatus === "returned") {
+    try {
+      await refundOrderStock(orderId);
+    } catch (err) {
+      // Compensate: revert the transition so a failed refund never leaves a
+      // cancelled/returned order with its stock silently unreturned. The
+      // status guard above means only this call performed the transition,
+      // so the revert targets exactly the row this call just changed. The
+      // revert itself gets its own try/catch: it is a second, independent D1
+      // call and can fail on its own, in which case it must not escape this
+      // Server Action as an unhandled error — the caller still needs a
+      // structured ActionResult, and the wording must be honest about which
+      // of the two very different outcomes actually happened.
+      //
+      // The revert is itself guarded on the status this call just wrote, so
+      // it can legitimately match zero rows if something else moved the order
+      // on in the meantime (the hourly stale-order sweep, a concurrent admin).
+      // That is a silent failure with exactly the same consequence as a
+      // throwing revert — order stuck, stock unreturned — so it must not be
+      // reported as a successful revert. Route it through the same branch.
+      try {
+        const revertResult = await db
+          .prepare(
+            `UPDATE orders SET status = ?${timestampField ? `, ${timestampField} = NULL` : ""}, updated_at = datetime('now') WHERE id = ? AND status = ?`
+          )
+          .bind(currentStatus, orderId, newStatus)
+          .run();
+        if (revertResult.meta.changes === 0) {
+          throw new Error(
+            "compensating revert matched no row (order no longer at the status this call wrote)"
+          );
+        }
+      } catch (revertErr) {
+        console.error(
+          "updateOrderStatus: stock refund failed AND compensating revert also failed — order left stuck",
+          { orderId, stuckStatus: newStatus, intendedRevertTo: currentStatus },
+          err,
+          revertErr
+        );
+        return {
+          success: false,
+          error:
+            "Échec du remboursement du stock et échec de la tentative d'annulation du changement de statut : la commande est restée au nouveau statut sans que le stock ait été remboursé. Une vérification manuelle est nécessaire.",
+        };
+      }
+      console.error(
+        "updateOrderStatus: stock refund failed, reverted",
+        { orderId, revertedTo: currentStatus },
+        err
+      );
+      return {
+        success: false,
+        error: "Échec du remboursement du stock ; la commande a été remise à son statut précédent.",
+      };
+    }
+  }
+
+  // Add history entry — only reached once the transition (and any required
+  // refund) has actually succeeded, so history never records a change that
+  // was reverted above.
   await addStatusHistory(
     orderId,
     currentStatus,
@@ -146,16 +221,10 @@ export async function updateOrderStatus(
     noteResult.data
   );
 
-  // Refund stock for cancellations and returns
-  // Note: Returns ALWAYS refund stock, even for delivered orders (items returned to warehouse)
-  if (newStatus === "cancelled" || newStatus === "returned") {
-    await refundOrderStock(orderId);
-  }
-
   // Notify customer (fire-and-forget)
   const customer = await getOrderCustomer(order.user_id);
   if (customer) {
-    sendStatusNotification(order, newStatus as OrderStatus, customer, {
+    sendStatusNotification(order, nextStatus, customer, {
       deliveryPersonName: order.delivery_person_name,
       reason: noteResult.data,
     });
@@ -262,15 +331,25 @@ export async function cancelOrderAdmin(
     };
   }
 
-  await execute(
-    `UPDATE orders SET
-       status = 'cancelled',
-       cancelled_at = datetime('now'),
-       cancellation_reason = ?,
-       updated_at = datetime('now')
-     WHERE id = ?`,
-    [reasonResult.data, orderId]
-  );
+  // Reuses the same guarded transition the customer self-cancel path and
+  // the stale-pending sweep use (see lib/db/orders.ts::cancelOrderFromStatus's
+  // doc comment) — its "AND status = ?" predicate, bound to currentStatus
+  // read above, means this call can only ever cancel-and-refund a row it
+  // actually transitioned itself. Without it, an admin cancelling a pending
+  // order the hourly sweep had already cancelled moments earlier would run
+  // its UPDATE unconditionally and call refundOrderStock a second time over
+  // the same order_items — the exact double-refund race this guard closes.
+  const cancelled = await cancelOrderFromStatus(orderId, currentStatus, reasonResult.data, {
+    refund: refundStock,
+  });
+
+  if (!cancelled) {
+    return {
+      success: false,
+      error:
+        "La commande a changé de statut entre-temps (ou le remboursement du stock a échoué). Merci de rafraîchir la page.",
+    };
+  }
 
   await addStatusHistory(
     orderId,
@@ -279,10 +358,6 @@ export async function cancelOrderAdmin(
     session.user.email,
     reasonResult.data
   );
-
-  if (refundStock) {
-    await refundOrderStock(orderId);
-  }
 
   // Notify customer (fire-and-forget)
   const customer = await getOrderCustomer(order.user_id);
@@ -327,15 +402,72 @@ export async function processReturn(
     };
   }
 
-  await execute(
+  // Guarded transition: "AND status = ?" bound to currentStatus means this
+  // UPDATE can affect the row at most once, even if another admin action (or,
+  // for a currentStatus that could also be reached via the sweep — not the
+  // case for "returned" today, but the same discipline as the other
+  // transitions above) races this same order concurrently.
+  const updateResult = await execute(
     `UPDATE orders SET
        status = 'returned',
        returned_at = datetime('now'),
        return_reason = ?,
        updated_at = datetime('now')
-     WHERE id = ?`,
-    [reasonResult.data, orderId]
+     WHERE id = ? AND status = ?`,
+    [reasonResult.data, orderId, currentStatus]
   );
+
+  if (!(updateResult.meta.changes > 0)) {
+    return {
+      success: false,
+      error: `La commande a changé de statut entre-temps (attendu "${ORDER_STATUS_LABELS[currentStatus]}"). Merci de rafraîchir la page.`,
+    };
+  }
+
+  // Returns ALWAYS refund stock (items returned to warehouse)
+  try {
+    await refundOrderStock(orderId);
+  } catch (err) {
+    // Compensate: revert to the prior status so a failed refund never
+    // leaves a "returned" order with its stock silently unreturned. The
+    // revert is a second, independent D1 call and gets its own try/catch so
+    // its failure can never escape this Server Action unhandled — the caller
+    // still needs a structured ActionResult, and the message must be honest
+    // about whether the revert actually happened — including when it matches
+    // zero rows because something else moved the order on, which leaves the
+    // same stuck state as a throwing revert and must be reported the same way.
+    try {
+      const revertResult = await execute(
+        `UPDATE orders SET status = ?, returned_at = NULL, return_reason = NULL, updated_at = datetime('now')
+         WHERE id = ? AND status = 'returned'`,
+        [currentStatus, orderId]
+      );
+      if (revertResult.meta.changes === 0) {
+        throw new Error("compensating revert matched no row (order no longer 'returned')");
+      }
+    } catch (revertErr) {
+      console.error(
+        "processReturn: stock refund failed AND compensating revert also failed — order left stuck",
+        { orderId, stuckStatus: "returned", intendedRevertTo: currentStatus },
+        err,
+        revertErr
+      );
+      return {
+        success: false,
+        error:
+          "Échec du remboursement du stock et échec de la tentative d'annulation du retour : la commande est restée au statut « retournée » sans que le stock ait été remboursé. Une vérification manuelle est nécessaire.",
+      };
+    }
+    console.error(
+      "processReturn: stock refund failed, reverted",
+      { orderId, revertedTo: currentStatus },
+      err
+    );
+    return {
+      success: false,
+      error: "Échec du remboursement du stock ; la commande a été remise à son statut précédent.",
+    };
+  }
 
   await addStatusHistory(
     orderId,
@@ -344,9 +476,6 @@ export async function processReturn(
     session.user.email,
     reasonResult.data
   );
-
-  // Returns ALWAYS refund stock (items returned to warehouse)
-  await refundOrderStock(orderId);
 
   // Notify customer (fire-and-forget)
   const customer = await getOrderCustomer(order.user_id);

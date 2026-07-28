@@ -4,6 +4,9 @@ import {
   calculateDiscount,
   calculateOrderTotal,
   calculateSubtotal,
+  resolveOrderLine,
+  countActiveVariantsByProduct,
+  type OrderLineInput,
 } from "@/lib/utils/checkout";
 import type { PromoCode } from "@/lib/db/types";
 
@@ -218,5 +221,174 @@ describe("calculateSubtotal", () => {
 
   it("gère une quantité de 1", () => {
     expect(calculateSubtotal([{ unitPrice: 99000, quantity: 1 }])).toBe(99000);
+  });
+});
+
+// ─── resolveOrderLine ───
+
+function makeLine(overrides: Partial<OrderLineInput> = {}): OrderLineInput {
+  return {
+    product: {
+      name: "Casque Bluetooth XYZ",
+      base_price: 10000,
+      stock_quantity: 5,
+      activeVariantCount: 0,
+    },
+    variant: null,
+    quantity: 1,
+    ...overrides,
+  };
+}
+
+describe("resolveOrderLine", () => {
+  it("rejette un variantId nul quand le produit a des variantes actives", () => {
+    const result = resolveOrderLine(
+      makeLine({ product: { ...makeLine().product, activeVariantCount: 3 } })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/variante/i);
+  });
+
+  it("accepte un variantId nul quand le produit n'a aucune variante", () => {
+    const result = resolveOrderLine(makeLine());
+
+    expect(result.ok).toBe(true);
+    expect(result.ok === true && result.unitPrice).toBe(10000);
+  });
+
+  it("facture depuis la variante quand elle est fournie", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: { ...makeLine().product, activeVariantCount: 3 },
+        variant: { name: "Rouge", price: 15000, stock_quantity: 2 },
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok === true && result.unitPrice).toBe(15000);
+  });
+
+  it("rejette une variante dont le stock est insuffisant", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: { ...makeLine().product, activeVariantCount: 1 },
+        variant: { name: "Rouge", price: 15000, stock_quantity: 1 },
+        quantity: 2,
+      })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/stock/i);
+  });
+
+  it("accepte une variante quand le stock est exactement suffisant", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: { ...makeLine().product, activeVariantCount: 1 },
+        variant: { name: "Rouge", price: 15000, stock_quantity: 2 },
+        quantity: 2,
+      })
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejette un produit sans variante dont le stock est insuffisant", () => {
+    const result = resolveOrderLine(makeLine({ quantity: 10 }));
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toMatch(/stock/i);
+  });
+
+  it("mentionne le nom du produit dans le message de garde variante", () => {
+    const result = resolveOrderLine(
+      makeLine({
+        product: {
+          name: "Enceinte Portable ABC",
+          base_price: 20000,
+          stock_quantity: 5,
+          activeVariantCount: 2,
+        },
+      })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain("Enceinte Portable ABC");
+  });
+});
+
+// ─── countActiveVariantsByProduct ───
+
+describe("countActiveVariantsByProduct", () => {
+  it("compte les variantes actives par produit", () => {
+    const counts = countActiveVariantsByProduct([
+      { product_id: "p1" },
+      { product_id: "p1" },
+      { product_id: "p2" },
+    ]);
+
+    expect(counts.get("p1")).toBe(2);
+    expect(counts.get("p2")).toBe(1);
+  });
+
+  it("retourne une map vide pour une liste vide", () => {
+    const counts = countActiveVariantsByProduct([]);
+    expect(counts.size).toBe(0);
+  });
+
+  it("un produit absent de la liste n'a pas d'entrée dans la map", () => {
+    const counts = countActiveVariantsByProduct([{ product_id: "p1" }]);
+    expect(counts.get("p2")).toBeUndefined();
+  });
+});
+
+// ─── resolveOrderLine wired through countActiveVariantsByProduct ───
+//
+// These pin the exact composition actions/checkout.ts uses:
+// `countActiveVariantsByProduct(variantsRaw).get(product.id) ?? 0` feeding
+// `resolveOrderLine`'s `activeVariantCount`. If that wiring were ever
+// reduced to a literal 0 (or the counting function stopped counting), these
+// fail — unlike the resolveOrderLine-only tests above, which pass literals
+// directly and can't detect that class of regression.
+
+describe("resolveOrderLine + countActiveVariantsByProduct (wiring)", () => {
+  it("rejette un variantId nul quand le comptage réel détecte des variantes actives", () => {
+    const activeVariantCountByProduct = countActiveVariantsByProduct([
+      { product_id: "p1" },
+      { product_id: "p1" },
+    ]);
+
+    const result = resolveOrderLine({
+      product: {
+        name: "Casque Bluetooth XYZ",
+        base_price: 10000,
+        stock_quantity: 5,
+        activeVariantCount: activeVariantCountByProduct.get("p1") ?? 0,
+      },
+      variant: null,
+      quantity: 1,
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepte un variantId nul quand le comptage réel ne trouve aucune variante pour ce produit", () => {
+    const activeVariantCountByProduct = countActiveVariantsByProduct([
+      { product_id: "other-product" },
+    ]);
+
+    const result = resolveOrderLine({
+      product: {
+        name: "Casque Bluetooth XYZ",
+        base_price: 10000,
+        stock_quantity: 5,
+        activeVariantCount: activeVariantCountByProduct.get("p1") ?? 0,
+      },
+      variant: null,
+      quantity: 1,
+    });
+
+    expect(result.ok).toBe(true);
   });
 });

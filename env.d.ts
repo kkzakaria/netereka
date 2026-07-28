@@ -18,6 +18,12 @@ interface CloudflareEnv {
   // Turnstile
   TURNSTILE_SECRET_KEY: string;
 
+  // Bearer secret required to invoke /api/cron/reap-pending-orders. Set to
+  // the same value as the CRON_SECRET repository secret used by the
+  // "Reap Pending Orders" GitHub Actions workflow, which calls this route on
+  // a schedule.
+  CRON_SECRET?: string;
+
   // Email (Resend)
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string; // defaults to "NETEREKA <commandes@netereka.ci>"

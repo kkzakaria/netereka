@@ -1,0 +1,146 @@
+name: Reap Pending Orders
+
+# Triggers the /api/cron/reap-pending-orders route on a schedule.
+# @opennextjs/cloudflare does not expose a Workers scheduled() handler
+# alongside the main Next.js worker, so that route cannot be a native
+# Cloudflare Cron Trigger — see app/api/cron/reap-pending-orders/route.ts's
+# top comment for the technical rationale. This workflow is the external
+# scheduler instead: it authenticates with a bearer secret and does nothing
+# else, so it needs no GitHub API access.
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: reap-pending-orders
+  cancel-in-progress: false
+
+jobs:
+  reap:
+    name: Sweep stale pending orders
+    runs-on: ubuntu-latest
+
+    steps:
+      # Inputs/secrets are routed through env: and read back as shell
+      # variables, never interpolated into the run: script body — the same
+      # discipline deploy.yml and rollback.yml already apply (see
+      # GHSA-rgmp-r8hv-xf4h for what happens when that rule is skipped).
+      #
+      # The bearer secret is passed to curl via a piped `-K -` config
+      # (stdin), not as a `-H` argv value: on a shared machine, argv is
+      # visible to other processes via the process list, and the secret in
+      # a plain -H flag would be too. -K - keeps it out of argv entirely.
+      #
+      # The route's own reapStalePendingOrders() catches per-order failures
+      # and tallies them as `skipped` rather than throwing — the route still
+      # returns 200 with those counts. A plain "fail on non-2xx" check can't
+      # tell a healthy no-op apart from a run where every order failed (e.g.
+      # sustained refund failures reverting rows to pending), so this step
+      # also inspects the response body itself: it fails the job outright
+      # when skipped > 0, and surfaces cancelled/skipped/hasMore in the job
+      # summary, not just the raw log, so an unhealthy run is visible without
+      # anyone having to open it.
+      #
+      # hasMore ("there is more backlog than this call drained") is wired
+      # into a small bounded loop below, capped at MAX_CALLS regardless of
+      # what the route reports — never an unbounded "keep calling until
+      # done" loop. In steady state (the common case: little to no backlog)
+      # this loop runs once and exits immediately on hasMore=false. Only a
+      # large backlog causes more than one call, and even then it is capped
+      # per run; a backlog bigger than MAX_CALLS * REAP_BATCH_SIZE simply
+      # keeps draining on subsequent hourly runs (or an operator can trigger
+      # workflow_dispatch again sooner) rather than looping unboundedly here.
+      - name: Call the reaper endpoint
+        env:
+          CRON_TARGET_URL: ${{ vars.CRON_REAP_ORDERS_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_TARGET_URL" ]; then
+            echo "::error::CRON_REAP_ORDERS_URL repository variable is not set — configure it in Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET repository secret is not set — configure it in Settings > Secrets and variables > Actions > Secrets (same value as the CRON_SECRET Worker secret)."
+            exit 1
+          fi
+
+          MAX_CALLS=5
+          CALLS_MADE=0
+          TOTAL_CANCELLED=0
+          TOTAL_SKIPPED=0
+          TOTAL_PROCESSED=0
+          HAS_MORE=true
+
+          while [ "$HAS_MORE" = "true" ] && [ "$CALLS_MADE" -lt "$MAX_CALLS" ]; do
+            CALLS_MADE=$((CALLS_MADE + 1))
+            RESPONSE_FILE=$(mktemp)
+            HTTP_CODE=$(printf 'header = "Authorization: Bearer %s"\n' "$CRON_SECRET" | \
+              curl -sS -K - -o "$RESPONSE_FILE" -w "%{http_code}" \
+                --connect-timeout 5 --max-time 30 \
+                -X POST "$CRON_TARGET_URL")
+
+            echo "Call $CALLS_MADE — HTTP status: $HTTP_CODE"
+            echo "Response body:"
+            cat "$RESPONSE_FILE"
+
+            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+              echo "::error::Reaper endpoint returned HTTP $HTTP_CODE on call $CALLS_MADE — see response body above. A wrong/missing secret on either side is the most common cause."
+              exit 1
+            fi
+
+            # A 2xx response is not enough on its own: a body that is valid
+            # JSON but missing these fields (or carrying them with the wrong
+            # type — e.g. a string instead of a number) would otherwise fall
+            # through the `// default` operators below and produce a green
+            # run reporting all-zero counts, exactly the silent-failure mode
+            # this workflow's health reporting exists to catch. So the shape
+            # is validated explicitly before anything is extracted: `jq -e`
+            # exits non-zero both when the body isn't valid JSON at all and
+            # when this boolean expression evaluates to false, and the `and`
+            # chain short-circuits (a jq guarantee) so `floor` is never
+            # applied to a non-number.
+            if ! jq -e '
+                (type == "object")
+                and (has("cancelled") and ((.cancelled | type) == "number") and ((.cancelled | floor) == .cancelled))
+                and (has("skipped") and ((.skipped | type) == "number") and ((.skipped | floor) == .skipped))
+                and (has("total") and ((.total | type) == "number") and ((.total | floor) == .total))
+                and (has("hasMore") and ((.hasMore | type) == "boolean"))
+              ' "$RESPONSE_FILE" > /dev/null 2>&1; then
+              echo "::error::Reaper endpoint returned a 2xx response on call $CALLS_MADE whose body is not valid JSON, or is missing cancelled/skipped/total (integers) or hasMore (boolean), or carries them with the wrong type — see response body above. Treating this as a failure rather than defaulting to zero."
+              exit 1
+            fi
+
+            CANCELLED=$(jq -r '.cancelled' "$RESPONSE_FILE")
+            SKIPPED=$(jq -r '.skipped' "$RESPONSE_FILE")
+            PROCESSED=$(jq -r '.total' "$RESPONSE_FILE")
+            HAS_MORE=$(jq -r '.hasMore' "$RESPONSE_FILE")
+
+            TOTAL_CANCELLED=$((TOTAL_CANCELLED + CANCELLED))
+            TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKIPPED))
+            TOTAL_PROCESSED=$((TOTAL_PROCESSED + PROCESSED))
+          done
+
+          {
+            echo "## Reap pending orders — summary"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Calls made | $CALLS_MADE (bounded at $MAX_CALLS per run) |"
+            echo "| Cancelled | $TOTAL_CANCELLED |"
+            echo "| Skipped | $TOTAL_SKIPPED |"
+            echo "| Total attempted | $TOTAL_PROCESSED |"
+            echo "| Backlog remaining after this run (hasMore) | $HAS_MORE |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$HAS_MORE" = "true" ]; then
+            echo "::warning::hasMore is still true after $MAX_CALLS calls this run — the backlog is larger than this run could drain. It will keep draining on the next hourly run, or trigger workflow_dispatch manually to drain it sooner."
+          fi
+
+          if [ "$TOTAL_SKIPPED" -gt 0 ]; then
+            echo "::error::$TOTAL_SKIPPED order(s) were skipped across this run — reapStalePendingOrders logs the per-order reason server-side (Worker logs). Sustained skips can mean refund failures reverting rows back to pending. Failing this run so it is not indistinguishable from a healthy no-op."
+            exit 1
+          fi
