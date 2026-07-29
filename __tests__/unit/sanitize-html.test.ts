@@ -836,6 +836,44 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).toBe("<style>this is not css</style>");
   });
 
+  /**
+   * The two cost guards below express their budget as a multiple of work
+   * measured in the same process, not as a number of milliseconds.
+   *
+   * A fixed millisecond budget is not portable. `3000` left roughly six times
+   * the headroom on a 16-core workstation at rest, but this file runs in the
+   * pre-commit hook and in CI, where a runner has two to four shared cores —
+   * and six times is not a comfortable margin for a CPU-bound loop on a loaded
+   * box. A guard that fails on someone else's unrelated commit gets deleted,
+   * and then it guards nothing.
+   *
+   * What these tests actually assert is a *shape*: that the scan stayed linear
+   * rather than turning quadratic again. Dividing by a calibration workload
+   * makes that shape the thing measured. Both numbers move together when the
+   * machine is slow or busy; only a change in complexity moves them apart.
+   *
+   * Measured: the ratio sits between 11 and 21 at rest and between 11 and 18
+   * with two full suites competing for the CPU, while the absolute times move
+   * by a factor of five. The regression this catches is not subtle — before
+   * the scan was bounded, one of these shapes alone cost 79 seconds against a
+   * calibration of a few milliseconds, a ratio in the thousands.
+   */
+  function calibrationMs(): number {
+    const realistic =
+      "<style>" +
+      "@media (max-width: 768px){.desc-x .desc-x .t{font-size:32px}}\r\n".repeat(300) +
+      "</style>";
+    // One warm-up pass first: without it the calibration absorbs JIT cost that
+    // the measured loop does not, which inflates the ratio for no reason.
+    sanitizeDescriptionHtml(realistic, "prod-1");
+    const started = performance.now();
+    for (let i = 0; i < 20; i++) sanitizeDescriptionHtml(realistic, "prod-1");
+    return Math.max(performance.now() - started, 1);
+  }
+
+  /** Ratio ceiling. Observed max 21; a return to quadratic reaches the hundreds. */
+  const COST_RATIO_BUDGET = 150;
+
   it("sanitizes adversarial tag-soup in linear time", () => {
     // [input, productId]. The productId matters: selector scoping only runs
     // when one is supplied, so the <style> shapes below exercise nothing
@@ -908,11 +946,18 @@ describe("sanitizeDescriptionHtml", () => {
       ['<style>a["' + ",b".repeat(240000) + "{x:y}", "prod-1"],
       ['<style>a[t="' + "b".repeat(400000) + '"]{x:y}', "prod-1"],
     ];
-    const started = Date.now();
+    const calibration = calibrationMs();
+    const started = performance.now();
     for (const [shape, productId] of shapes) sanitizeDescriptionHtml(shape, productId);
-    const elapsed = Date.now() - started;
-    expect(elapsed).toBeLessThan(3000);
-  }, 30000);
+    const elapsed = performance.now() - started;
+    expect(elapsed / calibration).toBeLessThan(COST_RATIO_BUDGET);
+    // Generous on purpose: the ratio above is the assertion, and a tight
+    // timeout would quietly put a wall-clock limit back in front of it — the
+    // exact portability problem the ratio exists to remove. Under three
+    // competing suites these shapes took 12s of wall clock while the ratio
+    // stayed flat; a genuine quadratic regression takes over 200s and fails
+    // here too, so this bound still catches the case the ratio would.
+  }, 180000);
 
   // Hardening: a browser resolves HTML character references and CSS escapes
   // BEFORE it decides what a URL's scheme is or what a declaration does. A
@@ -1201,11 +1246,18 @@ describe("sanitizeDescriptionHtml", () => {
       ["<style>" + "url ".repeat(120000), undefined],
       ["<style>" + "image-set ".repeat(48000), "prod-1"],
     ];
-    const started = Date.now();
+    const calibration = calibrationMs();
+    const started = performance.now();
     for (const [shape, productId] of shapes) sanitizeDescriptionHtml(shape, productId);
-    const elapsed = Date.now() - started;
-    expect(elapsed).toBeLessThan(3000);
-  }, 30000);
+    const elapsed = performance.now() - started;
+    expect(elapsed / calibration).toBeLessThan(COST_RATIO_BUDGET);
+    // Generous on purpose: the ratio above is the assertion, and a tight
+    // timeout would quietly put a wall-clock limit back in front of it — the
+    // exact portability problem the ratio exists to remove. Under three
+    // competing suites these shapes took 12s of wall clock while the ratio
+    // stayed flat; a genuine quadratic regression takes over 200s and fails
+    // here too, so this bound still catches the case the ratio would.
+  }, 180000);
 
   it("keeps a long generated style block byte-identical", () => {
     const id = "prod-7f3a91c2";
