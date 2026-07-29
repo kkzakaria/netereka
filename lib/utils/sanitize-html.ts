@@ -289,8 +289,15 @@ function isSafeUri(rawValue: string): boolean {
  * This is load-bearing for cost, not only for correctness: the branch bounds
  * how much work a single stored description can force on every storefront
  * render inside a CPU-metered Worker, which is what makes the measured
- * worst-case (~74 ms for the most expensive accepted input) an actual ceiling
- * instead of a sample. Raising it raises that ceiling proportionally.
+ * worst-case an actual ceiling instead of a sample. Raising it raises that
+ * ceiling proportionally.
+ *
+ * Where the ceiling sits, last measured by sweeping 45 adversarial shapes each
+ * cut to exactly 512,000 bytes, both figures from one run on one machine so
+ * they are comparable to each other and to nothing else: ~43 ms, on a block of
+ * nothing but "{". Rewriting the selector-scoping pass as a context-tracking
+ * sweep MOVED THE CEILING DOWN — the same sweep cost ~89 ms against the regex
+ * that pass replaced, on a block of "a{b{c{d{".
  *
  * Deliberately NOT exported. The boundary tests hardcode 512000 so that
  * changing this number fails them; deriving the test's boundary from the
@@ -344,6 +351,197 @@ function cutOut(html: string, re: RegExp): string {
     cursor = m.index + m[0].length;
   }
   return matched ? out + html.slice(cursor) : html;
+}
+
+/**
+ * At-keywords whose block holds style rules, so the selectors directly inside
+ * them are scoped exactly like top-level ones.
+ *
+ * A Set, not an object literal: the keyword comes from the stylesheet, and an
+ * object lookup would answer for inherited keys ("constructor", "toString")
+ * that name no at-rule at all.
+ *
+ * Everything else that opens a block either holds keyframe steps
+ * (`@keyframes`) or nothing but declarations (`@font-face`, `@page`), and
+ * neither takes a scope prefix. Defaulting the UNKNOWN at-keyword to "do not
+ * prefix" is the safe direction of the two: an unprefixed selector is merely
+ * over-broad and still applies, whereas a prefixed step selector or at-rule
+ * prelude is a rule the browser discards outright — which is exactly the
+ * damage being repaired here.
+ */
+const SELECTOR_BEARING_AT_RULES = new Set([
+  "media",
+  "supports",
+  "container",
+  "layer",
+  "scope",
+  "document",
+  "-moz-document",
+]);
+
+/** The at-keyword at the head of an at-rule prelude. */
+const AT_KEYWORD_RE = /^@([a-zA-Z-]+)/;
+
+function bearsSelectors(prelude: string): boolean {
+  const keyword = AT_KEYWORD_RE.exec(prelude);
+  return keyword !== null && SELECTOR_BEARING_AT_RULES.has(keyword[1].toLowerCase());
+}
+
+/**
+ * True when `code` is a character that a CSS identifier continues with, so a
+ * scope prefix followed by it names a DIFFERENT class. `.desc-p1x` starts with
+ * the characters of `.desc-p1` without being it.
+ */
+function continuesIdentifier(code: number): boolean {
+  return (
+    (code >= 0x61 && code <= 0x7a) || // a-z
+    (code >= 0x41 && code <= 0x5a) || // A-Z
+    (code >= 0x30 && code <= 0x39) || // 0-9
+    code === 0x2d || // "-"
+    code === 0x5f || // "_"
+    code === 0x5c || // "\", which starts an escape that continues the name
+    code > 0x7f // non-ASCII is an identifier character in CSS
+  );
+}
+
+function isAlreadyScoped(selector: string, scopePrefix: string): boolean {
+  if (!selector.startsWith(scopePrefix)) return false;
+  // charCodeAt past the end is NaN, and every comparison against NaN is false,
+  // so a selector that IS exactly the prefix reads as already scoped.
+  return !continuesIdentifier(selector.charCodeAt(scopePrefix.length));
+}
+
+/** `selectors` is already trimmed at the one call site, which is what lets the
+ *  single-member case — by far the common one — skip split/map/join entirely.
+ *  That fast path is worth about 15% of the worst-case sweep. */
+function scopeSelectorList(selectors: string, scopePrefix: string): string {
+  if (selectors.indexOf(",") === -1) {
+    return isAlreadyScoped(selectors, scopePrefix) ? selectors : `${scopePrefix} ${selectors}`;
+  }
+  return selectors
+    .split(",")
+    .map((member: string) => {
+      const selector = member.trim();
+      return isAlreadyScoped(selector, scopePrefix) ? selector : `${scopePrefix} ${selector}`;
+    })
+    .join(", ");
+}
+
+/**
+ * Prefix every style-rule selector in `css` with `scopePrefix`, so a product
+ * description's stylesheet cannot restyle the rest of the page.
+ *
+ * WHAT THIS REPLACED, AND WHY A REGEX COULD NOT DO IT
+ * ---------------------------------------------------
+ * The previous form was a single `replace(/([^{}]+)(\{)?/g, …)` that prefixed
+ * every run of text reaching a "{", on the assumption that such a run is
+ * always a selector list. It is not. Three different things can precede a "{",
+ * and only one of them is a selector:
+ *
+ *   1. an at-rule prelude — `@media (max-width: 768px) {`. A selector cannot
+ *      precede an at-rule, so `.desc-X @media … {` is not a weaker rule, it is
+ *      a rule the browser throws away whole.
+ *   2. a keyframe step — `from {`, `0%, 100% {`. Same outcome: the step is not
+ *      a selector, and prefixing it kills the animation.
+ *   3. an actual selector list, which is the only case that must be prefixed.
+ *
+ * Telling them apart needs the enclosing context, which a flat regex has no
+ * way to carry. Measured in production: all seven descriptions carrying a
+ * <style> block had dead @keyframes from case 2, and one had a dead media
+ * query from case 1.
+ *
+ * COST — the constraint this rewrite was NOT allowed to give up
+ * -------------------------------------------------------------
+ * The regex it replaces captured its "{" as an OPTIONAL group for a reason
+ * recorded at the time: requiring the "{" made a brace-free run cost time
+ * proportional to the SQUARE of its length, because the engine re-walked it
+ * from every following position. The sweep below keeps the bound by a
+ * structurally stronger route — there is no backtracking engine involved at
+ * all. `/[{}]/g` steps from one brace to the next, each character of the input
+ * falls inside exactly one prelude or one declaration run, and every operation
+ * performed on a prelude (lastIndexOf, trim, split, the anchored at-keyword
+ * match) is linear in that prelude alone. Preludes do not overlap, so the
+ * total stays linear in the input, which the input cap then turns into an
+ * absolute ceiling.
+ *
+ * One behaviour is carried over unchanged rather than improved: an empty
+ * member of a selector list ("h1,,h2") is still prefixed like any other. The
+ * result is invalid CSS, but it was invalid before the prefix too, and
+ * silently dropping members would change which rules apply.
+ *
+ * Not comment- or string-aware: a "{" inside a comment or a quoted attribute
+ * selector is read as a real block opening. That was equally true of the regex
+ * this replaces, and stripDangerousCss already documents that the CSS reaching
+ * these passes may not even be well formed.
+ */
+function scopeCssSelectors(css: string, scopePrefix: string): string {
+  let out = "";
+  // Everything in css before `copied` is already accounted for in `out`.
+  // Advancing it ONLY when a prelude is actually rewritten is what keeps a
+  // stylesheet the sweep does not change from being rebuilt character by
+  // character: a block of 512,000 braces walks the stack and appends nothing.
+  let copied = 0;
+  let preludeStart = 0;
+  // One entry per open brace: true when the preludes DIRECTLY inside that
+  // block are style-rule selectors that take the prefix. The top level, with
+  // the stack empty, behaves as true.
+  const bearsSelectorsInside: boolean[] = [];
+  const braces = /[{}]/g;
+  let brace: RegExpExecArray | null;
+
+  while ((brace = braces.exec(css)) !== null) {
+    const index = brace.index;
+    const begin = preludeStart;
+    preludeStart = index + 1;
+
+    if (brace[0] === "}") {
+      // Text in front of a "}" is declaration text, never a selector list, so
+      // it goes out exactly as it came in — which is why it is not even sliced
+      // out here. A "}" with nothing open is a stray; pop() tolerates it and
+      // the depth simply stays at zero.
+      bearsSelectorsInside.pop();
+      continue;
+    }
+
+    const prelude = css.slice(begin, index);
+    const depth = bearsSelectorsInside.length;
+    const inSelectorContext = depth === 0 || bearsSelectorsInside[depth - 1];
+
+    // A statement at-rule ends at its ";" and opens no block, so `@charset
+    // "utf-8"; .a {` has TWO parts and only the second is this "{"'s prelude.
+    // Splitting at the last ";" keeps the statement verbatim and still scopes
+    // the selector behind it.
+    //
+    // The split is gated on the prelude containing an "@" at all, because a
+    // selector may legitimately carry a ";" of its own inside an attribute
+    // value — `a[href*=";"]` — and splitting there would cut the selector in
+    // half. No "@", no statement at-rule, nothing to split.
+    const semicolon = prelude.includes("@") ? prelude.lastIndexOf(";") : -1;
+    const trimmed = (semicolon === -1 ? prelude : prelude.slice(semicolon + 1)).trim();
+
+    if (trimmed.charCodeAt(0) === 0x40 /* "@" */) {
+      // Rule 1: an at-rule prelude is not a selector list, and a selector in
+      // front of one costs the whole rule. Left exactly as written.
+      bearsSelectorsInside.push(bearsSelectors(trimmed));
+    } else if (!inSelectorContext || trimmed === "") {
+      // A keyframe step, or a prelude inside a block that holds declarations
+      // rather than style rules. Left byte for byte, and whatever it opens
+      // holds declarations too, so nothing inside gets prefixed either.
+      bearsSelectorsInside.push(false);
+    } else {
+      // The one case that is a selector list. Flush everything still untouched
+      // behind it — which includes any statement at-rule this prelude carried,
+      // up to and including its ";" — then emit the rewritten selectors in
+      // place of the rest of `prelude + "{"`.
+      out += css.slice(copied, begin + semicolon + 1) + scopeSelectorList(trimmed, scopePrefix) + " {";
+      copied = index + 1;
+      bearsSelectorsInside.push(false);
+    }
+  }
+
+  // Nothing was rewritten: return the original string rather than a rebuilt
+  // copy, which also keeps that case allocation free.
+  return copied === 0 ? css : out + css.slice(copied);
 }
 
 export function sanitizeDescriptionHtml(html: string, productId?: string): string {
@@ -428,26 +626,12 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       let css = stripDangerousCss(cssContent);
       css = css.trim();
       if (!css) return "";
+      // Scoping runs only on the admin save paths, which are the ones that
+      // pass a productId and persist what comes back. The storefront read path
+      // passes none, so this branch is skipped there and the stored markup is
+      // returned byte for byte.
       if (productId) {
-        const scopePrefix = `.desc-${productId}`;
-        // The "{" is captured as an OPTIONAL group so a run of declaration
-        // text that never reaches one is returned untouched instead of making
-        // the engine re-walk it from every following position. Requiring the
-        // "{" made a brace-free block cost time proportional to the SQUARE of
-        // its length; the selector text a run covers now cannot overlap the
-        // next run's, so the pass is one sweep. Behaviour is unchanged: a run
-        // with no "{" is not a selector and was already left alone.
-        css = css.replace(
-          /([^{}]+)(\{)?/g,
-          (match, selectors: string, brace: string | undefined) => {
-            if (brace === undefined) return match;
-            const scoped = selectors
-              .split(",")
-              .map((s: string) => `${scopePrefix} ${s.trim()}`)
-              .join(", ");
-            return `${scoped} {`;
-          },
-        );
+        css = scopeCssSelectors(css, `.desc-${productId}`);
       }
       return `<style>${css}</style>`;
     },

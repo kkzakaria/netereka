@@ -130,6 +130,106 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).toContain(".desc-p1 .promo");
   });
 
+  // Scoping used to prefix EVERY run of text that reached a "{", on the
+  // assumption that such a run is always a selector list. It is not: an
+  // at-rule's prelude and a @keyframes step are both preludes too, and a
+  // selector cannot precede either one. The browser drops the whole rule, so
+  // the prefix did not merely add specificity — it deleted the rule.
+  //
+  // The oracles below are exact output strings rather than substring checks.
+  // A `not.toContain(".desc-p1 @media")` assertion would go green the moment
+  // the spacing changed, without the rule ever becoming valid again; only the
+  // full string says what the browser will actually be handed.
+  describe("scopes by at-rule context", () => {
+    it("leaves an at-rule prelude unprefixed and still scopes inside it", () => {
+      const input = "<style>@media (max-width: 768px) { .t { color: red; } }</style>";
+      expect(sanitizeDescriptionHtml(input, "p1")).toBe(
+        "<style>@media (max-width: 768px) {.desc-p1 .t { color: red; } }</style>",
+      );
+    });
+
+    it("scopes inside @supports as well", () => {
+      const input = "<style>@supports (display: grid) { .g { display: grid; } }</style>";
+      expect(sanitizeDescriptionHtml(input, "p1")).toBe(
+        "<style>@supports (display: grid) {.desc-p1 .g { display: grid; } }</style>",
+      );
+    });
+
+    // The production case: all seven descriptions carrying a <style> block have
+    // a @keyframes rule, and every one of them had its steps prefixed, which
+    // kills the animation outright.
+    it("leaves from/to keyframe steps untouched", () => {
+      const input = "<style>@keyframes fade { from { opacity: 0; } to { opacity: 1; } }</style>";
+      expect(sanitizeDescriptionHtml(input, "p1")).toBe(input);
+    });
+
+    it("leaves percentage keyframe steps untouched, including lists", () => {
+      const input = "<style>@keyframes k { 0%, 100% { opacity: 0; } 50.5% { opacity: 1; } }</style>";
+      expect(sanitizeDescriptionHtml(input, "p1")).toBe(input);
+    });
+
+    it.each([
+      "<style>@font-face { font-weight: 700; }</style>",
+      "<style>@page { margin: 1cm; }</style>",
+    ])("leaves a declaration-only at-rule untouched: %s", (input) => {
+      expect(sanitizeDescriptionHtml(input, "p1")).toBe(input);
+    });
+
+    it("tracks context through nesting: keyframes inside a media query", () => {
+      const input = "<style>@media screen { @keyframes k { from { opacity: 0; } } .b { color: red; } }</style>";
+      expect(sanitizeDescriptionHtml(input, "p1")).toBe(
+        "<style>@media screen { @keyframes k { from { opacity: 0; } }.desc-p1 .b { color: red; } }</style>",
+      );
+    });
+
+    it("does not prefix a selector that already carries the scope", () => {
+      const input = "<style>.desc-p1 .a { color: red; }</style>";
+      expect(sanitizeDescriptionHtml(input, "p1")).toBe(input);
+    });
+
+    // Stated plainly: this one PASSES against the pre-fix code and cannot fail
+    // there, because that code prefixed every selector unconditionally. It is
+    // not evidence of the defect. It guards the idempotence check introduced
+    // alongside the fix: ".desc-p1x" is a DIFFERENT class that merely starts
+    // with the same characters, so it still needs scoping, and a naive
+    // startsWith() would leave it unscoped and let it leak out of the
+    // description. It fails against that naive implementation, which is the
+    // implementation it exists to rule out.
+    it("still scopes a class that merely starts with the scope's characters", () => {
+      expect(sanitizeDescriptionHtml("<style>.desc-p1x .a { color: red; }</style>", "p1")).toBe(
+        "<style>.desc-p1 .desc-p1x .a { color: red; }</style>",
+      );
+    });
+
+    it("scopes one member of a list and leaves the already-scoped one alone", () => {
+      expect(sanitizeDescriptionHtml("<style>.desc-p1 .a, .b { color: red; }</style>", "p1")).toBe(
+        "<style>.desc-p1 .a, .desc-p1 .b { color: red; }</style>",
+      );
+    });
+
+    // A statement at-rule ends at its ";" and does not open a block, so the
+    // selector behind it is a selector and must still be scoped.
+    it("scopes the selector that follows a statement at-rule", () => {
+      expect(sanitizeDescriptionHtml('<style>@charset "utf-8"; .a { color: red; }</style>', "p1")).toBe(
+        '<style>@charset "utf-8";.desc-p1 .a { color: red; }</style>',
+      );
+    });
+
+    // …and a ";" that belongs to the selector rather than to a statement
+    // at-rule must not be treated as one, or the selector is cut in half.
+    //
+    // Third of the three tests here that are green against the pre-fix code:
+    // it guards the statement-at-rule split introduced above, not the defect.
+    // Verified against the ungated form of that split, which produces
+    // '<style>a[href*=";.desc-p1 "] { color: red; }</style>' — a selector with
+    // the scope prefix buried inside its attribute value.
+    it("does not split a selector on a semicolon inside an attribute value", () => {
+      expect(sanitizeDescriptionHtml('<style>a[href*=";"] { color: red; }</style>', "p1")).toBe(
+        '<style>.desc-p1 a[href*=";"] { color: red; }</style>',
+      );
+    });
+  });
+
   // Security regression (GHSA-92r4): tags using "/" as the attribute separator
   // must NOT bypass sanitization. Previously the tag regex only matched
   // whitespace-separated attributes, so these passed through verbatim.
@@ -497,6 +597,18 @@ describe("sanitizeDescriptionHtml", () => {
       ["<style>".repeat(70000), "prod-1"],
       ["<style>a{" + "b".repeat(400000), "prod-1"],
       ["<style>" + "a{}".repeat(130000), "prod-1"],
+      // …and the constructs the context-tracking sweep added. Each one drives a
+      // different part of it: unbounded nesting depth, an at-rule prelude that
+      // never gets a block, a keyframe step list, a selector list with no
+      // members, and a prelude carrying a statement at-rule's ";".
+      ["<style>" + "{".repeat(400000), "prod-1"],
+      ["<style>" + "}".repeat(400000), "prod-1"],
+      ["<style>" + "@media x{".repeat(50000), "prod-1"],
+      ["<style>@keyframes k{" + "0%,".repeat(130000), "prod-1"],
+      ["<style>" + ",".repeat(400000) + "{}", "prod-1"],
+      ["<style>" + ".desc-prod-1 a,".repeat(28000) + "{}", "prod-1"],
+      ["<style>" + ";".repeat(400000) + "a{}", "prod-1"],
+      ["<style>" + "@media x{a{b}}".repeat(30000), "prod-1"],
     ];
     const started = Date.now();
     for (const [shape, productId] of shapes) sanitizeDescriptionHtml(shape, productId);
@@ -515,7 +627,7 @@ describe("sanitizeDescriptionHtml", () => {
   // contain that literal string in the first place, so a substring assertion
   // would pass against the unfixed code and prove nothing.
   // The input cap is what makes the branch's cost argument a ceiling rather
-  // than a sample: "the worst accepted input costs ~74 ms" only means anything
+  // than a sample: "the worst accepted input costs ~43 ms" only means anything
   // if nothing larger is ever accepted. It was previously unpinned — raising
   // it tenfold, or deleting the guard outright, left every test green.
   //
@@ -841,5 +953,68 @@ describe("sanitizeDescriptionHtml", () => {
     expect(scoped).toContain("flex-direction: column");
     expect(scoped).toContain(".blk-219");
     expect(scoped.length).toBeGreaterThan(50_000);
+  });
+
+  // The shape the seven production descriptions actually have, at their real
+  // size: ~15 KB of CSS with CRLF line endings, selectors that already repeat
+  // their own scope prefix, a @media block and a @keyframes rule. The storefront
+  // read path passes no productId, so that direction must stay byte-identical;
+  // the admin save paths pass one and persist the result, so that direction is
+  // what must come back as CSS a browser will accept.
+  describe("a realistic generated description with @media and @keyframes", () => {
+    const id = "9xMa0DwOqDK4l2Cm9v--r";
+    const CRLF = "\r\n";
+
+    function buildDescription(): string {
+      const rules: string[] = [];
+      for (let i = 0; i < 120; i++) {
+        rules.push(
+          `.desc-${id} .blk-${i} .product-title {${CRLF}                font-size: ${24 + (i % 12)}px;${CRLF}            }` +
+            `.desc-${id} .desc-${id} .blk-${i} .price-section {${CRLF}                flex-direction: column;${CRLF}            }`,
+        );
+      }
+      const keyframes =
+        `@keyframes neterekaFadeIn {${CRLF}` +
+        `                from { opacity: 0; transform: translateY(8px); }${CRLF}` +
+        `                to { opacity: 1; transform: translateY(0); }${CRLF}` +
+        `            }` +
+        `@keyframes neterekaPulse {${CRLF}` +
+        `                0%, 100% { transform: scale(1); }${CRLF}` +
+        `                50% { transform: scale(1.04); }${CRLF}` +
+        `            }`;
+      return (
+        `<style>${keyframes}@media (max-width: 768px) {${rules.join("")}}</style>` +
+        `<p>Écran AMOLED 6,7 pouces. Autonomie 2 jours.</p>`
+      );
+    }
+
+    // Also green before the fix, and deliberately so: it is the non-regression
+    // pin for the read path, not evidence of the defect. Scoping has always
+    // been gated behind `if (productId)`, and this asserts that rewriting what
+    // is inside that branch did not move the gate.
+    it("is byte-identical on the storefront read path (no productId)", () => {
+      const input = buildDescription();
+      expect(input.length).toBeGreaterThan(14_000);
+      expect(sanitizeDescriptionHtml(input)).toBe(input);
+    });
+
+    it("leaves every keyframe step unprefixed on the admin save path", () => {
+      const scoped = sanitizeDescriptionHtml(buildDescription(), id);
+
+      // The failure mode being pinned is a scope prefix welded onto a step
+      // selector or onto an at-rule prelude — both make the browser drop the
+      // whole rule. Assert on what precedes each construct, not merely that the
+      // construct is still present somewhere.
+      expect(scoped).toContain("@keyframes neterekaFadeIn {");
+      expect(scoped).toContain("@keyframes neterekaPulse {");
+      expect(scoped).toContain("@media (max-width: 768px) {");
+      expect(scoped).not.toMatch(/\.desc-[\w-]+\s+@/);
+      expect(scoped).not.toMatch(/\.desc-[\w-]+\s+(?:from|to)\s*\{/);
+      expect(scoped).not.toMatch(/\.desc-[\w-]+\s+[\d.]+%/);
+
+      // …and the selectors that ARE selectors still carry exactly one scope.
+      expect(scoped).toContain(`.desc-${id} .blk-119 .product-title {`);
+      expect(scoped).not.toContain(`.desc-${id} .desc-${id} .desc-${id}`);
+    });
   });
 });
