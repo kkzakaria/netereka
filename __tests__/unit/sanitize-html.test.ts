@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 
 describe("sanitizeDescriptionHtml", () => {
@@ -457,6 +457,65 @@ describe("sanitizeDescriptionHtml", () => {
   // not contain the literal string javascript" — an encoded payload does not
   // contain that literal string in the first place, so a substring assertion
   // would pass against the unfixed code and prove nothing.
+  // The input cap is what makes the branch's cost argument a ceiling rather
+  // than a sample: "the worst accepted input costs ~74 ms" only means anything
+  // if nothing larger is ever accepted. It was previously unpinned — raising
+  // it tenfold, or deleting the guard outright, left every test green.
+  //
+  // The boundary is hardcoded on purpose. MAX_INPUT_LENGTH is not exported,
+  // and deriving these numbers from it would let the cap move with the suite
+  // still passing — the same self-reference that made the guard invisible.
+  describe("input size cap", () => {
+    const MAX = 512_000;
+
+    /** A description of exactly `length` bytes that survives sanitization whole. */
+    function paragraphOfLength(length: number): string {
+      return `<p>${"a".repeat(length - "<p></p>".length)}</p>`;
+    }
+
+    it("accepts an input just under the cap", () => {
+      const input = paragraphOfLength(MAX - 1);
+      expect(input).toHaveLength(MAX - 1);
+
+      expect(sanitizeDescriptionHtml(input)).toBe(input);
+    });
+
+    it("accepts an input of exactly the cap", () => {
+      const input = paragraphOfLength(MAX);
+      expect(input).toHaveLength(MAX);
+
+      expect(sanitizeDescriptionHtml(input)).toBe(input);
+    });
+
+    it("fails closed one byte over the cap", () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const input = paragraphOfLength(MAX + 1);
+      expect(input).toHaveLength(MAX + 1);
+
+      expect(sanitizeDescriptionHtml(input)).toBe("");
+      // Asserting which branch fired, not just that the result is empty: the
+      // catch-all also returns "", so an empty string alone would not prove
+      // the cap is what refused this input.
+      expect(error).toHaveBeenCalledOnce();
+      expect(String(error.mock.calls[0][0])).toContain("exceeds max length");
+
+      error.mockRestore();
+    });
+
+    it("reports the offending length and product so an operator can act", () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      sanitizeDescriptionHtml(paragraphOfLength(MAX + 1), "prod-42");
+
+      expect(error.mock.calls[0][1]).toMatchObject({
+        length: MAX + 1,
+        productId: "prod-42",
+      });
+
+      error.mockRestore();
+    });
+  });
+
   describe("URI scheme filtering resists encoding", () => {
     it.each([
       '<a href="&#106;avascript:alert(1)">x</a>',
