@@ -42,12 +42,13 @@ describe("cartAdd", () => {
   });
 
   it("adds a product to the cart successfully", async () => {
-    // 1. Product lookup
+    // 1. Product lookup — a product sold without variants
     mockDb._statement.first.mockResolvedValueOnce({
       id: "p1",
       name: "iPhone 15",
       base_price: 650000,
       stock_quantity: 10,
+      active_variant_count: 0,
     });
     // 2. Existing cart item check — none
     mockDb._statement.first.mockResolvedValueOnce(null);
@@ -75,6 +76,7 @@ describe("cartAdd", () => {
       name: "Rare Phone",
       base_price: 200000,
       stock_quantity: 1,
+      active_variant_count: 0,
     });
 
     const result = await cartAdd(createMockCtx(mockDb), { product_id: "p1", quantity: 5 });
@@ -90,6 +92,7 @@ describe("cartAdd", () => {
       name: "Samsung TV",
       base_price: 300000,
       stock_quantity: 20,
+      active_variant_count: 0,
     });
     // Existing cart item
     mockDb._statement.first.mockResolvedValueOnce({
@@ -112,6 +115,7 @@ describe("cartAdd", () => {
       name: "Laptop",
       base_price: 500000,
       stock_quantity: 5,
+      active_variant_count: 3,
     });
     // Variant lookup — not found (wrong product)
     mockDb._statement.first.mockResolvedValueOnce(null);
@@ -124,6 +128,60 @@ describe("cartAdd", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/variant/i);
+  });
+
+  // ── Pricing invariant, enforced at cart entry ──
+  //
+  // `base_price` is the display figure for a product sold through variants
+  // (the lowest variant price). Letting such a line into the cart would both
+  // quote an unsellable price back in the conversation and produce a line the
+  // order path must later reject — so refuse it here, at the earliest point.
+  it("refuses a variant product added without a variant", async () => {
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "p1",
+      name: "Climatiseur Split",
+      base_price: 250000,
+      stock_quantity: 10,
+      active_variant_count: 2,
+    });
+
+    const result = await cartAdd(createMockCtx(mockDb), { product_id: "p1", quantity: 1 });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/variante/i);
+    expect(result.error).toContain("Climatiseur Split");
+    // Nothing may be written to whatsapp_carts.
+    expect(mockDb._statement.run).not.toHaveBeenCalled();
+  });
+
+  it("adds a variant line at the variant price, not the product base price", async () => {
+    // Product lookup
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "p1",
+      name: "Climatiseur Split",
+      base_price: 250000,
+      stock_quantity: 10,
+      active_variant_count: 2,
+    });
+    // Variant lookup
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "v2",
+      name: "3 CV",
+      price: 1400000,
+      stock_quantity: 2,
+    });
+    // Existing cart item check — none
+    mockDb._statement.first.mockResolvedValueOnce(null);
+    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+
+    const result = await cartAdd(createMockCtx(mockDb), {
+      product_id: "p1",
+      variant_id: "v2",
+      quantity: 1,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ name: "Climatiseur Split – 3 CV", price: 1400000 });
   });
 });
 

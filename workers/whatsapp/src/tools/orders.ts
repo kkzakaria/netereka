@@ -1,14 +1,38 @@
 import type { ToolContext, ToolResult } from "../types";
+// Shared with the web checkout on purpose: order-line pricing has exactly one
+// implementation in this repo. It is a pure module whose only import is an
+// `import type`, so nothing is pulled into the Worker bundle.
+import {
+  resolveOrderLine,
+  countActiveVariantsByProduct,
+  calculateSubtotal,
+} from "../../../../lib/utils/checkout";
 
 interface CartItemRow {
   cart_item_id: string;
   product_id: string;
   variant_id: string | null;
   product_name: string;
-  variant_name: string | null;
+  base_price: number;
+  product_stock: number;
   quantity: number;
-  unit_price: number;
+}
+
+interface ActiveVariantRow {
+  id: string;
+  product_id: string;
+  name: string;
+  price: number;
   stock_quantity: number;
+}
+
+interface ResolvedOrderLine {
+  productId: string;
+  variantId: string | null;
+  productName: string;
+  variantName: string | null;
+  unitPrice: number;
+  quantity: number;
 }
 
 interface DeliveryZoneRow {
@@ -50,17 +74,17 @@ export async function createOrder(
     };
   }
 
-  // Fetch cart items with product/variant info and stock
+  // Fetch cart items with the product's own figures. Prices are NOT read from
+  // this query: the unit price is decided by resolveOrderLine below, from the
+  // active variant when the product has any.
   const { results: cartItems } = await ctx.db
     .prepare(
       `SELECT wc.id as cart_item_id, p.id as product_id, wc.variant_id,
-              p.name as product_name, pv.name as variant_name,
-              wc.quantity,
-              COALESCE(pv.price, p.base_price) as unit_price,
-              COALESCE(pv.stock_quantity, p.stock_quantity) as stock_quantity
+              p.name as product_name, p.base_price,
+              p.stock_quantity as product_stock,
+              wc.quantity
        FROM whatsapp_carts wc
        JOIN products p ON wc.product_id = p.id
-       LEFT JOIN product_variants pv ON wc.variant_id = pv.id
        WHERE wc.session_id = ?`
     )
     .bind(ctx.session.id)
@@ -70,17 +94,68 @@ export async function createOrder(
     return { success: false, error: "Your cart is empty. Add items before placing an order." };
   }
 
-  // Validate stock for each item
+  // Fetch every ACTIVE variant of every product in the cart — not just the ones
+  // referenced by a variant_id. This yields each product's activeVariantCount
+  // without a second COUNT query, and guarantees a variant can only resolve for
+  // a product actually in this cart.
+  const productIds = [...new Set(cartItems.map((item) => item.product_id))];
+  const placeholders = productIds.map(() => "?").join(",");
+  const { results: activeVariantRows } = await ctx.db
+    .prepare(
+      `SELECT id, product_id, name, price, stock_quantity
+       FROM product_variants
+       WHERE product_id IN (${placeholders}) AND is_active = 1`
+    )
+    .bind(...productIds)
+    .all<ActiveVariantRow>();
+
+  const activeVariants = activeVariantRows ?? [];
+  const variantById = new Map(activeVariants.map((v) => [v.id, v]));
+  const activeVariantCountByProduct = countActiveVariantsByProduct(activeVariants);
+
+  // Resolve the price and stock of every line. base_price is a display figure
+  // for a product sold through variants, never a sellable price — a line with
+  // no variant on such a product stops the order here.
+  const lines: ResolvedOrderLine[] = [];
+
   for (const item of cartItems) {
-    if (item.stock_quantity < item.quantity) {
-      const name = item.variant_name
-        ? `${item.product_name} – ${item.variant_name}`
-        : item.product_name;
-      return {
-        success: false,
-        error: `Insufficient stock for "${name}". Only ${item.stock_quantity} unit(s) available.`,
-      };
+    let variant: ActiveVariantRow | null = null;
+    if (item.variant_id) {
+      const candidate = variantById.get(item.variant_id);
+      if (!candidate || candidate.product_id !== item.product_id) {
+        return {
+          success: false,
+          error: `La variante choisie pour ${item.product_name} n'est plus disponible. Veuillez en sélectionner une autre.`,
+        };
+      }
+      variant = candidate;
     }
+
+    const resolved = resolveOrderLine({
+      product: {
+        name: item.product_name,
+        base_price: item.base_price,
+        stock_quantity: item.product_stock,
+        activeVariantCount: activeVariantCountByProduct.get(item.product_id) ?? 0,
+      },
+      variant: variant
+        ? { name: variant.name, price: variant.price, stock_quantity: variant.stock_quantity }
+        : null,
+      quantity: item.quantity,
+    });
+
+    if (!resolved.ok) {
+      return { success: false, error: resolved.error };
+    }
+
+    lines.push({
+      productId: item.product_id,
+      variantId: variant?.id ?? null,
+      productName: item.product_name,
+      variantName: variant?.name ?? null,
+      unitPrice: resolved.unitPrice,
+      quantity: item.quantity,
+    });
   }
 
   // Look up delivery zone by commune
@@ -102,7 +177,7 @@ export async function createOrder(
   }
 
   // Calculate totals
-  const subtotal = cartItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  const subtotal = calculateSubtotal(lines);
   const deliveryFee = zone.fee;
   const total = subtotal + deliveryFee;
 
@@ -138,7 +213,7 @@ export async function createOrder(
       estimatedDelivery
     );
 
-  const insertItemStatements = cartItems.map((item) =>
+  const insertItemStatements = lines.map((line) =>
     ctx.db
       .prepare(
         `INSERT INTO order_items (
@@ -149,25 +224,25 @@ export async function createOrder(
       .bind(
         generateId(),
         orderId,
-        item.product_id,
-        item.variant_id ?? null,
-        item.product_name,
-        item.variant_name ?? null,
-        item.quantity,
-        item.unit_price,
-        item.quantity * item.unit_price
+        line.productId,
+        line.variantId,
+        line.productName,
+        line.variantName,
+        line.quantity,
+        line.unitPrice,
+        line.quantity * line.unitPrice
       )
   );
 
   // Decrement stock for each item
-  const stockDecrements = cartItems.map((item) =>
-    item.variant_id
+  const stockDecrements = lines.map((line) =>
+    line.variantId
       ? ctx.db
           .prepare("UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?")
-          .bind(item.quantity, item.variant_id)
+          .bind(line.quantity, line.variantId)
       : ctx.db
           .prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?")
-          .bind(item.quantity, item.product_id)
+          .bind(line.quantity, line.productId)
   );
 
   const clearCart = ctx.db
@@ -184,7 +259,7 @@ export async function createOrder(
       delivery_fee: deliveryFee,
       total,
       estimated_delivery: estimatedDelivery,
-      item_count: cartItems.length,
+      item_count: lines.length,
     },
   };
 }

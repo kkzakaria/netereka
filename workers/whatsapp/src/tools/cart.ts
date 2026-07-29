@@ -1,10 +1,15 @@
 import type { ToolContext, ToolResult } from "../types";
+// Same shared pricing rule as the web checkout and as createOrder — see
+// lib/utils/checkout.ts. Pure module, nothing lands in the Worker bundle.
+import { resolveOrderLine } from "../../../../lib/utils/checkout";
 
 interface ProductRow {
   id: string;
   name: string;
   base_price: number;
   stock_quantity: number;
+  /** Number of is_active = 1 variants this product has. */
+  active_variant_count: number;
 }
 
 interface VariantRow {
@@ -42,12 +47,16 @@ export async function cartAdd(
     return { success: false, error: "La quantité doit être un entier positif." };
   }
 
-  // Validate product exists and is available
+  // Validate product exists and is available. The active-variant count comes
+  // along so a product sold through variants can never be priced from its
+  // base_price (a display figure, not a sellable price).
   const product = await ctx.db
     .prepare(
-      `SELECT id, name, base_price, stock_quantity
-       FROM products
-       WHERE id = ? AND is_active = 1 AND is_draft = 0`
+      `SELECT p.id, p.name, p.base_price, p.stock_quantity,
+              (SELECT COUNT(*) FROM product_variants v
+                WHERE v.product_id = p.id AND v.is_active = 1) as active_variant_count
+       FROM products p
+       WHERE p.id = ? AND p.is_active = 1 AND p.is_draft = 0`
     )
     .bind(params.product_id)
     .first<ProductRow>();
@@ -56,13 +65,10 @@ export async function cartAdd(
     return { success: false, error: "Product not found" };
   }
 
-  let itemName = product.name;
-  let unitPrice = product.base_price;
-  let availableStock = product.stock_quantity;
-
-  // If variant provided, validate and use variant price/stock
+  // If variant provided, validate it belongs to this product and is active
+  let variant: VariantRow | null = null;
   if (params.variant_id) {
-    const variant = await ctx.db
+    variant = await ctx.db
       .prepare(
         `SELECT id, name, price, stock_quantity
          FROM product_variants
@@ -74,19 +80,32 @@ export async function cartAdd(
     if (!variant) {
       return { success: false, error: "Variant not found or does not belong to this product" };
     }
-
-    itemName = `${product.name} – ${variant.name}`;
-    unitPrice = variant.price;
-    availableStock = variant.stock_quantity;
   }
 
-  // Check stock
-  if (availableStock < quantity) {
-    return {
-      success: false,
-      error: `Insufficient stock. Only ${availableStock} unit(s) available.`,
-    };
+  // Price + stock decided by the shared rule. Refusing here rather than only at
+  // checkout keeps an unsellable base_price from ever being quoted back in the
+  // conversation; createOrder re-checks anyway, since a variant can be retired
+  // between the add and the order.
+  const resolved = resolveOrderLine({
+    product: {
+      name: product.name,
+      base_price: product.base_price,
+      stock_quantity: product.stock_quantity,
+      activeVariantCount: product.active_variant_count ?? 0,
+    },
+    variant: variant
+      ? { name: variant.name, price: variant.price, stock_quantity: variant.stock_quantity }
+      : null,
+    quantity,
+  });
+
+  if (!resolved.ok) {
+    return { success: false, error: resolved.error };
   }
+
+  const itemName = variant ? `${product.name} – ${variant.name}` : product.name;
+  const unitPrice = resolved.unitPrice;
+  const availableStock = resolved.availableStock;
 
   // Check if item already in cart (same product + variant combination)
   const existing = await ctx.db
