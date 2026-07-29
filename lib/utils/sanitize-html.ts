@@ -26,21 +26,35 @@ const EVENT_HANDLER_RE = /^on[a-z]/i;
 // `\75 rl(`, which a browser would then resolve again to `url(`).
 // ---------------------------------------------------------------------------
 
-/** Named character references that resolve to ASCII punctuation or whitespace.
- *  No named reference produces an ASCII letter, so this table together with the
- *  numeric forms covers every reference able to reconstruct a URI scheme or a
- *  CSS function name. Lookup is case-insensitive on purpose: resolving more
- *  than a browser would can only make the verdict stricter. */
+/** Every named character reference whose expansion contains an ASCII character.
+ *
+ *  Checked against the WHATWG entities table rather than assumed: of its 2231
+ *  named references, 57 expand to something containing an ASCII character, and
+ *  between them they produce 34 distinct ASCII characters — all of them below.
+ *  Only ONE expands to ASCII letters (`&fjlig;` → "fj"), which is why that entry
+ *  looks out of place; an earlier version of this comment claimed no named
+ *  reference produces a letter, and that was simply wrong.
+ *
+ *  Everything the spec can express outside this table is non-ASCII, and no URI
+ *  scheme or CSS function name is spelled with non-ASCII characters, so the
+ *  numeric forms — which are resolved in full — carry the rest.
+ *
+ *  Lookup is case-insensitive, which resolves more than a browser would (`&LT;`
+ *  is a real reference, `&TAB;` is not); that can only make the verdict
+ *  stricter. A trailing ";" is required: the legacy semicolon-less forms are
+ *  limited to references such as `&amp` / `&lt` / `&gt` / `&quot`, none of which
+ *  produce a character that can extend a scheme or a function name. */
 const NAMED_CHARACTER_REFERENCES: Record<string, string> = {
   tab: "\t", newline: "\n", nbsp: "\xa0",
-  quot: '"', apos: "'", amp: "&", lt: "<", gt: ">",
+  quot: '"', apos: "'", amp: "&", lt: "<", gt: ">", nvlt: "<", nvgt: ">",
   excl: "!", num: "#", dollar: "$", percnt: "%", ast: "*", midast: "*",
   lpar: "(", rpar: ")", plus: "+", comma: ",", period: ".", sol: "/",
-  colon: ":", semi: ";", equals: "=", quest: "?", commat: "@",
+  colon: ":", semi: ";", equals: "=", bne: "=", quest: "?", commat: "@",
   lsqb: "[", lbrack: "[", bsol: "\\", rsqb: "]", rbrack: "]",
-  hat: "^", lowbar: "_", grave: "`",
+  hat: "^", lowbar: "_", underbar: "_", grave: "`", diacriticalgrave: "`",
   lcub: "{", lbrace: "{", verbar: "|", vert: "|", verticalline: "|",
   rcub: "}", rbrace: "}",
+  fjlig: "fj",
 };
 
 /** A code point outside the Unicode range — or zero — is what a parser turns
@@ -56,24 +70,50 @@ function codePointOrReplacement(value: number): string {
 
 /** Resolve HTML character references the way a tokenizer does inside an
  *  attribute value, including the semicolon-less numeric forms: `&#106avascript:`
- *  really is `javascript:` to a browser. */
+ *  really is `javascript:` to a browser.
+ *
+ *  ONE pass, one regex. A tokenizer resolves each reference exactly once and
+ *  never re-reads what it just produced. Resolving the hexadecimal, decimal and
+ *  named forms in three ordered passes instead let one pass's OUTPUT become part
+ *  of the next pass's input, which does not merely over-decode — it silently
+ *  re-segments the references that follow. `&#92` immediately ahead of a `6`
+ *  produced by an earlier pass was read as `&#926`, so a run that a browser
+ *  resolves to `ur\6C(` was read here as something harmless and let through.
+ *  Any future addition must extend this single alternation, never chain
+ *  another `.replace()` after it. */
 function decodeCharacterReferences(value: string): string {
-  return value
-    .replace(/&#x([0-9a-f]+);?/gi, (_m, hex: string) => codePointOrReplacement(parseInt(hex, 16)))
-    .replace(/&#([0-9]+);?/g, (_m, dec: string) => codePointOrReplacement(parseInt(dec, 10)))
-    .replace(/&([a-z][a-z0-9]{1,31});/gi, (match, name: string) =>
-      NAMED_CHARACTER_REFERENCES[name.toLowerCase()] ?? match,
-    );
+  return value.replace(
+    /&(?:#x([0-9a-f]+);?|#([0-9]+);?|([a-z][a-z0-9]{1,31});)/gi,
+    (match, hex: string | undefined, dec: string | undefined, name: string | undefined) => {
+      if (hex !== undefined) return codePointOrReplacement(parseInt(hex, 16));
+      if (dec !== undefined) return codePointOrReplacement(parseInt(dec, 10));
+      return NAMED_CHARACTER_REFERENCES[(name as string).toLowerCase()] ?? match;
+    },
+  );
+}
+
+/** CSS Syntax L3 §3.3: a stylesheet is preprocessed before tokenizing, and CR,
+ *  CRLF and FF all become a single LF. That matters here because §4.3.7 lets one
+ *  such newline terminate a hexadecimal escape — so `u\72<CR><LF>l(` is `url(`
+ *  to a browser, the CRLF counting as the single terminator. Substituting first
+ *  keeps the terminator one character wide in `resolveCssEscapes` below.
+ *
+ *  This is ordinary content, not an exotic input: the generated <style> blocks
+ *  on real product descriptions are stored with CRLF line endings. */
+function preprocessCssNewlines(css: string): string {
+  return css.replace(/\r\n?|\f/g, "\n");
 }
 
 /** Resolve CSS escapes (`\72` → `r`) so the filter sees what the browser sees.
  *  The second alternative — a backslash before anything that is not a hex digit
  *  — matters as much as the first: it consumes `\\` as one escaped backslash, so
  *  `\\75 rl(` resolves to `\75 rl(` and NOT to `url(`, which is exactly what a
- *  browser does, resolving each escape once. */
+ *  browser does, resolving each escape once.
+ *  Run this on the output of preprocessCssNewlines, never on raw text: the
+ *  optional terminator is a single character by that point. */
 function resolveCssEscapes(css: string): string {
   return css.replace(
-    /\\(?:([0-9a-f]{1,6})[ \t\r\n\f]?|([\s\S]))/gi,
+    /\\(?:([0-9a-f]{1,6})[ \t\n]?|([\s\S]))/gi,
     (_m, hex: string | undefined, other: string) =>
       hex !== undefined ? codePointOrReplacement(parseInt(hex, 16)) : other,
   );
@@ -81,11 +121,20 @@ function resolveCssEscapes(css: string): string {
 
 /** Constructs that make a stylesheet fetch a resource or run legacy script.
  *  `image-set` covers its `-webkit-`/`-moz-` spellings too, since the match is
- *  not anchored. NO "g" flag: a global regex used with .test() carries its
- *  lastIndex from one call to the next, so the second call on the same input
- *  would disagree with the first — a filter that only holds every other time,
- *  and one that passes unit tests when they run in isolation. */
-const CSS_FETCHING_RE = /(?:url|image-set|src|expression)\s*\(|@import/i;
+ *  not anchored.
+ *
+ *  The "(" must follow the name immediately, with no whitespace, because that is
+ *  what makes a function token: `url (x)` is an identifier, a space and a
+ *  parenthesised block, and fetches nothing. Allowing whitespace bought no
+ *  safety and cost precision — it let the words "url (" inside a comment blank a
+ *  35 KB stylesheet. This pass is still neither comment- nor string-aware, so
+ *  "url(" written inside a comment does still blank the block.
+ *
+ *  NO "g" flag: a global regex used with .test() carries its lastIndex from one
+ *  call to the next, so the second call on the same input would disagree with
+ *  the first — a filter that only holds every other time, and one that passes
+ *  unit tests when they run in isolation. */
+const CSS_FETCHING_RE = /(?:url|image-set|src|expression)\(|@import/i;
 
 /**
  * Remove dangerous CSS constructs from a style value or a <style> block body.
@@ -102,7 +151,11 @@ const CSS_FETCHING_RE = /(?:url|image-set|src|expression)\s*\(|@import/i;
  * quote-aware, so fragments of markup can reach this function.
  */
 function stripDangerousCss(css: string): string {
-  const resolved = resolveCssEscapes(decodeCharacterReferences(css));
+  // The order is the browser's: character references are resolved by the HTML
+  // tokenizer (for an inline style attribute), then the CSS preprocessor folds
+  // line breaks, then the CSS tokenizer resolves escapes. Any other order reads
+  // a different document than the one that will run.
+  const resolved = resolveCssEscapes(preprocessCssNewlines(decodeCharacterReferences(css)));
   return CSS_FETCHING_RE.test(resolved) ? "" : css;
 }
 

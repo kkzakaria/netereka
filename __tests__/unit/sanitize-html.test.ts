@@ -523,33 +523,92 @@ describe("sanitizeDescriptionHtml", () => {
       const input = '<div style="content:\\201C">a</div>';
       expect(sanitizeDescriptionHtml(input)).toBe(input);
     });
+
+    // A stylesheet is preprocessed before tokenizing: CR, CRLF and FF all become
+    // a single LF, and one such newline then terminates a hexadecimal escape. A
+    // filter that treats CRLF as two characters leaves the second half inside
+    // the identifier and reads a split name where a browser reads a whole one.
+    // Real product descriptions are stored with CRLF, so this is the line ending
+    // this content actually has.
+    describe("CSS escapes terminated by a line break", () => {
+      const CRLF = "\r\n";
+      it.each([
+        `<style>body{background:u\\72${CRLF}l(https://evil.example/x)}</style>`,
+        `<style>@\\69${CRLF}mport "https://evil.example/x";</style>`,
+        `<div style="background:u\\72${CRLF}l(https://evil.example/x)">a</div>`,
+        `<style>body{background:u\\72\rl(https://evil.example/x)}</style>`,
+        `<style>body{background:u\\72\nl(https://evil.example/x)}</style>`,
+        `<style>body{background:u\\72\fl(https://evil.example/x)}</style>`,
+      ])("neutralises %j", (input) => {
+        expect(sanitizeDescriptionHtml(input)).not.toMatch(/evil\.example/);
+      });
+
+      it("still preserves a CRLF @media block byte-identical", () => {
+        const input =
+          `<style>@media (max-width: 768px) {.desc-x .product-title {${CRLF}` +
+          `                font-size: 32px;${CRLF}            }}</style>`;
+        expect(sanitizeDescriptionHtml(input)).toBe(input);
+      });
+    });
+
+    // Character references are resolved in ONE pass, as a tokenizer does. Chained
+    // passes let the output of one become the input of the next, which
+    // re-segments the references that follow rather than merely over-decoding
+    // them, and a run a browser rebuilds into a fetch was read as harmless.
+    it("resolves character references in a single pass", () => {
+      const input = "<style>body{background:&#117r&#92&#x36&#X43&#x28https://evil.example/x)}</style>";
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/evil\.example/);
+    });
+
+    it("does not fold a reference into the digits of the one before it", () => {
+      // "&#92" followed by a literal "6" is U+005C then "6"; reading it as
+      // "&#926" is a different string entirely.
+      const input = '<div style="background:&#117r&#92&#x36&#X43&#x28https://evil.example/x)">a</div>';
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/evil\.example/);
+    });
+
+    it("does not blank a stylesheet over whitespace before a parenthesis", () => {
+      // "url (x)" is an identifier, a space and a block: it fetches nothing, so
+      // matching it would only discard legitimate stylesheets that mention it.
+      const input = "<style>/* the url ( token is documented above */.a{color:red}</style>";
+      expect(sanitizeDescriptionHtml(input)).toBe(input);
+    });
   });
 
   // Companion guard to the one above, for the normalisation passes. They run on
   // the same content, on every storefront render inside a CPU-metered Worker, so
   // a superlinear form here would undo the bound the scan already has. Each
-  // shape is dense in exactly what one decoder looks for. Measured at ~0.2 s
-  // total, so the budget leaves an order of magnitude of headroom while a
-  // return to seconds fails immediately.
+  // shape is dense in exactly what one decoder looks for. Measured at ~0.45 s
+  // total, so the budget leaves roughly six times the headroom while a return to
+  // seconds fails immediately.
   it("resolves character references and escapes in linear time", () => {
+    // Half the shapes carry a productId: the admin save paths sanitize with one,
+    // and that turns on selector scoping, which the other half never reaches.
     const shapes: [string, string | undefined][] = [
       // CSS escape resolution
       ["<style>" + "\\".repeat(400000), undefined],
+      ["<style>" + "\\".repeat(400000), "prod-1"],
       ["<style>" + "\\75 ".repeat(120000), undefined],
-      ["<style>" + "\\ffffff".repeat(60000), undefined],
+      ["<style>" + "\\75 ".repeat(120000), "prod-1"],
+      ["<style>" + "\\ffffff".repeat(60000), "prod-1"],
+      ["<style>" + "a{\\75 }".repeat(60000), "prod-1"],
       ['<p style="' + "\\".repeat(400000) + '">', undefined],
+      // line-break folding ahead of escape resolution
+      ["<style>" + "\\72\r\n".repeat(80000), undefined],
+      ["<style>" + "\r\n".repeat(200000), "prod-1"],
       // character-reference resolution
       ["<style>" + "&#106;".repeat(80000), undefined],
-      ["<style>" + "&#x6a;".repeat(80000), undefined],
+      ["<style>" + "&#x6a;".repeat(80000), "prod-1"],
       ["<style>" + "&lpar;".repeat(80000), undefined],
-      ["<style>" + "&".repeat(400000), undefined],
+      ["<style>" + "&".repeat(400000), "prod-1"],
       ["<style>&#" + "9".repeat(400000) + ";", undefined],
       ["<style>&#x" + "f".repeat(400000) + ";", undefined],
       ["<style>&" + "a".repeat(400000) + ";", undefined],
+      ["<style>" + "&#92&#x36".repeat(50000), "prod-1"],
       ['<a href="' + "&#106;".repeat(80000) + '">x</a>', undefined],
       // near-miss on every alternative of the resource-fetch pattern
       ["<style>" + "url ".repeat(120000), undefined],
-      ["<style>" + "image-set ".repeat(48000), undefined],
+      ["<style>" + "image-set ".repeat(48000), "prod-1"],
     ];
     const started = Date.now();
     for (const [shape, productId] of shapes) sanitizeDescriptionHtml(shape, productId);
@@ -592,5 +651,14 @@ describe("sanitizeDescriptionHtml", () => {
       `<p><a href="/c/telephones">Voir la catégorie</a></p>`;
     expect(input.length).toBeGreaterThan(50_000);
     expect(sanitizeDescriptionHtml(input)).toBe(input);
+
+    // The admin save paths sanitize WITH a product id and persist the result, so
+    // that path carries real content too. Selector scoping reshapes it — that is
+    // pre-existing behaviour — but nothing may be blanked by the filters.
+    const scoped = sanitizeDescriptionHtml(input, id);
+    expect(scoped).toContain("@media (max-width: 768px)");
+    expect(scoped).toContain("flex-direction: column");
+    expect(scoped).toContain(".blk-219");
+    expect(scoped.length).toBeGreaterThan(50_000);
   });
 });
