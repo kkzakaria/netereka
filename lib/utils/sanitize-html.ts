@@ -292,14 +292,22 @@ function isSafeUri(rawValue: string): boolean {
  * worst-case an actual ceiling instead of a sample. Raising it raises that
  * ceiling proportionally.
  *
- * Where the ceiling sits, last measured by sweeping 70 adversarial shapes each
- * cut to exactly 512,000 bytes, all figures from one run on one machine so
- * they are comparable to each other and to nothing else: **~39 ms** (38–43
- * across runs), on a block of nothing but ";a{}" or "{". Rewriting the
- * selector-scoping pass as a context-tracking sweep MOVED THE CEILING DOWN —
- * the same sweep costs ~90 ms against the regex that pass replaced. Teaching
- * the sweep to step over CSS comments cost about 2% of the ceiling on top of
- * that, and about 12% across the whole sweep.
+ * Where the ceiling sits, last measured by sweeping 105 adversarial shapes
+ * each cut to exactly 512,000 bytes. Absolute figures move with machine load,
+ * so only same-run comparisons mean anything, and the ones below are all from
+ * single runs: **~39 ms** on a quiet machine, on a block of nothing but
+ * ";a{}", ".x{}" or "{".
+ *
+ * How it got there. Rewriting the selector-scoping pass as a context-tracking
+ * sweep MOVED THE CEILING DOWN — the same sweep costs about 2.2x that against
+ * the regex the pass replaced. Teaching the sweep to step over CSS comments
+ * then cost ~2% of the ceiling, and teaching the selector splitter to track
+ * strings, brackets and parens instead of calling split(",") cost ~1% more
+ * (58.30 -> 58.84 ms and 61.33 -> 60.95 ms, two same-run pairs on a loaded
+ * machine). Some shapes got dramatically CHEAPER in the process: an
+ * unterminated "[" or quote followed by 240,000 commas fell from ~35 ms to
+ * ~5 ms, because splitting is now suppressed rather than emitting a prefix per
+ * comma.
  *
  * Deliberately NOT exported. The boundary tests hardcode 512000 so that
  * changing this number fails them; deriving the test's boundary from the
@@ -391,6 +399,15 @@ function bearsSelectors(prelude: string, at: number): boolean {
   return keyword !== null && SELECTOR_BEARING_AT_RULES.has(keyword[1].toLowerCase());
 }
 
+/** A complete CSS string, sticky so it can be aimed at an opening quote. The
+ *  two alternatives are disjoint — an escape starts with a backslash, an
+ *  ordinary character excludes it — so there is no ambiguity for the engine to
+ *  backtrack through. A raw newline is excluded because CSS says a string does
+ *  not survive one; the match then fails and the caller falls back to treating
+ *  the quote as an ordinary character, exactly as a browser recovers. */
+const DOUBLE_QUOTED = /"(?:\\[^]|[^"\\\n\r\f])*"/y;
+const SINGLE_QUOTED = /'(?:\\[^]|[^'\\\n\r\f])*'/y;
+
 /** CSS whitespace: tab, LF, FF, CR, space. */
 function isCssWhitespace(code: number): boolean {
   return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d;
@@ -453,20 +470,95 @@ function lastStatementEnd(prelude: string): number {
   const length = prelude.length;
   let end = 0;
   let sawAtKeyword = false;
+  let depth = 0;
+  let quote = 0;
   let i = 0;
   while (i < length) {
     const code = prelude.charCodeAt(i);
+    if (quote !== 0) {
+      if (code === 0x5c /* "\" */) i++;
+      else if (code === quote) quote = 0;
+      i++;
+      continue;
+    }
     if (code === 0x2f /* "/" */ && prelude.charCodeAt(i + 1) === 0x2a /* "*" */) {
       const close = prelude.indexOf("*/", i + 2);
       if (close === -1) break; // the rest is comment
       i = close + 2;
       continue;
     }
-    if (code === 0x40 /* "@" */) sawAtKeyword = true;
-    else if (code === 0x3b /* ";" */) end = i + 1;
+    if (code === 0x22 /* '"' */ || code === 0x27 /* "'" */) quote = code;
+    else if (code === 0x5c /* "\" */) i++;
+    else if (code === 0x28 /* "(" */ || code === 0x5b /* "[" */) depth++;
+    else if (code === 0x29 /* ")" */ || code === 0x5d /* "]" */) {
+      if (depth > 0) depth--;
+    } else if (depth === 0) {
+      // A ";" only ends a statement at the top level of the prelude, and only
+      // outside a string. `@layer base; a[href*=";"] {` carries both: the first
+      // ";" is the statement, the second belongs to the selector. Splitting on
+      // the second inserted the scope prefix into the middle of an attribute
+      // value — a selector that still parses, and quietly matches something
+      // else than the author wrote.
+      if (code === 0x40 /* "@" */) sawAtKeyword = true;
+      else if (code === 0x3b /* ";" */) end = i + 1;
+    }
     i++;
   }
   return sawAtKeyword ? end : 0;
+}
+
+/**
+ * Split a selector list on the commas that actually separate selectors.
+ *
+ * Not every comma does. A comma inside a functional pseudo-class argument
+ * (`:is()`, `:where()`, `:not()`, `:has()`), inside an attribute selector's
+ * brackets, or inside a quoted value is part of ONE selector, and cutting
+ * there splices the scope prefix into the middle of a token:
+ *
+ *   `:is(h1, h2)`      became `.desc-p1 :is(h1, .desc-p1 h2)`  — invalid, and
+ *                      an invalid selector drops the whole rule. The forgiving
+ *                      parsing of `:is()`/`:where()` does not rescue this; it
+ *                      tolerates an invalid MEMBER, not a mangled token.
+ *   `a[title="x,y"]`   became `.desc-p1 a[title="x, .desc-p1 y"]` — which is
+ *                      WORSE, because it stays syntactically valid. Nothing
+ *                      errors and nothing is dropped; the rule simply matches
+ *                      a different title, silently. A parser-based check calls
+ *                      that clean, so only an exact-output oracle catches it.
+ *
+ * Linear: one left-to-right pass, `i` never moves backwards, and a comment
+ * jumps straight to its end. An unterminated "(", "[" or quote suppresses
+ * every later split rather than guessing — the list comes back as a single
+ * member, so nothing is inserted into a construct this function cannot read.
+ */
+function splitSelectorList(list: string): string[] {
+  const parts: string[] = [];
+  const length = list.length;
+  let start = 0;
+  let depth = 0;
+  let quote = 0;
+  for (let i = 0; i < length; i++) {
+    const code = list.charCodeAt(i);
+    if (quote !== 0) {
+      if (code === 0x5c /* "\" */) i++;
+      else if (code === quote) quote = 0;
+      continue;
+    }
+    if (code === 0x22 /* '"' */ || code === 0x27 /* "'" */) quote = code;
+    else if (code === 0x5c /* "\" */) i++;
+    else if (code === 0x28 /* "(" */ || code === 0x5b /* "[" */) depth++;
+    else if (code === 0x29 /* ")" */ || code === 0x5d /* "]" */) {
+      if (depth > 0) depth--;
+    } else if (code === 0x2f /* "/" */ && list.charCodeAt(i + 1) === 0x2a /* "*" */) {
+      const close = list.indexOf("*/", i + 2);
+      if (close === -1) break;
+      i = close + 1;
+    } else if (code === 0x2c /* "," */ && depth === 0) {
+      parts.push(list.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(list.slice(start));
+  return parts;
 }
 
 /**
@@ -510,9 +602,9 @@ function scopeSelector(selector: string, scopePrefix: string): string {
  *  split/map/join entirely. That fast path is worth about 15% of the
  *  worst-case sweep. */
 function scopeSelectorList(selectors: string, scopePrefix: string): string {
+  // No comma at all means nothing to split, and skips the scan entirely.
   if (selectors.indexOf(",") === -1) return scopeSelector(selectors, scopePrefix);
-  return selectors
-    .split(",")
+  return splitSelectorList(selectors)
     .map((member: string) => scopeSelector(member.trim(), scopePrefix))
     .join(", ");
 }
@@ -576,12 +668,19 @@ function scopeCssSelectors(css: string, scopePrefix: string): string {
   // block are style-rule selectors that take the prefix. The top level, with
   // the stack empty, behaves as true.
   const bearsSelectorsInside: boolean[] = [];
-  // "/*" is an alternative here so a brace INSIDE a comment cannot be mistaken
-  // for a block boundary: on a comment the sweep jumps straight past its end,
-  // which keeps the pass linear — indexOf lands on the close, it never re-reads
-  // the body. Without this, "/* } */ .a {" closed a block that was never open
-  // and the prefix ended up inside the comment.
-  const braces = /[{}]|\/\*/g;
+  // Comments and strings are alternatives here so that a brace inside either
+  // cannot be mistaken for a block boundary — the sweep jumps straight past
+  // them. Both were real: `/* } */ .a {` closed a block that was never open and
+  // left the prefix inside the comment, and a string was worse still —
+  // `a[title="/*"] {` started a comment that ran to end of input, so the
+  // selector was never scoped at all, and `.a{content:"}"}` inside @keyframes
+  // closed the animation early and got the next step prefixed.
+  //
+  // Linear either way: indexOf lands on a comment's close without re-reading
+  // its body, and the string patterns are built from disjoint alternatives
+  // (one begins with a backslash, the other excludes it) so the engine has
+  // nothing to backtrack into.
+  const braces = /[{}]|\/\*|["']/g;
   let brace: RegExpExecArray | null;
 
   while ((brace = braces.exec(css)) !== null) {
@@ -593,6 +692,19 @@ function scopeCssSelectors(css: string, scopePrefix: string): string {
       // nothing left that could be a selector.
       if (close === -1) break;
       braces.lastIndex = close + 2;
+      continue;
+    }
+
+    if (brace[0] === '"' || brace[0] === "'") {
+      const string = brace[0] === '"' ? DOUBLE_QUOTED : SINGLE_QUOTED;
+      string.lastIndex = index;
+      const matched = string.exec(css);
+      // A string that never closes, or that runs into a raw newline, is a
+      // parse error a browser recovers from rather than honouring. Treating the
+      // quote as an ordinary character is that recovery, and it is also what
+      // this sweep did before it knew about strings at all — so the unreadable
+      // case is no worse than it was.
+      if (matched !== null) braces.lastIndex = index + matched[0].length;
       continue;
     }
 
