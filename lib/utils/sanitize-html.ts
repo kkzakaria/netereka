@@ -292,12 +292,14 @@ function isSafeUri(rawValue: string): boolean {
  * worst-case an actual ceiling instead of a sample. Raising it raises that
  * ceiling proportionally.
  *
- * Where the ceiling sits, last measured by sweeping 45 adversarial shapes each
- * cut to exactly 512,000 bytes, both figures from one run on one machine so
- * they are comparable to each other and to nothing else: ~43 ms, on a block of
- * nothing but "{". Rewriting the selector-scoping pass as a context-tracking
- * sweep MOVED THE CEILING DOWN — the same sweep cost ~89 ms against the regex
- * that pass replaced, on a block of "a{b{c{d{".
+ * Where the ceiling sits, last measured by sweeping 70 adversarial shapes each
+ * cut to exactly 512,000 bytes, all figures from one run on one machine so
+ * they are comparable to each other and to nothing else: **~39 ms** (38–43
+ * across runs), on a block of nothing but ";a{}" or "{". Rewriting the
+ * selector-scoping pass as a context-tracking sweep MOVED THE CEILING DOWN —
+ * the same sweep costs ~90 ms against the regex that pass replaced. Teaching
+ * the sweep to step over CSS comments cost about 2% of the ceiling on top of
+ * that, and about 12% across the whole sweep.
  *
  * Deliberately NOT exported. The boundary tests hardcode 512000 so that
  * changing this number fails them; deriving the test's boundary from the
@@ -379,12 +381,92 @@ const SELECTOR_BEARING_AT_RULES = new Set([
   "-moz-document",
 ]);
 
-/** The at-keyword at the head of an at-rule prelude. */
-const AT_KEYWORD_RE = /^@([a-zA-Z-]+)/;
+/** The at-keyword at an at-rule prelude's first significant character. Sticky,
+ *  so it can be aimed past leading trivia without slicing a copy out first. */
+const AT_KEYWORD_RE = /@([a-zA-Z-]+)/y;
 
-function bearsSelectors(prelude: string): boolean {
+function bearsSelectors(prelude: string, at: number): boolean {
+  AT_KEYWORD_RE.lastIndex = at;
   const keyword = AT_KEYWORD_RE.exec(prelude);
   return keyword !== null && SELECTOR_BEARING_AT_RULES.has(keyword[1].toLowerCase());
+}
+
+/** CSS whitespace: tab, LF, FF, CR, space. */
+function isCssWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d;
+}
+
+/**
+ * Index of the first character at or after `from` that is neither whitespace
+ * nor part of a CSS comment — the first character that decides what a prelude
+ * IS.
+ *
+ * Skipping comments here is not a nicety. The generator that writes product
+ * descriptions emits a French "Animation" comment immediately before its
+ * `@keyframes` rule, so a test that skips only whitespace sees a "/" rather
+ * than an "@", reads the run as a selector list and prefixes it — which is a
+ * rule the browser then discards. Six of the seven descriptions carrying a
+ * <style> block have a comment in exactly that position, and they are exactly
+ * the six a repair could not fix while this function skipped whitespace only.
+ *
+ * The asymmetry is worth stating, because it is why the at-rule test is where
+ * this mattered: a comment before an ORDINARY selector is harmless, since a
+ * scope prefix, a comment and a selector parse as prefix-then-selector. Only
+ * before an at-rule does the prefix invalidate anything. The prefix is placed
+ * AFTER the trivia regardless, which costs nothing and keeps the comment where
+ * its author put it.
+ *
+ * Linear: `i` never moves backwards, and indexOf jumps straight to a comment's
+ * end instead of re-reading its body. An unterminated "/*" reports the end of
+ * the text, which is what a browser does with it too — everything after it is
+ * comment — and the caller then leaves the run alone.
+ */
+function skipTrivia(text: string, from: number): number {
+  const length = text.length;
+  let i = from;
+  for (;;) {
+    while (i < length && isCssWhitespace(text.charCodeAt(i))) i++;
+    if (i + 1 >= length || text.charCodeAt(i) !== 0x2f /* "/" */ || text.charCodeAt(i + 1) !== 0x2a /* "*" */) {
+      return i;
+    }
+    const end = text.indexOf("*/", i + 2);
+    if (end === -1) return length;
+    i = end + 2;
+  }
+}
+
+/**
+ * Index just past the last ";" in `prelude` that ends a statement at-rule, or
+ * 0 when it carries none.
+ *
+ * `@charset "utf-8"; .a {` is two things, and only the second is this "{"'s
+ * prelude. Two ways to get that wrong, both of which cut a selector in half,
+ * so both are excluded by scanning rather than by a lastIndexOf:
+ *
+ *   * a ";" inside a comment, next to an "@" that is also inside it
+ *   * a ";" inside a selector's own attribute value — `a[href*=";"] {`
+ *
+ * The second is why the "@" is required at all: no at-keyword outside a
+ * comment means no statement at-rule, so there is nothing to split off.
+ */
+function lastStatementEnd(prelude: string): number {
+  const length = prelude.length;
+  let end = 0;
+  let sawAtKeyword = false;
+  let i = 0;
+  while (i < length) {
+    const code = prelude.charCodeAt(i);
+    if (code === 0x2f /* "/" */ && prelude.charCodeAt(i + 1) === 0x2a /* "*" */) {
+      const close = prelude.indexOf("*/", i + 2);
+      if (close === -1) break; // the rest is comment
+      i = close + 2;
+      continue;
+    }
+    if (code === 0x40 /* "@" */) sawAtKeyword = true;
+    else if (code === 0x3b /* ";" */) end = i + 1;
+    i++;
+  }
+  return sawAtKeyword ? end : 0;
 }
 
 /**
@@ -404,26 +486,34 @@ function continuesIdentifier(code: number): boolean {
   );
 }
 
-function isAlreadyScoped(selector: string, scopePrefix: string): boolean {
-  if (!selector.startsWith(scopePrefix)) return false;
+function isAlreadyScoped(selector: string, at: number, scopePrefix: string): boolean {
+  if (!selector.startsWith(scopePrefix, at)) return false;
   // charCodeAt past the end is NaN, and every comparison against NaN is false,
   // so a selector that IS exactly the prefix reads as already scoped.
-  return !continuesIdentifier(selector.charCodeAt(scopePrefix.length));
+  return !continuesIdentifier(selector.charCodeAt(at + scopePrefix.length));
 }
 
-/** `selectors` is already trimmed at the one call site, which is what lets the
- *  single-member case — by far the common one — skip split/map/join entirely.
- *  That fast path is worth about 15% of the worst-case sweep. */
+/** Prefix one selector, putting the prefix after any leading trivia so a
+ *  comment stays in front of the selector it was written in front of — and so
+ *  a commented-out-then-scoped selector is still recognised as already scoped
+ *  rather than picking up a second prefix. */
+function scopeSelector(selector: string, scopePrefix: string): string {
+  const at = skipTrivia(selector, 0);
+  if (isAlreadyScoped(selector, at, scopePrefix)) return selector;
+  return at === 0
+    ? `${scopePrefix} ${selector}`
+    : `${selector.slice(0, at)}${scopePrefix} ${selector.slice(at)}`;
+}
+
+/** `selectors` arrives with its leading trivia already stripped by the caller,
+ *  which is what lets the single-member case — by far the common one — skip
+ *  split/map/join entirely. That fast path is worth about 15% of the
+ *  worst-case sweep. */
 function scopeSelectorList(selectors: string, scopePrefix: string): string {
-  if (selectors.indexOf(",") === -1) {
-    return isAlreadyScoped(selectors, scopePrefix) ? selectors : `${scopePrefix} ${selectors}`;
-  }
+  if (selectors.indexOf(",") === -1) return scopeSelector(selectors, scopePrefix);
   return selectors
     .split(",")
-    .map((member: string) => {
-      const selector = member.trim();
-      return isAlreadyScoped(selector, scopePrefix) ? selector : `${scopePrefix} ${selector}`;
-    })
+    .map((member: string) => scopeSelector(member.trim(), scopePrefix))
     .join(", ");
 }
 
@@ -486,11 +576,26 @@ function scopeCssSelectors(css: string, scopePrefix: string): string {
   // block are style-rule selectors that take the prefix. The top level, with
   // the stack empty, behaves as true.
   const bearsSelectorsInside: boolean[] = [];
-  const braces = /[{}]/g;
+  // "/*" is an alternative here so a brace INSIDE a comment cannot be mistaken
+  // for a block boundary: on a comment the sweep jumps straight past its end,
+  // which keeps the pass linear — indexOf lands on the close, it never re-reads
+  // the body. Without this, "/* } */ .a {" closed a block that was never open
+  // and the prefix ended up inside the comment.
+  const braces = /[{}]|\/\*/g;
   let brace: RegExpExecArray | null;
 
   while ((brace = braces.exec(css)) !== null) {
     const index = brace.index;
+
+    if (brace[0] === "/*") {
+      const close = css.indexOf("*/", index + 2);
+      // An unterminated comment runs to the end of the stylesheet, so there is
+      // nothing left that could be a selector.
+      if (close === -1) break;
+      braces.lastIndex = close + 2;
+      continue;
+    }
+
     const begin = preludeStart;
     preludeStart = index + 1;
 
@@ -507,33 +612,38 @@ function scopeCssSelectors(css: string, scopePrefix: string): string {
     const depth = bearsSelectorsInside.length;
     const inSelectorContext = depth === 0 || bearsSelectorsInside[depth - 1];
 
-    // A statement at-rule ends at its ";" and opens no block, so `@charset
-    // "utf-8"; .a {` has TWO parts and only the second is this "{"'s prelude.
-    // Splitting at the last ";" keeps the statement verbatim and still scopes
-    // the selector behind it.
+    // What this prelude IS is decided by its first SIGNIFICANT character —
+    // past any statement at-rule it carries, and past whitespace and comments.
+    // Reading the raw first character instead is what let a comment in front
+    // of "@keyframes" be mistaken for a selector list.
     //
-    // The split is gated on the prelude containing an "@" at all, because a
-    // selector may legitimately carry a ";" of its own inside an attribute
-    // value — `a[href*=";"]` — and splitting there would cut the selector in
-    // half. No "@", no statement at-rule, nothing to split.
-    const semicolon = prelude.includes("@") ? prelude.lastIndexOf(";") : -1;
-    const trimmed = (semicolon === -1 ? prelude : prelude.slice(semicolon + 1)).trim();
+    // No ";" means no statement at-rule to step over, and that is the common
+    // case by a wide margin. The native scan for one is cheaper than the
+    // character loop it skips, and the two agree by construction:
+    // lastStatementEnd only ever reports a position it found a ";" at.
+    const statementEnd = prelude.includes(";") ? lastStatementEnd(prelude) : 0;
+    const significant = skipTrivia(prelude, statementEnd);
 
-    if (trimmed.charCodeAt(0) === 0x40 /* "@" */) {
-      // Rule 1: an at-rule prelude is not a selector list, and a selector in
-      // front of one costs the whole rule. Left exactly as written.
-      bearsSelectorsInside.push(bearsSelectors(trimmed));
-    } else if (!inSelectorContext || trimmed === "") {
-      // A keyframe step, or a prelude inside a block that holds declarations
-      // rather than style rules. Left byte for byte, and whatever it opens
-      // holds declarations too, so nothing inside gets prefixed either.
+    if (prelude.charCodeAt(significant) === 0x40 /* "@" */) {
+      // An at-rule prelude is not a selector list, and a selector in front of
+      // one costs the whole rule. Left exactly as written.
+      bearsSelectorsInside.push(bearsSelectors(prelude, significant));
+    } else if (!inSelectorContext || significant >= prelude.length) {
+      // A keyframe step; a prelude inside a block that holds declarations
+      // rather than style rules; or a run with nothing significant in it at
+      // all, which includes one swallowed by an unterminated comment. Left
+      // byte for byte, and whatever it opens holds declarations too, so
+      // nothing inside gets prefixed either.
       bearsSelectorsInside.push(false);
     } else {
       // The one case that is a selector list. Flush everything still untouched
-      // behind it — which includes any statement at-rule this prelude carried,
-      // up to and including its ";" — then emit the rewritten selectors in
+      // in front of it — any statement at-rule this prelude carried, and any
+      // leading whitespace and comments — then emit the rewritten selectors in
       // place of the rest of `prelude + "{"`.
-      out += css.slice(copied, begin + semicolon + 1) + scopeSelectorList(trimmed, scopePrefix) + " {";
+      out +=
+        css.slice(copied, begin + significant) +
+        scopeSelectorList(prelude.slice(significant).trim(), scopePrefix) +
+        " {";
       copied = index + 1;
       bearsSelectorsInside.push(false);
     }

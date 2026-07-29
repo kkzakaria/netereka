@@ -144,14 +144,14 @@ describe("sanitizeDescriptionHtml", () => {
     it("leaves an at-rule prelude unprefixed and still scopes inside it", () => {
       const input = "<style>@media (max-width: 768px) { .t { color: red; } }</style>";
       expect(sanitizeDescriptionHtml(input, "p1")).toBe(
-        "<style>@media (max-width: 768px) {.desc-p1 .t { color: red; } }</style>",
+        "<style>@media (max-width: 768px) { .desc-p1 .t { color: red; } }</style>",
       );
     });
 
     it("scopes inside @supports as well", () => {
       const input = "<style>@supports (display: grid) { .g { display: grid; } }</style>";
       expect(sanitizeDescriptionHtml(input, "p1")).toBe(
-        "<style>@supports (display: grid) {.desc-p1 .g { display: grid; } }</style>",
+        "<style>@supports (display: grid) { .desc-p1 .g { display: grid; } }</style>",
       );
     });
 
@@ -178,7 +178,7 @@ describe("sanitizeDescriptionHtml", () => {
     it("tracks context through nesting: keyframes inside a media query", () => {
       const input = "<style>@media screen { @keyframes k { from { opacity: 0; } } .b { color: red; } }</style>";
       expect(sanitizeDescriptionHtml(input, "p1")).toBe(
-        "<style>@media screen { @keyframes k { from { opacity: 0; } }.desc-p1 .b { color: red; } }</style>",
+        "<style>@media screen { @keyframes k { from { opacity: 0; } } .desc-p1 .b { color: red; } }</style>",
       );
     });
 
@@ -211,8 +211,142 @@ describe("sanitizeDescriptionHtml", () => {
     // selector behind it is a selector and must still be scoped.
     it("scopes the selector that follows a statement at-rule", () => {
       expect(sanitizeDescriptionHtml('<style>@charset "utf-8"; .a { color: red; }</style>', "p1")).toBe(
-        '<style>@charset "utf-8";.desc-p1 .a { color: red; }</style>',
+        '<style>@charset "utf-8"; .desc-p1 .a { color: red; }</style>',
       );
+    });
+
+    // A CSS comment is trivia, exactly like whitespace, and it can sit in front
+    // of any prelude. Deciding what a prelude IS by looking at its first
+    // NON-WHITESPACE character therefore reads a "/" where an "@" is meant, and
+    // prefixes an at-rule that a browser then discards whole.
+    //
+    // This is not hypothetical. The generator that writes these descriptions
+    // emits an "Animation" comment immediately before its @keyframes rule, and
+    // six of the seven products carrying a <style> block have one there. They
+    // were the six a repair pass could not fix.
+    describe("comments in front of a prelude", () => {
+      // Both fixtures below pivot on a fragment taken verbatim from a stored
+      // description, de-scoped. The two differ ONLY by the comment, which is
+      // what made oneplus-watch-lite the single product that repaired cleanly.
+      const SAMSUNG = "}/* Animation d'entrée */\r\n        @keyframes fadeInUp {from {";
+      const ONEPLUS = "}@keyframes fadeInUp {from {";
+
+      function description(pivot: string): string {
+        return `<style>.hero {color: #183c78;${pivot}opacity: 0;}to {opacity: 1;}}</style>`;
+      }
+
+      it("leaves @keyframes unprefixed when a comment precedes it (samsung-galaxy-buds4-pro)", () => {
+        expect(sanitizeDescriptionHtml(description(SAMSUNG), "p1")).toBe(
+          `<style>.desc-p1 .hero {color: #183c78;${SAMSUNG}opacity: 0;}to {opacity: 1;}}</style>`,
+        );
+      });
+
+      // The CONTROL, and green before this fix on purpose: this is the one
+      // product of the seven that a repair pass already handled, and it is the
+      // one without a comment at that point. It is here so the pair above
+      // isolates the comment as the single difference.
+      it("still leaves @keyframes unprefixed with no comment (oneplus-watch-lite)", () => {
+        expect(sanitizeDescriptionHtml(description(ONEPLUS), "p1")).toBe(
+          `<style>.desc-p1 .hero {color: #183c78;${ONEPLUS}opacity: 0;}to {opacity: 1;}}</style>`,
+        );
+      });
+
+      // A commented-out @media was doubly damaged: the at-rule was prefixed AND
+      // the selectors inside it went unscoped, because the mangled prelude was
+      // recorded as a block that holds no selectors.
+      it("keeps a commented @media alive and still scopes inside it", () => {
+        expect(
+          sanitizeDescriptionHtml("<style>/* Responsive */@media (max-width:768px){.t{color:red}}</style>", "p1"),
+        ).toBe("<style>/* Responsive */@media (max-width:768px){.desc-p1 .t {color:red}}</style>");
+      });
+
+      it("places the prefix after a comment in front of an ordinary selector", () => {
+        expect(sanitizeDescriptionHtml("<style>/* c */.t{color:red}</style>", "p1")).toBe(
+          "<style>/* c */.desc-p1 .t {color:red}</style>",
+        );
+      });
+
+      it("stays idempotent when a comment precedes an already-scoped selector", () => {
+        expect(sanitizeDescriptionHtml("<style>/* c */.desc-p1 .t{color:red}</style>", "p1")).toBe(
+          "<style>/* c */.desc-p1 .t {color:red}</style>",
+        );
+      });
+
+      it("handles a run of consecutive comments before an at-rule", () => {
+        expect(sanitizeDescriptionHtml("<style>/* a *//* b */@media x{.t{color:red}}</style>", "p1")).toBe(
+          "<style>/* a *//* b */@media x{.desc-p1 .t {color:red}}</style>",
+        );
+      });
+
+      it("handles an empty comment before an at-rule", () => {
+        expect(sanitizeDescriptionHtml("<style>/**/@keyframes k{from{opacity:0}}</style>", "p1")).toBe(
+          "<style>/**/@keyframes k{from{opacity:0}}</style>",
+        );
+      });
+
+      it("handles a comment before an at-rule nested inside @media", () => {
+        expect(sanitizeDescriptionHtml("<style>@media x{/* c */@keyframes k{from{opacity:0}}}</style>", "p1")).toBe(
+          "<style>@media x{/* c */@keyframes k{from{opacity:0}}}</style>",
+        );
+      });
+
+      // Green before this fix too: the at-rule test already fired on the "@"
+      // at the head of this prelude, so trivia AFTER the name never mattered.
+      // Kept because it pins that the new trivia handling did not break it.
+      it("leaves a comment between an at-rule's name and its block alone", () => {
+        expect(sanitizeDescriptionHtml("<style>@media screen /* c */ {.t{color:red}}</style>", "p1")).toBe(
+          "<style>@media screen /* c */ {.desc-p1 .t {color:red}}</style>",
+        );
+      });
+
+      // Also green before: inside @keyframes every prelude is emitted
+      // verbatim regardless of what it starts with, so a comment there was
+      // never at risk. Pinned so that stays true.
+      it("leaves a comment before a keyframe step alone", () => {
+        expect(sanitizeDescriptionHtml("<style>@keyframes k{/* c */from{opacity:0}}</style>", "p1")).toBe(
+          "<style>@keyframes k{/* c */from{opacity:0}}</style>",
+        );
+      });
+
+      it("scopes a list member that carries a leading comment", () => {
+        expect(sanitizeDescriptionHtml("<style>.a, /* c */ .b{color:red}</style>", "p1")).toBe(
+          "<style>.desc-p1 .a, /* c */ .desc-p1 .b {color:red}</style>",
+        );
+      });
+
+      it("scopes the selector behind a statement at-rule and a comment", () => {
+        expect(sanitizeDescriptionHtml('<style>@charset "u"; /* c */ .a{color:red}</style>', "p1")).toBe(
+          '<style>@charset "u"; /* c */ .desc-p1 .a {color:red}</style>',
+        );
+      });
+
+      // A ";" and an "@" inside a comment are not a statement at-rule. Reading
+      // them as one made the text behind the ";" look like an at-rule prelude,
+      // and the selector escaped scoping entirely — it reached the page
+      // unqualified and could restyle anything.
+      it("does not read a semicolon and an at-sign inside a comment as a statement at-rule", () => {
+        expect(sanitizeDescriptionHtml("<style>/* a; @b */ .c{color:red}</style>", "p1")).toBe(
+          "<style>/* a; @b */ .desc-p1 .c {color:red}</style>",
+        );
+      });
+
+      // A brace inside a comment is not a block boundary. Treating it as one
+      // closed a block that was never open and put the prefix inside the
+      // comment, where it styles nothing.
+      it("does not treat a brace inside a comment as a block boundary", () => {
+        expect(sanitizeDescriptionHtml("<style>/* } */ .a{color:red}</style>", "p1")).toBe(
+          "<style>/* } */ .desc-p1 .a {color:red}</style>",
+        );
+      });
+
+      // An unterminated comment runs to the end of the stylesheet, so a browser
+      // sees no rule at all after it. Prefixing text inside it only wrote the
+      // scope class into a comment body.
+      it("leaves everything after an unterminated comment alone", () => {
+        expect(sanitizeDescriptionHtml("<style>/* c .a{color:red}</style>", "p1")).toBe(
+          "<style>/* c .a{color:red}</style>",
+        );
+      });
     });
 
     // …and a ";" that belongs to the selector rather than to a statement
@@ -609,6 +743,24 @@ describe("sanitizeDescriptionHtml", () => {
       ["<style>" + ".desc-prod-1 a,".repeat(28000) + "{}", "prod-1"],
       ["<style>" + ";".repeat(400000) + "a{}", "prod-1"],
       ["<style>" + "@media x{a{b}}".repeat(30000), "prod-1"],
+      // …and the comment handling. Skipping a comment is where a scanner most
+      // easily starts re-reading what it has already read, so each of these is
+      // dense in one thing the trivia skip has to step over: many tiny
+      // comments, comments in front of preludes, a comment holding the very
+      // characters the statement-at-rule split looks for, a comment holding a
+      // brace, and an unterminated "/*" — which a browser treats as running to
+      // the end of the sheet, and which must therefore cost one jump, not a
+      // scan per following position.
+      ["<style>" + "/**/".repeat(100000), "prod-1"],
+      ["<style>" + "/*c*/a{}".repeat(50000), "prod-1"],
+      ["<style>" + "/*c*/@keyframes k{from{o:0}}".repeat(14000), "prod-1"],
+      ["<style>" + "/* ; @ */a{}".repeat(33000), "prod-1"],
+      ["<style>" + "/* } */".repeat(57000), "prod-1"],
+      ["<style>" + ".a,/*c*/.b{x:y}".repeat(26000), "prod-1"],
+      ["<style>a{b:c}/*" + "a".repeat(400000), "prod-1"],
+      ["<style>/*" + "a".repeat(400000) + "*/.x{y:z}", "prod-1"],
+      ["<style>" + "/*".repeat(200000), "prod-1"],
+      ["<style>" + "*/".repeat(200000), "prod-1"],
     ];
     const started = Date.now();
     for (const [shape, productId] of shapes) sanitizeDescriptionHtml(shape, productId);
@@ -627,7 +779,7 @@ describe("sanitizeDescriptionHtml", () => {
   // contain that literal string in the first place, so a substring assertion
   // would pass against the unfixed code and prove nothing.
   // The input cap is what makes the branch's cost argument a ceiling rather
-  // than a sample: "the worst accepted input costs ~43 ms" only means anything
+  // than a sample: "the worst accepted input costs ~39 ms" only means anything
   // if nothing larger is ever accepted. It was previously unpinned — raising
   // it tenfold, or deleting the guard outright, left every test green.
   //
@@ -973,7 +1125,11 @@ describe("sanitizeDescriptionHtml", () => {
             `.desc-${id} .desc-${id} .blk-${i} .price-section {${CRLF}                flex-direction: column;${CRLF}            }`,
         );
       }
+      // The comment is not decoration: the generator emits it, six of the seven
+      // products have one in exactly this position, and it is what made them
+      // unrepairable while the at-rule test skipped whitespace only.
       const keyframes =
+        `/* Animation d'entrée */${CRLF}        ` +
         `@keyframes neterekaFadeIn {${CRLF}` +
         `                from { opacity: 0; transform: translateY(8px); }${CRLF}` +
         `                to { opacity: 1; transform: translateY(0); }${CRLF}` +
