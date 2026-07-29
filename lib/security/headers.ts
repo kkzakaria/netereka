@@ -2,10 +2,13 @@
  * Response security headers, including the Content-Security-Policy.
  *
  * They live here rather than inline in `next.config.ts` so they can be
- * asserted by a unit test: `next.config.ts` calls
- * `initOpenNextCloudflareForDev()` at module load, which makes it awkward to
- * import from a test, and the policy below is exactly the kind of value that
- * drifts silently if nothing pins it.
+ * asserted by a unit test — the policy below is exactly the kind of value that
+ * drifts silently if nothing pins it. `__tests__/unit/security/headers.test.ts`
+ * pins both this module *and* the wiring: it imports `next.config.ts` (mocking
+ * `initOpenNextCloudflareForDev`) and asserts these headers are what the
+ * config actually serves. Pinning the constant alone was not enough — an
+ * earlier version of the test stayed green while `next.config.ts` served an
+ * empty header list.
  *
  * ---------------------------------------------------------------------------
  * Why a CSP at all
@@ -53,6 +56,24 @@ export const CSP_REPORT_PATH = "/api/csp-report";
 /** Group name tying `report-to` to the `Reporting-Endpoints` header below. */
 export const CSP_REPORT_GROUP = "csp-endpoint";
 
+/** Fallback when `NEXT_PUBLIC_R2_URL` is unset — matches `wrangler.jsonc`'s bucket domain. */
+const DEFAULT_R2_ORIGIN = "https://r2.netereka.ci";
+
+/**
+ * The origin (scheme + host + port) of the image bucket, read from the same
+ * environment variable the image helpers use. `NEXT_PUBLIC_R2_URL` may carry a
+ * path, so only its origin is kept — a CSP host-source must not include one.
+ */
+function r2Origin(): string {
+  const configured = process.env.NEXT_PUBLIC_R2_URL;
+  if (!configured) return DEFAULT_R2_ORIGIN;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return DEFAULT_R2_ORIGIN;
+  }
+}
+
 /**
  * Every external origin the policy is allowed to name, and why.
  *
@@ -69,8 +90,14 @@ export const CSP_REPORT_GROUP = "csp-endpoint";
 export const CSP_ALLOWED_ORIGINS = {
   /** Turnstile widget script + its challenge iframe (`components/.../turnstile-captcha.tsx`). */
   turnstile: "https://challenges.cloudflare.com",
-  /** Product and banner images (`lib/utils/images.ts`, `NEXT_PUBLIC_R2_URL`). */
-  r2: "https://r2.netereka.ci",
+  /**
+   * Product and banner images. Derived from `NEXT_PUBLIC_R2_URL` — the same
+   * variable `lib/utils/images.ts` builds every image URL from — rather than
+   * written out again here. Two independent spellings of one origin drift
+   * apart silently, and the symptom would be a bucket move that blocks every
+   * product image with no failing test to say so.
+   */
+  r2: r2Origin(),
   /** GA4 loader (`components/analytics/google-analytics.tsx`). */
   googleTagManager: "https://www.googletagmanager.com",
 } as const;
@@ -80,9 +107,15 @@ const { turnstile, r2, googleTagManager } = CSP_ALLOWED_ORIGINS;
 /**
  * The policy, one directive per entry.
  *
- * `frame-src` lists only Turnstile: the sanitizer strips `<script>` and
- * `<iframe>` from stored HTML outright (`sanitize-html.ts`), so no product
- * description can introduce a frame.
+ * `frame-src` carries `'self'` plus Turnstile. `'self'` is not redundant:
+ * naming `frame-src` at all stops it falling back to `default-src`, so
+ * omitting `'self'` would leave this directive *narrower* than the default it
+ * replaced — first-party frames such as the admin HTML preview
+ * (`components/admin/html-editor.tsx`) would be the only casualty of a
+ * directive meant to constrain third parties. No external frame beyond
+ * Turnstile is needed: the sanitizer strips `<script>` and `<iframe>` from
+ * stored HTML outright (`sanitize-html.ts`), so no product description can
+ * introduce one.
  *
  * `font-src` needs no external origin: `next/font/google` self-hosts Inter at
  * build time under `/_next/static/media`.
@@ -101,7 +134,7 @@ export const CSP_DIRECTIVES: readonly string[] = [
   `img-src 'self' ${r2} data: blob:`,
   "font-src 'self' data:",
   `connect-src 'self' ${googleTagManager}`,
-  `frame-src ${turnstile}`,
+  `frame-src 'self' ${turnstile}`,
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'self'",
@@ -120,16 +153,26 @@ export const CSP_HEADER_KEY = "Content-Security-Policy-Report-Only";
 export const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
-  // Kept alongside `frame-ancestors 'self'` rather than replaced by it.
-  // Two reasons. First, a report-only policy enforces nothing at all, so
-  // while the CSP is in observation mode X-Frame-Options is the *only* thing
-  // actually preventing framing. Second, even once enforced, CSP3 § 6.4.2.2
-  // only describes frame-ancestors as "similar to" X-Frame-Options and leaves
-  // the interaction to browsers: a browser that honours frame-ancestors
-  // ignores X-Frame-Options, and one that does not falls back to it. The two
-  // values are kept deliberately equivalent ('self' ≡ SAMEORIGIN) so no
-  // browser can end up with a weaker rule than another — a test asserts both
-  // are present.
+  // Kept alongside `frame-ancestors 'self'`, and load-bearing today.
+  //
+  // CSP3 § 6.4.2.2 is not a "browsers may differ" situation, it is a rule:
+  // "the frame-ancestors directive overrides the X-Frame-Options header. If a
+  // resource is delivered with a policy that includes a directive named
+  // frame-ancestors AND WHOSE DISPOSITION IS 'enforce', then the
+  // X-Frame-Options header will be ignored, per HTML's processing model."
+  //
+  // The qualifier is what matters here. Our policy's disposition is `report`,
+  // so the override does not apply and a report-only frame-ancestors blocks
+  // nothing: X-Frame-Options is currently the *only* control actually
+  // preventing this site from being framed. Removing it because "the CSP
+  // covers framing" would drop clickjacking protection to zero.
+  //
+  // The consequence to plan for: the moment `frame-ancestors 'self'` ships in
+  // an ENFORCING policy — which is exactly what the recommended second header
+  // does — every browser implementing CSP ignores this header outright, and it
+  // survives only for any that do not. At that point the two must still agree
+  // ('self' ≡ SAMEORIGIN, as they do), or it becomes a dead header stating a
+  // rule nobody applies. A test asserts both are present and equivalent.
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },

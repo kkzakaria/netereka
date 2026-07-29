@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   CONTENT_SECURITY_POLICY,
   CSP_ALLOWED_ORIGINS,
@@ -8,6 +8,12 @@ import {
   securityHeaders,
 } from "@/lib/security/headers";
 
+// next.config.ts calls this at module load; it wants a real wrangler config
+// and a dev server, neither of which exists in a unit test.
+vi.mock("@opennextjs/cloudflare", () => ({ initOpenNextCloudflareForDev: vi.fn() }));
+
+import nextConfig from "@/next.config";
+
 /**
  * These tests pin the Content-Security-Policy in both directions.
  *
@@ -16,19 +22,49 @@ import {
  * enforcement, or removing `'unsafe-inline'` from `style-src`, would break
  * production silently and with the best of intentions. Both directions fail
  * here.
+ *
+ * Every assertion below reads the headers **that `next.config.ts` actually
+ * serves**, not the constant they are defined from. That distinction is the
+ * whole point: an earlier version of this file asserted the constant only, and
+ * stayed green — 11 of 11 — while `next.config.ts` was mutated to serve an
+ * empty header list, dropping the CSP, HSTS, X-Content-Type-Options,
+ * X-Frame-Options, Referrer-Policy, Permissions-Policy and COOP in one edit.
+ * A test that pins a value nobody proved is served pins nothing.
  */
 
+interface ServedHeader {
+  key: string;
+  value: string;
+}
+
+const headerRules = (await nextConfig.headers?.()) ?? [];
+const catchAllRule = headerRules.find((rule) => rule.source === "/:path*");
+const servedHeaders = (catchAllRule?.headers ?? []) as ServedHeader[];
+
+function header(key: string): string | undefined {
+  return servedHeaders.find((h) => h.key.toLowerCase() === key.toLowerCase())?.value;
+}
+
+/** Parsed from the served policy, so an unserved policy fails every assertion. */
 function directive(name: string): string[] | null {
-  for (const part of CONTENT_SECURITY_POLICY.split(";")) {
+  for (const part of (header(CSP_HEADER_KEY) ?? "").split(";")) {
     const tokens = part.trim().split(/\s+/).filter(Boolean);
     if (tokens[0] === name) return tokens.slice(1);
   }
   return null;
 }
 
-function header(key: string): string | undefined {
-  return securityHeaders.find((h) => h.key.toLowerCase() === key.toLowerCase())?.value;
-}
+describe("next.config.ts wiring", () => {
+  it("serves the security headers on every route", () => {
+    expect(headerRules).toHaveLength(1);
+    expect(catchAllRule).toBeDefined();
+    expect(servedHeaders).toEqual(securityHeaders);
+  });
+
+  it("serves the policy the constant defines, byte for byte", () => {
+    expect(header(CSP_HEADER_KEY)).toBe(CONTENT_SECURITY_POLICY);
+  });
+});
 
 describe("security headers", () => {
   it("keeps the headers that predate the CSP", () => {
@@ -46,15 +82,17 @@ describe("security headers", () => {
     // decision — see the task 4.3 decision note — so it must not happen as a
     // side effect of an unrelated change.
     expect(CSP_HEADER_KEY).toBe("Content-Security-Policy-Report-Only");
-    expect(header("Content-Security-Policy-Report-Only")).toBe(CONTENT_SECURITY_POLICY);
-    expect(securityHeaders.some((h) => h.key.toLowerCase() === "content-security-policy")).toBe(false);
+    expect(header("Content-Security-Policy-Report-Only")).toBeTruthy();
+    expect(servedHeaders.some((h) => h.key.toLowerCase() === "content-security-policy")).toBe(false);
   });
 
-  it("keeps X-Frame-Options alongside frame-ancestors", () => {
-    // frame-ancestors in a *report-only* policy enforces nothing, so
-    // X-Frame-Options is currently the only real anti-framing control. The two
-    // must also stay equivalent, so that a browser honouring one is never
-    // weaker than a browser honouring the other.
+  it("keeps X-Frame-Options alongside frame-ancestors, and equivalent to it", () => {
+    // CSP3 § 6.4.2.2: an *enforced* frame-ancestors overrides X-Frame-Options,
+    // which "will be ignored". Our disposition is `report`, so that override
+    // does not apply and X-Frame-Options is currently the only control
+    // actually preventing framing. Once the recommended enforcing second
+    // header ships, the two swap roles — so they must keep saying the same
+    // thing ('self' ≡ SAMEORIGIN).
     expect(header("X-Frame-Options")).toBe("SAMEORIGIN");
     expect(directive("frame-ancestors")).toEqual(["'self'"]);
   });
@@ -101,7 +139,6 @@ describe("content security policy directives", () => {
     expect(directive("script-src")).toEqual(
       expect.arrayContaining(["'self'", turnstile, googleTagManager])
     );
-    expect(directive("frame-src")).toEqual([turnstile]);
     expect(directive("img-src")).toEqual(
       expect.arrayContaining(["'self'", r2, "data:", "blob:"])
     );
@@ -111,6 +148,14 @@ describe("content security policy directives", () => {
     // next/font/google self-hosts Inter under /_next/static/media, so no
     // external font origin is needed.
     expect(directive("font-src")).toEqual(["'self'", "data:"]);
+  });
+
+  it("keeps frame-src at least as wide as the default it replaces", () => {
+    // Naming frame-src stops it falling back to default-src, so omitting
+    // 'self' would make a directive aimed at third parties narrower than the
+    // default — and the only casualty would be first-party frames such as the
+    // admin HTML preview.
+    expect(directive("frame-src")).toEqual(["'self'", CSP_ALLOWED_ORIGINS.turnstile]);
   });
 
   it("keeps navigation-only destinations out of connect-src", () => {
@@ -141,7 +186,7 @@ describe("content security policy directives", () => {
     const keywords = /^('[a-z-]+'|data:|blob:|https:|http:)$/;
 
     const offenders: string[] = [];
-    for (const part of CONTENT_SECURITY_POLICY.split(";")) {
+    for (const part of (header(CSP_HEADER_KEY) ?? "").split(";")) {
       const [, ...sources] = part.trim().split(/\s+/).filter(Boolean);
       for (const source of sources) {
         if (keywords.test(source)) continue;
@@ -153,11 +198,40 @@ describe("content security policy directives", () => {
   });
 
   it("serialises as a single well-formed header value", () => {
-    expect(CONTENT_SECURITY_POLICY).not.toContain("\n");
-    expect(CONTENT_SECURITY_POLICY).not.toContain(";;");
+    const served = header(CSP_HEADER_KEY) ?? "";
+    expect(served).not.toContain("\n");
+    expect(served).not.toContain(";;");
     // Every directive name appears exactly once — a duplicate directive is
     // ignored by browsers, which is a silent way to lose a restriction.
-    const names = CONTENT_SECURITY_POLICY.split(";").map((p) => p.trim().split(/\s+/)[0]);
+    const names = served.split(";").map((p) => p.trim().split(/\s+/)[0]);
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe("image origin", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("tracks NEXT_PUBLIC_R2_URL rather than restating the bucket host", async () => {
+    // One origin, one source of truth. If the bucket ever moves, the policy
+    // moves with it instead of silently blocking every product image.
+    vi.stubEnv("NEXT_PUBLIC_R2_URL", "https://cdn.example.test/products");
+    vi.resetModules();
+
+    const reloaded = await import("@/lib/security/headers");
+
+    expect(reloaded.CSP_ALLOWED_ORIGINS.r2).toBe("https://cdn.example.test");
+    expect(reloaded.CONTENT_SECURITY_POLICY).toContain("https://cdn.example.test");
+  });
+
+  it("falls back to the known bucket origin when the variable is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_R2_URL", "");
+    vi.resetModules();
+
+    const reloaded = await import("@/lib/security/headers");
+
+    expect(reloaded.CSP_ALLOWED_ORIGINS.r2).toBe("https://r2.netereka.ci");
   });
 });
