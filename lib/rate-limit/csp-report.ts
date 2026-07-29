@@ -109,6 +109,41 @@ function expandIpv6(input: string): string[] | null {
   return [...head, ...padding, ...tail].map((hextet) => hextet.replace(/^0+(?=.)/, ""));
 }
 
+/** Octets kept when labelling an IPv4 address for the log: 3 x 8 bits = a /24. */
+const IPV4_LABEL_OCTETS = 3;
+
+/**
+ * The coarser identifier that reaches the collector's LOG, as opposed to
+ * `clientNetworkKey` above, which is what the limiter counts against.
+ *
+ * They are deliberately different, because they answer different needs. The
+ * limiter wants precision: a full IPv4 address is one host, and merging hosts
+ * there would let one client spend another's budget. The log wants only enough
+ * to tell one flooding source from a genuine spread of browsers — that is the
+ * entire documented attribution need — and a full address is more than that
+ * need requires.
+ *
+ * It is more than it requires in a way that matters. This collector is a NEW
+ * log sink, and it writes the client identifier immediately next to the URL of
+ * the page that client was visiting. A full IPv4 address there is a personal
+ * data record under GDPR, created by this branch, for a purpose a /24 serves
+ * just as well. Truncating is the data-minimisation answer, and it is cheaper
+ * and more legible than the alternative of hashing: no salt to source, no salt
+ * to rotate, no async crypto call on the logging path, and an operator reading
+ * the log can still see at a glance that forty reports came from one network.
+ *
+ * IPv6 is already /64 from `clientNetworkKey`, which is coarse enough, so this
+ * only narrows IPv4. The residual is stated rather than hidden: a /24 still
+ * identifies a network, and combined with a page URL it is not anonymous — it
+ * is minimised, which is the claim being made, not anonymised.
+ */
+export function clientAttributionLabel(rawAddress: string): string {
+  const key = clientNetworkKey(rawAddress);
+  const octets = key.split(".");
+  if (octets.length !== 4 || !octets.every((octet) => /^\d{1,3}$/.test(octet))) return key;
+  return `${octets.slice(0, IPV4_LABEL_OCTETS).join(".")}.0/24`;
+}
+
 /**
  * Per-client throttle on the CSP violation collector (`/api/csp-report`).
  *

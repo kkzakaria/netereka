@@ -1,5 +1,9 @@
 import { getEnv } from "@/lib/cloudflare/context";
-import { checkCspReportRateLimit, clientNetworkKey } from "@/lib/rate-limit/csp-report";
+import {
+  checkCspReportRateLimit,
+  clientAttributionLabel,
+  clientNetworkKey,
+} from "@/lib/rate-limit/csp-report";
 
 /**
  * Collector for Content-Security-Policy violation reports.
@@ -123,11 +127,16 @@ interface NormalisedViolation {
 type DocumentScope = "same-origin" | "opaque-origin";
 
 /** Why a payload was thrown away without yielding any violation. */
-type UnreadableReason = "too-large" | "timeout" | "invalid-json" | "unrecognised-shape";
+type UnreadableReason =
+  | "too-large"
+  | "timeout"
+  | "read-failed"
+  | "invalid-json"
+  | "unrecognised-shape";
 
 type BodyRead =
   | { ok: true; text: string }
-  | { ok: false; reason: "too-large" | "timeout" };
+  | { ok: false; reason: "too-large" | "timeout" | "read-failed" };
 
 function truncate(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -185,6 +194,15 @@ async function readBoundedBody(request: Request, limit: number): Promise<BodyRea
       }
       chunks.push(value);
     }
+  } catch {
+    // The client went away mid-upload, or the stream errored. Routine, not
+    // exceptional — browsers abandon in-flight POSTs on navigation all the
+    // time. Without this the rejection propagated out of POST and the request
+    // ended as a 500 with nothing written, breaking both contracts this route
+    // is built on: the constant 204 on the accepted path, and the rule that
+    // nothing is dropped silently from the one log an operator is told to
+    // read as meaningful.
+    return { ok: false, reason: "read-failed" };
   } finally {
     clearTimeout(timer);
   }
@@ -284,7 +302,12 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(null, { status: 415 });
   }
 
-  const network = clientNetworkKey(request.headers.get("cf-connecting-ip") ?? "");
+  const clientAddress = request.headers.get("cf-connecting-ip") ?? "";
+  // Two identifiers, on purpose. The limiter counts against the precise
+  // network; only the coarsened label is ever written to the log. See
+  // `clientAttributionLabel`.
+  const network = clientNetworkKey(clientAddress);
+  const reporterNetwork = clientAttributionLabel(clientAddress);
 
   // Rate-limit before reading the body: a throttled caller costs one KV read.
   // Any failure here — no KV binding, KV unavailable, a write rejected because
@@ -314,7 +337,7 @@ export async function POST(request: Request): Promise<Response> {
   const reportUnreadable = (reason: UnreadableReason) => {
     console.warn("[csp-report] could not read a payload", {
       reason,
-      reporterNetwork: network,
+      reporterNetwork,
       format,
     });
   };
@@ -322,7 +345,9 @@ export async function POST(request: Request): Promise<Response> {
   const read = await readBoundedBody(request, MAX_BODY_BYTES);
   if (!read.ok) {
     reportUnreadable(read.reason);
-    return new Response(null, { status: read.reason === "timeout" ? 408 : 413 });
+    const status =
+      read.reason === "timeout" ? 408 : read.reason === "too-large" ? 413 : 400;
+    return new Response(null, { status });
   }
 
   let payload: unknown;
@@ -358,7 +383,7 @@ export async function POST(request: Request): Promise<Response> {
     // the enforcement decision rests on is itself worth seeing.
     console.warn("[csp-report] discarded reports not from one of this site's origins", {
       count: discarded,
-      reporterNetwork: network,
+      reporterNetwork,
       format,
     });
   }
@@ -369,7 +394,7 @@ export async function POST(request: Request): Promise<Response> {
     // `reporterNetwork`, `format` and `documentScope` are ours, not the
     // payload's — they are what lets a reader separate one noisy source from a
     // real spread, and a frame that inherits our policy from the main document.
-    console.warn("[csp-report] violation", { ...violation, reporterNetwork: network, format });
+    console.warn("[csp-report] violation", { ...violation, reporterNetwork, format });
   }
 
   return new Response(null, { status: 204 });

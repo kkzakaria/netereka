@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { clientNetworkKey } from "@/lib/rate-limit/csp-report";
+import { clientAttributionLabel, clientNetworkKey } from "@/lib/rate-limit/csp-report";
 
 /**
  * The CSP collector's limiter counts against whatever this function returns.
@@ -93,5 +93,42 @@ describe("clientNetworkKey", () => {
 
   it("bounds the key length whatever it is handed", () => {
     expect(clientNetworkKey("a".repeat(500)).length).toBeLessThanOrEqual(64);
+  });
+});
+
+/**
+ * What reaches the collector's LOG, as opposed to what the limiter counts
+ * against. The collector is a new log sink that writes this next to the page
+ * URL a visitor was on, so it carries only what the documented attribution
+ * need — one flooding source versus a spread of browsers — actually requires.
+ */
+describe("clientAttributionLabel", () => {
+  it("never writes a whole IPv4 address", () => {
+    expect(clientAttributionLabel("203.0.113.7")).toBe("203.0.113.0/24");
+    expect(clientAttributionLabel("203.0.113.7")).not.toContain("113.7");
+  });
+
+  it("still separates one network from another", () => {
+    // The attribution need survives the minimisation, which is the whole
+    // argument for truncating rather than hashing.
+    expect(clientAttributionLabel("203.0.113.7")).toBe(clientAttributionLabel("203.0.113.99"));
+    expect(clientAttributionLabel("203.0.113.7")).not.toBe(clientAttributionLabel("198.51.100.7"));
+  });
+
+  it("leaves IPv6 at the /64 the limiter already uses", () => {
+    expect(clientAttributionLabel("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+  });
+
+  it("coarsens an IPv4-mapped address like any other IPv4 host", () => {
+    expect(clientAttributionLabel("::ffff:192.0.2.1")).toBe("192.0.2.0/24");
+  });
+
+  it("is stricter than the limiter key, never looser", () => {
+    // If these ever coincide for IPv4, the minimisation has been undone.
+    expect(clientAttributionLabel("203.0.113.7")).not.toBe(clientNetworkKey("203.0.113.7"));
+  });
+
+  it("falls back safely when there is no address", () => {
+    expect(clientAttributionLabel("")).toBe("unknown");
   });
 });

@@ -166,7 +166,7 @@ describe("POST /api/csp-report", () => {
       );
 
       expect(loggedMessages()[0]).toContain("discarded");
-      expect(logged(0)).toMatchObject({ count: 1, reporterNetwork: "203.0.113.7" });
+      expect(logged(0)).toMatchObject({ count: 1, reporterNetwork: "203.0.113.0/24" });
     });
 
     it("discards a report with no document URL at all", async () => {
@@ -235,7 +235,7 @@ describe("POST /api/csp-report", () => {
       // browsers. Both fields are ours, not the payload's.
       await POST(post(CSP_REPORT_BODY, "application/csp-report", { "cf-connecting-ip": "198.51.100.4" }));
 
-      expect(logged(0)).toMatchObject({ reporterNetwork: "198.51.100.4", format: "report-uri" });
+      expect(logged(0)).toMatchObject({ reporterNetwork: "198.51.100.0/24", format: "report-uri" });
     });
   });
 
@@ -373,7 +373,7 @@ describe("POST /api/csp-report", () => {
 
       expect(unreadableLogs()[0]).toMatchObject({
         reason: "invalid-json",
-        reporterNetwork: "198.51.100.9",
+        reporterNetwork: "198.51.100.0/24",
         format: "reports+json",
       });
     });
@@ -402,6 +402,36 @@ describe("POST /api/csp-report", () => {
 
       expect(res.status).toBe(415);
       expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("drops a stream that errors mid-upload instead of raising a 500", async () => {
+      // A browser abandoning an in-flight POST on navigation is routine, and
+      // reader.read() rejects when it happens. Uncaught, that rejection left
+      // POST as a 500 with nothing logged — breaking both the constant-204
+      // contract and the no-silent-drops one.
+      const failing = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("{"));
+          controller.error(new Error("client went away"));
+        },
+      });
+
+      const res = await POST(post(failing, "application/csp-report"));
+
+      expect(res.status).toBe(400);
+      expect(unreadableLogs()).toHaveLength(1);
+      expect(unreadableLogs()[0]).toMatchObject({ reason: "read-failed" });
+      expect(violationLogs()).toHaveLength(0);
+    });
+
+    it("logs the reporting network only as a coarsened network, never a host", async () => {
+      // The limiter still counts against the precise address; only what
+      // reaches the log is minimised. See clientAttributionLabel.
+      await POST(post(CSP_REPORT_BODY, "application/csp-report", { "cf-connecting-ip": "203.0.113.7" }));
+
+      expect(mocks.checkCspReportRateLimit).toHaveBeenCalledWith(KV, "203.0.113.7");
+      expect(logged(0).reporterNetwork).toBe("203.0.113.0/24");
+      expect(String(logged(0).reporterNetwork)).not.toContain("203.0.113.7");
     });
 
     it("says so when it abandons a stalled read", async () => {
