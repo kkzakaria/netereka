@@ -382,6 +382,181 @@ describe("sanitizeDescriptionHtml", () => {
     expect(elapsed).toBeLessThan(3000);
   }, 30000);
 
+  // Hardening: a browser resolves HTML character references and CSS escapes
+  // BEFORE it decides what a URL's scheme is or what a declaration does. A
+  // filter that compares literal tokens against the raw value is therefore
+  // reading a different document than the parser that ultimately runs. Values
+  // are now resolved the same way before the accept/reject decision.
+  //
+  // The oracle here is "the attribute did not survive", not "the output does
+  // not contain the literal string javascript" — an encoded payload does not
+  // contain that literal string in the first place, so a substring assertion
+  // would pass against the unfixed code and prove nothing.
+  describe("URI scheme filtering resists encoding", () => {
+    it.each([
+      '<a href="&#106;avascript:alert(1)">x</a>',
+      '<a href="&#x6a;avascript:alert(1)">x</a>',
+      '<a href="java&#9;script:alert(1)">x</a>',
+      '<a href="java\tscript:alert(1)">x</a>',
+      '<img src="&#106;avascript:alert(1)">',
+      '<a href="&#0000106;avascript:alert(1)">x</a>',
+      '<a href="&#x0006a;avascript:alert(1)">x</a>',
+      '<a href="&#106avascript:alert(1)">x</a>',
+      '<a href="jav&NewLine;ascript&colon;alert(1)">x</a>',
+      '<a href="java&Tab;script&#x3a;alert(1)">x</a>',
+      '<a href="javascript:alert(1)">x</a>',
+      '<a href="data&colon;text/html,payload">x</a>',
+      '<a href="vbscript&#58;msgbox(1)">x</a>',
+      '<img src="&#100;ata:text/html,payload">',
+    ])("drops an href or src whose scheme only appears once decoded: %j", (input) => {
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/\b(?:href|src)\s*=/i);
+    });
+
+    it.each([
+      '<a href="//evil.example/x">x</a>',
+      '<a href="\\\\evil.example/x">x</a>',
+      '<a href="/\\evil.example/x">x</a>',
+      '<a href="\\/evil.example/x">x</a>',
+    ])("drops a scheme-relative reference that points off-site: %j", (input) => {
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/\bhref\s*=/i);
+    });
+
+    it.each([
+      "ftp://evil.example/x",
+      "file:///etc/passwd",
+      "blob:https://evil.example/x",
+      "view-source:https://netereka.ci",
+    ])("drops an href carrying an unlisted scheme: %s", (uri) => {
+      expect(sanitizeDescriptionHtml(`<a href="${uri}">x</a>`)).not.toMatch(/\bhref\s*=/i);
+    });
+
+    it("keeps legitimate links intact", () => {
+      const input = '<a href="https://netereka.ci/p/abc">produit</a>';
+      expect(sanitizeDescriptionHtml(input)).toContain('href="https://netereka.ci/p/abc"');
+    });
+
+    it("keeps relative links intact", () => {
+      expect(sanitizeDescriptionHtml('<a href="/c/telephones">cat</a>')).toContain('href="/c/telephones"');
+    });
+
+    it("keeps fragment, query, mailto and tel references intact", () => {
+      expect(sanitizeDescriptionHtml('<a href="#specs">specs</a>')).toContain('href="#specs"');
+      expect(sanitizeDescriptionHtml('<a href="?page=2">suite</a>')).toContain('href="?page=2"');
+      expect(sanitizeDescriptionHtml('<a href="mailto:contact@netereka.ci">mail</a>')).toContain(
+        'href="mailto:contact@netereka.ci"',
+      );
+      expect(sanitizeDescriptionHtml('<a href="tel:+2250700000000">tel</a>')).toContain(
+        'href="tel:+2250700000000"',
+      );
+    });
+
+    it("keeps scheme-less relative references intact", () => {
+      // Produced by the rich-text editor for uploaded images, and by hand-written
+      // legacy descriptions. A reference with no scheme cannot introduce one.
+      expect(sanitizeDescriptionHtml('<img src="/images/description-images/abc123.jpg" alt="p">')).toContain(
+        'src="/images/description-images/abc123.jpg"',
+      );
+      expect(sanitizeDescriptionHtml('<img src="photos/telephone.jpg" alt="p">')).toContain(
+        'src="photos/telephone.jpg"',
+      );
+    });
+
+    it("emits the original value, not the decoded one", () => {
+      // Normalisation decides; it must never replace what is emitted, or a
+      // legitimate reference carrying an entity would render differently.
+      const input = '<a href="https://netereka.ci/s?a=1&amp;b=2">q</a>';
+      expect(sanitizeDescriptionHtml(input)).toContain('href="https://netereka.ci/s?a=1&amp;b=2"');
+    });
+  });
+
+  describe("CSS filtering resists escaping", () => {
+    it.each([
+      "<style>body{background:u\\72 l(https://evil.example/x)}</style>",
+      "<style>body{background:\\75\\72\\6c(https://evil.example/x)}</style>",
+      '<style>body{background:image-set("https://evil.example/x" 1x)}</style>',
+      '<style>body{background:-webkit-image-set("https://evil.example/x" 1x)}</style>',
+      '<style>@\\69 mport "https://evil.example/x";</style>',
+      '<style>@\\0069mport "https://evil.example/x";</style>',
+      "<style>@font-face{src:url(https://evil.example/x)}</style>",
+      '<div style="background:u\\72 l(https://evil.example/x)">a</div>',
+      '<div style="background:URL(https://evil.example/x)">a</div>',
+      '<div style="background:&#117;rl(https://evil.example/x)">a</div>',
+      '<div style="background:u&#92;72 l(https://evil.example/x)">a</div>',
+      '<div style="background:url&lpar;https://evil.example/x)">a</div>',
+      '<div style="behavior:url(https://evil.example/x)">a</div>',
+      '<div style="background:u&#x5c;72 l(https://evil.example/x)">a</div>',
+    ])("neutralises a resource fetch that only appears once decoded: %j", (input) => {
+      expect(sanitizeDescriptionHtml(input)).not.toMatch(/evil\.example/);
+    });
+
+    // A module-level regex carrying the "g" flag keeps its lastIndex across
+    // calls when used with .test(), so the second call on the same input can
+    // silently disagree with the first — a filter that only holds every other
+    // time, and one that unit tests running in isolation would not catch.
+    it("reaches the same verdict on repeated calls with the same input", () => {
+      const inputs = [
+        "<style>body{background:u\\72 l(https://evil.example/x)}</style>",
+        '<div style="background:url(https://evil.example/x)">a</div>',
+        '<style>@import "https://evil.example/x";</style>',
+        '<a href="&#106;avascript:alert(1)">x</a>',
+      ];
+      for (const input of inputs) {
+        const first = sanitizeDescriptionHtml(input);
+        for (let i = 0; i < 5; i++) {
+          expect(sanitizeDescriptionHtml(input)).toBe(first);
+        }
+        expect(first).not.toMatch(/evil\.example/);
+        expect(first).not.toMatch(/\bhref\s*=/i);
+      }
+    });
+
+    it("does not emit a once-resolved escape a browser would resolve again", () => {
+      // "\5c 75 rl(" is an escaped backslash followed by literal text: a browser
+      // resolves it once and sees no url(). Emitting the resolved form instead
+      // of the original would hand the browser "\75 rl(", which it WOULD then
+      // resolve to url() — a second decode the input never asked for.
+      const result = sanitizeDescriptionHtml('<div style="background:\\5c 75 rl(https://ok.example/x)">a</div>');
+      expect(result).not.toContain("\\75 rl(");
+    });
+
+    it("keeps a benign CSS escape byte-identical", () => {
+      const input = '<div style="content:\\201C">a</div>';
+      expect(sanitizeDescriptionHtml(input)).toBe(input);
+    });
+  });
+
+  // Companion guard to the one above, for the normalisation passes. They run on
+  // the same content, on every storefront render inside a CPU-metered Worker, so
+  // a superlinear form here would undo the bound the scan already has. Each
+  // shape is dense in exactly what one decoder looks for. Measured at ~0.2 s
+  // total, so the budget leaves an order of magnitude of headroom while a
+  // return to seconds fails immediately.
+  it("resolves character references and escapes in linear time", () => {
+    const shapes: [string, string | undefined][] = [
+      // CSS escape resolution
+      ["<style>" + "\\".repeat(400000), undefined],
+      ["<style>" + "\\75 ".repeat(120000), undefined],
+      ["<style>" + "\\ffffff".repeat(60000), undefined],
+      ['<p style="' + "\\".repeat(400000) + '">', undefined],
+      // character-reference resolution
+      ["<style>" + "&#106;".repeat(80000), undefined],
+      ["<style>" + "&#x6a;".repeat(80000), undefined],
+      ["<style>" + "&lpar;".repeat(80000), undefined],
+      ["<style>" + "&".repeat(400000), undefined],
+      ["<style>&#" + "9".repeat(400000) + ";", undefined],
+      ["<style>&#x" + "f".repeat(400000) + ";", undefined],
+      ["<style>&" + "a".repeat(400000) + ";", undefined],
+      ['<a href="' + "&#106;".repeat(80000) + '">x</a>', undefined],
+      // near-miss on every alternative of the resource-fetch pattern
+      ["<style>" + "url ".repeat(120000), undefined],
+      ["<style>" + "image-set ".repeat(48000), undefined],
+    ];
+    const started = Date.now();
+    for (const [shape, productId] of shapes) sanitizeDescriptionHtml(shape, productId);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeLessThan(3000);
+  }, 30000);
+
   it("keeps a long generated style block byte-identical", () => {
     const id = "prod-7f3a91c2";
     const rules: string[] = [];
@@ -395,5 +570,27 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).toContain("@media (max-width: 640px)");
     expect(result).toContain("<p>Autonomie 12 h.<br>Livraison à Abidjan.</p>");
     expect(result).not.toContain("<style><style>");
+  });
+
+  // Non-regression against the shape real product descriptions actually have:
+  // a ~56 KB generated <style> block wrapped in @media, with CRLF line endings
+  // and selectors that repeat their own scope prefix. Normalising values before
+  // filtering them must leave this untouched to the byte — @media is the one
+  // construct every one of these descriptions relies on.
+  it("leaves a realistic generated description byte-identical", () => {
+    const id = "9xMa0DwOqDK4l2Cm9v--r";
+    const rules: string[] = [];
+    for (let i = 0; i < 220; i++) {
+      rules.push(
+        `.desc-${id} .blk-${i} .product-title {\r\n                font-size: ${24 + (i % 12)}px;\r\n            }` +
+          `.desc-${id} .desc-${id} .blk-${i} .price-section {\r\n                flex-direction: column;\r\n                gap: ${i % 8}px;\r\n            }`,
+      );
+    }
+    const input =
+      `<style>@media (max-width: 768px) {${rules.join("")}}</style>` +
+      `<p>Écran AMOLED 6,7 pouces. Autonomie 2 jours.</p>` +
+      `<p><a href="/c/telephones">Voir la catégorie</a></p>`;
+    expect(input.length).toBeGreaterThan(50_000);
+    expect(sanitizeDescriptionHtml(input)).toBe(input);
   });
 });

@@ -10,26 +10,132 @@ const ALLOWED_ATTRS = new Set([
   "colspan", "rowspan", "target", "rel",
 ]);
 
-const DANGEROUS_URI_RE = /^\s*(javascript|data|vbscript)\s*:/i;
-
 const EVENT_HANDLER_RE = /^on[a-z]/i;
 
+// ---------------------------------------------------------------------------
+// Normalisation — used to DECIDE, never to rewrite what is emitted.
+//
+// A browser resolves HTML character references and CSS escapes before it works
+// out what a URL's scheme is or what a declaration does. A filter that compares
+// literal tokens against the raw value is reading a different document than the
+// parser that ultimately runs, and every disagreement between the two is a way
+// through. Both filters below therefore resolve the value first — but only to
+// reach a verdict. What survives is the ORIGINAL value: emitting the resolved
+// form would change how legitimate content renders and, worse, would hand the
+// browser a string it resolves a SECOND time (`\5c 75 rl(` resolves once to
+// `\75 rl(`, which a browser would then resolve again to `url(`).
+// ---------------------------------------------------------------------------
+
+/** Named character references that resolve to ASCII punctuation or whitespace.
+ *  No named reference produces an ASCII letter, so this table together with the
+ *  numeric forms covers every reference able to reconstruct a URI scheme or a
+ *  CSS function name. Lookup is case-insensitive on purpose: resolving more
+ *  than a browser would can only make the verdict stricter. */
+const NAMED_CHARACTER_REFERENCES: Record<string, string> = {
+  tab: "\t", newline: "\n", nbsp: "\xa0",
+  quot: '"', apos: "'", amp: "&", lt: "<", gt: ">",
+  excl: "!", num: "#", dollar: "$", percnt: "%", ast: "*", midast: "*",
+  lpar: "(", rpar: ")", plus: "+", comma: ",", period: ".", sol: "/",
+  colon: ":", semi: ";", equals: "=", quest: "?", commat: "@",
+  lsqb: "[", lbrack: "[", bsol: "\\", rsqb: "]", rbrack: "]",
+  hat: "^", lowbar: "_", grave: "`",
+  lcub: "{", lbrace: "{", verbar: "|", vert: "|", verticalline: "|",
+  rcub: "}", rbrace: "}",
+};
+
+/** A code point outside the Unicode range — or zero — is what a parser turns
+ *  into U+FFFD. Returning the replacement character keeps the decoder total:
+ *  String.fromCodePoint would otherwise throw on `&#x110000;`, failing the whole
+ *  description closed over a malformed reference. The digit runs feeding this
+ *  are unbounded on purpose — capping them would leave a truncated tail behind
+ *  that a browser still resolves. */
+function codePointOrReplacement(value: number): string {
+  if (!Number.isFinite(value) || value <= 0 || value > 0x10ffff) return "�";
+  return String.fromCodePoint(value);
+}
+
+/** Resolve HTML character references the way a tokenizer does inside an
+ *  attribute value, including the semicolon-less numeric forms: `&#106avascript:`
+ *  really is `javascript:` to a browser. */
+function decodeCharacterReferences(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, hex: string) => codePointOrReplacement(parseInt(hex, 16)))
+    .replace(/&#([0-9]+);?/g, (_m, dec: string) => codePointOrReplacement(parseInt(dec, 10)))
+    .replace(/&([a-z][a-z0-9]{1,31});/gi, (match, name: string) =>
+      NAMED_CHARACTER_REFERENCES[name.toLowerCase()] ?? match,
+    );
+}
+
+/** Resolve CSS escapes (`\72` → `r`) so the filter sees what the browser sees.
+ *  The second alternative — a backslash before anything that is not a hex digit
+ *  — matters as much as the first: it consumes `\\` as one escaped backslash, so
+ *  `\\75 rl(` resolves to `\75 rl(` and NOT to `url(`, which is exactly what a
+ *  browser does, resolving each escape once. */
+function resolveCssEscapes(css: string): string {
+  return css.replace(
+    /\\(?:([0-9a-f]{1,6})[ \t\r\n\f]?|([\s\S]))/gi,
+    (_m, hex: string | undefined, other: string) =>
+      hex !== undefined ? codePointOrReplacement(parseInt(hex, 16)) : other,
+  );
+}
+
+/** Constructs that make a stylesheet fetch a resource or run legacy script.
+ *  `image-set` covers its `-webkit-`/`-moz-` spellings too, since the match is
+ *  not anchored. NO "g" flag: a global regex used with .test() carries its
+ *  lastIndex from one call to the next, so the second call on the same input
+ *  would disagree with the first — a filter that only holds every other time,
+ *  and one that passes unit tests when they run in isolation. */
+const CSS_FETCHING_RE = /(?:url|image-set|src|expression)\s*\(|@import/i;
+
 /**
- * Remove dangerous CSS constructs from a style value or <style> block body.
- * Strips @import, url(...) and expression(...) — including UNTERMINATED forms
- * (a bare `url(` with no closing paren), because browsers recover from an
- * unclosed url() and would still issue the request, so matching only the
- * balanced form would leave an exfiltration bypass.
+ * Remove dangerous CSS constructs from a style value or a <style> block body.
+ *
+ * The whole value is dropped as soon as a resource-fetching construct is found,
+ * rather than the offending token alone. Surgical removal is what produced
+ * `-webkit-image-set( 1x)` — a surviving wrapper — and it cannot be made sound
+ * against escapes without a real CSS parser. The trade-off is blunt and
+ * deliberate: one `url()` anywhere in a <style> block discards that whole block.
+ * No product description in production uses `url(` or `@import` today, so
+ * nothing legitimate depends on the finer-grained behaviour.
+ *
+ * The input is NOT assumed to be well-formed CSS: the <style> delimiter is not
+ * quote-aware, so fragments of markup can reach this function.
  */
 function stripDangerousCss(css: string): string {
-  // The optional closing paren (\)?) makes each pattern consume BOTH balanced
-  // forms — url(x) — and unterminated ones — url(x  — up to the next ")" or the
-  // end of the value, so a bare `url(https://evil/…` is removed entirely rather
-  // than leaving the host behind.
-  return css
-    .replace(/@import\b[^;]*;?/gi, "")
-    .replace(/url\s*\([^)]*\)?/gi, "")
-    .replace(/expression\s*\([^)]*\)?/gi, "");
+  const resolved = resolveCssEscapes(decodeCharacterReferences(css));
+  return CSS_FETCHING_RE.test(resolved) ? "" : css;
+}
+
+/** Schemes a product description may link to. Everything else — javascript:,
+ *  data:, vbscript:, blob:, file:, and any scheme invented tomorrow — is refused
+ *  by construction, which is the point of an allowlist. */
+const ALLOWED_SCHEME_RE = /^(?:https?|mailto|tel):/i;
+
+/** Any scheme at all: an ASCII letter, then scheme characters, then ":". */
+const ANY_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+/** Two leading slashes in either direction. A browser resolving a relative
+ *  reference against an http(s) page treats "//", "\\", "/\" and "\/" alike:
+ *  all four inherit the page's scheme and point at another host. */
+const SCHEME_RELATIVE_RE = /^[/\\]{2}/;
+
+/** C0 controls, space and DEL. A browser removes tab/CR/LF anywhere in a URL
+ *  and trims leading controls before parsing the scheme, so "java&#9;script:"
+ *  names a scheme to it while reading as harmless text to a filter that skips
+ *  this step. Removing the rest of the range as well only ever makes the verdict
+ *  stricter: dropping characters cannot turn a refused value into an allowed
+ *  scheme it did not already spell. */
+const URI_NOISE_RE = /[\x00-\x20\x7f]/g;
+
+function isSafeUri(rawValue: string): boolean {
+  const value = decodeCharacterReferences(rawValue).replace(URI_NOISE_RE, "");
+  if (ALLOWED_SCHEME_RE.test(value)) return true;
+  if (SCHEME_RELATIVE_RE.test(value)) return false;
+  // A reference naming no scheme cannot introduce one: it is a path, a query or
+  // a fragment resolved against the current page. Percent-encoding is
+  // deliberately NOT decoded here — a browser does not decode it before parsing
+  // the scheme either, so "%6aavascript:" is a relative path to both of us.
+  return !ANY_SCHEME_RE.test(value);
 }
 
 /**
@@ -198,7 +304,11 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
         const attrValue = rawValue;
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
-        if ((attrName === "href" || attrName === "src") && DANGEROUS_URI_RE.test(attrValue)) continue;
+        // Allowlist, not denylist: the value is judged on the scheme a browser
+        // will see once it has resolved character references, and anything not
+        // explicitly permitted — including a scheme-relative "//host/…" — is
+        // dropped. If it passes, the ORIGINAL value is what gets emitted.
+        if ((attrName === "href" || attrName === "src") && !isSafeUri(attrValue)) continue;
         let cleanValue = attrValue;
         if (attrName === "style") {
           // Inline style values were not filtered, unlike <style> blocks, so
