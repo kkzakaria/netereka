@@ -39,12 +39,43 @@ describe("clientNetworkKey", () => {
 
   it("handles an address compressed inside the prefix itself", () => {
     expect(clientNetworkKey("2001:db8::1")).toBe("2001:db8:0:0::/64");
-    expect(clientNetworkKey("::1")).toBe("0:0:0:0::/64");
   });
 
   it("unwraps IPv4-mapped addresses so they cannot sidestep the IPv4 path", () => {
     expect(clientNetworkKey("::ffff:192.0.2.1")).toBe("192.0.2.1");
-    expect(clientNetworkKey("::192.0.2.1")).toBe("192.0.2.1");
+  });
+
+  it("unwraps the hexadecimal spelling of an IPv4-mapped address too", () => {
+    // ::ffff:c000:0201 is the same host as ::ffff:192.0.2.1. Recognising only
+    // the dotted spelling let this one fall into the shared ::/64 bucket,
+    // merging every mapped address that used hex into a single counter.
+    expect(clientNetworkKey("::ffff:c000:0201")).toBe("192.0.2.1");
+    expect(clientNetworkKey("::ffff:c000:0201")).toBe(clientNetworkKey("::ffff:192.0.2.1"));
+  });
+
+  it("does not unwrap a dotted quad that is part of a real IPv6 network", () => {
+    // Unwrapping any trailing dotted quad collided unrelated networks onto one
+    // IPv4 key — and onto the key of the genuine IPv4 host of that address.
+    expect(clientNetworkKey("2001:db8::192.0.2.1")).toBe("2001:db8:0:0::/64");
+    expect(clientNetworkKey("64:ff9b::192.0.2.33")).toBe("64:ff9b:0:0::/64");
+
+    const keys = new Set([
+      clientNetworkKey("2001:db8::192.0.2.1"),
+      clientNetworkKey("64:ff9b::192.0.2.1"),
+      clientNetworkKey("192.0.2.1"),
+    ]);
+    expect(keys.size).toBe(3);
+  });
+
+  it("leaves the deprecated IPv4-compatible form in the reserved ::/64 bucket", () => {
+    // RFC 4291 § 2.5.5.1 deprecates ::a.b.c.d, and it is indistinguishable
+    // from ::1 and the rest of the reserved block that no real client uses.
+    expect(clientNetworkKey("::192.0.2.1")).toBe("0:0:0:0::/64");
+    expect(clientNetworkKey("::1")).toBe("0:0:0:0::/64");
+  });
+
+  it("rejects an out-of-range dotted quad rather than mis-bucketing it", () => {
+    expect(clientNetworkKey("::ffff:999.0.2.1")).toBe("::ffff:999.0.2.1");
   });
 
   it("buckets an unparseable address as itself rather than failing open", () => {

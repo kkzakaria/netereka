@@ -22,21 +22,37 @@ const IPV6_PREFIX_HEXTETS = 4;
  * billed KV write, the "limiter" inverts into a cost amplifier: the harder it
  * is flooded, the more we pay. Truncating to /64 makes one subnet one bucket.
  *
- * /64 rather than a broader /56 or /48 is deliberate. /64 is the one prefix
- * length that is a hard boundary in the addressing architecture, so no
- * legitimate deployment puts unrelated parties inside a single /64 — this
- * bucket can never merge two strangers. Broader prefixes would bucket harder
- * but would start grouping genuinely distinct end sites, and this limiter's
+ * /64 rather than a broader /56 or /48 is deliberate, and the honest argument
+ * for it is comparative rather than absolute. A /64 does NOT guarantee one
+ * party: it is one link, and any guest or shared network puts unrelated
+ * visitors on the same one. What it guarantees is that the merging it causes
+ * is no worse than merging this project has already accepted elsewhere — a
+ * single IPv4 address is likewise shared, and `lib/rate-limit/orders.ts`
+ * documents whole populations of Ivorian mobile customers behind one CGNAT
+ * address. Bucketing IPv6 at /64 is strictly less aggressive than that, while
+ * removing the unbounded-key problem entirely. Broader prefixes would bucket
+ * harder but start grouping genuinely distinct end sites, and this limiter's
  * failure mode is *losing reports*, which are the data the enforcement
- * decision rests on. The residual is worth stating plainly: an end site
- * holding a /56 still commands 256 buckets, so 5,120 reports per ten minutes
- * and 256 KV keys. That is bounded and affordable, where the previous
- * behaviour was neither. If the collector's own logs ever show one flood
- * spread across sibling /64s, widen this constant to 3 hextets (/48); the
- * shape of the fix does not change.
+ * decision rests on.
  *
- * IPv4-mapped forms (`::ffff:192.0.2.1`) are unwrapped to the IPv4 address
- * they carry, so they cannot be used to sidestep the IPv4 path.
+ * The residual is worth stating plainly: an end site holding a /56 still
+ * commands 256 buckets, so 5,120 reports per ten minutes and 256 KV keys.
+ * That is bounded and affordable, where the previous behaviour was neither.
+ * If the collector's own logs ever show one flood spread across sibling /64s,
+ * widen this constant to 3 hextets (/48); the shape of the fix does not
+ * change.
+ *
+ * IPv4-mapped addresses (`::ffff:192.0.2.1`, and equally the hexadecimal
+ * spelling `::ffff:c000:0201`) are unwrapped to the IPv4 host they carry, so
+ * neither spelling sidesteps the IPv4 path. Only that mapping is unwrapped:
+ * an embedded dotted quad anywhere else — `2001:db8::192.0.2.1`, or the
+ * NAT64 well-known prefix `64:ff9b::192.0.2.1` — belongs to a real and
+ * distinct IPv6 network and is bucketed on its own /64. Unwrapping those
+ * would have collided unrelated networks onto one IPv4 key, and onto the key
+ * of the genuine IPv4 host of that address. The deprecated IPv4-compatible
+ * form (`::192.0.2.1`, RFC 4291 § 2.5.5.1) is likewise left alone: it is
+ * indistinguishable from `::1` and other reserved addresses in the `::/64`
+ * block, which no real client is ever seen from.
  */
 export function clientNetworkKey(rawAddress: string): string {
   const address = rawAddress.trim().toLowerCase().slice(0, 64);
@@ -45,17 +61,40 @@ export function clientNetworkKey(rawAddress: string): string {
   // No colon: IPv4, or something unparseable that is bucketed as itself.
   if (!address.includes(":")) return address;
 
-  // IPv4-mapped / IPv4-compatible: the embedded dotted quad is the real host.
-  const embedded = address.slice(address.lastIndexOf(":") + 1);
-  if (embedded.includes(".")) return embedded;
-
   const hextets = expandIpv6(address);
   if (!hextets) return address;
+
+  // `::ffff:x.y.z.w` — the only mapping that denotes an IPv4 host rather than
+  // an IPv6 network. Unwrap it so both its spellings land on the IPv4 path.
+  const isIpv4Mapped =
+    hextets.slice(0, 5).every((hextet) => hextet === "0") && hextets[5] === "ffff";
+  if (isIpv4Mapped) return dottedQuad(hextets[6], hextets[7]);
+
   return `${hextets.slice(0, IPV6_PREFIX_HEXTETS).join(":")}::/64`;
 }
 
-/** Expand `::` compression to a full 8-hextet list; null if it does not parse. */
-function expandIpv6(address: string): string[] | null {
+/** Render the low 32 bits of an IPv4-mapped address as a dotted quad. */
+function dottedQuad(high: string, low: string): string {
+  const value = (parseInt(high, 16) << 16) | parseInt(low, 16);
+  return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff].join(".");
+}
+
+/**
+ * Expand `::` compression to a full 8-hextet list; null if it does not parse.
+ * A trailing dotted quad is folded into the two hextets it encodes first, so
+ * `::ffff:192.0.2.1` and `::ffff:c000:201` reduce to the same list.
+ */
+function expandIpv6(input: string): string[] | null {
+  let address = input;
+  const quad = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(address);
+  if (quad) {
+    const octets = quad.slice(1, 5).map(Number);
+    if (octets.some((octet) => octet > 255)) return null;
+    const high = ((octets[0] << 8) | octets[1]).toString(16);
+    const low = ((octets[2] << 8) | octets[3]).toString(16);
+    address = `${address.slice(0, quad.index)}${high}:${low}`;
+  }
+
   const halves = address.split("::");
   if (halves.length > 2) return null;
 

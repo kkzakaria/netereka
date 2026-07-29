@@ -23,13 +23,22 @@ import nextConfig from "@/next.config";
  * production silently and with the best of intentions. Both directions fail
  * here.
  *
- * Every assertion below reads the headers **that `next.config.ts` actually
- * serves**, not the constant they are defined from. That distinction is the
- * whole point: an earlier version of this file asserted the constant only, and
- * stayed green — 11 of 11 — while `next.config.ts` was mutated to serve an
- * empty header list, dropping the CSP, HSTS, X-Content-Type-Options,
- * X-Frame-Options, Referrer-Policy, Permissions-Policy and COOP in one edit.
- * A test that pins a value nobody proved is served pins nothing.
+ * Every assertion about the *policy's content* reads the headers **that
+ * `next.config.ts` actually serves**, via `header()` and `directive()`, not
+ * the constant they are defined from. That distinction is the whole point: an
+ * earlier version of this file asserted the constant only, and stayed green —
+ * 11 of 11 — while `next.config.ts` was mutated to serve an empty header list,
+ * dropping the CSP, HSTS, X-Content-Type-Options, X-Frame-Options,
+ * Referrer-Policy, Permissions-Policy and COOP in one edit. A test that pins a
+ * value nobody proved is served pins nothing.
+ *
+ * Three places do read the module's exports directly, deliberately, because
+ * the export *is* what they are about: the `servedHeaders`/`CONTENT_SECURITY_POLICY`
+ * equality checks that tie the two together in the first place, the inventory
+ * shape check, and the "image origin" block that reloads the module under a
+ * stubbed environment variable. The equality checks make the tie transitive,
+ * so there is no gap — but "every assertion reads the served array" would be
+ * an overstatement, and this note exists so nobody repeats it.
  */
 
 interface ServedHeader {
@@ -68,7 +77,12 @@ describe("next.config.ts wiring", () => {
 
 describe("security headers", () => {
   it("keeps the headers that predate the CSP", () => {
-    expect(header("Strict-Transport-Security")).toContain("max-age=31536000");
+    // Exact, not `toContain`: `includeSubDomains` and `preload` are the two
+    // halves that matter, and a substring match on the max-age let both be
+    // dropped with the suite green.
+    expect(header("Strict-Transport-Security")).toBe(
+      "max-age=31536000; includeSubDomains; preload"
+    );
     expect(header("X-Content-Type-Options")).toBe("nosniff");
     expect(header("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
     expect(header("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=()");
@@ -172,6 +186,25 @@ describe("content security policy directives", () => {
     ]) {
       expect(connectSrc.some((source) => source.includes(navigationOnly))).toBe(false);
     }
+  });
+
+  it("holds the inventory itself to a fixed shape", () => {
+    // The offenders scan below draws its allowlist from CSP_ALLOWED_ORIGINS,
+    // which on its own is circular: adding a fourth origin to the map and
+    // using it in a directive would widen the policy with the suite green.
+    // This assertion is the non-circular half — the inventory's shape is
+    // written out here, so growing it is a deliberate edit to the test.
+    expect(Object.keys(CSP_ALLOWED_ORIGINS).sort()).toEqual([
+      "googleTagManager",
+      "r2",
+      "turnstile",
+    ]);
+    expect(CSP_ALLOWED_ORIGINS.turnstile).toBe("https://challenges.cloudflare.com");
+    expect(CSP_ALLOWED_ORIGINS.googleTagManager).toBe("https://www.googletagmanager.com");
+    // `r2` is intentionally not pinned to a literal: it is derived from
+    // NEXT_PUBLIC_R2_URL, which is the point (see the "image origin" tests).
+    // Its shape is still constrained — an origin, never an origin with a path.
+    expect(CSP_ALLOWED_ORIGINS.r2).toMatch(/^https:\/\/[^/]+$/);
   });
 
   it("names no origin outside the sanctioned inventory", () => {
