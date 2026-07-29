@@ -207,27 +207,57 @@ describe("content security policy directives", () => {
     expect(CSP_ALLOWED_ORIGINS.r2).toMatch(/^https:\/\/[^/]+$/);
   });
 
-  it("names no origin outside the sanctioned inventory", () => {
-    // Guards against the policy being widened one origin at a time until it
-    // means nothing. Anything host-shaped in the policy must be either an
-    // inventoried origin or the report path.
+  it("names no source outside the sanctioned inventory", () => {
+    // Guards against the policy being widened one source at a time until it
+    // means nothing.
+    //
+    // The bare scheme-sources are the point. `https:` in a source list matches
+    // EVERY host, so it is wider than any hostname could be — and an earlier
+    // version of this scan waved `https:` and `http:` through as harmless
+    // "keywords", which meant the single most effective way to gut this policy
+    // was also the one way it could not see. They are offenders here, always.
+    //
+    // `data:` and `blob:` are bounded, but only in the right directive:
+    // `data:` in `script-src` is a classic injection vector, so they are
+    // allowed per-directive rather than globally.
     const sanctioned = new Set<string>([
       ...Object.values(CSP_ALLOWED_ORIGINS),
       CSP_REPORT_PATH,
       CSP_REPORT_GROUP,
     ]);
-    const keywords = /^('[a-z-]+'|data:|blob:|https:|http:)$/;
+    const quotedKeyword = /^'[a-z0-9-]+'$/;
+    const schemeSourcesByDirective: Record<string, string[]> = {
+      "img-src": ["data:", "blob:"],
+      "font-src": ["data:"],
+    };
 
     const offenders: string[] = [];
     for (const part of (header(CSP_HEADER_KEY) ?? "").split(";")) {
-      const [, ...sources] = part.trim().split(/\s+/).filter(Boolean);
+      const [directiveName, ...sources] = part.trim().split(/\s+/).filter(Boolean);
+      const allowedSchemes = schemeSourcesByDirective[directiveName] ?? [];
       for (const source of sources) {
-        if (keywords.test(source)) continue;
+        if (quotedKeyword.test(source)) continue;
+        if (allowedSchemes.includes(source)) continue;
         if (sanctioned.has(source)) continue;
-        offenders.push(source);
+        offenders.push(`${directiveName} ${source}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("admits no bare scheme-source in any directive", () => {
+    // Stated separately from the scan above so the intent survives a future
+    // refactor of it: `https:`, `http:`, `data:` and `blob:` as whole sources
+    // are wildcards of varying width, and none belongs in a fetch directive
+    // that grants script or connection privileges.
+    const wildcardish = new Set(["https:", "http:", "data:", "blob:", "*"]);
+
+    for (const directiveName of ["default-src", "script-src", "style-src", "connect-src", "frame-src"]) {
+      const sources = directive(directiveName) ?? [];
+      for (const source of sources) {
+        expect(wildcardish.has(source)).toBe(false);
+      }
+    }
   });
 
   it("serialises as a single well-formed header value", () => {

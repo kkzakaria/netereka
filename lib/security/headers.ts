@@ -133,6 +133,29 @@ export const CSP_DIRECTIVES: readonly string[] = [
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' ${r2} data: blob:`,
   "font-src 'self' data:",
+  // GA4's *loader* only. Its measurement beacons go somewhere else — to
+  // `www.google-analytics.com`, to regional hosts such as
+  // `region1.google-analytics.com`, and to `*.analytics.google.com`; with
+  // Google Signals enabled, `stats.g.doubleclick.net` joins them, and the
+  // beacon falls back to an image request under `img-src` when `sendBeacon`
+  // is unavailable. None of them are here, and that is a decision rather than
+  // an oversight.
+  //
+  // They are expected to appear as violations during observation. Treat them
+  // as the collector working, not as a defect to file.
+  //
+  // Not added, for two reasons. First, the discipline this policy is built on
+  // is that an origin earns its place by being observed, not by being read
+  // about — Google documents a wildcard list (`https://*.google-analytics.com`
+  // and friends), and a wildcard is a materially wider grant than a host, so
+  // it should be granted on evidence from this site rather than on a doc page.
+  // Second, and decisively: the recommended enforcement path does not enforce
+  // `connect-src` at all. The proposal is a second, enforcing header carrying
+  // only `object-src`, `base-uri`, `form-action` and `frame-ancestors` — the
+  // four that cost no caching — while this policy stays report-only. Analytics
+  // therefore cannot be broken by following that path, whatever this line says.
+  // If full enforcement is ever chosen instead, this is one of the entries that
+  // must be settled from the collector's own logs first.
   `connect-src 'self' ${googleTagManager}`,
   `frame-src 'self' ${turnstile}`,
   "object-src 'none'",
@@ -177,9 +200,26 @@ export const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
-  // Resolves the `report-to csp-endpoint` group above. Reporting API v1
-  // parses this value against the response's own URL, so a same-origin path
-  // is valid and avoids hard-coding the deployment hostname.
+  // Resolves the `report-to csp-endpoint` group above.
+  //
+  // The value is a root-relative path, and that is checked rather than
+  // assumed — it was queried in review as something Chromium would ignore,
+  // which would have left `report-to` dead in most of the traffic.
+  //
+  // It does not. Reporting API v1 § "Process reporting endpoints for response"
+  // parses each value with "base URL set to response's url", and Chrome's own
+  // documentation states the rule precisely: an endpoint URL "must start with
+  // a slash (/). Relative paths are not supported." A *relative* path
+  // (`reports/csp`) is unsupported; a root-relative one is exactly what is
+  // asked for, and that is what this is.
+  //
+  // Relative is also the better choice here, not merely an adequate one. This
+  // site serves both an apex and a `www` host (middleware 301s www → apex, but
+  // the header is on that redirect response too). A path resolves against
+  // whichever host served the document, so the report stays same-origin either
+  // way. An absolute URL pinned to SITE_URL would make reports from `www`
+  // cross-origin — which costs a CORS preflight and drops credentials — for no
+  // gain.
   { key: "Reporting-Endpoints", value: `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"` },
   { key: CSP_HEADER_KEY, value: CONTENT_SECURITY_POLICY },
 ];
