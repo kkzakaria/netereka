@@ -10,32 +10,761 @@ const ALLOWED_ATTRS = new Set([
   "colspan", "rowspan", "target", "rel",
 ]);
 
-const DANGEROUS_URI_RE = /^\s*(javascript|data|vbscript)\s*:/i;
-
 const EVENT_HANDLER_RE = /^on[a-z]/i;
 
+// ---------------------------------------------------------------------------
+// Normalisation — used to DECIDE, never to rewrite what is emitted.
+//
+// A browser resolves HTML character references and CSS escapes before it works
+// out what a URL's scheme is or what a declaration does. A filter that compares
+// literal tokens against the raw value is reading a different document than the
+// parser that ultimately runs, and every disagreement between the two is a way
+// through. Both filters below therefore resolve the value first — but only to
+// reach a verdict. What survives is the ORIGINAL value: emitting the resolved
+// form would change how legitimate content renders and, worse, would hand the
+// browser a string it resolves a SECOND time (`\5c 75 rl(` resolves once to
+// `\75 rl(`, which a browser would then resolve again to `url(`).
+// ---------------------------------------------------------------------------
+
+/** Every named character reference whose expansion contains an ASCII character.
+ *
+ *  Checked against the WHATWG entities table rather than assumed: of its 2231
+ *  named references, 57 expand to something containing an ASCII character, and
+ *  between them they produce 34 distinct ASCII characters — all of them below.
+ *  Only ONE expands to ASCII letters (`&fjlig;` → "fj"), which is why that entry
+ *  looks out of place; an earlier version of this comment claimed no named
+ *  reference produces a letter, and that was simply wrong.
+ *
+ *  Everything the spec can express outside this table is non-ASCII, and no URI
+ *  scheme or CSS function name is spelled with non-ASCII characters, so the
+ *  numeric forms — which are resolved in full — carry the rest.
+ *
+ *  Lookup is case-insensitive, which resolves more than a browser would (`&LT;`
+ *  is a real reference, `&TAB;` is not); that can only make the verdict
+ *  stricter. A trailing ";" is required: the legacy semicolon-less forms are
+ *  limited to references such as `&amp` / `&lt` / `&gt` / `&quot`, none of which
+ *  produce a character that can extend a scheme or a function name.
+ *
+ *  A Map, not an object literal, and the difference is not stylistic. A plain
+ *  object inherits from Object.prototype, so a lookup for a name that happens
+ *  to be spelled like one of its members answers with that member instead of
+ *  `undefined`. Exactly one such name is reachable through the reference
+ *  grammar below (`[a-z][a-z0-9]{1,31}` admits `constructor` and nothing else
+ *  on the prototype), and `&constructor;` therefore decoded to
+ *  "function Object() { [native code] }" — a reference the HTML spec does not
+ *  define, decoded to text no browser produces.
+ *
+ *  Nothing was exploitable through it: the injected text carries no ":" and
+ *  joins no characters together, so every reachable case had the filter and
+ *  the browser agreeing on the verdict anyway (`&constructor;javascript:` is a
+ *  relative URL to both; `ur&constructor;l(` is not `url(` to either). But the
+ *  premise of this whole file is that the filter reads what the browser reads,
+ *  and here it demonstrably did not. A Map has no inherited keys, so the
+ *  question cannot arise again.
+ *
+ *  There is deliberately NO test for this, and that is worth stating so nobody
+ *  reads the gap as an oversight. The decoder's output is used to reach a
+ *  verdict and is never emitted, and in every reachable case the verdict was
+ *  the same either way — so the difference is invisible through this module's
+ *  public surface. Three assertions were written for it and all three passed
+ *  against the unfixed table; they were removed rather than kept, because a
+ *  test that cannot fail is worse than no test. The guarantee here is
+ *  structural instead: a Map cannot answer for a name it was not given. */
+const NAMED_CHARACTER_REFERENCES = new Map<string, string>(Object.entries({
+  tab: "\t", newline: "\n", nbsp: "\xa0",
+  quot: '"', apos: "'", amp: "&", lt: "<", gt: ">", nvlt: "<", nvgt: ">",
+  excl: "!", num: "#", dollar: "$", percnt: "%", ast: "*", midast: "*",
+  lpar: "(", rpar: ")", plus: "+", comma: ",", period: ".", sol: "/",
+  colon: ":", semi: ";", equals: "=", bne: "=", quest: "?", commat: "@",
+  lsqb: "[", lbrack: "[", bsol: "\\", rsqb: "]", rbrack: "]",
+  hat: "^", lowbar: "_", underbar: "_", grave: "`", diacriticalgrave: "`",
+  lcub: "{", lbrace: "{", verbar: "|", vert: "|", verticalline: "|",
+  rcub: "}", rbrace: "}",
+  fjlig: "fj",
+}));
+
+/** A code point outside the Unicode range — or zero — is what a parser turns
+ *  into U+FFFD. Returning the replacement character keeps the decoder total:
+ *  String.fromCodePoint would otherwise throw on `&#x110000;`, failing the whole
+ *  description closed over a malformed reference. The digit runs feeding this
+ *  are unbounded on purpose — capping them would leave a truncated tail behind
+ *  that a browser still resolves. */
+function codePointOrReplacement(value: number): string {
+  if (!Number.isFinite(value) || value <= 0 || value > 0x10ffff) return "�";
+  return String.fromCodePoint(value);
+}
+
+/** Resolve HTML character references the way a tokenizer does inside an
+ *  attribute value, including the semicolon-less numeric forms: `&#106avascript:`
+ *  really is `javascript:` to a browser.
+ *
+ *  ONE pass, one regex. A tokenizer resolves each reference exactly once and
+ *  never re-reads what it just produced. Resolving the hexadecimal, decimal and
+ *  named forms in three ordered passes instead let one pass's OUTPUT become part
+ *  of the next pass's input, which does not merely over-decode — it silently
+ *  re-segments the references that follow. `&#92` immediately ahead of a `6`
+ *  produced by an earlier pass was read as `&#926`, so a run that a browser
+ *  resolves to `ur\6C(` was read here as something harmless and let through.
+ *  Any future addition must extend this single alternation, never chain
+ *  another `.replace()` after it. */
+function decodeCharacterReferences(value: string): string {
+  return value.replace(
+    /&(?:#x([0-9a-f]+);?|#([0-9]+);?|([a-z][a-z0-9]{1,31});)/gi,
+    (match, hex: string | undefined, dec: string | undefined, name: string | undefined) => {
+      if (hex !== undefined) return codePointOrReplacement(parseInt(hex, 16));
+      if (dec !== undefined) return codePointOrReplacement(parseInt(dec, 10));
+      return NAMED_CHARACTER_REFERENCES.get((name as string).toLowerCase()) ?? match;
+    },
+  );
+}
+
+/** CSS Syntax L3 §3.3: a stylesheet is preprocessed before tokenizing, and CR,
+ *  CRLF and FF all become a single LF. That matters here because §4.3.7 lets one
+ *  such newline terminate a hexadecimal escape — so `u\72<CR><LF>l(` is `url(`
+ *  to a browser, the CRLF counting as the single terminator. Substituting first
+ *  keeps the terminator one character wide in `resolveCssEscapes` below.
+ *
+ *  This is ordinary content, not an exotic input: the generated <style> blocks
+ *  on real product descriptions are stored with CRLF line endings. */
+function preprocessCssNewlines(css: string): string {
+  return css.replace(/\r\n?|\f/g, "\n");
+}
+
+/** Resolve CSS escapes (`\72` → `r`) so the filter sees what the browser sees.
+ *  The second alternative — a backslash before anything that is not a hex digit
+ *  — matters as much as the first: it consumes `\\` as one escaped backslash, so
+ *  `\\75 rl(` resolves to `\75 rl(` and NOT to `url(`, which is exactly what a
+ *  browser does, resolving each escape once.
+ *  Run this on the output of preprocessCssNewlines, never on raw text: the
+ *  optional terminator is a single character by that point. */
+function resolveCssEscapes(css: string): string {
+  return css.replace(
+    /\\(?:([0-9a-f]{1,6})[ \t\n]?|([\s\S]))/gi,
+    (_m, hex: string | undefined, other: string) =>
+      hex !== undefined ? codePointOrReplacement(parseInt(hex, 16)) : other,
+  );
+}
+
+/** Constructs that make a stylesheet fetch a resource or run legacy script.
+ *  `image-set` covers its `-webkit-`/`-moz-` spellings too, since the match is
+ *  not anchored.
+ *
+ *  The "(" must follow the name immediately, with no whitespace, because that is
+ *  what makes a function token: `url (x)` is an identifier, a space and a
+ *  parenthesised block, and fetches nothing. Allowing whitespace bought no
+ *  safety and cost precision — it let the words "url (" inside a comment blank a
+ *  35 KB stylesheet. This pass is still neither comment- nor string-aware, so
+ *  "url(" written inside a comment does still blank the block.
+ *
+ *  NO "g" flag: a global regex used with .test() carries its lastIndex from one
+ *  call to the next, so the second call on the same input would disagree with
+ *  the first — a filter that only holds every other time, and one that passes
+ *  unit tests when they run in isolation. */
+const CSS_FETCHING_RE = /(?:url|image-set|src|expression)\(|@import/i;
+
 /**
- * Remove dangerous CSS constructs from a style value or <style> block body.
- * Strips @import, url(...) and expression(...) — including UNTERMINATED forms
- * (a bare `url(` with no closing paren), because browsers recover from an
- * unclosed url() and would still issue the request, so matching only the
- * balanced form would leave an exfiltration bypass.
+ * Remove dangerous CSS constructs from a style value or a <style> block body.
+ *
+ * The whole value is dropped as soon as a resource-fetching construct is found,
+ * rather than the offending token alone. Surgical removal is what produced
+ * `-webkit-image-set( 1x)` — a surviving wrapper — and it cannot be made sound
+ * against escapes without a real CSS parser. The trade-off is blunt and
+ * deliberate: one `url()` anywhere in a <style> block discards that whole block.
+ * No product description in production uses `url(` or `@import` today, so
+ * nothing legitimate depends on the finer-grained behaviour.
+ *
+ * The input is NOT assumed to be well-formed CSS: the <style> delimiter is not
+ * quote-aware, so fragments of markup can reach this function.
  */
 function stripDangerousCss(css: string): string {
-  // The optional closing paren (\)?) makes each pattern consume BOTH balanced
-  // forms — url(x) — and unterminated ones — url(x  — up to the next ")" or the
-  // end of the value, so a bare `url(https://evil/…` is removed entirely rather
-  // than leaving the host behind.
-  return css
-    .replace(/@import\b[^;]*;?/gi, "")
-    .replace(/url\s*\([^)]*\)?/gi, "")
-    .replace(/expression\s*\([^)]*\)?/gi, "");
+  // The order is the browser's: character references are resolved by the HTML
+  // tokenizer (for an inline style attribute), then the CSS preprocessor folds
+  // line breaks, then the CSS tokenizer resolves escapes. Any other order reads
+  // a different document than the one that will run.
+  const resolved = resolveCssEscapes(preprocessCssNewlines(decodeCharacterReferences(css)));
+  return CSS_FETCHING_RE.test(resolved) ? "" : css;
+}
+
+/** Schemes a product description may link to. Everything else — javascript:,
+ *  data:, vbscript:, blob:, file:, and any scheme invented tomorrow — is refused
+ *  by construction, which is the point of an allowlist. */
+const ALLOWED_SCHEME_RE = /^(?:https?|mailto|tel):/i;
+
+/** Any scheme at all: an ASCII letter, then scheme characters, then ":". */
+const ANY_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+/** Two leading slashes in either direction. A browser resolving a relative
+ *  reference against an http(s) page treats "//", "\\", "/\" and "\/" alike:
+ *  all four inherit the page's scheme and point at another host. */
+const SCHEME_RELATIVE_RE = /^[/\\]{2}/;
+
+/** C0 controls, space and DEL. A browser removes tab/CR/LF anywhere in a URL
+ *  and trims leading controls before parsing the scheme, so "java&#9;script:"
+ *  names a scheme to it while reading as harmless text to a filter that skips
+ *  this step. Removing the rest of the range as well only ever makes the verdict
+ *  stricter: dropping characters cannot turn a refused value into an allowed
+ *  scheme it did not already spell. */
+const URI_NOISE_RE = /[\x00-\x20\x7f]/g;
+
+function isSafeUri(rawValue: string): boolean {
+  const value = decodeCharacterReferences(rawValue).replace(URI_NOISE_RE, "");
+  if (ALLOWED_SCHEME_RE.test(value)) return true;
+  if (SCHEME_RELATIVE_RE.test(value)) return false;
+  // A reference naming no scheme cannot introduce one: it is a path, a query or
+  // a fragment resolved against the current page. Percent-encoding is
+  // deliberately NOT decoded here — a browser does not decode it before parsing
+  // the scheme either, so "%6aavascript:" is a relative path to both of us.
+  return !ANY_SCHEME_RE.test(value);
 }
 
 /**
  * Sanitize admin-authored HTML for product descriptions.
+ *
+ * ---------------------------------------------------------------------------
+ * KNOWN CONTENT LOSS — read this before debugging "my description is truncated"
+ * ---------------------------------------------------------------------------
+ * This function is not lossless, and the losses below are deliberate. They are
+ * the price of failing closed on input this filter cannot model as confidently
+ * as a browser would. None of them can be softened without reopening a way
+ * through, so the answer to a report of missing content is to change the
+ * SOURCE, not this file.
+ *
+ * **1. A `<` followed by an ASCII letter discards everything up to the next
+ * `<`, or to the end of the input.**
+ *
+ * That sequence is how a tag starts, so the filter reads it as one. If no `>`
+ * arrives before the next `<`, it is not a complete tag and the fragment is
+ * dropped rather than emitted (see the `gt === undefined` branch in step 3).
+ * The consequence is easiest to see in code samples:
+ *
+ * ```
+ *   in : <pre><code>for(i=0;i<n;i++){}</code></pre>
+ *   out: <pre><code>for(i=0;i</code></pre>
+ * ```
+ *
+ * `i<n` opens what looks like a `<n…>` tag, and `;i++){}` disappears with it.
+ * A 2,686-byte description built this way was measured losing 2,623 bytes.
+ *
+ * A lone `<` in ordinary prose is untouched — `5 < 10` is safe, because the
+ * `<` is followed by a space rather than a letter. Only the letter case bites.
+ *
+ * **Exposure was measured, not assumed:** 0 of 568 non-empty descriptions in
+ * production are affected, and the seven products carrying generated `<style>`
+ * blocks are byte-identical before and after. The day a seller writes a
+ * technical spec containing `i<n`, the fix is to write `i&lt;n` in the source
+ * — which is what the HTML spec asks for anyway — not to relax the filter.
+ *
+ * **2. A `<` inside a quoted attribute value ends the tag here, but not in a
+ * browser.** HTML says `<` inside a quoted value is literal text; this filter
+ * treats every `<` as a potential tag start. The divergence fails closed — the
+ * opening fragment is dropped — but the text after it is then re-read as
+ * markup, so an element can appear in the output that a browser would never
+ * have built from the same input:
+ *
+ * ```
+ *   in : <p a="<img src=x onerror=alert(1)>">
+ *   out: <img src="x">">
+ * ```
+ *
+ * The `<img>` is fully sanitized (the handler is gone), so this is a fidelity
+ * loss and not a hole — but it is surprising enough to be worth stating.
+ *
+ * **3. One resource-fetching construct discards a whole `<style>` block.** See
+ * `stripDangerousCss`: `url(`, `@import`, `image-set(`, `src(` or
+ * `expression(` anywhere in a block — including inside a comment, since that
+ * pass is not comment-aware — blanks the entire block rather than the offending
+ * declaration.
+ *
+ * **4. A `<` inside a `<style>` tag's attributes spills the CSS as text.** See
+ * the note on step 2.
+ *
+ * Every one of these is pinned by a test in `__tests__/unit/sanitize-html.test.ts`
+ * (`describe("known content loss")`), so none of them can change silently.
  */
-const MAX_INPUT_LENGTH = 512_000; // 500KB — reject oversized input
+
+/**
+ * 500 KB. Input above this is refused outright — the function returns "" and
+ * logs, rather than attempting to sanitize.
+ *
+ * This is load-bearing for cost, not only for correctness: the branch bounds
+ * how much work a single stored description can force on every storefront
+ * render inside a CPU-metered Worker, which is what makes the measured
+ * worst-case an actual ceiling instead of a sample. Raising it raises that
+ * ceiling proportionally.
+ *
+ * Where the ceiling sits, last measured by sweeping 105 adversarial shapes
+ * each cut to exactly 512,000 bytes. Absolute figures move with machine load,
+ * so only same-run comparisons mean anything, and the ones below are all from
+ * single runs: **~39 ms** on a quiet machine, on a block of nothing but
+ * ";a{}", ".x{}" or "{".
+ *
+ * How it got there. Rewriting the selector-scoping pass as a context-tracking
+ * sweep MOVED THE CEILING DOWN — the same sweep costs about 2.2x that against
+ * the regex the pass replaced. Teaching the sweep to step over CSS comments
+ * then cost ~2% of the ceiling, and teaching the selector splitter to track
+ * strings, brackets and parens instead of calling split(",") cost ~1% more
+ * (58.30 -> 58.84 ms and 61.33 -> 60.95 ms, two same-run pairs on a loaded
+ * machine). Some shapes got dramatically CHEAPER in the process: an
+ * unterminated "[" or quote followed by 240,000 commas fell from ~35 ms to
+ * ~5 ms, because splitting is now suppressed rather than emitting a prefix per
+ * comma.
+ *
+ * Deliberately NOT exported. The boundary tests hardcode 512000 so that
+ * changing this number fails them; deriving the test's boundary from the
+ * constant would let the cap move with the suite still green.
+ */
+const MAX_INPUT_LENGTH = 512_000;
+
+/** A script/iframe element: opening tag, contents, and closing tag. */
+const RAW_TEXT_ELEMENT_RE = /<(script|iframe)[^<>]*>[\s\S]*?(?:<\/\1(?=[\s/>])[^<>]*>|$)/gi;
+/** A bare script/iframe tag, with no contents to go with it. */
+const RAW_TEXT_TAG_RE = /<(script|iframe)[^<>]*\/?>/gi;
+
+/**
+ * Delete every match of `re` from `html` without welding the text in front of
+ * a deleted span onto the text behind it.
+ *
+ * Cutting a span out of markup joins its two neighbours, and the join can
+ * spell a tag that was in neither of them: an opening left dangling in front
+ * of the cut gets completed by whatever follows it. A global replace never
+ * re-examines its own output, so a pass cannot catch what it has itself just
+ * built, and re-running it to a fixed point costs a fresh scan of the whole
+ * string per level of nesting.
+ *
+ * So the cut is instead widened backwards, in the same single pass, to swallow
+ * any unterminated markup sitting directly in front of the span — back to the
+ * last ">", when a "<" occurs in between. Nothing that could be completed is
+ * left in front of the cut, which makes this a property of this pass alone
+ * rather than one inherited from a later pass. Widening only ever removes
+ * characters that were already inside an unclosed tag, and a string with no
+ * match at all is returned unchanged.
+ */
+function cutOut(html: string, re: RegExp): string {
+  re.lastIndex = 0;
+  let out = "";
+  let cursor = 0;
+  let matched = false;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    matched = true;
+    let start = m.index;
+    // Both look-ups stay inside the gap in front of the span: the span itself
+    // begins with a "<", and a span always ends with the ">" that the next
+    // gap's backward look-up stops at. Successive gaps therefore do not
+    // overlap and the added work over the whole string stays proportional to
+    // its length.
+    const lastGt = html.lastIndexOf(">", start - 1);
+    const from = Math.max(cursor, lastGt + 1);
+    const lt = html.indexOf("<", from);
+    if (lt !== -1 && lt < start) start = lt;
+    out += html.slice(cursor, start);
+    cursor = m.index + m[0].length;
+  }
+  return matched ? out + html.slice(cursor) : html;
+}
+
+/**
+ * At-keywords whose block holds style rules, so the selectors directly inside
+ * them are scoped exactly like top-level ones.
+ *
+ * A Set, not an object literal: the keyword comes from the stylesheet, and an
+ * object lookup would answer for inherited keys ("constructor", "toString")
+ * that name no at-rule at all.
+ *
+ * Everything else that opens a block either holds keyframe steps
+ * (`@keyframes`) or nothing but declarations (`@font-face`, `@page`), and
+ * neither takes a scope prefix. Defaulting the UNKNOWN at-keyword to "do not
+ * prefix" is the safe direction of the two: an unprefixed selector is merely
+ * over-broad and still applies, whereas a prefixed step selector or at-rule
+ * prelude is a rule the browser discards outright — which is exactly the
+ * damage being repaired here.
+ */
+const SELECTOR_BEARING_AT_RULES = new Set([
+  "media",
+  "supports",
+  "container",
+  "layer",
+  "scope",
+  "document",
+  "-moz-document",
+]);
+
+/** The at-keyword at an at-rule prelude's first significant character. Sticky,
+ *  so it can be aimed past leading trivia without slicing a copy out first. */
+const AT_KEYWORD_RE = /@([a-zA-Z-]+)/y;
+
+function bearsSelectors(prelude: string, at: number): boolean {
+  AT_KEYWORD_RE.lastIndex = at;
+  const keyword = AT_KEYWORD_RE.exec(prelude);
+  return keyword !== null && SELECTOR_BEARING_AT_RULES.has(keyword[1].toLowerCase());
+}
+
+/** A complete CSS string, sticky so it can be aimed at an opening quote. The
+ *  two alternatives are disjoint — an escape starts with a backslash, an
+ *  ordinary character excludes it — so there is no ambiguity for the engine to
+ *  backtrack through. A raw newline is excluded because CSS says a string does
+ *  not survive one; the match then fails and the caller falls back to treating
+ *  the quote as an ordinary character, exactly as a browser recovers. */
+const DOUBLE_QUOTED = /"(?:\\[^]|[^"\\\n\r\f])*"/y;
+const SINGLE_QUOTED = /'(?:\\[^]|[^'\\\n\r\f])*'/y;
+
+/** CSS whitespace: tab, LF, FF, CR, space. */
+function isCssWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d;
+}
+
+/**
+ * Index of the first character at or after `from` that is neither whitespace
+ * nor part of a CSS comment — the first character that decides what a prelude
+ * IS.
+ *
+ * Skipping comments here is not a nicety. The generator that writes product
+ * descriptions emits a French "Animation" comment immediately before its
+ * `@keyframes` rule, so a test that skips only whitespace sees a "/" rather
+ * than an "@", reads the run as a selector list and prefixes it — which is a
+ * rule the browser then discards. Six of the seven descriptions carrying a
+ * <style> block have a comment in exactly that position, and they are exactly
+ * the six a repair could not fix while this function skipped whitespace only.
+ *
+ * The asymmetry is worth stating, because it is why the at-rule test is where
+ * this mattered: a comment before an ORDINARY selector is harmless, since a
+ * scope prefix, a comment and a selector parse as prefix-then-selector. Only
+ * before an at-rule does the prefix invalidate anything. The prefix is placed
+ * AFTER the trivia regardless, which costs nothing and keeps the comment where
+ * its author put it.
+ *
+ * Linear: `i` never moves backwards, and indexOf jumps straight to a comment's
+ * end instead of re-reading its body. An unterminated "/*" reports the end of
+ * the text, which is what a browser does with it too — everything after it is
+ * comment — and the caller then leaves the run alone.
+ */
+function skipTrivia(text: string, from: number): number {
+  const length = text.length;
+  let i = from;
+  for (;;) {
+    while (i < length && isCssWhitespace(text.charCodeAt(i))) i++;
+    if (i + 1 >= length || text.charCodeAt(i) !== 0x2f /* "/" */ || text.charCodeAt(i + 1) !== 0x2a /* "*" */) {
+      return i;
+    }
+    const end = text.indexOf("*/", i + 2);
+    if (end === -1) return length;
+    i = end + 2;
+  }
+}
+
+/**
+ * Index just past the last ";" in `prelude` that ends a statement at-rule, or
+ * 0 when it carries none.
+ *
+ * `@charset "utf-8"; .a {` is two things, and only the second is this "{"'s
+ * prelude. Two ways to get that wrong, both of which cut a selector in half,
+ * so both are excluded by scanning rather than by a lastIndexOf:
+ *
+ *   * a ";" inside a comment, next to an "@" that is also inside it
+ *   * a ";" inside a selector's own attribute value — `a[href*=";"] {`
+ *
+ * The second is why the "@" is required at all: no at-keyword outside a
+ * comment means no statement at-rule, so there is nothing to split off.
+ */
+function lastStatementEnd(prelude: string): number {
+  const length = prelude.length;
+  let end = 0;
+  let sawAtKeyword = false;
+  let depth = 0;
+  let quote = 0;
+  let i = 0;
+  while (i < length) {
+    const code = prelude.charCodeAt(i);
+    if (quote !== 0) {
+      if (code === 0x5c /* "\" */) i++;
+      else if (code === quote) quote = 0;
+      i++;
+      continue;
+    }
+    if (code === 0x2f /* "/" */ && prelude.charCodeAt(i + 1) === 0x2a /* "*" */) {
+      const close = prelude.indexOf("*/", i + 2);
+      if (close === -1) break; // the rest is comment
+      i = close + 2;
+      continue;
+    }
+    if (code === 0x22 /* '"' */ || code === 0x27 /* "'" */) quote = code;
+    else if (code === 0x5c /* "\" */) i++;
+    else if (code === 0x28 /* "(" */ || code === 0x5b /* "[" */) depth++;
+    else if (code === 0x29 /* ")" */ || code === 0x5d /* "]" */) {
+      if (depth > 0) depth--;
+    } else if (depth === 0) {
+      // A ";" only ends a statement at the top level of the prelude, and only
+      // outside a string. `@layer base; a[href*=";"] {` carries both: the first
+      // ";" is the statement, the second belongs to the selector. Splitting on
+      // the second inserted the scope prefix into the middle of an attribute
+      // value — a selector that still parses, and quietly matches something
+      // else than the author wrote.
+      if (code === 0x40 /* "@" */) sawAtKeyword = true;
+      else if (code === 0x3b /* ";" */) end = i + 1;
+    }
+    i++;
+  }
+  return sawAtKeyword ? end : 0;
+}
+
+/**
+ * Split a selector list on the commas that actually separate selectors.
+ *
+ * Not every comma does. A comma inside a functional pseudo-class argument
+ * (`:is()`, `:where()`, `:not()`, `:has()`), inside an attribute selector's
+ * brackets, or inside a quoted value is part of ONE selector, and cutting
+ * there splices the scope prefix into the middle of a token:
+ *
+ *   `:is(h1, h2)`      became `.desc-p1 :is(h1, .desc-p1 h2)`  — invalid, and
+ *                      an invalid selector drops the whole rule. The forgiving
+ *                      parsing of `:is()`/`:where()` does not rescue this; it
+ *                      tolerates an invalid MEMBER, not a mangled token.
+ *   `a[title="x,y"]`   became `.desc-p1 a[title="x, .desc-p1 y"]` — which is
+ *                      WORSE, because it stays syntactically valid. Nothing
+ *                      errors and nothing is dropped; the rule simply matches
+ *                      a different title, silently. A parser-based check calls
+ *                      that clean, so only an exact-output oracle catches it.
+ *
+ * Linear: one left-to-right pass, `i` never moves backwards, and a comment
+ * jumps straight to its end. An unterminated "(", "[" or quote suppresses
+ * every later split rather than guessing — the list comes back as a single
+ * member, so nothing is inserted into a construct this function cannot read.
+ */
+function splitSelectorList(list: string): string[] {
+  const parts: string[] = [];
+  const length = list.length;
+  let start = 0;
+  let depth = 0;
+  let quote = 0;
+  for (let i = 0; i < length; i++) {
+    const code = list.charCodeAt(i);
+    if (quote !== 0) {
+      if (code === 0x5c /* "\" */) i++;
+      else if (code === quote) quote = 0;
+      continue;
+    }
+    if (code === 0x22 /* '"' */ || code === 0x27 /* "'" */) quote = code;
+    else if (code === 0x5c /* "\" */) i++;
+    else if (code === 0x28 /* "(" */ || code === 0x5b /* "[" */) depth++;
+    else if (code === 0x29 /* ")" */ || code === 0x5d /* "]" */) {
+      if (depth > 0) depth--;
+    } else if (code === 0x2f /* "/" */ && list.charCodeAt(i + 1) === 0x2a /* "*" */) {
+      const close = list.indexOf("*/", i + 2);
+      if (close === -1) break;
+      i = close + 1;
+    } else if (code === 0x2c /* "," */ && depth === 0) {
+      parts.push(list.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(list.slice(start));
+  return parts;
+}
+
+/**
+ * True when `code` is a character that a CSS identifier continues with, so a
+ * scope prefix followed by it names a DIFFERENT class. `.desc-p1x` starts with
+ * the characters of `.desc-p1` without being it.
+ */
+function continuesIdentifier(code: number): boolean {
+  return (
+    (code >= 0x61 && code <= 0x7a) || // a-z
+    (code >= 0x41 && code <= 0x5a) || // A-Z
+    (code >= 0x30 && code <= 0x39) || // 0-9
+    code === 0x2d || // "-"
+    code === 0x5f || // "_"
+    code === 0x5c || // "\", which starts an escape that continues the name
+    code > 0x7f // non-ASCII is an identifier character in CSS
+  );
+}
+
+function isAlreadyScoped(selector: string, at: number, scopePrefix: string): boolean {
+  if (!selector.startsWith(scopePrefix, at)) return false;
+  // charCodeAt past the end is NaN, and every comparison against NaN is false,
+  // so a selector that IS exactly the prefix reads as already scoped.
+  return !continuesIdentifier(selector.charCodeAt(at + scopePrefix.length));
+}
+
+/** Prefix one selector, putting the prefix after any leading trivia so a
+ *  comment stays in front of the selector it was written in front of — and so
+ *  a commented-out-then-scoped selector is still recognised as already scoped
+ *  rather than picking up a second prefix. */
+function scopeSelector(selector: string, scopePrefix: string): string {
+  const at = skipTrivia(selector, 0);
+  if (isAlreadyScoped(selector, at, scopePrefix)) return selector;
+  return at === 0
+    ? `${scopePrefix} ${selector}`
+    : `${selector.slice(0, at)}${scopePrefix} ${selector.slice(at)}`;
+}
+
+/** `selectors` arrives with its leading trivia already stripped by the caller,
+ *  which is what lets the single-member case — by far the common one — skip
+ *  split/map/join entirely. That fast path is worth about 15% of the
+ *  worst-case sweep. */
+function scopeSelectorList(selectors: string, scopePrefix: string): string {
+  // No comma at all means nothing to split, and skips the scan entirely.
+  if (selectors.indexOf(",") === -1) return scopeSelector(selectors, scopePrefix);
+  return splitSelectorList(selectors)
+    .map((member: string) => scopeSelector(member.trim(), scopePrefix))
+    .join(", ");
+}
+
+/**
+ * Prefix every style-rule selector in `css` with `scopePrefix`, so a product
+ * description's stylesheet cannot restyle the rest of the page.
+ *
+ * WHAT THIS REPLACED, AND WHY A REGEX COULD NOT DO IT
+ * ---------------------------------------------------
+ * The previous form was a single `replace(/([^{}]+)(\{)?/g, …)` that prefixed
+ * every run of text reaching a "{", on the assumption that such a run is
+ * always a selector list. It is not. Three different things can precede a "{",
+ * and only one of them is a selector:
+ *
+ *   1. an at-rule prelude — `@media (max-width: 768px) {`. A selector cannot
+ *      precede an at-rule, so `.desc-X @media … {` is not a weaker rule, it is
+ *      a rule the browser throws away whole.
+ *   2. a keyframe step — `from {`, `0%, 100% {`. Same outcome: the step is not
+ *      a selector, and prefixing it kills the animation.
+ *   3. an actual selector list, which is the only case that must be prefixed.
+ *
+ * Telling them apart needs the enclosing context, which a flat regex has no
+ * way to carry. Measured in production: all seven descriptions carrying a
+ * <style> block had dead @keyframes from case 2, and one had a dead media
+ * query from case 1.
+ *
+ * COST — the constraint this rewrite was NOT allowed to give up
+ * -------------------------------------------------------------
+ * The regex it replaces captured its "{" as an OPTIONAL group for a reason
+ * recorded at the time: requiring the "{" made a brace-free run cost time
+ * proportional to the SQUARE of its length, because the engine re-walked it
+ * from every following position. The sweep below keeps the bound by a
+ * structurally stronger route — there is no backtracking engine involved at
+ * all. `/[{}]/g` steps from one brace to the next, each character of the input
+ * falls inside exactly one prelude or one declaration run, and every operation
+ * performed on a prelude (lastIndexOf, trim, split, the anchored at-keyword
+ * match) is linear in that prelude alone. Preludes do not overlap, so the
+ * total stays linear in the input, which the input cap then turns into an
+ * absolute ceiling.
+ *
+ * One behaviour is carried over unchanged rather than improved: an empty
+ * member of a selector list ("h1,,h2") is still prefixed like any other. The
+ * result is invalid CSS, but it was invalid before the prefix too, and
+ * silently dropping members would change which rules apply.
+ *
+ * Not comment- or string-aware: a "{" inside a comment or a quoted attribute
+ * selector is read as a real block opening. That was equally true of the regex
+ * this replaces, and stripDangerousCss already documents that the CSS reaching
+ * these passes may not even be well formed.
+ */
+function scopeCssSelectors(css: string, scopePrefix: string): string {
+  let out = "";
+  // Everything in css before `copied` is already accounted for in `out`.
+  // Advancing it ONLY when a prelude is actually rewritten is what keeps a
+  // stylesheet the sweep does not change from being rebuilt character by
+  // character: a block of 512,000 braces walks the stack and appends nothing.
+  let copied = 0;
+  let preludeStart = 0;
+  // One entry per open brace: true when the preludes DIRECTLY inside that
+  // block are style-rule selectors that take the prefix. The top level, with
+  // the stack empty, behaves as true.
+  const bearsSelectorsInside: boolean[] = [];
+  // Comments and strings are alternatives here so that a brace inside either
+  // cannot be mistaken for a block boundary — the sweep jumps straight past
+  // them. Both were real: `/* } */ .a {` closed a block that was never open and
+  // left the prefix inside the comment, and a string was worse still —
+  // `a[title="/*"] {` started a comment that ran to end of input, so the
+  // selector was never scoped at all, and `.a{content:"}"}` inside @keyframes
+  // closed the animation early and got the next step prefixed.
+  //
+  // Linear either way: indexOf lands on a comment's close without re-reading
+  // its body, and the string patterns are built from disjoint alternatives
+  // (one begins with a backslash, the other excludes it) so the engine has
+  // nothing to backtrack into.
+  const braces = /[{}]|\/\*|["']/g;
+  let brace: RegExpExecArray | null;
+
+  while ((brace = braces.exec(css)) !== null) {
+    const index = brace.index;
+
+    if (brace[0] === "/*") {
+      const close = css.indexOf("*/", index + 2);
+      // An unterminated comment runs to the end of the stylesheet, so there is
+      // nothing left that could be a selector.
+      if (close === -1) break;
+      braces.lastIndex = close + 2;
+      continue;
+    }
+
+    if (brace[0] === '"' || brace[0] === "'") {
+      const string = brace[0] === '"' ? DOUBLE_QUOTED : SINGLE_QUOTED;
+      string.lastIndex = index;
+      const matched = string.exec(css);
+      // A string that never closes, or that runs into a raw newline, is a
+      // parse error a browser recovers from rather than honouring. Treating the
+      // quote as an ordinary character is that recovery, and it is also what
+      // this sweep did before it knew about strings at all — so the unreadable
+      // case is no worse than it was.
+      if (matched !== null) braces.lastIndex = index + matched[0].length;
+      continue;
+    }
+
+    const begin = preludeStart;
+    preludeStart = index + 1;
+
+    if (brace[0] === "}") {
+      // Text in front of a "}" is declaration text, never a selector list, so
+      // it goes out exactly as it came in — which is why it is not even sliced
+      // out here. A "}" with nothing open is a stray; pop() tolerates it and
+      // the depth simply stays at zero.
+      bearsSelectorsInside.pop();
+      continue;
+    }
+
+    const prelude = css.slice(begin, index);
+    const depth = bearsSelectorsInside.length;
+    const inSelectorContext = depth === 0 || bearsSelectorsInside[depth - 1];
+
+    // What this prelude IS is decided by its first SIGNIFICANT character —
+    // past any statement at-rule it carries, and past whitespace and comments.
+    // Reading the raw first character instead is what let a comment in front
+    // of "@keyframes" be mistaken for a selector list.
+    //
+    // No ";" means no statement at-rule to step over, and that is the common
+    // case by a wide margin. The native scan for one is cheaper than the
+    // character loop it skips, and the two agree by construction:
+    // lastStatementEnd only ever reports a position it found a ";" at.
+    const statementEnd = prelude.includes(";") ? lastStatementEnd(prelude) : 0;
+    const significant = skipTrivia(prelude, statementEnd);
+
+    if (prelude.charCodeAt(significant) === 0x40 /* "@" */) {
+      // An at-rule prelude is not a selector list, and a selector in front of
+      // one costs the whole rule. Left exactly as written.
+      bearsSelectorsInside.push(bearsSelectors(prelude, significant));
+    } else if (!inSelectorContext || significant >= prelude.length) {
+      // A keyframe step; a prelude inside a block that holds declarations
+      // rather than style rules; or a run with nothing significant in it at
+      // all, which includes one swallowed by an unterminated comment. Left
+      // byte for byte, and whatever it opens holds declarations too, so
+      // nothing inside gets prefixed either.
+      bearsSelectorsInside.push(false);
+    } else {
+      // The one case that is a selector list. Flush everything still untouched
+      // in front of it — any statement at-rule this prelude carried, and any
+      // leading whitespace and comments — then emit the rewritten selectors in
+      // place of the rest of `prelude + "{"`.
+      out +=
+        css.slice(copied, begin + significant) +
+        scopeSelectorList(prelude.slice(significant).trim(), scopePrefix) +
+        " {";
+      copied = index + 1;
+      bearsSelectorsInside.push(false);
+    }
+  }
+
+  // Nothing was rewritten: return the original string rather than a rebuilt
+  // copy, which also keeps that case allocation free.
+  return copied === 0 ? css : out + css.slice(copied);
+}
 
 export function sanitizeDescriptionHtml(html: string, productId?: string): string {
   if (!html || !html.trim()) return "";
@@ -48,29 +777,83 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
 
   let result = html;
 
-  // 1. Remove script/iframe tags and their content entirely
-  result = result.replace(/<(script|iframe)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  result = result.replace(/<(script|iframe)[^>]*\/?>/gi, "");
+  // 0. A "<" immediately followed by another "<" can never open a tag — the
+  // tokenizer treats it as literal text — so escape it up front. Leaving it
+  // raw let a removal splice a tag back together: in "<<x>img src=y
+  // onerror=…>", dropping the disallowed <x> pushed the leading "<" against
+  // the text after it and reconstituted a live <img>. Every later pass removes
+  // spans that start at a "<", so this is the one adjacency they cannot
+  // prevent on their own. Rendering is unchanged — a browser shows "&lt;" and
+  // a literal "<" identically — and a lone "<" in prose ("5 < 10") is
+  // untouched because it is not followed by another "<".
+  result = result.replace(/<(?=<)/g, "&lt;");
 
-  // 2. Process <style> blocks: scope selectors, block @import and url()
+  // 1. Remove script/iframe tags and their content entirely.
+  // The attribute run stops at "<" as well as ">" ([^<>]) so a "<" that never
+  // gets a matching ">" cannot make the engine re-walk the rest of the input
+  // once per candidate tag; see the note above step 3 on scan discipline.
+  // The "|$" fallback mirrors the <style> pass below and matches how browsers
+  // treat an unterminated raw-text element: everything to the end of input is
+  // element content, so it all goes. Without it, an unclosed <script> left its
+  // body behind as visible text. The closing tag tolerates attributes after
+  // the name (`</script foo>`), which the tokenizer also treats as a close.
+  // Both removals go through cutOut() so neither can weld a leftover opening
+  // onto the text behind the span it deletes.
+  result = cutOut(result, RAW_TEXT_ELEMENT_RE);
+  result = cutOut(result, RAW_TEXT_TAG_RE);
+
+  // 2. Process <style> blocks: scope selectors, block @import and url().
+  // Tolerate whitespace before the closing tag's ">" — the HTML spec allows it
+  // and browsers accept it — as well as a missing closing tag entirely, by
+  // falling back to the end of input. Either form previously left the block
+  // unmatched, so it fell through to the tag-by-tag pass below untouched.
+  // Note: when the "$" branch fires (no closing tag found), the callback below
+  // still appends a synthetic "</style>" to its output — the emitted markup
+  // always balances even though the input didn't. That synthetic close is
+  // itself just text at this point; step 3 below re-scans the whole result
+  // and is what actually keeps the rest of the pipeline honest regardless of
+  // how this pass reshuffled tag boundaries.
+  // The attribute run is [^<>] rather than [^>] for the same scan-discipline
+  // reason as step 1 — see the note above step 3.
+  //
+  // Deferred item, restated at its CURRENT size. This delimiter has never been
+  // quote-aware: a ">" inside a <style> attribute value ends the open tag here
+  // even though a browser would read it as part of the value. That is
+  // architectural and shared with every tag in this file, and it is why
+  // stripDangerousCss documents that it may be handed fragments of markup
+  // rather than well-formed CSS.
+  //
+  // Narrowing the attribute run from [^>] to [^<>] changed the SHAPE of that
+  // gap, and a deferral only covers what was actually recorded, so the new
+  // shape is recorded here rather than left to be rediscovered. A "<" inside
+  // a <style> attribute value now prevents this pass from matching at all —
+  // the run stops at the "<" and the required ">" never arrives — so the block
+  // is never recognised as CSS. Step 3 then drops the malformed open tag and
+  // the CSS body survives as visible text, followed by a stray "</style>":
+  //
+  //   in : <style type="a<b">body{color:red}</style>
+  //   out: body{color:red}</style>
+  //
+  // Consequence: cosmetic, not a hole. The body reaches the page as text
+  // rather than as style, and every construct inside it has already passed
+  // through step 3's tag filter, so nothing there is live — the trailing
+  // "</style>" is an end tag with no matching start and closes nothing. It is
+  // recorded rather than repaired because the alternative is restoring [^>],
+  // which would give up the scan bound that step 1 and step 3 both rely on, in
+  // exchange for prose fidelity in a case that is already inert. Pinned by a
+  // test so it cannot drift further without being noticed.
   result = result.replace(
-    /<style[^>]*>([\s\S]*?)<\/style>/gi,
+    /<style[^<>]*>([\s\S]*?)(?:<\/style\s*>|$)/gi,
     (_match, cssContent: string) => {
       let css = stripDangerousCss(cssContent);
       css = css.trim();
       if (!css) return "";
+      // Scoping runs only on the admin save paths, which are the ones that
+      // pass a productId and persist what comes back. The storefront read path
+      // passes none, so this branch is skipped there and the stored markup is
+      // returned byte for byte.
       if (productId) {
-        const scopePrefix = `.desc-${productId}`;
-        css = css.replace(
-          /([^{}]+)\{/g,
-          (_m, selectors: string) => {
-            const scoped = selectors
-              .split(",")
-              .map((s: string) => `${scopePrefix} ${s.trim()}`)
-              .join(", ");
-            return `${scoped} {`;
-          },
-        );
+        css = scopeCssSelectors(css, `.desc-${productId}`);
       }
       return `<style>${css}</style>`;
     },
@@ -82,11 +865,66 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   // <img/src=x/onerror=alert(1)> is a valid <img> with an onerror handler. The
   // separator class MUST include "/" ([\s/]); matching only \s let such tags
   // pass through verbatim and defeated sanitization entirely (GHSA-92r4).
+  //
+  // The tag-name class covers every character a browser's tokenizer will fold
+  // into a tag name, not just [a-zA-Z0-9]. Per the HTML tag-name tokenizer
+  // state, once the first character is an ASCII letter, EVERY subsequent
+  // character is appended to the tag name until whitespace, "/", or ">" is
+  // seen — that includes "-", "_", ":", "." and non-ASCII characters. A tag
+  // name like "my-tag" previously matched neither this regex nor ALLOWED_TAGS,
+  // so it never reached the replace callback at all and passed through the
+  // sanitizer completely unfiltered, attributes included.
+  //
+  // Scan discipline — why the runs stop at "<" and why ">" is optional.
+  // Both runs below ([^\s/<>] for the name, [^<>] for the attribute section)
+  // exclude "<", and the closing ">" is captured as an OPTIONAL group. Two
+  // properties follow, and both matter:
+  //
+  //  * Every run is bounded by the next "<", and the regions those runs cover
+  //    for successive candidate tags cannot overlap — a run started at one
+  //    "<" always stops at or before the next one. With the trailing ">"
+  //    optional the match can never fail once the leading letter is seen, so
+  //    the engine never re-walks a run it has already walked. The earlier form
+  //    could re-walk the remainder of the input once per "<", which on a large
+  //    stored description turned every page view into a long CPU burn inside a
+  //    CPU-metered Worker.
+  //    Scope of that guarantee: it covers THIS regex's own sweep — finding tag
+  //    boundaries — and nothing else. The work the callback below does per tag
+  //    (attribute parsing) is bounded separately, at `attrRegex`; each pass in
+  //    this file carries its own note, and none of them may be read as a
+  //    statement about the function as a whole.
+  //
+  //  * Excluding "<" from the name does NOT re-admit the class of tag the
+  //    widened name class was introduced to catch. When a run stops at a "<"
+  //    (or at end of input) there is no ">", so `gt` is undefined and the
+  //    whole "<"-plus-name-plus-attributes fragment is DROPPED rather than
+  //    matched — the fail-closed branch below. That pairing is the essential
+  //    part: bounding the name is only safe when whatever exceeds the bound is
+  //    removed. A dropped fragment always ends at the next "<" or at end of
+  //    input, so the removal cannot splice a live tag out of the surrounding
+  //    text — a tag can only start at a "<", and every "<" is examined here.
+  //
+  // The old trailing `\s*\/?` before ">" was dead weight: the greedy attribute
+  // run already absorbs any trailing whitespace and solidus.
   result = result.replace(
-    /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:[\s/][^>]*)?)\s*\/?>/g,
-    (match, tagName: string, attrsStr: string) => {
+    /<\/?([a-zA-Z][^\s/<>]*)((?:[\s/][^<>]*)?)(>)?/g,
+    (match, tagName: string, attrsStr: string, gt: string | undefined) => {
+      // No ">" reached before the next "<" or the end of input: not a complete
+      // tag, so drop the fragment rather than leave a live tag start (and its
+      // handlers) behind in the output.
+      //
+      // THIS IS WHERE CONTENT IS LOST. The dropped fragment runs from the "<"
+      // to the next "<" or to the end of the input, so a "<" followed by a
+      // letter anywhere in prose takes the rest of that run with it —
+      // "for(i=0;i<n;i++){}" comes out as "for(i=0;i". That is deliberate and
+      // measured (0 of 568 production descriptions affected); see the "KNOWN
+      // CONTENT LOSS" section on sanitizeDescriptionHtml above for the full
+      // statement, and `describe("known content loss")` in the tests for the
+      // cases that pin it. Returning the fragment as text instead is what this
+      // branch exists to prevent, so the loss cannot be traded away here.
+      if (gt === undefined) return "";
+
       const tag = tagName.toLowerCase();
-      if (tag === "style") return match; // already processed
       if (tag === "script" || tag === "iframe") return "";
 
       const isClosing = match.startsWith("</");
@@ -94,14 +932,31 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       if (isClosing) return `</${tag}>`;
 
       const attrs: string[] = [];
-      const attrRegex = /([a-zA-Z_][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+      // The "= value" part is an OPTIONAL group, and a name that turns out to
+      // carry no value is skipped below. That keeps exactly the same set of
+      // name/value pairs as requiring the "=" did — a name run always ends at
+      // the same character whichever position inside it the scan starts from,
+      // so if the "=" is missing it is missing for every start inside that run
+      // and no pair was ever found there — while removing the re-walk of the
+      // run from each of those positions. Requiring the "=" made an attribute
+      // section with no "=" cost time proportional to the SQUARE of its
+      // length, and this pass runs on every storefront render of a product
+      // description inside a CPU-metered Worker.
+      const attrRegex = /([a-zA-Z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
       let attrMatch: RegExpExecArray | null;
       while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
         const attrName = attrMatch[1].toLowerCase();
-        const attrValue = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? "";
+        const rawValue = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4];
+        // Valueless attribute ("<div hidden>"): never emitted before either.
+        if (rawValue === undefined) continue;
+        const attrValue = rawValue;
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
-        if ((attrName === "href" || attrName === "src") && DANGEROUS_URI_RE.test(attrValue)) continue;
+        // Allowlist, not denylist: the value is judged on the scheme a browser
+        // will see once it has resolved character references, and anything not
+        // explicitly permitted — including a scheme-relative "//host/…" — is
+        // dropped. If it passes, the ORIGINAL value is what gets emitted.
+        if ((attrName === "href" || attrName === "src") && !isSafeUri(attrValue)) continue;
         let cleanValue = attrValue;
         if (attrName === "style") {
           // Inline style values were not filtered, unlike <style> blocks, so

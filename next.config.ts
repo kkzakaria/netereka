@@ -1,16 +1,12 @@
 import type { NextConfig } from "next";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+// Defined in lib/security/headers.ts, not here, so a unit test can pin the
+// Content-Security-Policy. That test also imports THIS file (mocking
+// initOpenNextCloudflareForDev) and asserts the wiring below actually serves
+// those headers — pinning the constant alone left `headers: []` green.
+import { securityHeaders } from "./lib/security/headers";
 
 initOpenNextCloudflareForDev({ configPath: "wrangler.dev.jsonc" });
-
-const securityHeaders = [
-  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "SAMEORIGIN" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
-];
 
 const nextConfig: NextConfig = {
   async headers() {
