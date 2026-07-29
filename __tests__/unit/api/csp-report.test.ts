@@ -63,6 +63,18 @@ function violationLogs(): Record<string, unknown>[] {
     .map((call) => call[1] as Record<string, unknown>);
 }
 
+function unreadableLogs(): Record<string, unknown>[] {
+  return warn.mock.calls
+    .filter((call) => String(call[0]).includes("could not read"))
+    .map((call) => call[1] as Record<string, unknown>);
+}
+
+function discardLogs(): Record<string, unknown>[] {
+  return warn.mock.calls
+    .filter((call) => String(call[0]).includes("discarded"))
+    .map((call) => call[1] as Record<string, unknown>);
+}
+
 describe("POST /api/csp-report", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -181,6 +193,43 @@ describe("POST /api/csp-report", () => {
       expect(logged(0)).toMatchObject({ count: 8 });
     });
 
+    it("accepts an about:srcdoc report instead of filing it as a forgery", async () => {
+      // A srcdoc frame INHERITS this policy — components/admin/html-editor.tsx
+      // renders one — so it is a surface the CSP needs telemetry from before
+      // anyone enforces. Its origin serialises to the string "null", which an
+      // earlier version compared against our origins, found no match, and
+      // counted as fabricated traffic.
+      const res = await POST(
+        post(cspReport({ "document-uri": "about:srcdoc" }), "application/csp-report")
+      );
+
+      expect(res.status).toBe(204);
+      expect(discardLogs()).toHaveLength(0);
+      expect(violationLogs()).toHaveLength(1);
+    });
+
+    it("marks an opaque-origin report so it can be read separately", async () => {
+      await POST(post(cspReport({ "document-uri": "about:srcdoc" }), "application/csp-report"));
+
+      expect(logged(0)).toMatchObject({ documentScope: "opaque-origin" });
+    });
+
+    it.each(["about:blank", "data:text/html,x"])(
+      "treats %s as opaque rather than foreign",
+      async (documentUri) => {
+        await POST(post(cspReport({ "document-uri": documentUri }), "application/csp-report"));
+
+        expect(violationLogs()).toHaveLength(1);
+        expect(logged(0)).toMatchObject({ documentScope: "opaque-origin" });
+      }
+    );
+
+    it("marks an ordinary report as same-origin, distinguishably", async () => {
+      await POST(post(CSP_REPORT_BODY, "application/csp-report"));
+
+      expect(logged(0)).toMatchObject({ documentScope: "same-origin" });
+    });
+
     it("records the reporting network and wire format on accepted violations", async () => {
       // What lets a reader tell one flooding source from a genuine spread of
       // browsers. Both fields are ours, not the payload's.
@@ -205,7 +254,7 @@ describe("POST /api/csp-report", () => {
       const res = await POST(post(oversized, "application/csp-report"));
 
       expect(res.status).toBe(413);
-      expect(warn).not.toHaveBeenCalled();
+      expect(violationLogs()).toHaveLength(0);
     });
 
     it("drops the report when the rate limit is exhausted", async () => {
@@ -289,14 +338,87 @@ describe("POST /api/csp-report", () => {
       const res = await POST(post("not json at all", "application/csp-report"));
 
       expect(res.status).toBe(400);
-      expect(warn).not.toHaveBeenCalled();
+      expect(violationLogs()).toHaveLength(0);
     });
 
-    it("logs nothing for a well-formed JSON body that carries no violation", async () => {
+    it("records no violation for a well-formed JSON body that carries none", async () => {
       const res = await POST(post(JSON.stringify({ hello: "world" }), "application/csp-report"));
 
       expect(res.status).toBe(204);
       expect(violationLogs()).toHaveLength(0);
+    });
+  });
+
+  describe("nothing is dropped silently", () => {
+    // The operator is told to read this log for weeks and to treat quiet as
+    // reassuring. That only holds if quiet means "nothing happened" — a path
+    // that discards input without a trace makes an absence of violations and
+    // an absence of readable input look identical.
+
+    it.each([
+      ["a body over the size cap", () => cspReport({ "blocked-uri": "x".repeat(16 * 1024) }), "too-large"],
+      ["a body that is not JSON", () => "not json at all", "invalid-json"],
+      ["JSON in no recognised shape", () => JSON.stringify({ hello: "world" }), "unrecognised-shape"],
+    ])("says so when it drops %s", async (_label, body, reason) => {
+      await POST(post(body(), "application/csp-report"));
+
+      expect(unreadableLogs()).toHaveLength(1);
+      expect(unreadableLogs()[0]).toMatchObject({ reason });
+    });
+
+    it("attributes the drop to a network and a wire format", async () => {
+      await POST(
+        post("not json at all", "application/reports+json", { "cf-connecting-ip": "198.51.100.9" })
+      );
+
+      expect(unreadableLogs()[0]).toMatchObject({
+        reason: "invalid-json",
+        reporterNetwork: "198.51.100.9",
+        format: "reports+json",
+      });
+    });
+
+    it("keeps an unreadable payload to one line, like every other path", async () => {
+      await POST(post("}{".repeat(1000), "application/csp-report"));
+
+      expect(warn.mock.calls).toHaveLength(1);
+    });
+
+    it("separates 'we could not read this' from 'this is not from our site'", async () => {
+      // Two different facts that lead a reader somewhere different: one points
+      // at a client or a wire format, the other at someone seeding the log.
+      await POST(
+        post(cspReport({ "document-uri": "https://attacker.example/" }), "application/csp-report")
+      );
+
+      expect(discardLogs()).toHaveLength(1);
+      expect(unreadableLogs()).toHaveLength(0);
+    });
+
+    it("stays silent only on the rejection decided before the limiter", async () => {
+      // 415 is settled before the rate limit is consulted, so logging it would
+      // be exactly the unbounded write the limiter exists to prevent.
+      const res = await POST(post(CSP_REPORT_BODY, "application/json"));
+
+      expect(res.status).toBe(415);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("says so when it abandons a stalled read", async () => {
+      const stalled = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("{"));
+        },
+      });
+
+      vi.useFakeTimers();
+      const pending = POST(post(stalled, "application/csp-report"));
+      await vi.advanceTimersByTimeAsync(6_000);
+      await pending;
+      vi.useRealTimers();
+
+      expect(unreadableLogs()).toHaveLength(1);
+      expect(unreadableLogs()[0]).toMatchObject({ reason: "timeout" });
     });
   });
 
@@ -327,7 +449,7 @@ describe("POST /api/csp-report", () => {
 
       expect(res.status).toBe(408);
       expect(cancelled).toBe(true);
-      expect(warn).not.toHaveBeenCalled();
+      expect(violationLogs()).toHaveLength(0);
     });
   });
 });

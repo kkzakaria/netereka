@@ -19,7 +19,9 @@ import { checkCspReportRateLimit, clientNetworkKey } from "@/lib/rate-limit/csp-
  *    anything else is rejected with 415 before a single byte of body is read;
  *  - the body is read through a counting reader and abandoned past 8 KB, and
  *    the whole read is under a deadline, so neither a large upload nor a
- *    stream that never ends can pin the handler;
+ *    stream that never ends can pin the handler. The 415 above is the only
+ *    rejection that is not logged, because it is decided *before* the limiter
+ *    and logging it would be the unbounded write the limiter exists to stop;
  *  - a per-network fixed window (`lib/rate-limit/csp-report.ts`) caps how many
  *    reports one network can have logged, and any failure of that check drops
  *    the report rather than letting it through;
@@ -40,26 +42,41 @@ import { checkCspReportRateLimit, clientNetworkKey } from "@/lib/rate-limit/csp-
  * outsider who can write into the log can steer that decision, and a poisoned
  * log looks exactly like a healthy one.
  *
- * So this route does not try to authenticate reports. It makes forgery
- * *visible* instead:
+ * So this route does not try to authenticate reports. It sorts them, and
+ * labels each line with how much it is worth:
  *
- *  - a report whose `document-uri` / `documentURL` is not one of this site's
- *    own origins is discarded, not logged as a violation. A genuine report
- *    about *our* policy is always emitted by a document served from *our*
- *    origin, so a foreign document URL is definitionally not ours;
- *  - the discard is itself logged once per request, under its own message, so
- *    an attempt to seed the log is visible rather than silent;
- *  - every accepted violation is logged with the network it was reported from
- *    and which wire format it arrived in, so a reader can tell one flooding
- *    source from a genuine spread of browsers.
+ *  - a report whose `document-uri` / `documentURL` names an origin that is
+ *    neither ours nor opaque is discarded rather than logged as a violation,
+ *    and the discard is logged once per request under its own message;
+ *  - a report from an *opaque* origin (`about:srcdoc`, `about:blank`, a
+ *    sandboxed or `data:` document — all of which serialise their origin as
+ *    the string "null") is **accepted** and marked `documentScope:
+ *    "opaque-origin"`. Those are not foreign: a `srcdoc` frame inherits this
+ *    policy, and `components/admin/html-editor.tsx` renders one, so it is a
+ *    surface the CSP genuinely needs telemetry from;
+ *  - a payload we cannot read at all — too large, too slow, not JSON, or not
+ *    a shape either wire format defines — is logged too, under its own
+ *    message and reason. Silence has to mean "nothing happened", not "we
+ *    threw something away without saying so";
+ *  - every logged line carries the network it came from and the wire format
+ *    it arrived in, so a reader can tell one flooding source from a genuine
+ *    spread of browsers.
  *
- * What remains untrustworthy, and must stay in the reader's mind: within a
- * same-origin report, the individual fields are still attacker-chosen. A
- * `blockedUrl` can be invented, a directive name can be misattributed, and an
- * on-site actor can inflate the count for any directive they like. Treat this
- * log as evidence of *what to go and check*, never as proof on its own — the
- * conclusion "GA4 needs origin X" should be confirmed against the code before
- * the policy is widened for it.
+ * **The origin filter authenticates nothing.** This is the part that must not
+ * be misread. `document-uri` is a field the sender chooses, so anyone can put
+ * one of our URLs in it — a plain `curl` with `document-uri:
+ * https://netereka.ci/x` is logged as accepted, with no presence on the site
+ * required. What the filter buys is cost: it removes casual and accidental
+ * noise, and it means seeding the log takes deliberate effort rather than a
+ * stray misconfigured scanner. It is not evidence of provenance.
+ *
+ * Nothing inside a report is evidence either. A `blockedUrl` can be invented,
+ * a directive name misattributed, a count inflated for any directive at will.
+ * Read this log as a hint about *where to look*, never as proof: the
+ * conclusion "GA4 needs origin X" has to be confirmed against the code before
+ * the policy is widened for it. The one thing the log supports on its own is
+ * the negative — a directive that stays quiet across weeks of real traffic is
+ * probably safe, because silence cannot be forged into existence.
  */
 export const dynamic = "force-dynamic";
 
@@ -91,6 +108,22 @@ interface NormalisedViolation {
   disposition: string;
   sourceFile: string;
 }
+
+/**
+ * How much the document URL on a report is worth.
+ *
+ *  - `same-origin` — names one of this site's origins. Still not proof of
+ *    provenance (see the module comment), just the ordinary case.
+ *  - `opaque-origin` — `about:srcdoc`, `about:blank`, a `data:` document, or
+ *    anything in a sandboxed frame; all serialise their origin as "null".
+ *    Accepted and marked, because a `srcdoc` frame inherits our policy and is
+ *    a surface we want reports from.
+ *  - `foreign` — names some other site. Discarded.
+ */
+type DocumentScope = "same-origin" | "opaque-origin";
+
+/** Why a payload was thrown away without yielding any violation. */
+type UnreadableReason = "too-large" | "timeout" | "invalid-json" | "unrecognised-shape";
 
 type BodyRead =
   | { ok: true; text: string }
@@ -225,6 +258,26 @@ function trustedDocumentOrigins(request: Request, siteUrl: string | undefined): 
   return origins;
 }
 
+/**
+ * Sort a report by what its document URL names. See `DocumentScope`.
+ *
+ * The opaque case is the one worth spelling out: an `about:srcdoc` document
+ * has no origin of its own, so `new URL(...).origin` gives the string "null".
+ * An earlier version compared that against our origins, found no match, and
+ * filed it as a forgery — which lost telemetry from the admin HTML preview
+ * (whose srcdoc frame inherits this policy) *and* showed the operator
+ * fabricated-traffic where there was none. Marking beats discarding: an
+ * attacker can also claim an opaque origin, but the label keeps that claim
+ * readable as a separate population instead of contaminating either bucket.
+ */
+function classifyDocument(rawUrl: string, trusted: Set<string>): DocumentScope | "foreign" {
+  const origin = originOf(rawUrl);
+  if (origin === null) return "foreign";
+  if (trusted.has(origin)) return "same-origin";
+  if (origin === "null") return "opaque-origin";
+  return "foreign";
+}
+
 export async function POST(request: Request): Promise<Response> {
   const contentType = contentTypeEssence(request.headers.get("content-type"));
   if (!ACCEPTED_CONTENT_TYPES.has(contentType)) {
@@ -250,27 +303,53 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (!allowed) return new Response(null, { status: 204 });
 
+  const format = contentType === "application/reports+json" ? "reports+json" : "report-uri";
+
+  /**
+   * One line, one request, past the limiter — the same bound the discard path
+   * already has. These used to be silent returns, which made the operator's
+   * instruction to treat quiet as reassuring unsafe: an absence of violations
+   * and an absence of *readable input* looked identical in the log.
+   */
+  const reportUnreadable = (reason: UnreadableReason) => {
+    console.warn("[csp-report] could not read a payload", {
+      reason,
+      reporterNetwork: network,
+      format,
+    });
+  };
+
   const read = await readBoundedBody(request, MAX_BODY_BYTES);
-  if (!read.ok) return new Response(null, { status: read.reason === "timeout" ? 408 : 413 });
+  if (!read.ok) {
+    reportUnreadable(read.reason);
+    return new Response(null, { status: read.reason === "timeout" ? 408 : 413 });
+  }
 
   let payload: unknown;
   try {
     payload = JSON.parse(read.text);
   } catch {
+    reportUnreadable("invalid-json");
     return new Response(null, { status: 400 });
   }
 
-  const format = contentType === "application/reports+json" ? "reports+json" : "report-uri";
   const violations =
     contentType === "application/reports+json" ? fromReportsJson(payload) : fromCspReport(payload);
+  if (violations.length === 0) {
+    // Valid JSON, but not a shape either wire format defines. Distinct from a
+    // forgery discard: "we could not read this" and "this did not come from
+    // our site" lead the reader somewhere different.
+    reportUnreadable("unrecognised-shape");
+    return new Response(null, { status: 204 });
+  }
 
   const trusted = trustedDocumentOrigins(request, siteUrl);
-  const sameOrigin: NormalisedViolation[] = [];
+  const accepted: (NormalisedViolation & { documentScope: DocumentScope })[] = [];
   let discarded = 0;
   for (const violation of violations.slice(0, MAX_REPORTS_PER_REQUEST)) {
-    const documentOrigin = originOf(violation.documentUrl);
-    if (documentOrigin && trusted.has(documentOrigin)) sameOrigin.push(violation);
-    else discarded++;
+    const scope = classifyDocument(violation.documentUrl, trusted);
+    if (scope === "foreign") discarded++;
+    else accepted.push({ ...violation, documentScope: scope });
   }
 
   if (discarded > 0) {
@@ -284,11 +363,12 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
-  for (const violation of sameOrigin) {
+  for (const violation of accepted) {
     // Structured, not interpolated: every field is page-controlled, and
     // serialising them as an object keeps newlines from forging log lines.
-    // `reporterNetwork` and `format` are ours, not the payload's — they are
-    // what lets a reader separate one noisy source from a real spread.
+    // `reporterNetwork`, `format` and `documentScope` are ours, not the
+    // payload's — they are what lets a reader separate one noisy source from a
+    // real spread, and a frame that inherits our policy from the main document.
     console.warn("[csp-report] violation", { ...violation, reporterNetwork: network, format });
   }
 
