@@ -173,10 +173,51 @@ export const CONTENT_SECURITY_POLICY = CSP_DIRECTIVES.join("; ");
  */
 export const CSP_HEADER_KEY = "Content-Security-Policy-Report-Only";
 
+/**
+ * The subset of the policy above that is actually ENFORCED, shipped as a
+ * second header alongside it.
+ *
+ * A browser evaluates every policy it is given independently, so two headers
+ * are two policies: the one above keeps observing everything, this one blocks
+ * these four. That is the whole reason the split works.
+ *
+ * These four earn enforcement now because **none of them concerns a loaded
+ * script**, which is what makes them free. Enforcing `script-src` would need a
+ * per-request nonce, a nonce cannot be cached, and that would turn
+ * `/p/[slug]` (ISR 1h), `/c/[slug]` (5min) and six 24h static pages into
+ * dynamic renders. These four cost nothing of the sort.
+ *
+ * `base-uri 'none'` is the one worth naming. A `<base href>` silently
+ * re-points every relative URL on the page — scripts, forms, links. The HTML
+ * sanitizer does not allow a `<base>` tag, but this directive defends the
+ * paths the sanitizer never sees, and it is not a duplicate of anything.
+ *
+ * Deliberately absent: `default-src`. Adding one would make this policy govern
+ * every fetch, which is precisely the nonce problem this split exists to
+ * avoid. The test suite fails if `default-src`, `script-src` or `style-src`
+ * appears here, so a future well-meaning widening cannot land quietly.
+ */
+export const CSP_ENFORCED_DIRECTIVES: readonly string[] = [
+  "object-src 'none'",
+  "base-uri 'none'",
+  // Safe for this codebase, and checked rather than assumed: every <form> uses
+  // `action={serverAction}`, which React posts same-origin to the current
+  // route, and no form carries a cross-origin URL action. Social sign-in is a
+  // *navigation* (`authClient.signIn.social()` sets the location), and
+  // `form-action` does not govern navigations.
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+];
+
+export const CONTENT_SECURITY_POLICY_ENFORCED = CSP_ENFORCED_DIRECTIVES.join("; ");
+
+/** Enforcing. See CSP_ENFORCED_DIRECTIVES for why only those four. */
+export const CSP_ENFORCED_HEADER_KEY = "Content-Security-Policy";
+
 export const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
-  // Kept alongside `frame-ancestors 'self'`, and load-bearing today.
+  // Kept alongside `frame-ancestors 'self'`, and now mostly a fallback.
   //
   // CSP3 § 6.4.2.2 is not a "browsers may differ" situation, it is a rule:
   // "the frame-ancestors directive overrides the X-Frame-Options header. If a
@@ -184,18 +225,19 @@ export const securityHeaders = [
   // frame-ancestors AND WHOSE DISPOSITION IS 'enforce', then the
   // X-Frame-Options header will be ignored, per HTML's processing model."
   //
-  // The qualifier is what matters here. Our policy's disposition is `report`,
-  // so the override does not apply and a report-only frame-ancestors blocks
-  // nothing: X-Frame-Options is currently the *only* control actually
-  // preventing this site from being framed. Removing it because "the CSP
-  // covers framing" would drop clickjacking protection to zero.
+  // That condition is now met. `frame-ancestors 'self'` ships in the ENFORCING
+  // header below, so every browser implementing CSP ignores this line outright.
   //
-  // The consequence to plan for: the moment `frame-ancestors 'self'` ships in
-  // an ENFORCING policy — which is exactly what the recommended second header
-  // does — every browser implementing CSP ignores this header outright, and it
-  // survives only for any that do not. At that point the two must still agree
-  // ('self' ≡ SAMEORIGIN, as they do), or it becomes a dead header stating a
-  // rule nobody applies. A test asserts both are present and equivalent.
+  // It stays for two reasons rather than being deleted. It still works in any
+  // agent that honours X-Frame-Options without implementing `frame-ancestors`,
+  // and this audience is mobile-heavy in a market where old and embedded
+  // browsers are not rare. And if the enforcing header is ever removed — by
+  // accident or in a rollback — deleting this line would silently drop
+  // clickjacking protection to zero rather than back to where it was.
+  //
+  // The two must therefore keep saying the same thing: 'self' ≡ SAMEORIGIN, as
+  // they do. A test asserts both are present and equivalent, so they cannot
+  // drift into a header stating a rule nobody applies.
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
@@ -222,4 +264,9 @@ export const securityHeaders = [
   // gain.
   { key: "Reporting-Endpoints", value: `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"` },
   { key: CSP_HEADER_KEY, value: CONTENT_SECURITY_POLICY },
+  // Two policies, deliberately. The one above observes everything and blocks
+  // nothing; this one blocks four directives and observes nothing. Neither
+  // weakens the other — a browser must satisfy every enforcing policy it is
+  // given, and report-only policies never block.
+  { key: CSP_ENFORCED_HEADER_KEY, value: CONTENT_SECURITY_POLICY_ENFORCED },
 ];
