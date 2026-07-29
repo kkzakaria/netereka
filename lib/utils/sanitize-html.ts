@@ -43,8 +43,34 @@ const EVENT_HANDLER_RE = /^on[a-z]/i;
  *  is a real reference, `&TAB;` is not); that can only make the verdict
  *  stricter. A trailing ";" is required: the legacy semicolon-less forms are
  *  limited to references such as `&amp` / `&lt` / `&gt` / `&quot`, none of which
- *  produce a character that can extend a scheme or a function name. */
-const NAMED_CHARACTER_REFERENCES: Record<string, string> = {
+ *  produce a character that can extend a scheme or a function name.
+ *
+ *  A Map, not an object literal, and the difference is not stylistic. A plain
+ *  object inherits from Object.prototype, so a lookup for a name that happens
+ *  to be spelled like one of its members answers with that member instead of
+ *  `undefined`. Exactly one such name is reachable through the reference
+ *  grammar below (`[a-z][a-z0-9]{1,31}` admits `constructor` and nothing else
+ *  on the prototype), and `&constructor;` therefore decoded to
+ *  "function Object() { [native code] }" — a reference the HTML spec does not
+ *  define, decoded to text no browser produces.
+ *
+ *  Nothing was exploitable through it: the injected text carries no ":" and
+ *  joins no characters together, so every reachable case had the filter and
+ *  the browser agreeing on the verdict anyway (`&constructor;javascript:` is a
+ *  relative URL to both; `ur&constructor;l(` is not `url(` to either). But the
+ *  premise of this whole file is that the filter reads what the browser reads,
+ *  and here it demonstrably did not. A Map has no inherited keys, so the
+ *  question cannot arise again.
+ *
+ *  There is deliberately NO test for this, and that is worth stating so nobody
+ *  reads the gap as an oversight. The decoder's output is used to reach a
+ *  verdict and is never emitted, and in every reachable case the verdict was
+ *  the same either way — so the difference is invisible through this module's
+ *  public surface. Three assertions were written for it and all three passed
+ *  against the unfixed table; they were removed rather than kept, because a
+ *  test that cannot fail is worse than no test. The guarantee here is
+ *  structural instead: a Map cannot answer for a name it was not given. */
+const NAMED_CHARACTER_REFERENCES = new Map<string, string>(Object.entries({
   tab: "\t", newline: "\n", nbsp: "\xa0",
   quot: '"', apos: "'", amp: "&", lt: "<", gt: ">", nvlt: "<", nvgt: ">",
   excl: "!", num: "#", dollar: "$", percnt: "%", ast: "*", midast: "*",
@@ -55,7 +81,7 @@ const NAMED_CHARACTER_REFERENCES: Record<string, string> = {
   lcub: "{", lbrace: "{", verbar: "|", vert: "|", verticalline: "|",
   rcub: "}", rbrace: "}",
   fjlig: "fj",
-};
+}));
 
 /** A code point outside the Unicode range — or zero — is what a parser turns
  *  into U+FFFD. Returning the replacement character keeps the decoder total:
@@ -87,7 +113,7 @@ function decodeCharacterReferences(value: string): string {
     (match, hex: string | undefined, dec: string | undefined, name: string | undefined) => {
       if (hex !== undefined) return codePointOrReplacement(parseInt(hex, 16));
       if (dec !== undefined) return codePointOrReplacement(parseInt(dec, 10));
-      return NAMED_CHARACTER_REFERENCES[(name as string).toLowerCase()] ?? match;
+      return NAMED_CHARACTER_REFERENCES.get((name as string).toLowerCase()) ?? match;
     },
   );
 }
