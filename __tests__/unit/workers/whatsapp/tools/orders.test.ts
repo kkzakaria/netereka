@@ -112,6 +112,8 @@ describe("createOrder", () => {
           product_name: "iPhone 15",
           base_price: 650000,
           product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
           quantity: 1,
         },
       ],
@@ -144,6 +146,8 @@ describe("createOrder", () => {
           product_name: "Rare Phone",
           base_price: 200000,
           product_stock: 2,
+          product_is_active: 1,
+          product_is_draft: 0,
           quantity: 5,
         },
       ],
@@ -176,6 +180,8 @@ describe("createOrder", () => {
           product_name: "iPhone 15",
           base_price: 650000,
           product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
           quantity: 2,
         },
       ],
@@ -233,6 +239,8 @@ describe("createOrder", () => {
           product_name: "Climatiseur Split",
           base_price: 250000,
           product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
           quantity: 1,
           unit_price: 250000,
           stock_quantity: 10,
@@ -280,6 +288,8 @@ describe("createOrder", () => {
           product_name: "Climatiseur Split",
           base_price: 250000,
           product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
           quantity: 1,
         },
       ],
@@ -324,6 +334,8 @@ describe("createOrder", () => {
           product_name: "Climatiseur Split",
           base_price: 250000,
           product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
           quantity: 1,
         },
       ],
@@ -346,6 +358,85 @@ describe("createOrder", () => {
     expect(mockDb.batch).not.toHaveBeenCalled();
   });
 
+  // ── Catalogue availability ──
+  //
+  // add_to_cart filters on is_active/is_draft, but a product can leave the
+  // catalogue between the add and the order. The web checkout drops such a
+  // product from its product query and fails the order; this path had no
+  // equivalent predicate, so a withdrawn product stayed sellable through the
+  // bot. The wording must say the catalogue no longer carries it — that is a
+  // different situation from being out of stock, and the customer's remedy is
+  // different too.
+  it("refuses an order containing a product that has left the catalogue", async () => {
+    const ctx = createMockCtx(mockDb);
+
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        {
+          cart_item_id: "ci1",
+          product_id: "p1",
+          variant_id: null,
+          product_name: "Ventilateur Retiré",
+          base_price: 45000,
+          product_stock: 10,
+          product_is_active: 0,
+          product_is_draft: 0,
+          quantity: 1,
+        },
+      ],
+    });
+    mockDb._statement.all.mockResolvedValueOnce({ results: [] });
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "zone-1",
+      fee: 2000,
+      estimated_hours: 24,
+    });
+
+    const result = await createOrder(ctx, {
+      address: "123 Rue Principale",
+      commune: "Cocody",
+      phone: "0700000000",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/catalogue/i);
+    expect(result.error).toContain("Ventilateur Retiré");
+    // Not a stock message — the remedy is to remove the line, not to reduce it.
+    expect(result.error).not.toMatch(/stock/i);
+    expect(mockDb.batch).not.toHaveBeenCalled();
+  });
+
+  it("refuses an order containing a product returned to draft", async () => {
+    const ctx = createMockCtx(mockDb);
+
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        {
+          cart_item_id: "ci1",
+          product_id: "p1",
+          variant_id: null,
+          product_name: "Brouillon",
+          base_price: 45000,
+          product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 1,
+          quantity: 1,
+        },
+      ],
+    });
+    mockDb._statement.all.mockResolvedValueOnce({ results: [] });
+
+    const result = await createOrder(ctx, {
+      address: "123 Rue Principale",
+      commune: "Cocody",
+      phone: "0700000000",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/catalogue/i);
+    expect(mockDb.batch).not.toHaveBeenCalled();
+  });
+
   it("refuses a cart line whose variant belongs to another product", async () => {
     const ctx = createMockCtx(mockDb);
 
@@ -358,6 +449,8 @@ describe("createOrder", () => {
           product_name: "Climatiseur Split",
           base_price: 250000,
           product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
           quantity: 1,
         },
       ],

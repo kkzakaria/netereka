@@ -7,6 +7,11 @@ import {
   countActiveVariantsByProduct,
   calculateSubtotal,
 } from "../../../../lib/utils/checkout";
+import {
+  isProductInCatalogue,
+  productGoneFromCatalogue,
+  variantGoneFromCatalogue,
+} from "./line-issues";
 
 interface CartItemRow {
   cart_item_id: string;
@@ -15,6 +20,8 @@ interface CartItemRow {
   product_name: string;
   base_price: number;
   product_stock: number;
+  product_is_active: number;
+  product_is_draft: number;
   quantity: number;
 }
 
@@ -82,6 +89,7 @@ export async function createOrder(
       `SELECT wc.id as cart_item_id, p.id as product_id, wc.variant_id,
               p.name as product_name, p.base_price,
               p.stock_quantity as product_stock,
+              p.is_active as product_is_active, p.is_draft as product_is_draft,
               wc.quantity
        FROM whatsapp_carts wc
        JOIN products p ON wc.product_id = p.id
@@ -119,14 +127,19 @@ export async function createOrder(
   const lines: ResolvedOrderLine[] = [];
 
   for (const item of cartItems) {
+    // is_active / is_draft are read as columns rather than filtered in the
+    // JOIN on purpose: filtering would make the line vanish from the result
+    // set and the order would go through for the remaining items, at a
+    // quietly smaller total. The line must stop the order, not disappear.
+    if (!isProductInCatalogue(item)) {
+      return { success: false, error: productGoneFromCatalogue(item.product_name) };
+    }
+
     let variant: ActiveVariantRow | null = null;
     if (item.variant_id) {
       const candidate = variantById.get(item.variant_id);
       if (!candidate || candidate.product_id !== item.product_id) {
-        return {
-          success: false,
-          error: `La variante choisie pour ${item.product_name} n'est plus disponible. Veuillez en sélectionner une autre.`,
-        };
+        return { success: false, error: variantGoneFromCatalogue(item.product_name) };
       }
       variant = candidate;
     }

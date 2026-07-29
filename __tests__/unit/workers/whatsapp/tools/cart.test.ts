@@ -192,33 +192,57 @@ describe("cartView", () => {
     mockDb = createMockD1();
   });
 
+  /** A row as the cart-view query returns it, with orderable defaults. */
+  function viewRow(overrides: Record<string, unknown>) {
+    return {
+      id: "ci1",
+      product_name: "iPhone 15",
+      base_price: 650000,
+      product_stock: 10,
+      product_is_active: 1,
+      product_is_draft: 0,
+      active_variant_count: 0,
+      cart_variant_id: null,
+      variant_id: null,
+      variant_name: null,
+      variant_price: null,
+      variant_stock: null,
+      quantity: 1,
+      ...overrides,
+    };
+  }
+
+  type ViewItem = {
+    name: string;
+    quantity: number;
+    unit_price: number | null;
+    total: number | null;
+    issue: string | null;
+  };
+  type ViewData = { items: ViewItem[]; subtotal: number; has_blocking_issues: boolean };
+
   it("returns cart items with subtotal", async () => {
     mockDb._statement.all.mockResolvedValueOnce({
       results: [
-        {
-          id: "ci1",
-          product_name: "iPhone 15",
-          variant_name: null,
-          quantity: 2,
-          unit_price: 650000,
-        },
-        {
-          id: "ci2",
-          product_name: "AirPods",
-          variant_name: null,
-          quantity: 1,
-          unit_price: 150000,
-        },
+        viewRow({ id: "ci1", product_name: "iPhone 15", base_price: 650000, quantity: 2 }),
+        viewRow({ id: "ci2", product_name: "AirPods", base_price: 150000, quantity: 1 }),
       ],
     });
 
     const result = await cartView(createMockCtx(mockDb));
 
     expect(result.success).toBe(true);
-    const data = result.data as { items: unknown[]; subtotal: number };
+    const data = result.data as ViewData;
     expect(data.items).toHaveLength(2);
     expect(data.subtotal).toBe(1450000); // 2*650000 + 1*150000
-    expect(data.items[0]).toMatchObject({ name: "iPhone 15", quantity: 2, unit_price: 650000, total: 1300000 });
+    expect(data.items[0]).toMatchObject({
+      name: "iPhone 15",
+      quantity: 2,
+      unit_price: 650000,
+      total: 1300000,
+      issue: null,
+    });
+    expect(data.has_blocking_issues).toBe(false);
   });
 
   it("returns empty cart with zero subtotal", async () => {
@@ -227,9 +251,120 @@ describe("cartView", () => {
     const result = await cartView(createMockCtx(mockDb));
 
     expect(result.success).toBe(true);
-    const data = result.data as { items: unknown[]; subtotal: number };
+    const data = result.data as ViewData;
     expect(data.items).toHaveLength(0);
     expect(data.subtotal).toBe(0);
+    expect(data.has_blocking_issues).toBe(false);
+  });
+
+  it("prices a variant line from the variant", async () => {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        viewRow({
+          product_name: "Climatiseur Split",
+          base_price: 250000,
+          active_variant_count: 2,
+          cart_variant_id: "v2",
+          variant_id: "v2",
+          variant_name: "3 CV",
+          variant_price: 1400000,
+          variant_stock: 5,
+        }),
+      ],
+    });
+
+    const result = await cartView(createMockCtx(mockDb));
+
+    const data = result.data as ViewData;
+    expect(data.items[0]).toMatchObject({
+      name: "Climatiseur Split – 3 CV",
+      unit_price: 1400000,
+      total: 1400000,
+      issue: null,
+    });
+    expect(data.subtotal).toBe(1400000);
+  });
+
+  // The view must not invent a figure the checkout will refuse: quoting an
+  // unsellable base_price and then rejecting the order is what makes the
+  // channel look untrustworthy.
+  it("shows no price for a variant product line that carries no variant", async () => {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        viewRow({
+          product_name: "Climatiseur Split",
+          base_price: 250000,
+          active_variant_count: 2,
+        }),
+      ],
+    });
+
+    const result = await cartView(createMockCtx(mockDb));
+
+    const data = result.data as ViewData;
+    expect(data.items[0].unit_price).toBeNull();
+    expect(data.items[0].total).toBeNull();
+    expect(data.items[0].issue).toMatch(/variante/i);
+    // Excluded from the subtotal, and the caller is told the cart is blocked.
+    expect(data.subtotal).toBe(0);
+    expect(data.has_blocking_issues).toBe(true);
+  });
+
+  it("shows no price for a line whose chosen variant is no longer active", async () => {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        viewRow({
+          product_name: "Climatiseur Split",
+          base_price: 250000,
+          active_variant_count: 1,
+          cart_variant_id: "v-retired",
+          variant_id: null,
+        }),
+      ],
+    });
+
+    const result = await cartView(createMockCtx(mockDb));
+
+    const data = result.data as ViewData;
+    expect(data.items[0].unit_price).toBeNull();
+    expect(data.items[0].issue).toMatch(/variante/i);
+    expect(data.has_blocking_issues).toBe(true);
+  });
+
+  it("flags a line whose product has left the catalogue", async () => {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        viewRow({ product_name: "Ventilateur Retiré", product_is_active: 0 }),
+      ],
+    });
+
+    const result = await cartView(createMockCtx(mockDb));
+
+    const data = result.data as ViewData;
+    expect(data.items[0].unit_price).toBeNull();
+    expect(data.items[0].issue).toMatch(/catalogue/i);
+    expect(data.subtotal).toBe(0);
+    expect(data.has_blocking_issues).toBe(true);
+  });
+
+  // A line that is priceable but short on stock keeps its price: the customer
+  // can act on it by lowering the quantity, so hiding the figure would remove
+  // information rather than protect anyone.
+  it("keeps the price of a line that is merely short on stock, but flags it", async () => {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        viewRow({ product_name: "Rare Phone", base_price: 200000, product_stock: 1, quantity: 5 }),
+      ],
+    });
+
+    const result = await cartView(createMockCtx(mockDb));
+
+    const data = result.data as ViewData;
+    expect(data.items[0].unit_price).toBe(200000);
+    expect(data.items[0].issue).toMatch(/stock/i);
+    // Not orderable as it stands, so it does not count toward the subtotal.
+    expect(data.subtotal).toBe(0);
+    expect(data.has_blocking_issues).toBe(true);
   });
 });
 
