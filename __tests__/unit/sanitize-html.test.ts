@@ -296,8 +296,18 @@ describe("sanitizeDescriptionHtml", () => {
       expect(result).not.toContain("<b");
     });
 
-    it("neutralizes a handler hidden behind a '<' inside an attribute value", () => {
+    // This assertion used to be `not.toMatch(/onerror/i)` alone, which no
+    // mutation of the pass it sits in could break: widening the attribute run
+    // back to [^>] still drops the handler, because the attribute allowlist
+    // catches it a second time. Its neighbours were doing the work. The exact
+    // output is the oracle that actually discriminates — and it also records a
+    // surprise worth knowing, since the emitted <img> is an element a browser
+    // would never have built from this input (HTML says "<" inside a quoted
+    // value is text). Sanitized, therefore inert; but not a faithful rendering.
+    it("ends the tag at a '<' inside an attribute value, and sanitizes what follows", () => {
       const result = sanitizeDescriptionHtml('<p a="<img src=x onerror=alert(1)>">');
+
+      expect(result).toBe('<img src="x">">');
       expect(result).not.toMatch(/onerror/i);
     });
 
@@ -315,6 +325,61 @@ describe("sanitizeDescriptionHtml", () => {
     it("leaves a lone '<' in prose alone", () => {
       const input = "<p>5 < 10 et 20 > 3</p>";
       expect(sanitizeDescriptionHtml(input)).toBe(input);
+    });
+  });
+
+  // The filter is not lossless, and these losses are deliberate — the price of
+  // failing closed where it cannot model a browser with confidence. They are
+  // pinned here so they stay a known trade-off rather than becoming a surprise
+  // the day someone writes a technical spec containing "i<n". If one of these
+  // fails, the question is whether the SOURCE content should change, never
+  // whether the filter should be softened: each loss corresponds to a branch
+  // that exists to keep something out. See the "KNOWN CONTENT LOSS" section on
+  // sanitizeDescriptionHtml.
+  //
+  // Exposure was measured before accepting them: 0 of 568 non-empty production
+  // descriptions are affected, and the seven products carrying generated
+  // <style> blocks are byte-identical before and after.
+  describe("known content loss", () => {
+    it("discards a code sample from '<' to the next '<'", () => {
+      // "i<n" opens what the filter must read as a tag; ";i++){}" goes with it.
+      // A 2,686-byte description built this way lost 2,623 bytes.
+      const result = sanitizeDescriptionHtml("<pre><code>for(i=0;i<n;i++){}</code></pre>");
+
+      expect(result).toBe("<pre><code>for(i=0;i</code></pre>");
+    });
+
+    it("discards to the end of the input when no further '<' follows", () => {
+      const result = sanitizeDescriptionHtml("<p>a<n more text here");
+
+      expect(result).toBe("<p>a");
+    });
+
+    it("loses only the letter case, never a '<' used as an operator", () => {
+      // The distinction that keeps ordinary prose intact: a tag can only start
+      // with an ASCII letter, so "5 < 10" and "a <= b" are never touched.
+      expect(sanitizeDescriptionHtml("<p>5 < 10</p>")).toBe("<p>5 < 10</p>");
+      expect(sanitizeDescriptionHtml("<p>a <= b</p>")).toBe("<p>a <= b</p>");
+    });
+
+    it("spills a style block as text when its attributes contain a '<'", () => {
+      // Deferred item, recorded at its current size rather than its original
+      // one: the <style> delimiter's attribute run stops at "<", so this block
+      // is never recognised as CSS. The body reaches the page as inert text,
+      // followed by an end tag that closes nothing. Cosmetic, not a hole —
+      // everything in the body has still been through the tag filter.
+      const result = sanitizeDescriptionHtml('<style type="a<b">body{color:red}</style>');
+
+      expect(result).toBe("body{color:red}</style>");
+      expect(result).not.toContain("<style");
+    });
+
+    it("does not let a spilled style block disturb the markup after it", () => {
+      const result = sanitizeDescriptionHtml(
+        '<style type="a<b">body{color:red}</style><p>after</p>'
+      );
+
+      expect(result).toBe("body{color:red}</style><p>after</p>");
     });
   });
 

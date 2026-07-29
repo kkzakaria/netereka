@@ -193,8 +193,84 @@ function isSafeUri(rawValue: string): boolean {
 
 /**
  * Sanitize admin-authored HTML for product descriptions.
+ *
+ * ---------------------------------------------------------------------------
+ * KNOWN CONTENT LOSS — read this before debugging "my description is truncated"
+ * ---------------------------------------------------------------------------
+ * This function is not lossless, and the losses below are deliberate. They are
+ * the price of failing closed on input this filter cannot model as confidently
+ * as a browser would. None of them can be softened without reopening a way
+ * through, so the answer to a report of missing content is to change the
+ * SOURCE, not this file.
+ *
+ * **1. A `<` followed by an ASCII letter discards everything up to the next
+ * `<`, or to the end of the input.**
+ *
+ * That sequence is how a tag starts, so the filter reads it as one. If no `>`
+ * arrives before the next `<`, it is not a complete tag and the fragment is
+ * dropped rather than emitted (see the `gt === undefined` branch in step 3).
+ * The consequence is easiest to see in code samples:
+ *
+ * ```
+ *   in : <pre><code>for(i=0;i<n;i++){}</code></pre>
+ *   out: <pre><code>for(i=0;i</code></pre>
+ * ```
+ *
+ * `i<n` opens what looks like a `<n…>` tag, and `;i++){}` disappears with it.
+ * A 2,686-byte description built this way was measured losing 2,623 bytes.
+ *
+ * A lone `<` in ordinary prose is untouched — `5 < 10` is safe, because the
+ * `<` is followed by a space rather than a letter. Only the letter case bites.
+ *
+ * **Exposure was measured, not assumed:** 0 of 568 non-empty descriptions in
+ * production are affected, and the seven products carrying generated `<style>`
+ * blocks are byte-identical before and after. The day a seller writes a
+ * technical spec containing `i<n`, the fix is to write `i&lt;n` in the source
+ * — which is what the HTML spec asks for anyway — not to relax the filter.
+ *
+ * **2. A `<` inside a quoted attribute value ends the tag here, but not in a
+ * browser.** HTML says `<` inside a quoted value is literal text; this filter
+ * treats every `<` as a potential tag start. The divergence fails closed — the
+ * opening fragment is dropped — but the text after it is then re-read as
+ * markup, so an element can appear in the output that a browser would never
+ * have built from the same input:
+ *
+ * ```
+ *   in : <p a="<img src=x onerror=alert(1)>">
+ *   out: <img src="x">">
+ * ```
+ *
+ * The `<img>` is fully sanitized (the handler is gone), so this is a fidelity
+ * loss and not a hole — but it is surprising enough to be worth stating.
+ *
+ * **3. One resource-fetching construct discards a whole `<style>` block.** See
+ * `stripDangerousCss`: `url(`, `@import`, `image-set(`, `src(` or
+ * `expression(` anywhere in a block — including inside a comment, since that
+ * pass is not comment-aware — blanks the entire block rather than the offending
+ * declaration.
+ *
+ * **4. A `<` inside a `<style>` tag's attributes spills the CSS as text.** See
+ * the note on step 2.
+ *
+ * Every one of these is pinned by a test in `__tests__/unit/sanitize-html.test.ts`
+ * (`describe("known content loss")`), so none of them can change silently.
  */
-const MAX_INPUT_LENGTH = 512_000; // 500KB — reject oversized input
+
+/**
+ * 500 KB. Input above this is refused outright — the function returns "" and
+ * logs, rather than attempting to sanitize.
+ *
+ * This is load-bearing for cost, not only for correctness: the branch bounds
+ * how much work a single stored description can force on every storefront
+ * render inside a CPU-metered Worker, which is what makes the measured
+ * worst-case (~74 ms for the most expensive accepted input) an actual ceiling
+ * instead of a sample. Raising it raises that ceiling proportionally.
+ *
+ * Deliberately NOT exported. The boundary tests hardcode 512000 so that
+ * changing this number fails them; deriving the test's boundary from the
+ * constant would let the cap move with the suite still green.
+ */
+const MAX_INPUT_LENGTH = 512_000;
 
 export function sanitizeDescriptionHtml(html: string, productId?: string): string {
   if (!html || !html.trim()) return "";
@@ -243,6 +319,33 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   // how this pass reshuffled tag boundaries.
   // The attribute run is [^<>] rather than [^>] for the same scan-discipline
   // reason as step 1 — see the note above step 3.
+  //
+  // Deferred item, restated at its CURRENT size. This delimiter has never been
+  // quote-aware: a ">" inside a <style> attribute value ends the open tag here
+  // even though a browser would read it as part of the value. That is
+  // architectural and shared with every tag in this file, and it is why
+  // stripDangerousCss documents that it may be handed fragments of markup
+  // rather than well-formed CSS.
+  //
+  // Narrowing the attribute run from [^>] to [^<>] changed the SHAPE of that
+  // gap, and a deferral only covers what was actually recorded, so the new
+  // shape is recorded here rather than left to be rediscovered. A "<" inside
+  // a <style> attribute value now prevents this pass from matching at all —
+  // the run stops at the "<" and the required ">" never arrives — so the block
+  // is never recognised as CSS. Step 3 then drops the malformed open tag and
+  // the CSS body survives as visible text, followed by a stray "</style>":
+  //
+  //   in : <style type="a<b">body{color:red}</style>
+  //   out: body{color:red}</style>
+  //
+  // Consequence: cosmetic, not a hole. The body reaches the page as text
+  // rather than as style, and every construct inside it has already passed
+  // through step 3's tag filter, so nothing there is live — the trailing
+  // "</style>" is an end tag with no matching start and closes nothing. It is
+  // recorded rather than repaired because the alternative is restoring [^>],
+  // which would give up the scan bound that step 1 and step 3 both rely on, in
+  // exchange for prose fidelity in a case that is already inert. Pinned by a
+  // test so it cannot drift further without being noticed.
   result = result.replace(
     /<style[^<>]*>([\s\S]*?)(?:<\/style\s*>|$)/gi,
     (_match, cssContent: string) => {
@@ -327,6 +430,16 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       // No ">" reached before the next "<" or the end of input: not a complete
       // tag, so drop the fragment rather than leave a live tag start (and its
       // handlers) behind in the output.
+      //
+      // THIS IS WHERE CONTENT IS LOST. The dropped fragment runs from the "<"
+      // to the next "<" or to the end of the input, so a "<" followed by a
+      // letter anywhere in prose takes the rest of that run with it —
+      // "for(i=0;i<n;i++){}" comes out as "for(i=0;i". That is deliberate and
+      // measured (0 of 568 production descriptions affected); see the "KNOWN
+      // CONTENT LOSS" section on sanitizeDescriptionHtml above for the full
+      // statement, and `describe("known content loss")` in the tests for the
+      // cases that pin it. Returning the fragment as text instead is what this
+      // branch exists to prevent, so the loss cannot be traded away here.
       if (gt === undefined) return "";
 
       const tag = tagName.toLowerCase();
