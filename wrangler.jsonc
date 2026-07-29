@@ -35,9 +35,22 @@
       "bucket_name": "netereka-opennext-cache"
     }
   ],
+  // Workers Logs ingests and indexes everything the Worker writes to console.
+  // It was disabled, which meant console output was emitted and then dropped:
+  // nothing was stored, so nothing could be read back. The CSP violation
+  // collector in app/api/csp-report/route.ts depends on this — its whole
+  // purpose is to leave a record an operator reads over the following weeks.
+  //
+  // Retention is 7 days (Workers Paid; 3 on Free), so a report covering a
+  // longer window has to be assembled from successive reads rather than one
+  // query at the end. Persisting to D1 is the alternative if that ever matters.
+  //
+  // invocation_logs stays on: it carries CPU and wall time per request, which
+  // is what tells us whether the sanitizer's bounded scan cost holds under real
+  // traffic. Volume is not a concern at this site's scale.
   "observability": {
     "logs": {
-      "enabled": false,
+      "enabled": true,
       "invocation_logs": true
     }
   }
