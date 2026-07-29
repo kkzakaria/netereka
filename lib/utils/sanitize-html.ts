@@ -272,6 +272,54 @@ function isSafeUri(rawValue: string): boolean {
  */
 const MAX_INPUT_LENGTH = 512_000;
 
+/** A script/iframe element: opening tag, contents, and closing tag. */
+const RAW_TEXT_ELEMENT_RE = /<(script|iframe)[^<>]*>[\s\S]*?(?:<\/\1(?=[\s/>])[^<>]*>|$)/gi;
+/** A bare script/iframe tag, with no contents to go with it. */
+const RAW_TEXT_TAG_RE = /<(script|iframe)[^<>]*\/?>/gi;
+
+/**
+ * Delete every match of `re` from `html` without welding the text in front of
+ * a deleted span onto the text behind it.
+ *
+ * Cutting a span out of markup joins its two neighbours, and the join can
+ * spell a tag that was in neither of them: an opening left dangling in front
+ * of the cut gets completed by whatever follows it. A global replace never
+ * re-examines its own output, so a pass cannot catch what it has itself just
+ * built, and re-running it to a fixed point costs a fresh scan of the whole
+ * string per level of nesting.
+ *
+ * So the cut is instead widened backwards, in the same single pass, to swallow
+ * any unterminated markup sitting directly in front of the span — back to the
+ * last ">", when a "<" occurs in between. Nothing that could be completed is
+ * left in front of the cut, which makes this a property of this pass alone
+ * rather than one inherited from a later pass. Widening only ever removes
+ * characters that were already inside an unclosed tag, and a string with no
+ * match at all is returned unchanged.
+ */
+function cutOut(html: string, re: RegExp): string {
+  re.lastIndex = 0;
+  let out = "";
+  let cursor = 0;
+  let matched = false;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    matched = true;
+    let start = m.index;
+    // Both look-ups stay inside the gap in front of the span: the span itself
+    // begins with a "<", and a span always ends with the ">" that the next
+    // gap's backward look-up stops at. Successive gaps therefore do not
+    // overlap and the added work over the whole string stays proportional to
+    // its length.
+    const lastGt = html.lastIndexOf(">", start - 1);
+    const from = Math.max(cursor, lastGt + 1);
+    const lt = html.indexOf("<", from);
+    if (lt !== -1 && lt < start) start = lt;
+    out += html.slice(cursor, start);
+    cursor = m.index + m[0].length;
+  }
+  return matched ? out + html.slice(cursor) : html;
+}
+
 export function sanitizeDescriptionHtml(html: string, productId?: string): string {
   if (!html || !html.trim()) return "";
   if (html.length > MAX_INPUT_LENGTH) {
@@ -303,8 +351,10 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   // element content, so it all goes. Without it, an unclosed <script> left its
   // body behind as visible text. The closing tag tolerates attributes after
   // the name (`</script foo>`), which the tokenizer also treats as a close.
-  result = result.replace(/<(script|iframe)[^<>]*>[\s\S]*?(?:<\/\1(?=[\s/>])[^<>]*>|$)/gi, "");
-  result = result.replace(/<(script|iframe)[^<>]*\/?>/gi, "");
+  // Both removals go through cutOut() so neither can weld a leftover opening
+  // onto the text behind the span it deletes.
+  result = cutOut(result, RAW_TEXT_ELEMENT_RE);
+  result = cutOut(result, RAW_TEXT_TAG_RE);
 
   // 2. Process <style> blocks: scope selectors, block @import and url().
   // Tolerate whitespace before the closing tag's ">" — the HTML spec allows it

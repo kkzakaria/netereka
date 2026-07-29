@@ -283,6 +283,63 @@ describe("sanitizeDescriptionHtml", () => {
   // A "<" that never gets a matching ">" is not a tag. It used to be left in
   // the output verbatim, which meant a real browser could still fold whatever
   // followed into a live element. It is dropped instead.
+  // Deleting a span joins the text on either side of it, and the join can
+  // spell an element that was in neither side — an opening left unterminated
+  // in front of the deleted span gets finished off by what follows. The
+  // raw-text removal must not leave one behind, on its own, without relying on
+  // a later pass to clean up after it.
+  //
+  // These use ALLOWED tag names deliberately: a disallowed one would be
+  // dropped later anyway, which would hide the result. An allowed one is kept,
+  // so if the removal leaves an element the assertion sees it.
+  describe("raw-text removal leaves no element behind", () => {
+    const cases: [string, string, string][] = [
+      ["through an element removal", "<p<script>x</script> class=welded>", "<p"],
+      ["through an iframe removal", "<p<iframe>x</iframe> class=welded>", "<p"],
+      ["when the element never closes", "<di<script src=a>v class=welded>", "<div"],
+      ["with two unterminated openings", "<spa<spa<script>x</script>n>n class=welded>", "<span"],
+      ["regardless of case", "<im<SCRIPT>x</SCRIPT>g src=y>", "<img"],
+      ["when the closing tag has attributes", "<p<script>x</script foo> class=welded>", "<p"],
+      ["with three unterminated openings", "<p<p<p<script>x</script>>> class=welded>", "<p"],
+      ["across two consecutive removals", "<h<script>a</script><script>b</script>1 class=welded>", "<h1"],
+    ];
+    for (const [label, input, forbidden] of cases) {
+      it(label, () => {
+        expect(sanitizeDescriptionHtml(input)).not.toContain(forbidden);
+      });
+    }
+
+    it("still removes the element and its content in the ordinary case", () => {
+      expect(sanitizeDescriptionHtml('<p>Hello</p><script>alert("xss")</script><p>World</p>'))
+        .toBe("<p>Hello</p><p>World</p>");
+      expect(sanitizeDescriptionHtml('<iframe src="evil.com"></iframe><p>safe</p>'))
+        .toBe("<p>safe</p>");
+    });
+
+    it("leaves no live handler behind for any of these shapes", () => {
+      const shapes = [
+        "<scr<script>x</script>ipt src=y onerror=z>",
+        "<ifra<iframe>x</iframe>me src=y onload=z>",
+        "<scr<script src=a>ipt src=y onerror=z>",
+        "<scr<scr<script>x</script>ipt>ipt src=y onerror=z>",
+        "<scr<style>a{}</style><script>x</script>ipt src=y onerror=z>",
+        "<SCR<SCRIPT>x</SCRIPT>IPT SRC=y ONERROR=z>",
+        "<scr<script>x</script foo>ipt src=y onerror=z>",
+        "<<scr<script>x</script>ipt src=y onerror=z>",
+        "<scr<script>a</script><script>b</script>ipt src=y onerror=z>",
+        "<scr<scr<scr<script>x</script>ipt>ipt>ipt src=y onerror=z>",
+      ];
+      for (const shape of shapes) {
+        const result = sanitizeDescriptionHtml(shape);
+        // No element may carry the handler: the text may survive, but only as
+        // text, so no "<" may precede it.
+        expect(result).not.toMatch(/<[a-zA-Z][^<>]*on[a-z]+\s*=/i);
+        expect(result.toLowerCase()).not.toContain("<script");
+        expect(result.toLowerCase()).not.toContain("<iframe");
+      }
+    });
+  });
+
   describe("incomplete tags", () => {
     it("drops a tag start that never closes, handler included", () => {
       const result = sanitizeDescriptionHtml("<p>ok</p><img src=x onerror=alert(1)");
