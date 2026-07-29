@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   CONTENT_SECURITY_POLICY,
+  CONTENT_SECURITY_POLICY_ENFORCED,
   CSP_ALLOWED_ORIGINS,
+  CSP_ENFORCED_HEADER_KEY,
   CSP_HEADER_KEY,
   CSP_REPORT_GROUP,
   CSP_REPORT_PATH,
@@ -63,6 +65,23 @@ function directive(name: string): string[] | null {
   return null;
 }
 
+/** The same, for the enforcing header — read served, never from the constant. */
+function enforcedDirective(name: string): string[] | null {
+  for (const part of (header(CSP_ENFORCED_HEADER_KEY) ?? "").split(";")) {
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    if (tokens[0] === name) return tokens.slice(1);
+  }
+  return null;
+}
+
+/** Directive names present in the enforcing header, served. */
+function enforcedDirectiveNames(): string[] {
+  return (header(CSP_ENFORCED_HEADER_KEY) ?? "")
+    .split(";")
+    .map((part) => part.trim().split(/\s+/)[0])
+    .filter(Boolean);
+}
+
 describe("next.config.ts wiring", () => {
   it("serves the security headers on every route", () => {
     expect(headerRules).toHaveLength(1);
@@ -89,26 +108,36 @@ describe("security headers", () => {
     expect(header("Cross-Origin-Opener-Policy")).toBe("same-origin-allow-popups");
   });
 
-  it("ships the policy report-only and never enforcing", () => {
-    // A report-only policy blocks nothing. Moving to `Content-Security-Policy`
-    // means every inline script must be nonced or hashed, which forces dynamic
-    // rendering on a storefront that is currently cacheable. That is a product
-    // decision — see the task 4.3 decision note — so it must not happen as a
-    // side effect of an unrelated change.
+  it("ships the observing policy report-only, and never enforces it", () => {
+    // A report-only policy blocks nothing. Moving *this* policy to
+    // `Content-Security-Policy` means every inline script must be nonced or
+    // hashed, which forces dynamic rendering on a storefront that is currently
+    // cacheable. That is a product decision — see the task 4.3 decision note —
+    // so it must not happen as a side effect of an unrelated change.
+    //
+    // This originally asserted that no enforcing header existed at all. A
+    // second, enforcing header now does exist, carrying only the four
+    // directives that need no nonce; the check therefore moved from "no
+    // enforcing header" to "the enforcing header is not this policy". The
+    // "enforced CSP subset" block below pins what that header may contain, so
+    // the two together still fail if the observing policy is enforced by any
+    // route — directly, or by widening the subset until it is this policy.
     expect(CSP_HEADER_KEY).toBe("Content-Security-Policy-Report-Only");
     expect(header("Content-Security-Policy-Report-Only")).toBeTruthy();
-    expect(servedHeaders.some((h) => h.key.toLowerCase() === "content-security-policy")).toBe(false);
+    expect(header("Content-Security-Policy")).not.toBe(CONTENT_SECURITY_POLICY);
+    expect(header("Content-Security-Policy")).not.toContain("script-src");
   });
 
   it("keeps X-Frame-Options alongside frame-ancestors, and equivalent to it", () => {
     // CSP3 § 6.4.2.2: an *enforced* frame-ancestors overrides X-Frame-Options,
-    // which "will be ignored". Our disposition is `report`, so that override
-    // does not apply and X-Frame-Options is currently the only control
-    // actually preventing framing. Once the recommended enforcing second
-    // header ships, the two swap roles — so they must keep saying the same
-    // thing ('self' ≡ SAMEORIGIN).
+    // which "will be ignored". That condition is now met — the enforcing
+    // subset header carries `frame-ancestors 'self'` — so the two have swapped
+    // roles: CSP does the blocking, and X-Frame-Options survives only for
+    // agents that do not implement frame-ancestors. They must therefore keep
+    // saying the same thing ('self' ≡ SAMEORIGIN), in all three places.
     expect(header("X-Frame-Options")).toBe("SAMEORIGIN");
     expect(directive("frame-ancestors")).toEqual(["'self'"]);
+    expect(enforcedDirective("frame-ancestors")).toEqual(["'self'"]);
   });
 
   it("declares a reporting endpoint the browsers can actually reach", () => {
@@ -296,5 +325,66 @@ describe("image origin", () => {
     const reloaded = await import("@/lib/security/headers");
 
     expect(reloaded.CSP_ALLOWED_ORIGINS.r2).toBe("https://r2.netereka.ci");
+  });
+});
+
+/**
+ * The enforcing header — the half of the policy that actually blocks.
+ *
+ * It exists because these four directives concern no loaded script, so they
+ * need no nonce and cost no caching. That is also exactly what makes them easy
+ * to widen by accident: adding `default-src` here would quietly put every
+ * fetch under an enforced policy and take the site's caching with it. These
+ * tests fail in both directions — a directive dropped, or one added.
+ */
+describe("enforced CSP subset", () => {
+  it("is served, and is the enforcing header key", () => {
+    expect(header(CSP_ENFORCED_HEADER_KEY)).toBeDefined();
+    expect(CSP_ENFORCED_HEADER_KEY).toBe("Content-Security-Policy");
+  });
+
+  it("serves the enforced policy the constant defines, byte for byte", () => {
+    expect(header(CSP_ENFORCED_HEADER_KEY)).toBe(CONTENT_SECURITY_POLICY_ENFORCED);
+  });
+
+  it.each([
+    ["object-src", "'none'"],
+    ["base-uri", "'none'"],
+    ["form-action", "'self'"],
+    ["frame-ancestors", "'self'"],
+  ])("enforces %s %s", (name, value) => {
+    expect(enforcedDirective(name)).toEqual([value]);
+  });
+
+  // The reason this header can exist at all. Any of these would reintroduce
+  // the nonce requirement and, with it, dynamic rendering on every cached page.
+  it.each(["default-src", "script-src", "style-src", "img-src", "connect-src"])(
+    "does not carry %s",
+    (name) => {
+      expect(enforcedDirective(name)).toBeNull();
+    }
+  );
+
+  it("carries those four directives and nothing else", () => {
+    expect(enforcedDirectiveNames().sort()).toEqual(
+      ["base-uri", "form-action", "frame-ancestors", "object-src"].sort()
+    );
+  });
+
+  // Report-only and enforcing are two policies, and the split is the design.
+  // Collapsing them — by flipping the observing header to enforcement — would
+  // put script-src under enforcement with no nonce and break the storefront.
+  it("keeps the observing policy report-only", () => {
+    expect(CSP_HEADER_KEY).toBe("Content-Security-Policy-Report-Only");
+    expect(header("Content-Security-Policy-Report-Only")).toBeDefined();
+    expect(header(CSP_ENFORCED_HEADER_KEY)).not.toBe(header(CSP_HEADER_KEY));
+  });
+
+  // CSP3 §6.4.2.2: an enforced frame-ancestors makes browsers ignore
+  // X-Frame-Options. That condition is now met, so the two must agree — else
+  // the surviving header states a rule nobody applies.
+  it("agrees with X-Frame-Options on framing", () => {
+    expect(enforcedDirective("frame-ancestors")).toEqual(["'self'"]);
+    expect(header("X-Frame-Options")).toBe("SAMEORIGIN");
   });
 });
