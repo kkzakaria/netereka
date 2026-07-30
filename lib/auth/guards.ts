@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { initAuth, type Session } from "@/lib/auth";
+// One implementation of "is this ban in force?", shared with the WhatsApp
+// Worker (workers/whatsapp/src/tools/guards.ts). See lib/auth/ban.ts for why
+// it must not be re-written per channel.
+import { isActivelyBanned } from "@/lib/auth/ban";
 import type { StaffRole } from "@/lib/db/types";
 
 export type AdminSession = Omit<Session, "user"> & {
@@ -47,29 +51,18 @@ async function getFreshSession() {
   });
 }
 
-// better-auth's admin plugin only clears an expired ban when a *new*
-// session is created (sign-in) — an already-open session that reads as
-// banned:true keeps that value forever unless banExpires has since passed,
-// in which case it should no longer block access here.
+// `isActivelyBanned` deliberately does not live here any more: the WhatsApp
+// Worker enforces the same rule and cannot import this module (it pulls in
+// `next/navigation`). The predicate — permanent ban vs expired ban, and the
+// three runtime shapes `banExpires` arrives in on this path alone — is
+// documented in lib/auth/ban.ts.
 //
-// `banExpires` is typed `Date | string | null` rather than following
-// `Session["user"]["banExpires"]` (which better-auth types as `Date`)
-// because that type only holds on a fresh D1 read. requireAuth's normal
-// path reads the session-cache cookie instead: better-auth's cache-hit
-// branch (better-auth/dist/api/routes/session.mjs) re-hydrates only
-// `createdAt`/`updatedAt` into `Date`s when it deserialises the cached
-// payload — `banExpires` comes straight out of `JSON.parse` as an ISO
-// string (or null). `new Date(...)` normalizes either shape, so behavior
-// is correct either way, but the annotation must say so or it lies about
-// what a caller on the cache path actually receives.
-function isActivelyBanned(user: {
-  banned?: Session["user"]["banned"];
-  banExpires?: Date | string | null;
-}): boolean {
-  if (!user.banned) return false;
-  if (!user.banExpires) return true;
-  return new Date(user.banExpires).getTime() > Date.now();
-}
+// Worth knowing at these call sites: `Session["user"]["banExpires"]` is typed
+// `Date`, but that only holds on a fresh D1 read. requireAuth's normal path
+// reads the session-cache cookie, whose cache-hit branch
+// (better-auth/dist/api/routes/session.mjs) re-hydrates only
+// `createdAt`/`updatedAt` into `Date`s — `banExpires` comes straight out of
+// `JSON.parse` as an ISO string. The shared predicate accepts both.
 
 export async function requireAnyAdmin(): Promise<AnyAdminSession> {
   const session = await getFreshSession();

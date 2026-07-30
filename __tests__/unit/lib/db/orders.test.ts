@@ -24,9 +24,14 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/cloudflare/context", () => ({
   getDB: vi.fn().mockResolvedValue({
-    // refundOrderStock builds each stock-update statement via db.prepare(...).bind(...)
-    // before handing the array to db.batch(...) — both must be stubbed.
-    prepare: vi.fn().mockReturnValue({ bind: vi.fn().mockReturnValue({}) }),
+    // refundOrderStock and createOrderWithItems build each statement via
+    // db.prepare(...).bind(...) before handing the array to db.batch(...) —
+    // both must be stubbed. Each prepared statement carries its own sql and
+    // params so a test can assert *which* rows a compensating batch touched,
+    // not merely how many statements it contained.
+    prepare: vi.fn((sql: string) => ({
+      bind: (...params: unknown[]) => ({ sql, params }),
+    })),
     batch: mocks.dbBatch,
   }),
 }));
@@ -495,5 +500,39 @@ describe("createOrderWithItems", () => {
     // First execute = the reservation INSERT, second = the cleanup DELETE.
     expect(mocks.execute).toHaveBeenCalledTimes(2);
     expect(mocks.execute.mock.calls[1][0]).toMatch(/DELETE FROM orders WHERE id = \?/);
+  });
+
+  it("gives back every decrement that applied, including the ones after the refused line", async () => {
+    // db.batch runs the whole sequence: a decrement matching no row does not
+    // stop the statements after it, so line 3 reserves even though line 2 was
+    // refused. Restoring only the lines *before* the refusal left line 3's
+    // units held against an order this same batch deletes.
+    const threeItems = [
+      { ...items[0], productId: "prod-1", productName: "Casque", quantity: 1 },
+      { ...items[0], productId: "prod-2", productName: "Souris", quantity: 2 },
+      { ...items[0], productId: "prod-3", productName: "Clavier", quantity: 3 },
+    ];
+    mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
+    mocks.dbBatch
+      .mockResolvedValueOnce([
+        { meta: { changes: 1 } }, // prod-1 reserved
+        { meta: { changes: 0 } }, // prod-2 refused
+        { meta: { changes: 1 } }, // prod-3 reserved anyway
+        { meta: { changes: 1 } }, // the three order_items inserts
+        { meta: { changes: 1 } },
+        { meta: { changes: 1 } },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await expect(createOrderWithItems(orderData, threeItems)).rejects.toThrow(/Souris/);
+
+    const rollback = mocks.dbBatch.mock.calls[1][0] as { sql: string; params: unknown[] }[];
+    const restores = rollback.filter((s) => s.sql.includes("stock_quantity + ?"));
+    expect(restores.map((s) => s.params)).toEqual([
+      [1, "prod-1"],
+      [3, "prod-3"],
+    ]);
+    // prod-2 took nothing; crediting it back would invent stock.
+    expect(restores.some((s) => s.params.includes("prod-2"))).toBe(false);
   });
 });

@@ -11,7 +11,11 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "paths": {
-      "@db/*": ["../../lib/db/*"]
+      "@db/*": ["../../lib/db/*"],
+      // Shared pure modules under lib/ (e.g. lib/utils/checkout.ts) are imported
+      // relatively from src/; this mapping only resolves the `@/...` type-only
+      // imports *inside* them. Nothing here reaches the Worker bundle.
+      "@/*": ["../../*"]
     }
   },
   "include": ["src/**/*.ts", "../../lib/db/schema.ts"],

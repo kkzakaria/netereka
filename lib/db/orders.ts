@@ -3,6 +3,13 @@ import { getDB } from "@/lib/cloudflare/context";
 import { nanoid } from "nanoid";
 import type { Order, OrderItem, OrderStatus } from "@/lib/db/types";
 import { notifyOrderStatusUpdate } from "@/lib/notifications";
+// One implementation of "take stock / give it back", shared with the WhatsApp
+// Worker (workers/whatsapp/src/tools/orders.ts). See lib/utils/stock.ts.
+import {
+  buildStockDecrement,
+  buildStockRestore,
+  stockUpdateApplied,
+} from "@/lib/utils/stock";
 export type { Order, OrderItem };
 
 /** Concurrently-open pending orders allowed per user (see createOrder). */
@@ -125,25 +132,9 @@ export async function createOrderWithItems(
   //    layout this can no longer prevent an orphaned order row by running
   //    first; that is now the job of the try/catch around db.batch below.
   for (const item of items) {
-    if (item.variantId) {
-      stockUpdateIndices.push(statements.length);
-      statements.push(
-        db
-          .prepare(
-            "UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
-          )
-          .bind(item.quantity, item.variantId, item.quantity)
-      );
-    } else {
-      stockUpdateIndices.push(statements.length);
-      statements.push(
-        db
-          .prepare(
-            "UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?"
-          )
-          .bind(item.quantity, item.productId, item.quantity)
-      );
-    }
+    const { sql, params } = buildStockDecrement(item);
+    stockUpdateIndices.push(statements.length);
+    statements.push(db.prepare(sql).bind(...params));
   }
 
   // 2. Insert order items (the order row itself was already inserted and
@@ -210,27 +201,26 @@ export async function createOrderWithItems(
 
   // 5. Verify all stock decrements succeeded
   for (let i = 0; i < stockUpdateIndices.length; i++) {
-    const result = results[stockUpdateIndices[i]];
-    if (result.meta.changes === 0) {
-      // Stock was insufficient — delete the orphaned order + items
+    if (!stockUpdateApplied(results[stockUpdateIndices[i]])) {
+      // Stock was insufficient — delete the orphaned order + items and give
+      // back every decrement that DID apply.
+      //
+      // "Every", not "every one before this line": db.batch executes the whole
+      // sequence, and a decrement matching no row is not a failure that stops
+      // it — the statements after the refused one still ran and still
+      // reserved. Restoring only `items.slice(0, i)` left those later
+      // reservations held against an order this very batch is deleting, with
+      // nothing left to release them. Conversely, a decrement that did NOT
+      // apply must never be restored: that would credit stock nobody took.
       await db.batch([
         db.prepare("DELETE FROM order_items WHERE order_id = ?").bind(orderId),
         db.prepare("DELETE FROM orders WHERE id = ?").bind(orderId),
-        // Restore stock for items that DID succeed (before this one)
-        ...items.slice(0, i).map((prev) => {
-          if (prev.variantId) {
-            return db
-              .prepare(
-                "UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?"
-              )
-              .bind(prev.quantity, prev.variantId);
-          }
-          return db
-            .prepare(
-              "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?"
-            )
-            .bind(prev.quantity, prev.productId);
-        }),
+        ...items
+          .filter((_, j) => stockUpdateApplied(results[stockUpdateIndices[j]]))
+          .map((prev) => {
+            const { sql, params } = buildStockRestore(prev);
+            return db.prepare(sql).bind(...params);
+          }),
         // Restore promo used_count only if the guarded increment actually applied
         ...(promoApplied && orderData.promoCodeId
           ? [
@@ -257,19 +247,12 @@ export async function createOrderWithItems(
     await db.batch([
       db.prepare("DELETE FROM order_items WHERE order_id = ?").bind(orderId),
       db.prepare("DELETE FROM orders WHERE id = ?").bind(orderId),
-      ...items.map((it) =>
-        it.variantId
-          ? db
-              .prepare(
-                "UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?"
-              )
-              .bind(it.quantity, it.variantId)
-          : db
-              .prepare(
-                "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?"
-              )
-              .bind(it.quantity, it.productId)
-      ),
+      // Every decrement was verified as applied by step 5 above before this
+      // point is reachable, so all of them are restored here.
+      ...items.map((it) => {
+        const { sql, params } = buildStockRestore(it);
+        return db.prepare(sql).bind(...params);
+      }),
     ]);
     throw new Error(
       "Ce code promo n'est plus disponible (limite d'utilisation atteinte)."
@@ -603,30 +586,19 @@ export async function refundOrderStock(orderId: string): Promise<{ itemsRefunded
   const statements: D1PreparedStatement[] = [];
 
   for (const item of items) {
-    if (item.variant_id) {
-      statements.push(
-        db
-          .prepare(
-            "UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?"
-          )
-          .bind(item.quantity, item.variant_id)
-      );
-    } else {
-      statements.push(
-        db
-          .prepare(
-            "UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?"
-          )
-          .bind(item.quantity, item.product_id)
-      );
-    }
+    const { sql, params } = buildStockRestore({
+      productId: item.product_id,
+      variantId: item.variant_id,
+      quantity: item.quantity,
+    });
+    statements.push(db.prepare(sql).bind(...params));
   }
 
   try {
     const results = await db.batch(statements);
 
     // Verify all updates succeeded
-    const failedUpdates = results.filter((r) => r.meta.changes === 0);
+    const failedUpdates = results.filter((r) => !stockUpdateApplied(r));
     if (failedUpdates.length > 0) {
       console.warn(
         `refundOrderStock: ${failedUpdates.length}/${items.length} items had no matching product/variant for order ${orderId}`

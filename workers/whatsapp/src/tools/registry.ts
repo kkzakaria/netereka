@@ -88,7 +88,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: "function",
     function: {
       name: "cart_view",
-      description: "Show the current WhatsApp cart contents and subtotal.",
+      description:
+        "Show the current WhatsApp cart contents and subtotal. An item with unit_price null cannot be ordered as it stands — read its `issue` to the customer and never quote a price for it. The subtotal covers only orderable items, so do not present it as a final total when has_blocking_issues is true.",
       parameters: { type: "object", properties: {} },
     },
   },
