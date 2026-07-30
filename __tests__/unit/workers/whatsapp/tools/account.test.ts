@@ -156,6 +156,60 @@ describe("linkAccount", () => {
     expect(mockDb.prepare).not.toHaveBeenCalled();
     expect(sendOtpEmail).not.toHaveBeenCalled();
   });
+
+  // A suspended account must not become reachable from a new WhatsApp number.
+  // The refusal reuses the uniform message on purpose: a distinct "this account
+  // is suspended" reply would hand an unauthenticated sender both an existence
+  // oracle and the account's moderation status.
+  it("will not stage a suspended account, and says nothing that distinguishes it", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
+    const ctx = createMockCtx(mockDb);
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "banned-1",
+      email: "banned@example.com",
+      banned: 1,
+      banExpires: null,
+    });
+
+    const result = await linkAccount(ctx, { email: "banned@example.com" });
+
+    expect(result.success).toBe(true);
+    const data = result.data as { message: string };
+    expect(data.message).toMatch(/si un compte existe/i);
+    expect(sendOtpEmail).not.toHaveBeenCalled();
+    // Nothing staged: the session must not carry a pending link to a banned id.
+    const staged = mockDb.prepare.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => sql.includes("UPDATE whatsapp_sessions"));
+    expect(staged).toBeUndefined();
+  });
+
+  it("still links an account whose ban has expired", async () => {
+    const { sendOtpEmail } = await import("../../../../../workers/whatsapp/src/email");
+    const ctx = createMockCtx(mockDb);
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "user-123",
+      email: "user@example.com",
+      banned: 1,
+      banExpires: new Date(Date.now() - 60_000).toISOString(),
+    });
+    mockDb._statement.run.mockResolvedValueOnce({ success: true });
+
+    await linkAccount(ctx, { email: "user@example.com" });
+
+    expect(sendOtpEmail).toHaveBeenCalled();
+  });
+
+  it("reads the ban state in the same lookup as the account", async () => {
+    const ctx = createMockCtx(mockDb);
+    mockDb._statement.first.mockResolvedValueOnce(null);
+
+    await linkAccount(ctx, { email: "someone@example.com" });
+
+    const lookupSql = String(mockDb.prepare.mock.calls[0][0]);
+    expect(lookupSql).toMatch(/banned/);
+    expect(lookupSql).toMatch(/banExpires/);
+  });
 });
 
 describe("verifyOtp", () => {
@@ -219,6 +273,8 @@ describe("verifyOtp", () => {
       otp_expires_at: futureTime,
       pending_user_id: "user-456",
     });
+    // The pending account's ban state, re-read before the promotion.
+    mockDb._statement.first.mockResolvedValueOnce({ banned: 0, banExpires: null });
     mockDb._statement.run.mockResolvedValueOnce({ meta: { changes: 1 } });
 
     const result = await verifyOtp(ctx, { code: "654321" });
@@ -247,6 +303,7 @@ describe("verifyOtp", () => {
       otp_expires_at: futureTime,
       pending_user_id: "user-456",
     });
+    mockDb._statement.first.mockResolvedValueOnce({ banned: 0, banExpires: null });
     mockDb._statement.run.mockResolvedValueOnce({ meta: { changes: 0 } });
 
     const result = await verifyOtp(ctx, { code: "654321" });
@@ -254,5 +311,32 @@ describe("verifyOtp", () => {
     expect(result.success).toBe(false);
     expect(ctx.session.is_verified).toBe(0);
     expect(ctx.session.user_id).toBeNull();
+  });
+
+  // Closes the window between staging and confirmation: the account was fine
+  // when the code was sent and has been suspended since. Naming the reason is
+  // safe here and nowhere else — holding the emailed code proves the sender
+  // controls that mailbox.
+  it("does not promote an account suspended after the code was sent", async () => {
+    const ctx = createMockCtx(mockDb);
+    const futureTime = new Date(Date.now() + 600000).toISOString();
+    mockDb._statement.first.mockResolvedValueOnce({
+      otp_code: "654321",
+      otp_expires_at: futureTime,
+      pending_user_id: "user-456",
+    });
+    mockDb._statement.first.mockResolvedValueOnce({ banned: 1, banExpires: null });
+
+    const result = await verifyOtp(ctx, { code: "654321" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/suspendu/i);
+    expect(ctx.session.is_verified).toBe(0);
+    expect(ctx.session.user_id).toBeNull();
+    // No promotion UPDATE may have been prepared at all.
+    const promoteSql = mockDb.prepare.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => sql.includes("is_verified = 1"));
+    expect(promoteSql).toBeUndefined();
   });
 });

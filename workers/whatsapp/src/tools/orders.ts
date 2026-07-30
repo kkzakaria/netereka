@@ -19,6 +19,7 @@ import {
   productGoneFromCatalogue,
   variantGoneFromCatalogue,
 } from "./line-issues";
+import { requireActiveCustomer } from "./guards";
 
 interface CartItemRow {
   cart_item_id: string;
@@ -199,11 +200,15 @@ export async function createOrder(
   ctx: ToolContext,
   params: { address: string; commune: string; phone: string; instructions?: string }
 ): Promise<ToolResult & { data?: unknown }> {
-  if (ctx.session.is_verified !== 1 || !ctx.session.user_id) {
-    return {
-      success: false,
-      error: "Your account is not linked. Please link your account before placing an order.",
-    };
+  // Verified *and* not suspended, re-read from the user row on every call —
+  // `whatsapp_sessions.is_verified` is set once at OTP time and never revisited,
+  // so it cannot carry a ban decided afterwards. See ./guards.ts.
+  const customer = await requireActiveCustomer(
+    ctx,
+    "Your account is not linked. Please link your account before placing an order."
+  );
+  if (!customer.ok) {
+    return { success: false, error: customer.error };
   }
 
   // Fetch cart items with the product's own figures. Prices are NOT read from
@@ -347,7 +352,7 @@ export async function createOrder(
     )
     .bind(
       orderId,
-      ctx.session.user_id,
+      customer.userId,
       orderNumber,
       subtotal,
       deliveryFee,
@@ -416,11 +421,12 @@ export async function getOrderStatus(
   ctx: ToolContext,
   params: { order_number: string }
 ): Promise<ToolResult & { data?: unknown }> {
-  if (ctx.session.is_verified !== 1 || !ctx.session.user_id) {
-    return {
-      success: false,
-      error: "Your account is not linked. Please link your account to view orders.",
-    };
+  const customer = await requireActiveCustomer(
+    ctx,
+    "Your account is not linked. Please link your account to view orders."
+  );
+  if (!customer.ok) {
+    return { success: false, error: customer.error };
   }
 
   const order = await ctx.db
@@ -429,7 +435,7 @@ export async function getOrderStatus(
        FROM orders
        WHERE order_number = ? AND user_id = ?`
     )
-    .bind(params.order_number, ctx.session.user_id)
+    .bind(params.order_number, customer.userId)
     .first<OrderRow>();
 
   if (!order) {
@@ -455,11 +461,12 @@ export async function listOrders(
   ctx: ToolContext,
   params: { limit?: number }
 ): Promise<ToolResult & { data?: unknown }> {
-  if (ctx.session.is_verified !== 1 || !ctx.session.user_id) {
-    return {
-      success: false,
-      error: "Your account is not linked. Please link your account to view orders.",
-    };
+  const customer = await requireActiveCustomer(
+    ctx,
+    "Your account is not linked. Please link your account to view orders."
+  );
+  if (!customer.ok) {
+    return { success: false, error: customer.error };
   }
 
   const limit = Math.max(1, Math.min(params.limit ?? 5, 10));
@@ -472,7 +479,7 @@ export async function listOrders(
        ORDER BY created_at DESC
        LIMIT ?`
     )
-    .bind(ctx.session.user_id, limit)
+    .bind(customer.userId, limit)
     .all<Pick<OrderRow, "order_number" | "status" | "total" | "created_at">>();
 
   return {

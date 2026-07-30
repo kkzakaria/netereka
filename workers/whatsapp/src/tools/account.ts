@@ -1,9 +1,17 @@
 import type { ToolContext, ToolResult } from "../types";
 import { sendOtpEmail } from "../email";
+import { readAccountState, ACCOUNT_SUSPENDED, ACCOUNT_UNKNOWN, ACCOUNT_STATE_UNAVAILABLE } from "./guards";
+// One implementation of "is this ban in force?", shared with the web guards.
+import { isActivelyBanned } from "../../../../lib/auth/ban";
 
 interface UserRow {
   id: string;
   email: string;
+  // Read in the same lookup as the account: a suspended account must not be
+  // linkable to a WhatsApp number at all. `banExpires` is the raw D1 TEXT
+  // column (ISO string) — the shared predicate reads that shape.
+  banned: number | null;
+  banExpires: string | null;
 }
 
 interface SessionOtpRow {
@@ -67,12 +75,18 @@ export async function linkAccount(
   await ctx.env.KV.put(sessionKey, String(sessionCount + 1), { expirationTtl: LINK_WINDOW_TTL });
 
   const user = await ctx.db
-    .prepare("SELECT id, email FROM user WHERE LOWER(email) = LOWER(?)")
+    .prepare("SELECT id, email, banned, banExpires FROM user WHERE LOWER(email) = LOWER(?)")
     .bind(email)
     .first<UserRow>();
 
   // Uniform response for unregistered emails — never disclose non-existence.
-  if (!user) {
+  //
+  // A suspended account takes the *same* branch on purpose: no OTP is sent and
+  // nothing is staged, but the reply is byte-identical to the unregistered one.
+  // Answering "this account is suspended" to an unauthenticated sender would
+  // hand out both an existence oracle and the account's moderation status. An
+  // expired ban is not a ban, so such an account links normally.
+  if (!user || isActivelyBanned(user)) {
     return { success: true, data: { message: LINK_UNIFORM_MESSAGE } };
   }
 
@@ -150,6 +164,24 @@ export async function verifyOtp(
 
     await ctx.env.KV.put(attemptsKey, String(attempts), { expirationTtl: 600 });
     return { success: false, error: `Code incorrect (tentative ${attempts}/5). Vérifiez votre email et réessayez.` };
+  }
+
+  // OTP confirmed — but the account may have been suspended in the ten minutes
+  // since the code was sent, so its state is re-read before it is promoted to
+  // the trusted user_id. Naming the reason is safe here and nowhere else in
+  // this file: holding the emailed code proves the sender controls the mailbox,
+  // so this is not an oracle for a third party.
+  const state = await readAccountState(ctx.db, row.pending_user_id);
+  if (state !== "active") {
+    return {
+      success: false,
+      error:
+        state === "banned"
+          ? ACCOUNT_SUSPENDED
+          : state === "unknown"
+            ? ACCOUNT_UNKNOWN
+            : ACCOUNT_STATE_UNAVAILABLE,
+    };
   }
 
   // OTP confirmed: promote the pending account to the trusted user_id and mark

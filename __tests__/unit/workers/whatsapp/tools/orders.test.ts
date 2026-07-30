@@ -94,6 +94,20 @@ function createMockCtx(
   };
 }
 
+/**
+ * Every privileged order tool now opens with an authoritative ban read
+ * (`requireActiveCustomer`). Queueing its answer first, before each test adds
+ * its own rows, keeps the `mockResolvedValueOnce` sequences below in step.
+ */
+function primeActiveAccount(mockDb: ReturnType<typeof createMockD1>) {
+  mockDb._statement.first.mockResolvedValueOnce({ banned: 0, banExpires: null });
+}
+
+/** A ban with no expiry: indefinite. */
+function primeBannedAccount(mockDb: ReturnType<typeof createMockD1>) {
+  mockDb._statement.first.mockResolvedValueOnce({ banned: 1, banExpires: null });
+}
+
 // ─── createOrder ──────────────────────────────────────────────────────────────
 
 describe("createOrder", () => {
@@ -101,6 +115,7 @@ describe("createOrder", () => {
 
   beforeEach(() => {
     mockDb = createMockD1();
+    primeActiveAccount(mockDb);
   });
 
   it("returns error if session has no linked user", async () => {
@@ -132,6 +147,47 @@ describe("createOrder", () => {
     expect(result.error).toMatch(/link/i);
     // Must short-circuit before touching the DB.
     expect(mockDb.prepare).not.toHaveBeenCalled();
+  });
+
+  // A session linked before the ban stays `is_verified = 1` forever — nothing
+  // in this Worker revisits it. The ban therefore has to be re-read here, or
+  // the bot channel keeps serving an account the shop has suspended.
+  it("refuses a suspended account and writes nothing", async () => {
+    mockDb = createMockD1();
+    primeBannedAccount(mockDb);
+    const ctx = createMockCtx(mockDb);
+
+    const result = await createOrder(ctx, {
+      address: "123 Rue Principale",
+      commune: "Cocody",
+      phone: "0700000000",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/suspendu/i);
+    // Refused before the cart is even read: no stock taken, no order row.
+    expect(mockDb.batch).not.toHaveBeenCalled();
+    expect(preparedSql(mockDb)).not.toMatch(/INSERT INTO orders/i);
+  });
+
+  it("still serves an account whose ban has expired", async () => {
+    mockDb = createMockD1();
+    mockDb._statement.first.mockResolvedValueOnce({
+      banned: 1,
+      banExpires: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const ctx = createMockCtx(mockDb);
+    mockDb._statement.all.mockResolvedValueOnce({ results: [] }); // empty cart
+
+    const result = await createOrder(ctx, {
+      address: "123 Rue Principale",
+      commune: "Cocody",
+      phone: "0700000000",
+    });
+
+    // Refused for the cart, not for the lapsed sanction.
+    expect(result.error).toMatch(/cart/i);
+    expect(result.error).not.toMatch(/suspendu/i);
   });
 
   it("returns error if cart is empty", async () => {
@@ -548,6 +604,7 @@ describe("createOrder — stock reservation", () => {
 
   beforeEach(() => {
     mockDb = createMockD1();
+    primeActiveAccount(mockDb);
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -783,6 +840,7 @@ describe("getOrderStatus", () => {
 
   beforeEach(() => {
     mockDb = createMockD1();
+    primeActiveAccount(mockDb);
   });
 
   it("returns order details when order is found", async () => {
@@ -834,6 +892,18 @@ describe("getOrderStatus", () => {
     expect(result.success).toBe(false);
     expect(mockDb.prepare).not.toHaveBeenCalled();
   });
+
+  it("refuses a suspended account without reading the order", async () => {
+    mockDb = createMockD1();
+    primeBannedAccount(mockDb);
+    const ctx = createMockCtx(mockDb);
+
+    const result = await getOrderStatus(ctx, { order_number: "ORD-ABC123" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/suspendu/i);
+    expect(preparedSql(mockDb)).not.toMatch(/FROM orders/i);
+  });
 });
 
 // ─── listOrders ───────────────────────────────────────────────────────────────
@@ -843,6 +913,7 @@ describe("listOrders", () => {
 
   beforeEach(() => {
     mockDb = createMockD1();
+    primeActiveAccount(mockDb);
   });
 
   it("returns error if user is not linked", async () => {
@@ -861,6 +932,18 @@ describe("listOrders", () => {
 
     expect(result.success).toBe(false);
     expect(mockDb.prepare).not.toHaveBeenCalled();
+  });
+
+  it("refuses a suspended account without listing its orders", async () => {
+    mockDb = createMockD1();
+    primeBannedAccount(mockDb);
+    const ctx = createMockCtx(mockDb);
+
+    const result = await listOrders(ctx, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/suspendu/i);
+    expect(preparedSql(mockDb)).not.toMatch(/FROM orders/i);
   });
 
   it("returns list of recent orders", async () => {
