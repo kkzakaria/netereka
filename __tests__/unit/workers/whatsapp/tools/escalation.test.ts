@@ -286,8 +286,81 @@ describe("escalateHuman", () => {
     expect(blocked.success).toBe(true);
     expect(messageOf(blocked)).toMatch(/conseiller/i);
     expect(messageOf(blocked)).toMatch(/contact/i);
+    // Someone really was reached earlier in the window, so saying the request
+    // was passed on is true here. The next test is the same branch when it is
+    // not true — the pair is what makes either assertion mean anything.
+    expect(messageOf(blocked)).toMatch(/transmise/i);
     // The request is still recorded on the session, so staff can find it.
     expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining("UPDATE whatsapp_sessions"));
+  });
+
+  it("does not claim the request was passed on when the throttle fires and nobody was ever reached", async () => {
+    // The rate-limit slot is consumed before the sends, so being throttled says
+    // nothing on its own about whether an administrator was ever notified.
+    const kv = createMockKV();
+    mockSendText.mockResolvedValue({ success: false, error: "token expired" });
+
+    for (let i = 0; i < ESCALATION_MAX_PER_WINDOW; i++) {
+      const db = createMockD1();
+      primeConfig(db, ["2250101010101"]);
+      const res = await escalateHuman(createMockCtx(db, { kv }), { reason: "aide" });
+      expect(messageOf(res)).not.toMatch(/va prendre le relais/i);
+    }
+
+    const db = createMockD1();
+    primeConfig(db, ["2250101010101"]);
+    const blocked = await escalateHuman(createMockCtx(db, { kv }), { reason: "encore" });
+
+    // Still throttled: staff are not paged a fourth time...
+    expect(mockSendText).toHaveBeenCalledTimes(ESCALATION_MAX_PER_WINDOW);
+    // ...but the customer is not told their request reached anyone, because it
+    // did not, and the channel that does not depend on the bot is named.
+    expect(messageOf(blocked)).not.toMatch(/transmise/i);
+    expect(messageOf(blocked)).toMatch(/pas réussi à joindre/i);
+    expect(messageOf(blocked)).toMatch(/contact/i);
+  });
+
+  it("treats an unreadable acknowledgement marker as 'nobody was reached'", async () => {
+    const kv = createMockKV();
+    for (let i = 0; i < ESCALATION_MAX_PER_WINDOW; i++) {
+      const db = createMockD1();
+      primeConfig(db, ["2250101010101"]);
+      await escalateHuman(createMockCtx(db, { kv }), { reason: "aide" });
+    }
+
+    // The counter is now full. Fail only the marker read, so the throttle still
+    // fires but the outcome of the earlier sends becomes unknowable.
+    const realGet = kv.get.getMockImplementation()!;
+    kv.get.mockImplementation(async (key: string) => {
+      if (key.startsWith("wa:escalate:ack:")) throw new Error("KV down");
+      return realGet(key);
+    });
+
+    const db = createMockD1();
+    primeConfig(db, ["2250101010101"]);
+    const blocked = await escalateHuman(createMockCtx(db, { kv }), { reason: "encore" });
+
+    expect(mockSendText).toHaveBeenCalledTimes(ESCALATION_MAX_PER_WINDOW);
+    // Unknown must not be reported as reassurance.
+    expect(messageOf(blocked)).not.toMatch(/transmise/i);
+    expect(messageOf(blocked)).toMatch(/contact/i);
+  });
+
+  it("does not let a failed marker write break the escalation", async () => {
+    const kv = createMockKV();
+    const realPut = kv.put.getMockImplementation()!;
+    kv.put.mockImplementation(async (key: string, value: string, options?: KVNamespacePutOptions) => {
+      if (key.startsWith("wa:escalate:ack:")) throw new Error("KV down");
+      return realPut(key, value, options);
+    });
+    primeConfig(mockDb, ["2250101010101"]);
+
+    const result = await escalateHuman(createMockCtx(mockDb, { kv }), { reason: "aide" });
+
+    // The customer is still told the truth about this attempt; only the memory
+    // of it is lost, which the throttled branch already treats as "unknown".
+    expect(result.success).toBe(true);
+    expect(messageOf(result)).toMatch(/va prendre le relais/i);
   });
 
   it("counts a throttled attempt against the number, not the session id", async () => {

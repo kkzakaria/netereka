@@ -36,15 +36,33 @@ const UNREACHED_MESSAGE =
   "Écrivez-nous depuis la page Contact du site netereka.ci, ou réessayez dans quelques minutes.";
 
 /**
- * The ceiling was reached. Phrased so it is true whether or not the earlier
- * notifications got through, and so it never reads as a refusal: a customer in
- * difficulty is still pointed at a human.
+ * The ceiling was reached *and* an administrator was reached earlier in the
+ * window, so saying the request was passed on is true. Never reads as a
+ * refusal: a customer in difficulty is still pointed at a human.
  */
 const THROTTLED_MESSAGE =
   "Votre demande a déjà été transmise, un conseiller vous répondra dès que possible. " +
   "Si c'est urgent, écrivez-nous depuis la page Contact du site netereka.ci.";
 
+/**
+ * The ceiling was reached and nothing says anyone was ever notified — the
+ * customer whose earlier attempts all failed on infrastructure, i.e. exactly
+ * the one for whom the alternative channel matters most. Claims nothing about
+ * the request having been transmitted.
+ */
+const THROTTLED_UNREACHED_MESSAGE =
+  "J'ai bien noté vos demandes, mais je n'ai pas réussi à joindre un conseiller. " +
+  "Écrivez-nous depuis la page Contact du site netereka.ci : c'est le moyen le plus sûr de nous atteindre.";
+
 const NO_REASON = "(aucune raison fournie)";
+
+/**
+ * KV key recording that at least one administrator acknowledged an escalation
+ * from this number recently. The rate-limit slot is consumed *before* the
+ * sends, so "throttled" carries no information about whether anyone was
+ * notified; this marker is that information, and nothing else keeps it.
+ */
+const ACK_PREFIX = "wa:escalate:ack:";
 
 // Built from escaped strings rather than written as regex literals so the
 // source file stays plain ASCII: these ranges are invisible or control
@@ -238,6 +256,16 @@ export async function escalateHuman(
   //
   // Keyed on the WhatsApp number rather than the session id: a session row is
   // trivial to churn, the number is what actually costs staff attention.
+  //
+  // The slot is consumed here, before the sends, and deliberately so: the
+  // alternative — charging the slot only once an administrator has answered —
+  // would stop the throttle bounding *attempts* and bound only successes. The
+  // total-failure modes are an expired token, a Meta outage, or Meta rate
+  // limiting us; those are precisely when repeated escalations would hammer
+  // the Graph API hardest, when hammering helps least and can deepen the
+  // outage. What that ordering costs is that "throttled" no longer implies
+  // "someone was told" — paid for by the marker read below, not by loosening
+  // the cap.
   const throttleKey = sanitisePhone(session.wa_phone) || `session:${session.id}`;
   let allowed = true;
   try {
@@ -254,7 +282,23 @@ export async function escalateHuman(
     console.error("[escalation] Rate-limit check unavailable, letting the request through:", err);
   }
 
-  if (!allowed) return { success: true, data: { message: THROTTLED_MESSAGE } };
+  if (!allowed) {
+    // Throttled. Whether that means "a human already has this" or "three
+    // attempts failed and nobody knows" depends on something the counter does
+    // not record, so ask the marker — and treat an unreadable answer as the
+    // pessimistic one. Reassurance is the claim that needs evidence; the
+    // fallback channel costs nothing if it turns out to be unnecessary.
+    let acknowledged = false;
+    try {
+      acknowledged = (await env.KV.get(`${ACK_PREFIX}${throttleKey}`)) !== null;
+    } catch (err) {
+      console.error("[escalation] Could not read the acknowledgement marker:", err);
+    }
+    return {
+      success: true,
+      data: { message: acknowledged ? THROTTLED_MESSAGE : THROTTLED_UNREACHED_MESSAGE },
+    };
+  }
 
   const alertMsg = buildEscalationMessage(session.wa_phone, params.reason, {
     verified: session.is_verified === 1 && Boolean(session.user_id),
@@ -262,6 +306,26 @@ export async function escalateHuman(
   });
 
   const notified = await notifyAdmins(db, alertMsg);
+
+  // Remember that someone answered, so a later throttled attempt from this
+  // number can tell the customer the truth. Written only on success and only
+  // for the length of one window; a failure here costs nothing but the memory,
+  // which the throttled branch already reads as "unknown", i.e. as no promise.
+  //
+  // The marker can outlive the counter's window by up to an hour. The
+  // consequence of that staleness is benign: a customer throttled in the next
+  // window whose sends all failed is told their request was passed on — which
+  // is still true, an administrator was notified within the hour and knows
+  // they want help.
+  if (notified > 0) {
+    try {
+      await env.KV.put(`${ACK_PREFIX}${throttleKey}`, "1", {
+        expirationTtl: ESCALATION_WINDOW_SECONDS,
+      });
+    } catch (err) {
+      console.error("[escalation] Could not record the acknowledgement marker:", err);
+    }
+  }
 
   return {
     success: true,
