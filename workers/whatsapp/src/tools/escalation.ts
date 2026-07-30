@@ -174,9 +174,10 @@ export function buildEscalationMessage(
  * actually reached, so the caller can tell the customer the truth.
  *
  * Every step is guarded: a missing config row, malformed `admin_phones`, and a
- * network error mid-loop must each cost at most one admin, never the whole
- * escalation. `WhatsAppAPI.sendText` does not guard its own `fetch`, so an
- * unhandled rejection there would otherwise abort the loop.
+ * failed or timed-out send must each cost at most one admin, never the whole
+ * escalation. `WhatsAppAPI.sendText` still rejects rather than returning on a
+ * transport failure — deliberately — so each send is settled individually
+ * rather than awaited in a bare loop.
  */
 async function notifyAdmins(db: D1Database, alertMsg: string): Promise<number> {
   type ConfigRow = {
@@ -211,16 +212,39 @@ async function notifyAdmins(db: D1Database, alertMsg: string): Promise<number> {
   if (adminPhones.length === 0) return 0;
 
   const api = new WhatsAppAPI(config.phone_number_id, config.access_token);
-  let notified = 0;
-  for (const phone of adminPhones) {
-    try {
+
+  // Dispatched together rather than in sequence. There is no ordering
+  // requirement between administrators, and serial round trips multiply the
+  // exposure to a slow one: with four phones the worst case was four timeouts
+  // end to end, all of it charged to the deferred-work budget that also owes
+  // the rest of this message's processing. Fanned out, the worst case is one.
+  //
+  // `allSettled`, not `all`: one rejected send must not cancel the reporting
+  // of the others, and an unobserved rejection here would surface as an
+  // unhandled promise rejection in the Worker.
+  const settled = await Promise.allSettled(
+    adminPhones.map(async (phone) => {
       const result = await api.sendText(phone, alertMsg);
-      if (result.success) notified++;
-      else console.error(`[escalation] Failed to notify admin ${phone}: ${result.error}`);
-    } catch (err) {
-      console.error(`[escalation] Failed to notify admin ${phone}:`, err);
+      if (!result.success) {
+        console.error(`[escalation] Failed to notify admin ${phone}: ${result.error}`);
+      }
+      return result.success;
+    })
+  );
+
+  // The count keeps exactly the meaning it had when this was a loop: one
+  // administrator counts only if their own send came back successful. A
+  // rejection — network error, or the abort that bounds a hung request —
+  // counts as not notified, which is what makes the customer's message fall
+  // back to the alternative channel rather than promise a callback.
+  let notified = 0;
+  settled.forEach((outcome, i) => {
+    if (outcome.status === "rejected") {
+      console.error(`[escalation] Failed to notify admin ${adminPhones[i]}:`, outcome.reason);
+    } else if (outcome.value) {
+      notified++;
     }
-  }
+  });
   return notified;
 }
 

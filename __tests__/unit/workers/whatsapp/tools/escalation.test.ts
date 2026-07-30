@@ -418,6 +418,58 @@ describe("escalateHuman", () => {
     expect(messageOf(result)).toMatch(/va prendre le relais/i);
   });
 
+  it("dispatches admin notifications concurrently, so one stalled phone cannot delay the rest", async () => {
+    primeConfig(mockDb, ["2250101010101", "2250202020202", "2250303030303"]);
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    mockSendText
+      .mockImplementationOnce(async () => {
+        await firstPending;
+        return { success: true };
+      })
+      .mockResolvedValue({ success: true });
+
+    const inFlight = escalateHuman(createMockCtx(mockDb), { reason: "aide" });
+    // Drain the queue while the first send is still parked. A serial loop would
+    // be blocked on it and would have made exactly one call by now.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSendText).toHaveBeenCalledTimes(3);
+
+    releaseFirst();
+    const result = await inFlight;
+    expect(messageOf(result)).toMatch(/va prendre le relais/i);
+  });
+
+  it("counts a stalled send as not notified without losing the others", async () => {
+    primeConfig(mockDb, ["2250101010101", "2250202020202"]);
+    mockSendText
+      .mockRejectedValueOnce(
+        new DOMException("The operation was aborted due to timeout", "TimeoutError")
+      )
+      .mockResolvedValueOnce({ success: true });
+
+    const result = await escalateHuman(createMockCtx(mockDb), { reason: "aide" });
+
+    expect(mockSendText).toHaveBeenCalledTimes(2);
+    // One admin did answer, so the promise to the customer still holds.
+    expect(messageOf(result)).toMatch(/va prendre le relais/i);
+  });
+
+  it("does not promise a human when every send times out", async () => {
+    primeConfig(mockDb, ["2250101010101", "2250202020202"]);
+    mockSendText.mockRejectedValue(
+      new DOMException("The operation was aborted due to timeout", "TimeoutError")
+    );
+
+    const result = await escalateHuman(createMockCtx(mockDb), { reason: "aide" });
+
+    expect(result.success).toBe(true);
+    expect(messageOf(result)).not.toMatch(/va prendre le relais/i);
+    expect(messageOf(result)).toMatch(/contact/i);
+  });
+
   it("survives a network error from the WhatsApp API instead of failing the tool", async () => {
     primeConfig(mockDb, ["2250101010101", "2250202020202"]);
     mockSendText
