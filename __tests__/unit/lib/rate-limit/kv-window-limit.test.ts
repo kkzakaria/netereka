@@ -211,4 +211,29 @@ describe("checkKVRateLimit", () => {
       expect.objectContaining({ expirationTtl: WINDOW_SECONDS })
     );
   });
+
+  it("floors the very first write's TTL at 60s so a sub-minute window is usable", async () => {
+    // KV rejects expirationTtl below 60 outright (the double above throws, as
+    // the real binding does). The floor used to be applied only to the second
+    // write, so the *first* call of a sub-minute window blew up. No shipped
+    // caller uses a window that short, which is exactly why this went unseen.
+    const SHORT = 30;
+    const kv = makeKV();
+
+    const ok = await checkKVRateLimit(kv, "k", { max: 2, windowSeconds: SHORT }, NOW);
+
+    expect(ok).toBe(true);
+    expect(kv.put).toHaveBeenCalledWith(
+      "k",
+      // The window itself still closes after 30s — `resetAt` governs, not the
+      // KV TTL — so flooring the entry's lifetime cannot widen the window.
+      bucket(1, NOW + SHORT * 1000),
+      expect.objectContaining({ expirationTtl: 60 })
+    );
+
+    // And the window really is 30s, not 60: a call at +31s starts a fresh one.
+    expect(await checkKVRateLimit(kv, "k", { max: 2, windowSeconds: SHORT }, NOW + 31_000)).toBe(true);
+    expect(await checkKVRateLimit(kv, "k", { max: 2, windowSeconds: SHORT }, NOW + 32_000)).toBe(true);
+    expect(await checkKVRateLimit(kv, "k", { max: 2, windowSeconds: SHORT }, NOW + 33_000)).toBe(false);
+  });
 });

@@ -53,7 +53,19 @@ export async function checkKVRateLimit(
   // already applies to malformed KV values.
   if (!bucket || bucket.resetAt <= now) {
     const fresh: Bucket = { count: 1, resetAt: now + windowSeconds * 1000 };
-    await kv.put(key, JSON.stringify(fresh), { expirationTtl: windowSeconds });
+    // Floored at 60 for the same reason as the accepted-call write below: KV
+    // rejects any expirationTtl under 60 seconds outright, so a caller
+    // configured with a sub-minute window would have thrown here on its very
+    // first call — the floor was applied to the second write only. No current
+    // caller uses a window that short (600s is the shortest), so this was
+    // latent rather than live, but it made the module unusable for the one
+    // shape a rate limiter is most often asked for. Flooring is safe because
+    // `resetAt`, not the KV TTL, defines the window: the branch guarding this
+    // block already treats `resetAt <= now` as expired regardless of whether
+    // the KV entry itself has gone.
+    await kv.put(key, JSON.stringify(fresh), {
+      expirationTtl: Math.max(60, windowSeconds),
+    });
     return true;
   }
 
