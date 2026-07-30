@@ -4,6 +4,11 @@ import {
   getOrderStatus,
   listOrders,
 } from "../../../../../workers/whatsapp/src/tools/orders";
+// Asserted verbatim below, on purpose. `resolveOrderLine` also emits a message
+// containing "variante" ("Veuillez sélectionner une variante pour …"), so a
+// /variante/i assertion passes whichever of the two rules fired — and the
+// stale-variant_id guard would go unpinned.
+import { variantGoneFromCatalogue } from "../../../../../workers/whatsapp/src/tools/line-issues";
 import type { ToolContext } from "../../../../../workers/whatsapp/src/types";
 
 /**
@@ -384,8 +389,9 @@ describe("createOrder", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/variante/i);
-    expect(result.error).toContain("Climatiseur Split");
+    // This is resolveOrderLine's rule, not the stale-variant guard: assert its
+    // own wording so the two cannot stand in for each other.
+    expect(result.error).toBe("Veuillez sélectionner une variante pour Climatiseur Split");
     // Nothing may be written: no order, no order_item at base_price.
     expect(mockDb.batch).not.toHaveBeenCalled();
   });
@@ -468,7 +474,51 @@ describe("createOrder", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/variante/i);
+    expect(result.error).toBe(variantGoneFromCatalogue("Climatiseur Split"));
+    expect(mockDb.batch).not.toHaveBeenCalled();
+  });
+
+  // The case where the stale-variant_id guard is the ONLY protection. With
+  // every variant retired, activeVariantCount is 0, so resolveOrderLine's
+  // "you must pick a variant" rule is inapplicable by construction and stops
+  // covering for it: nothing else stands between a stale variant_id and a sale
+  // at base_price.
+  it("refuses a stale variant_id even when the product has no active variants left", async () => {
+    const ctx = createMockCtx(mockDb);
+
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        {
+          cart_item_id: "ci1",
+          product_id: "p1",
+          variant_id: "v-retired",
+          product_name: "Climatiseur Split",
+          base_price: 250000,
+          product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
+          quantity: 1,
+        },
+      ],
+    });
+    // 2. Every variant of this product has been retired.
+    mockDb._statement.all.mockResolvedValueOnce({ results: [] });
+    // A zone is primed so that reaching the delivery lookup cannot be mistaken
+    // for a refusal: if the guard stops working, the order goes through.
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "zone-1",
+      fee: 2000,
+      estimated_hours: 24,
+    });
+
+    const result = await createOrder(ctx, {
+      address: "123 Rue Principale",
+      commune: "Cocody",
+      phone: "0700000000",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(variantGoneFromCatalogue("Climatiseur Split"));
     expect(mockDb.batch).not.toHaveBeenCalled();
   });
 
@@ -551,7 +601,11 @@ describe("createOrder", () => {
     expect(mockDb.batch).not.toHaveBeenCalled();
   });
 
-  it("refuses a cart line whose variant belongs to another product", async () => {
+  // A different branch of the same guard, and reachable for real: the variant
+  // query spans every product in the cart, so a second product's variants are
+  // in the map. Here the candidate EXISTS — only its ownership is wrong — so
+  // the `!candidate` half of the guard cannot cover this one.
+  it("refuses a cart line whose variant belongs to another product in the same cart", async () => {
     const ctx = createMockCtx(mockDb);
 
     mockDb._statement.all.mockResolvedValueOnce({
@@ -559,7 +613,7 @@ describe("createOrder", () => {
         {
           cart_item_id: "ci1",
           product_id: "p1",
-          variant_id: "v-other",
+          variant_id: "v-cheap", // belongs to p2, not p1
           product_name: "Climatiseur Split",
           base_price: 250000,
           product_stock: 10,
@@ -567,12 +621,31 @@ describe("createOrder", () => {
           product_is_draft: 0,
           quantity: 1,
         },
+        {
+          cart_item_id: "ci2",
+          product_id: "p2",
+          variant_id: "v-cheap",
+          product_name: "Câble USB",
+          base_price: 2000,
+          product_stock: 50,
+          product_is_active: 1,
+          product_is_draft: 0,
+          quantity: 1,
+        },
       ],
     });
+    // p1 has its own active variants, so resolveOrderLine's "pick a variant"
+    // rule would not fire here either way — only the ownership check can.
     mockDb._statement.all.mockResolvedValueOnce({
       results: [
-        { id: "v-other", product_id: "p2", name: "Autre", price: 1, stock_quantity: 99 },
+        { id: "v1", product_id: "p1", name: "1.5 CV", price: 250000, stock_quantity: 4 },
+        { id: "v-cheap", product_id: "p2", name: "1 m", price: 1, stock_quantity: 99 },
       ],
+    });
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "zone-1",
+      fee: 2000,
+      estimated_hours: 24,
     });
 
     const result = await createOrder(ctx, {
@@ -582,6 +655,7 @@ describe("createOrder", () => {
     });
 
     expect(result.success).toBe(false);
+    expect(result.error).toBe(variantGoneFromCatalogue("Climatiseur Split"));
     expect(mockDb.batch).not.toHaveBeenCalled();
   });
 });

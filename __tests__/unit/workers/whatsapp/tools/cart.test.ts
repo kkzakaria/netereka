@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cartAdd, cartView, cartUpdate, cartRemove, cartClear } from "../../../../../workers/whatsapp/src/tools/cart";
+// Asserted verbatim below. `resolveOrderLine` emits its own message containing
+// "variante", so a /variante/i assertion cannot tell the stale-variant_id
+// guard from the "pick a variant" rule, and would leave the former unpinned.
+import { variantGoneFromCatalogue } from "../../../../../workers/whatsapp/src/tools/line-issues";
 import type { ToolContext } from "../../../../../workers/whatsapp/src/types";
 
 function createMockD1() {
@@ -148,8 +152,7 @@ describe("cartAdd", () => {
     const result = await cartAdd(createMockCtx(mockDb), { product_id: "p1", quantity: 1 });
 
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/variante/i);
-    expect(result.error).toContain("Climatiseur Split");
+    expect(result.error).toBe("Veuillez sélectionner une variante pour Climatiseur Split");
     // Nothing may be written to whatsapp_carts.
     expect(mockDb._statement.run).not.toHaveBeenCalled();
   });
@@ -304,12 +307,18 @@ describe("cartView", () => {
     const data = result.data as ViewData;
     expect(data.items[0].unit_price).toBeNull();
     expect(data.items[0].total).toBeNull();
-    expect(data.items[0].issue).toMatch(/variante/i);
+    // resolveOrderLine's rule, stated verbatim so it cannot be confused with
+    // the stale-variant_id guard pinned in the two tests below.
+    expect(data.items[0].issue).toBe("Veuillez sélectionner une variante pour Climatiseur Split");
     // Excluded from the subtotal, and the caller is told the cart is blocked.
     expect(data.subtotal).toBe(0);
     expect(data.has_blocking_issues).toBe(true);
   });
 
+  // The LEFT JOIN carries `AND pv.product_id = wc.product_id AND pv.is_active = 1`,
+  // so a retired variant and a variant belonging to another product reach this
+  // code identically: cart_variant_id set, variant_id null. One test covers both
+  // shapes here — unlike createOrder, where they take different branches.
   it("shows no price for a line whose chosen variant is no longer active", async () => {
     mockDb._statement.all.mockResolvedValueOnce({
       results: [
@@ -327,7 +336,34 @@ describe("cartView", () => {
 
     const data = result.data as ViewData;
     expect(data.items[0].unit_price).toBeNull();
-    expect(data.items[0].issue).toMatch(/variante/i);
+    expect(data.items[0].issue).toBe(variantGoneFromCatalogue("Climatiseur Split"));
+    expect(data.has_blocking_issues).toBe(true);
+  });
+
+  // The case where this guard is the only protection: with every variant
+  // retired, active_variant_count is 0, so resolveOrderLine would happily
+  // price the line at base_price. Nothing else stops it.
+  it("shows no price for a stale variant when the product has no active variants left", async () => {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        viewRow({
+          product_name: "Climatiseur Split",
+          base_price: 250000,
+          active_variant_count: 0,
+          cart_variant_id: "v-retired",
+          variant_id: null,
+          quantity: 1,
+        }),
+      ],
+    });
+
+    const result = await cartView(createMockCtx(mockDb));
+
+    const data = result.data as ViewData;
+    expect(data.items[0].unit_price).toBeNull();
+    expect(data.items[0].total).toBeNull();
+    expect(data.items[0].issue).toBe(variantGoneFromCatalogue("Climatiseur Split"));
+    expect(data.subtotal).toBe(0);
     expect(data.has_blocking_issues).toBe(true);
   });
 
