@@ -852,11 +852,23 @@ describe("sanitizeDescriptionHtml", () => {
    * makes that shape the thing measured. Both numbers move together when the
    * machine is slow or busy; only a change in complexity moves them apart.
    *
-   * Measured: the ratio sits between 11 and 21 at rest and between 11 and 18
-   * with two full suites competing for the CPU, while the absolute times move
-   * by a factor of five. The regression this catches is not subtle — before
-   * the scan was bounded, one of these shapes alone cost 79 seconds against a
-   * calibration of a few milliseconds, a ratio in the thousands.
+   * The calibration must take a time of the same order as the workload it
+   * calibrates, and that is not a detail. A first version looped 20 times,
+   * taking ~15 ms against a ~1500 ms measured loop, and stayed flaky: a long
+   * loop loses far more of its time slice to other work than a short one, so
+   * the short calibration under-reported the contention and the ratio swung
+   * between 89 and 123. Looping 200 times pulled it to 10-12.
+   *
+   * Measured across three conditions — this file alone, the full suite running
+   * its files in parallel, and two extra suites competing for the CPU — the
+   * ratio stays between 6.6 and 11.9 for the tag-soup shapes and between 3.7
+   * and 5.7 for the character-reference ones, while the absolute time of the
+   * measured loop moves from 652 ms to 3761 ms. The ceiling below is five
+   * times the worst of those.
+   *
+   * The regression this catches is not subtle: before the scan was bounded,
+   * one shape alone cost 79 seconds, and restoring the quadratic attribute
+   * scan puts the measured loop at 217 seconds — ratios in the hundreds.
    */
   function calibrationMs(): number {
     const realistic =
@@ -867,12 +879,12 @@ describe("sanitizeDescriptionHtml", () => {
     // the measured loop does not, which inflates the ratio for no reason.
     sanitizeDescriptionHtml(realistic, "prod-1");
     const started = performance.now();
-    for (let i = 0; i < 20; i++) sanitizeDescriptionHtml(realistic, "prod-1");
+    for (let i = 0; i < 200; i++) sanitizeDescriptionHtml(realistic, "prod-1");
     return Math.max(performance.now() - started, 1);
   }
 
-  /** Ratio ceiling. Observed max 21; a return to quadratic reaches the hundreds. */
-  const COST_RATIO_BUDGET = 150;
+  /** Ratio ceiling. Observed max 11.9; a return to quadratic reaches the hundreds. */
+  const COST_RATIO_BUDGET = 60;
 
   it("sanitizes adversarial tag-soup in linear time", () => {
     // [input, productId]. The productId matters: selector scoping only runs
