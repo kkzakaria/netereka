@@ -7,6 +7,13 @@ import {
   countActiveVariantsByProduct,
   calculateSubtotal,
 } from "../../../../lib/utils/checkout";
+// Same reason: the SQL that takes stock and the SQL that gives it back has one
+// implementation in this repo, shared with lib/db/orders.ts. Pure strings.
+import {
+  buildStockDecrement,
+  buildStockRestore,
+  stockUpdateApplied,
+} from "../../../../lib/utils/stock";
 import {
   isProductInCatalogue,
   productGoneFromCatalogue,
@@ -68,6 +75,124 @@ function generateOrderNumber(): string {
 
 function generateId(): string {
   return crypto.randomUUID();
+}
+
+// ─── Stock reservation ────────────────────────────────────────────────────────
+//
+// The stock check done while resolving the lines above is a read: between it
+// and the write, the web checkout, an admin, or another bot session can take
+// the same units. Reserving is therefore a compare-and-swap
+// (`AND stock_quantity >= ?`, see lib/utils/stock.ts) whose result is read
+// statement by statement.
+//
+// Reading the result is not optional. `D1Database.batch` is a single SQL
+// transaction, but an UPDATE that matches no row is not a failed statement:
+// D1 commits it with `changes: 0`, and every other statement in the batch
+// commits too. There is no rollback available afterwards. That is why the
+// reservation is a batch of its own, run before anything is written: when a
+// line is refused, no order row exists, no order line exists, and the
+// customer's cart is still there to retry from — the only thing left to undo
+// is the stock the earlier lines did take.
+//
+// The cost of that ordering is a window where stock is held with no order to
+// show for it, if the isolate dies between the two batches. That is the lesser
+// evil: leaked reservation is recoverable by an operator, whereas the reverse
+// ordering hands the customer a confirmed order the shop cannot fulfil.
+
+/** Refusal messages. Only the "…équipe…" ones need a human. */
+function outOfStockReleased(productName: string): string {
+  return `Stock insuffisant pour ${productName} : les derniers exemplaires viennent d'être commandés. Votre commande n'a pas été enregistrée et votre panier reste intact.`;
+}
+
+function outOfStockNotReleased(productName: string): string {
+  return `Stock insuffisant pour ${productName}. Votre commande n'a pas été enregistrée, mais le stock déjà réservé pour les autres articles n'a pas pu être libéré : notre équipe a été prévenue.`;
+}
+
+const RESERVATION_UNAVAILABLE =
+  "Nous n'avons pas pu réserver le stock de votre commande. Votre panier reste intact : merci de réessayer dans un instant.";
+
+const ORDER_WRITE_FAILED_RELEASED =
+  "L'enregistrement de votre commande a échoué. Le stock réservé a été libéré et votre panier reste intact : merci de réessayer.";
+
+const ORDER_WRITE_FAILED_NOT_RELEASED =
+  "L'enregistrement de votre commande a échoué et le stock réservé n'a pas pu être libéré : notre équipe a été prévenue.";
+
+/**
+ * Gives back stock that was reserved. Never throws — it is only ever called
+ * from a failure path, and an exception escaping here would replace a
+ * structured refusal with an unhandled rejection, leaving the caller with
+ * nothing to say to the customer.
+ *
+ * Returns false when any line could not be put back, including the silent
+ * case: a release matching no row means the product row moved on and the units
+ * are still missing. That is a different situation for the operator than a
+ * clean release, and the caller words it differently.
+ */
+async function releaseStock(ctx: ToolContext, taken: ResolvedOrderLine[]): Promise<boolean> {
+  if (taken.length === 0) return true;
+
+  try {
+    const results = await ctx.db.batch(
+      taken.map((line) => {
+        const { sql, params } = buildStockRestore(line);
+        return ctx.db.prepare(sql).bind(...params);
+      })
+    );
+
+    const missed = taken.filter((_, i) => !stockUpdateApplied(results[i]));
+    if (missed.length > 0) {
+      console.error(
+        "createOrder: stock release matched no row — units still reserved against no order",
+        missed.map((line) => ({
+          product_id: line.productId,
+          variant_id: line.variantId,
+          quantity: line.quantity,
+        }))
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("createOrder: stock release failed — units still reserved against no order", err);
+    return false;
+  }
+}
+
+/**
+ * Reserves every line, or nothing. On refusal, the lines that did reserve are
+ * released — and only those: crediting back a decrement that never applied
+ * would invent stock, which is how a compensation turns into a second bug.
+ */
+async function reserveStock(
+  ctx: ToolContext,
+  lines: ResolvedOrderLine[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  let results: D1Result[];
+  try {
+    results = await ctx.db.batch(
+      lines.map((line) => {
+        const { sql, params } = buildStockDecrement(line);
+        return ctx.db.prepare(sql).bind(...params);
+      })
+    );
+  } catch (err) {
+    // A statement that *fails* (as opposed to matching no row) rolls the whole
+    // sequence back, so nothing was taken and there is nothing to release.
+    console.error("createOrder: stock reservation batch failed, nothing reserved", err);
+    return { ok: false, error: RESERVATION_UNAVAILABLE };
+  }
+
+  const refusedIndex = lines.findIndex((_, i) => !stockUpdateApplied(results[i]));
+  if (refusedIndex === -1) return { ok: true };
+
+  const reserved = lines.filter((_, i) => stockUpdateApplied(results[i]));
+  const released = await releaseStock(ctx, reserved);
+  const productName = lines[refusedIndex].productName;
+
+  return {
+    ok: false,
+    error: released ? outOfStockReleased(productName) : outOfStockNotReleased(productName),
+  };
 }
 
 export async function createOrder(
@@ -194,6 +319,14 @@ export async function createOrder(
   const deliveryFee = zone.fee;
   const total = subtotal + deliveryFee;
 
+  // Reserve the stock first, in a batch of its own, and stop here if any line
+  // is refused — see the block comment above reserveStock for why this cannot
+  // ride in the same batch as the order write.
+  const reservation = await reserveStock(ctx, lines);
+  if (!reservation.ok) {
+    return { success: false, error: reservation.error };
+  }
+
   // Generate order number and id
   const orderId = generateId();
   const orderNumber = generateOrderNumber();
@@ -247,22 +380,24 @@ export async function createOrder(
       )
   );
 
-  // Decrement stock for each item
-  const stockDecrements = lines.map((line) =>
-    line.variantId
-      ? ctx.db
-          .prepare("UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?")
-          .bind(line.quantity, line.variantId)
-      : ctx.db
-          .prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?")
-          .bind(line.quantity, line.productId)
-  );
-
   const clearCart = ctx.db
     .prepare(`DELETE FROM whatsapp_carts WHERE session_id = ?`)
     .bind(ctx.session.id);
 
-  await ctx.db.batch([insertOrder, ...insertItemStatements, ...stockDecrements, clearCart]);
+  // The stock is already held at this point. If this batch fails, D1 rolls the
+  // whole sequence back — no order, no lines, cart untouched — but the
+  // reservation was a separate, already-committed batch and has to be undone
+  // by hand, or those units stay held against an order that does not exist.
+  try {
+    await ctx.db.batch([insertOrder, ...insertItemStatements, clearCart]);
+  } catch (err) {
+    console.error(`createOrder: order write failed for ${orderNumber}, releasing reserved stock`, err);
+    const released = await releaseStock(ctx, lines);
+    return {
+      success: false,
+      error: released ? ORDER_WRITE_FAILED_RELEASED : ORDER_WRITE_FAILED_NOT_RELEASED,
+    };
+  }
 
   return {
     success: true,

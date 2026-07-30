@@ -6,18 +6,69 @@ import {
 } from "../../../../../workers/whatsapp/src/tools/orders";
 import type { ToolContext } from "../../../../../workers/whatsapp/src/types";
 
+/**
+ * A statement as it was actually prepared and bound. `createOrder` now has to
+ * be judged on *which* SQL it sends and in which batch, not merely on how many
+ * times it called `batch()`, so each prepared statement carries its own text
+ * and parameters instead of every call returning one shared spy.
+ */
+interface RecordedStatement {
+  sql: string;
+  params: unknown[];
+  bind: (...args: unknown[]) => RecordedStatement;
+  first: (...args: unknown[]) => unknown;
+  run: (...args: unknown[]) => unknown;
+  all: (...args: unknown[]) => unknown;
+}
+
 function createMockD1() {
+  // Kept as a single spy so the existing per-call expectations
+  // (`_statement.all.mockResolvedValueOnce`, `_statement.bind` assertions)
+  // keep working: every recorded statement delegates its terminal methods here.
   const mockStatement = {
     bind: vi.fn().mockReturnThis(),
     first: vi.fn(),
     run: vi.fn(),
     all: vi.fn(),
   };
+  const prepared: RecordedStatement[] = [];
+  const prepare = vi.fn((sql: string) => {
+    const stmt: RecordedStatement = {
+      sql,
+      params: [],
+      bind(...args: unknown[]) {
+        stmt.params = args;
+        mockStatement.bind(...args);
+        return stmt;
+      },
+      first: (...args: unknown[]) => mockStatement.first(...args),
+      run: (...args: unknown[]) => mockStatement.run(...args),
+      all: (...args: unknown[]) => mockStatement.all(...args),
+    };
+    prepared.push(stmt);
+    return stmt;
+  });
   return {
-    prepare: vi.fn().mockReturnValue(mockStatement),
-    batch: vi.fn().mockResolvedValue([]),
+    prepare,
+    // Default: every statement in the batch reports one affected row. A batch
+    // that returned `[]` used to be accepted because nothing read the result.
+    batch: vi.fn(async (stmts: RecordedStatement[]) => stmts.map(() => ({ meta: { changes: 1 } }))),
     _statement: mockStatement,
+    _prepared: prepared,
   };
+}
+
+/** The statements handed to the n-th `batch()` call (0-indexed). */
+function batchStatements(
+  mockDb: ReturnType<typeof createMockD1>,
+  n: number
+): RecordedStatement[] {
+  return (mockDb.batch.mock.calls[n]?.[0] ?? []) as RecordedStatement[];
+}
+
+/** Every statement prepared during the call, across all batches and singles. */
+function preparedSql(mockDb: ReturnType<typeof createMockD1>): string {
+  return mockDb._prepared.map((s) => s.sql).join("\n");
 }
 
 function createMockCtx(
@@ -194,9 +245,6 @@ describe("createOrder", () => {
       fee: 2000,
       estimated_hours: 24,
     });
-    // batch succeeds
-    mockDb.batch.mockResolvedValueOnce([]);
-
     const result = await createOrder(ctx, {
       address: "123 Rue Principale",
       commune: "Cocody",
@@ -214,8 +262,19 @@ describe("createOrder", () => {
     expect(data.subtotal).toBe(1300000); // 2 * 650000
     expect(data.delivery_fee).toBe(2000);
     expect(data.total).toBe(1302000);
-    // batch should have been called once with multiple statements
-    expect(mockDb.batch).toHaveBeenCalledTimes(1);
+    // Two batches: the stock reservation, then the order write. Both must have
+    // actually run — the order is only confirmed once its stock is held.
+    expect(mockDb.batch).toHaveBeenCalledTimes(2);
+    expect(batchStatements(mockDb, 0)).toHaveLength(1);
+    expect(batchStatements(mockDb, 0)[0].sql).toContain("stock_quantity - ?");
+    const written = batchStatements(mockDb, 1)
+      .map((s) => s.sql)
+      .join("\n");
+    expect(written).toContain("INSERT INTO orders");
+    expect(written).toContain("INSERT INTO order_items");
+    expect(written).toContain("DELETE FROM whatsapp_carts");
+    // Nothing was put back.
+    expect(preparedSql(mockDb)).not.toContain("stock_quantity + ?");
   });
 
   // ── Pricing invariant (shared with the web checkout via resolveOrderLine) ──
@@ -307,7 +366,6 @@ describe("createOrder", () => {
       fee: 2000,
       estimated_hours: 24,
     });
-    mockDb.batch.mockResolvedValueOnce([]);
 
     const result = await createOrder(ctx, {
       address: "123 Rue Principale",
@@ -469,6 +527,252 @@ describe("createOrder", () => {
 
     expect(result.success).toBe(false);
     expect(mockDb.batch).not.toHaveBeenCalled();
+  });
+});
+
+// ─── createOrder: stock reservation ───────────────────────────────────────────
+//
+// The read at the top of createOrder (resolveOrderLine's stock check) is a
+// snapshot: between it and the write, the web checkout, the admin, or another
+// bot session can take the same units. The reservation must therefore be a
+// compare-and-swap, and — the half that is easy to forget — its result must be
+// read. D1's batch is one SQL transaction, but an UPDATE that matches no row
+// is not a failed statement: it commits with `changes: 0` and everything
+// around it commits too. A predicate whose result nobody inspects would simply
+// move the damage from "negative stock" to "confirmed order, nothing reserved,
+// cart emptied", with no rollback available because the batch already
+// committed.
+
+describe("createOrder — stock reservation", () => {
+  let mockDb: ReturnType<typeof createMockD1>;
+
+  beforeEach(() => {
+    mockDb = createMockD1();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  /** Two orderable, variant-less lines: p1 x2 and p2 x3. */
+  function stubTwoLineCart() {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        {
+          cart_item_id: "ci1",
+          product_id: "p1",
+          variant_id: null,
+          product_name: "iPhone 15",
+          base_price: 650000,
+          product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
+          quantity: 2,
+        },
+        {
+          cart_item_id: "ci2",
+          product_id: "p2",
+          variant_id: null,
+          product_name: "Chargeur",
+          base_price: 15000,
+          product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
+          quantity: 3,
+        },
+      ],
+    });
+    mockDb._statement.all.mockResolvedValueOnce({ results: [] }); // no variants
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "zone-1",
+      fee: 2000,
+      estimated_hours: 24,
+    });
+  }
+
+  const address = { address: "123 Rue Principale", commune: "Cocody", phone: "0700000000" };
+
+  it("guards every decrement on the stock still being there", async () => {
+    stubTwoLineCart();
+
+    await createOrder(createMockCtx(mockDb), address);
+
+    const reservation = batchStatements(mockDb, 0);
+    expect(reservation).toHaveLength(2);
+    for (const stmt of reservation) {
+      expect(stmt.sql).toContain("AND stock_quantity >= ?");
+    }
+    expect(reservation[0].params).toEqual([2, "p1", 2]);
+    expect(reservation[1].params).toEqual([3, "p2", 3]);
+  });
+
+  it("targets the variant row, not the product row, for a variant line", async () => {
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        {
+          cart_item_id: "ci1",
+          product_id: "p1",
+          variant_id: "v2",
+          product_name: "Climatiseur Split",
+          base_price: 250000,
+          product_stock: 10,
+          product_is_active: 1,
+          product_is_draft: 0,
+          quantity: 1,
+        },
+      ],
+    });
+    mockDb._statement.all.mockResolvedValueOnce({
+      results: [
+        { id: "v2", product_id: "p1", name: "3 CV", price: 1400000, stock_quantity: 2 },
+      ],
+    });
+    mockDb._statement.first.mockResolvedValueOnce({
+      id: "zone-1",
+      fee: 2000,
+      estimated_hours: 24,
+    });
+
+    await createOrder(createMockCtx(mockDb), address);
+
+    const reservation = batchStatements(mockDb, 0);
+    expect(reservation[0].sql).toContain("product_variants");
+    expect(reservation[0].sql).toContain("AND stock_quantity >= ?");
+    expect(reservation[0].params).toEqual([1, "v2", 1]);
+  });
+
+  it("refuses the order when a decrement is rejected, and writes no order at all", async () => {
+    stubTwoLineCart();
+    // Both decrements refused: someone emptied the shelf in between.
+    mockDb.batch.mockResolvedValueOnce([
+      { meta: { changes: 0 } },
+      { meta: { changes: 0 } },
+    ]);
+
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/stock/i);
+    // No order row, no order line, and — critically — the customer's cart is
+    // still there to retry from.
+    const sql = preparedSql(mockDb);
+    expect(sql).not.toContain("INSERT INTO orders");
+    expect(sql).not.toContain("INSERT INTO order_items");
+    expect(sql).not.toContain("DELETE FROM whatsapp_carts");
+  });
+
+  it("puts back the stock it did take when a later line is refused", async () => {
+    stubTwoLineCart();
+    // First line reserved, second refused.
+    mockDb.batch.mockResolvedValueOnce([
+      { meta: { changes: 1 } },
+      { meta: { changes: 0 } },
+    ]);
+
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Chargeur");
+
+    const release = batchStatements(mockDb, 1);
+    // Exactly one release: the line that was refused took nothing, and
+    // crediting it back would invent stock.
+    expect(release).toHaveLength(1);
+    expect(release[0].sql).toContain("stock_quantity + ?");
+    expect(release[0].params).toEqual([2, "p1"]);
+  });
+
+  it("releases nothing when the very first line is the one refused", async () => {
+    stubTwoLineCart();
+    mockDb.batch.mockResolvedValueOnce([
+      { meta: { changes: 0 } },
+      { meta: { changes: 1 } },
+    ]);
+
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    // The second line did reserve, so it — and only it — is put back.
+    const release = batchStatements(mockDb, 1);
+    expect(release).toHaveLength(1);
+    expect(release[0].params).toEqual([3, "p2"]);
+  });
+
+  it("treats a short result array as a refusal rather than as success", async () => {
+    stubTwoLineCart();
+    // Fail closed: fewer results than statements must not read as "applied".
+    mockDb.batch.mockResolvedValueOnce([]);
+
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    expect(preparedSql(mockDb)).not.toContain("INSERT INTO orders");
+  });
+
+  it("says so when the release itself matches no row", async () => {
+    stubTwoLineCart();
+    mockDb.batch.mockResolvedValueOnce([
+      { meta: { changes: 1 } },
+      { meta: { changes: 0 } },
+    ]);
+    // The release runs but touches nothing — the product row moved on. That is
+    // a failure, not a no-op: the stock is still missing.
+    mockDb.batch.mockResolvedValueOnce([{ meta: { changes: 0 } }]);
+
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/équipe/i);
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it("stays a structured refusal when the release throws", async () => {
+    stubTwoLineCart();
+    mockDb.batch.mockResolvedValueOnce([
+      { meta: { changes: 1 } },
+      { meta: { changes: 0 } },
+    ]);
+    mockDb.batch.mockRejectedValueOnce(new Error("D1_ERROR"));
+
+    // No unhandled rejection: the caller gets a ToolResult either way.
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/équipe/i);
+  });
+
+  it("distinguishes a released reservation from one it could not release", async () => {
+    stubTwoLineCart();
+    mockDb.batch.mockResolvedValueOnce([
+      { meta: { changes: 1 } },
+      { meta: { changes: 0 } },
+    ]);
+    mockDb.batch.mockResolvedValueOnce([{ meta: { changes: 1 } }]); // release worked
+
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    // Asserted positively too, so `not.toMatch` cannot pass on an absent error.
+    expect(result.error).toMatch(/stock/i);
+    // The operator-visible half of the message is reserved for the case that
+    // actually needs an operator.
+    expect(result.error).not.toMatch(/équipe/i);
+  });
+
+  it("releases the whole reservation when the order write fails", async () => {
+    stubTwoLineCart();
+    mockDb.batch.mockResolvedValueOnce([
+      { meta: { changes: 1 } },
+      { meta: { changes: 1 } },
+    ]);
+    // The order write is rolled back by D1, but the reservation before it was
+    // its own committed batch — it has to be undone by hand.
+    mockDb.batch.mockRejectedValueOnce(new Error("UNIQUE constraint failed: orders.order_number"));
+
+    const result = await createOrder(createMockCtx(mockDb), address);
+
+    expect(result.success).toBe(false);
+    const release = batchStatements(mockDb, 2);
+    expect(release).toHaveLength(2);
+    expect(release[0].params).toEqual([2, "p1"]);
+    expect(release[1].params).toEqual([3, "p2"]);
   });
 });
 
