@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.16.0](https://github.com/kkzakaria/netereka/compare/v1.15.0...v1.16.0) (2026-07-30)
+
+
+### Features
+
+* **storefront:** enforce the CSP directives that cost no caching ([#263](https://github.com/kkzakaria/netereka/issues/263)) ([c228a61](https://github.com/kkzakaria/netereka/commit/c228a611d4b9750961cd62040f97e85863bc2ff7))
+
+
+### Bug Fixes
+
+* **auth:** harden authentication configuration (lot 1/8) ([#252](https://github.com/kkzakaria/netereka/issues/252)) ([a88900d](https://github.com/kkzakaria/netereka/commit/a88900d943d2f49e7a02cd574297a69ca725aae2))
+* **auth:** tighten the authorization boundary (lot 2/8) ([#255](https://github.com/kkzakaria/netereka/issues/255)) ([7cc23ad](https://github.com/kkzakaria/netereka/commit/7cc23ad419d8f0ce86772c3df5bbcb40e42928ab))
+* **storefront:** harden the order pipeline (lot 3/8) ([#257](https://github.com/kkzakaria/netereka/issues/257)) ([606ae38](https://github.com/kkzakaria/netereka/commit/606ae38ba5f67ad33b43a33651e92c4d526236bc))
+* **whatsapp:** make the bot inherit the storefront's order guarantees (lot 5/8) ([#265](https://github.com/kkzakaria/netereka/issues/265)) ([bf42007](https://github.com/kkzakaria/netereka/commit/bf42007ea128767e4f85101360e22aae8c84f171))
+
 ## [1.15.0](https://github.com/kkzakaria/netereka/compare/v1.14.0...v1.15.0) (2026-07-04)
 
 
