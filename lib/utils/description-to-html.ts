@@ -13,6 +13,19 @@ import { sanitizeDescriptionHtml } from "./sanitize-html";
  * All three paths produce sanitized HTML safe for `dangerouslySetInnerHTML`.
  * Legacy HTML sanitization uses an allowlist-based regex pass; this is
  * intentionally limited to admin-authored content (not end-user input).
+ *
+ * `type` (the `description_type` column) selects the editor that OWNS the
+ * content, and only `"html"` — whose payload is by definition raw markup that
+ * must not be re-detected — routes on it alone. `"richtext"` is a claim about
+ * the writer, not a guarantee about the bytes: rows predating the rich-text
+ * editor, and rows patched by hand in D1, carry that type over plain text or
+ * legacy HTML. Trusting the claim sent those through `JSON.parse`, which threw,
+ * logged, and returned "" — the description simply vanished from the product
+ * page (issue #145). So the Lexical branch is entered on the content's actual
+ * shape instead. A serialized Lexical state is always a JSON object, so
+ * `{`-prefixed content is exactly the set that branch should claim, and content
+ * that both starts with `{` and fails to parse stays a reported anomaly rather
+ * than being quietly rendered as prose.
  */
 export function descriptionToHtml(raw: string, type?: string): string {
   if (!raw) return "";
@@ -24,7 +37,7 @@ export function descriptionToHtml(raw: string, type?: string): string {
     return sanitizeDescriptionHtml(trimmed);
   }
 
-  if (type === "richtext" || trimmed.startsWith("{")) {
+  if (trimmed.startsWith("{")) {
     let state: unknown;
     try {
       state = JSON.parse(trimmed);
