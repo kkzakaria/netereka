@@ -115,7 +115,8 @@ export function StepVariants({ product, formRef }: StepVariantsProps) {
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="touch"
+          className="sm:size-auto sm:h-8 sm:px-3 sm:text-xs"
           disabled={isPending}
           onClick={() => setShowCreate(true)}
         >
@@ -179,9 +180,9 @@ function VariantCard({
       <div className="flex items-center gap-1 shrink-0">
         <Button
           type="button"
-          size="sm"
+          size="touch"
           variant="ghost"
-          className="h-8 text-xs"
+          className="sm:size-auto sm:h-8 sm:px-3 sm:text-xs"
           disabled={isPending}
           onClick={onEdit}
         >
@@ -189,9 +190,9 @@ function VariantCard({
         </Button>
         <Button
           type="button"
-          size="sm"
+          size="touch"
           variant="ghost"
-          className="h-8 text-xs text-destructive hover:text-destructive"
+          className="text-destructive hover:text-destructive sm:size-auto sm:h-8 sm:px-3 sm:text-xs"
           disabled={isPending}
           onClick={onDelete}
         >
@@ -300,13 +301,20 @@ function InlineVariantForm({
         <input type="hidden" name="sort_order" value={variant?.sort_order ?? 0} />
 
         <div className="flex items-center gap-2 pt-1">
-          <Button type="button" size="sm" disabled={isPending} onClick={handleSubmit}>
+          <Button
+            type="button"
+            size="touch"
+            className="sm:size-auto sm:h-8 sm:px-3 sm:text-xs"
+            disabled={isPending}
+            onClick={handleSubmit}
+          >
             {isPending ? "Enregistrement..." : isEdit ? "Mettre à jour" : "Ajouter"}
           </Button>
           <Button
             type="button"
-            size="sm"
+            size="touch"
             variant="ghost"
+            className="sm:size-auto sm:h-8 sm:px-3 sm:text-xs"
             disabled={isPending}
             onClick={onCancel}
           >
