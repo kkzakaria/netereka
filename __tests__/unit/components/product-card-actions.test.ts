@@ -23,6 +23,7 @@ vi.mock("@hugeicons/react", () => ({ HugeiconsIcon: "HugeiconsIcon" }));
 import type { ReactElement } from "react";
 import { ProductCardActions } from "@/components/storefront/product-card-actions";
 import type { ProductCardData } from "@/lib/db/types";
+import { cn } from "@/lib/utils";
 
 const PRODUCT: ProductCardData = {
   id: "prod-1",
@@ -58,12 +59,30 @@ function renderProps(product: ProductCardData = PRODUCT): AnyProps[] {
   return collectProps(ProductCardActions({ product }));
 }
 
-/** Every button on the row must be 44px tall on mobile, 32px from `sm:` up. */
-function expectResponsiveTouchTarget(className: unknown) {
+/**
+ * Asserting that the parent passes `h-11` is not enough: the height that actually
+ * renders is whatever `cn()` produces once the parent's className is merged over the
+ * size class the Button CVA emits. tailwind-merge only drops a class when both sit in
+ * the same group, so these helpers assert on the *merged* result and, critically, that
+ * the CVA's own size class is gone — otherwise both survive and the 44px target silently
+ * depends on CSS emission order rather than on the override.
+ */
+function expectMergedTouchTarget(className: unknown, cvaSizeClass: string, mobile: string, desktop: string) {
   expect(typeof className).toBe("string");
-  const classes = String(className).split(/\s+/);
-  expect(classes).toContain("h-11");
-  expect(classes).toContain("sm:h-8");
+  const merged = cn(cvaSizeClass, String(className)).split(/\s+/);
+  expect(merged).toContain(mobile);
+  expect(merged).toContain(desktop);
+  expect(merged).not.toContain(cvaSizeClass);
+}
+
+/** Text button: `size="lg"` emits `h-8`, overridden in the same group by `h-11`. */
+function expectResponsiveTouchTarget(className: unknown) {
+  expectMergedTouchTarget(className, "h-8", "h-11", "sm:h-8");
+}
+
+/** Icon button: `size="icon-lg"` emits `size-8`, which only `size-11` can displace. */
+function expectResponsiveIconTouchTarget(className: unknown) {
+  expectMergedTouchTarget(className, "size-8", "size-11", "sm:size-8");
 }
 
 describe("ProductCardActions touch targets", () => {
@@ -85,7 +104,7 @@ describe("ProductCardActions touch targets", () => {
   it("gives the WhatsApp icon button a 44px mobile height", () => {
     const whatsappButton = renderProps().find((p) => "productName" in p);
     expect(whatsappButton).toBeDefined();
-    expectResponsiveTouchTarget(whatsappButton!.className);
+    expectResponsiveIconTouchTarget(whatsappButton!.className);
   });
 
   it("gives the wishlist icon button a 44px mobile height", () => {
@@ -93,6 +112,6 @@ describe("ProductCardActions touch targets", () => {
       (p) => "productId" in p && !("productName" in p)
     );
     expect(wishlistButton).toBeDefined();
-    expectResponsiveTouchTarget(wishlistButton!.className);
+    expectResponsiveIconTouchTarget(wishlistButton!.className);
   });
 });

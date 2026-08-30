@@ -67,7 +67,11 @@ export function ProductCardActions({ product }: Props) {
         className="flex flex-col gap-1.5 border-t px-3 py-2 sm:flex-row sm:items-center sm:gap-2"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* h-11 = 44px touch target on mobile (design system); sm: restores desktop density */}
+        {/* 44px touch target on mobile (design system); sm: restores desktop density.
+            The icon buttons render size="icon-lg" (size-8) internally, so they must be
+            overridden with size-11 — not h-11: tailwind-merge keeps size-* and h-*
+            as separate groups, which would leave both classes in the output and make
+            the height depend on CSS emission order. */}
         <Button
           size="lg"
           variant={isOutOfStock ? "outline" : "default"}
@@ -91,11 +95,11 @@ export function ProductCardActions({ product }: Props) {
               price={product.base_price}
               slug={product.slug}
               variant="icon"
-              className="h-11 w-full sm:h-8 sm:w-8"
+              className="size-11 w-full sm:size-8"
             />
           </div>
           <div className="flex-1 sm:flex-none" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-            <WishlistButtonDynamic productId={product.id} className="h-11 w-full sm:h-8 sm:w-8" />
+            <WishlistButtonDynamic productId={product.id} className="size-11 w-full sm:size-8" />
           </div>
         </div>
       </div>
