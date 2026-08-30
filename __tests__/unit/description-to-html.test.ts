@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { descriptionToHtml } from "@/lib/utils/description-to-html";
 
 describe("descriptionToHtml", () => {
@@ -115,8 +115,70 @@ describe("descriptionToHtml with description_type", () => {
     expect(descriptionToHtml("", "richtext")).toBe("");
   });
 
-  it("returns empty for non-JSON content with richtext type", () => {
-    expect(descriptionToHtml("plain text product description", "richtext")).toBe("");
+  // ── description_type lies about the content (issue #145) ───────────────────
+  //
+  // `description_type` records what the admin editor MEANT to store, not what
+  // the column actually holds. Rows written before the rich-text editor shipped
+  // — or repaired by hand in D1 — carry type "richtext" over plain text or
+  // legacy HTML. Those must render on their real format, not be swallowed.
+
+  it("renders plain text stored under richtext type", () => {
+    expect(descriptionToHtml("L'iPhone 17 Pro est le dernier modele.", "richtext")).toBe(
+      "<p>L&#39;iPhone 17 Pro est le dernier modele.</p>",
+    );
+  });
+
+  it("paragraphs multi-line plain text stored under richtext type", () => {
+    expect(descriptionToHtml("Para one\n\nPara two\nsuite", "richtext")).toBe(
+      "<p>Para one</p><p>Para two<br>suite</p>",
+    );
+  });
+
+  it("escapes HTML-special characters in plain text stored under richtext type", () => {
+    expect(descriptionToHtml('Ecran 6" & <promo>', "richtext")).toBe(
+      "<p>Ecran 6&quot; &amp; &lt;promo&gt;</p>",
+    );
+  });
+
+  it("sanitizes legacy HTML stored under richtext type", () => {
+    const result = descriptionToHtml(
+      '<p>Hello <strong>world</strong></p><script>alert("xss")</script>',
+      "richtext",
+    );
+    expect(result).not.toContain("<script>");
+    expect(result).toContain("<p>Hello <strong>world</strong></p>");
+  });
+
+  it("does not log when plain text is stored under richtext type", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      descriptionToHtml("plain text product description", "richtext");
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // ── Non-regression: genuine data anomalies must still be reported ──────────
+
+  it("still logs and returns empty for malformed JSON under richtext type", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(descriptionToHtml('{"root": {broken}', "richtext")).toBe("");
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still logs and returns empty for JSON without a root key under richtext type", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(descriptionToHtml('{"foo":"bar"}', "richtext")).toBe("");
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("sanitizes HTML at read time for defense-in-depth", () => {
