@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Créer la branche
+## Task 1: Créer la branche
 
 **Files:** (aucun fichier)
 
@@ -24,7 +24,7 @@ Expected: `Switched to a new branch 'feat/price-filter-slider'`
 
 ---
 
-### Task 2: Installer le composant shadcn Slider
+## Task 2: Installer le composant shadcn Slider
 
 **Files:**
 - Create: `components/ui/slider.tsx` (généré par shadcn)
@@ -55,7 +55,7 @@ Expected: aucune erreur.
 
 ---
 
-### Task 3: Créer le composant `PriceFilter`
+## Task 3: Créer le composant `PriceFilter`
 
 **Files:**
 - Create: `app/(storefront)/search/price-filter.tsx`
@@ -195,7 +195,7 @@ Expected: aucune erreur.
 
 ---
 
-### Task 4: Intégrer `PriceFilter` dans `SearchFilters`
+## Task 4: Intégrer `PriceFilter` dans `SearchFilters`
 
 **Files:**
 - Modify: `app/(storefront)/search/search-filters.tsx`
@@ -296,14 +296,14 @@ export function SearchFilters() {
 ```
 
 Ce qui change par rapport à l'actuel :
-- **Supprimé** : `useState`, `useRef` imports, `Input` import, `formatPrice` import
-- **Supprimé** : `priceState`, `priceTimerRef` state
-- **Supprimé** : le bloc de sync externe prix (lignes 24-29 actuel)
-- **Supprimé** : `handlePriceChange` function
-- **Supprimé** : le `<fieldset>` Prix avec ses deux `<Input>`
-- **Ajouté** : import `PriceFilter`
-- **Ajouté** : `<PriceFilter>` avec les props
-- **Ajouté** : `type="button"` sur le bouton reset (bonne pratique)
+- **Supprimé:** `useState`, `useRef` imports, `Input` import, `formatPrice` import
+- **Supprimé:** `priceState`, `priceTimerRef` state
+- **Supprimé:** le bloc de sync externe prix (lignes 24-29 actuel)
+- **Supprimé:** `handlePriceChange` function
+- **Supprimé:** le `<fieldset>` Prix avec ses deux `<Input>`
+- **Ajouté:** import `PriceFilter`
+- **Ajouté:** `<PriceFilter>` avec les props
+- **Ajouté:** `type="button"` sur le bouton reset (bonne pratique)
 
 **Step 2: Vérifier tsc**
 
@@ -315,7 +315,7 @@ Expected: aucune erreur.
 
 ---
 
-### Task 5: Vérifier types, lint, et tests
+## Task 5: Vérifier types, lint, et tests
 
 **Step 1: TypeScript**
 
@@ -343,7 +343,7 @@ Expected: tous les tests passent (422 tests, composants React non couverts par l
 
 ---
 
-### Task 6: Commit et PR
+## Task 6: Commit et PR
 
 **Step 1: Stager les fichiers**
 

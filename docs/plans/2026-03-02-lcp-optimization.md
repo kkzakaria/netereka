@@ -223,12 +223,12 @@ git commit -m "perf: add 750w and 1200w to hero preload Link header srcset"
 The fix: extract only the scroll/drag logic into a new `ScrollContainer` client component. `HorizontalSection` becomes a server component and passes `<ProductCard>` children to `ScrollContainer`. In Next.js App Router, server component children passed to a client component are serialized as RSC payload — they are NOT bundled as client JS. `ProductCard` itself has no `"use client"` directive, so it remains a server component. Only `ProductCardActions` (already a client component, small) stays in the client bundle.
 
 **Before:**
-```
+```text
 HorizontalSection (client) → ProductCard (bundled as client) → ProductCardActions (client)
 ```
 
 **After:**
-```
+```text
 HorizontalSection (server) → ScrollContainer (client, just scroll logic) → children (RSC payload)
 ProductCard stays server-rendered, not bundled as client JS
 ```

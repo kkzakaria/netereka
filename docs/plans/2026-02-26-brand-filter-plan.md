@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Créer la branche
+## Task 1: Créer la branche
 
 **Files:**
 - (aucun fichier)
@@ -25,7 +25,7 @@ Expected: `Switched to a new branch 'feat/brand-filter-search'`
 
 ---
 
-### Task 2: Créer le composant `BrandFilter`
+## Task 2: Créer le composant `BrandFilter`
 
 **Files:**
 - Create: `app/(storefront)/search/brand-filter.tsx`
@@ -158,7 +158,7 @@ Expected: le fichier est listé.
 
 ---
 
-### Task 3: Intégrer `BrandFilter` dans `SearchFilters`
+## Task 3: Intégrer `BrandFilter` dans `SearchFilters`
 
 **Files:**
 - Modify: `app/(storefront)/search/search-filters.tsx`
@@ -215,7 +215,7 @@ Le remplacer par :
 
 ---
 
-### Task 4: Vérifier types, lint, et tests
+## Task 4: Vérifier types, lint, et tests
 
 **Step 1: Vérifier les types TypeScript**
 
@@ -243,7 +243,7 @@ Expected: tous les tests passent (les tests existants ne couvrent pas les compos
 
 ---
 
-### Task 5: Commit et PR
+## Task 5: Commit et PR
 
 **Step 1: Stager les fichiers**
 
