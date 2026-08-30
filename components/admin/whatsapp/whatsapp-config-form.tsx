@@ -1,6 +1,8 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,27 +10,79 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  whatsappConfigSchema,
+  type WhatsAppConfigInput,
+} from "@/lib/validations/whatsapp-config";
 import { saveWhatsAppConfig, type WhatsAppConfig } from "@/actions/admin/whatsapp";
 
 interface WhatsAppConfigFormProps {
   config: WhatsAppConfig | null;
 }
 
+const FIELD_NAMES = [
+  "display_phone_number",
+  "phone_number_id",
+  "business_account_id",
+  "access_token",
+  "verify_token",
+  "webhook_secret",
+  "admin_phones",
+  "is_active",
+] as const;
+
+function isFieldName(value: string): value is (typeof FIELD_NAMES)[number] {
+  return (FIELD_NAMES as readonly string[]).includes(value);
+}
+
 export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
   const [isPending, startTransition] = useTransition();
   const [showAccessToken, setShowAccessToken] = useState(false);
   const [showWebhookSecret, setShowWebhookSecret] = useState(false);
-  const isActiveRef = useRef<HTMLInputElement>(null);
 
-  function handleSubmit(formData: FormData) {
+  const {
+    register,
+    handleSubmit,
+    control,
+    setError,
+    formState: { errors },
+  } = useForm<WhatsAppConfigInput>({
+    resolver: zodResolver(whatsappConfigSchema),
+    defaultValues: {
+      display_phone_number: config?.display_phone_number ?? "",
+      phone_number_id: config?.phone_number_id ?? "",
+      business_account_id: config?.business_account_id ?? "",
+      // Secrets arrive masked (•••••••• + last 4) — submitting them unchanged
+      // preserves the stored value server-side.
+      access_token: config?.access_token ?? "",
+      verify_token: config?.verify_token ?? "",
+      webhook_secret: config?.webhook_secret ?? "",
+      admin_phones: config?.admin_phones ?? "[]",
+      is_active: config?.is_active === 1,
+    },
+  });
+
+  function onSubmit(values: WhatsAppConfigInput) {
     startTransition(async () => {
       try {
-        const result = await saveWhatsAppConfig(formData);
+        const result = await saveWhatsAppConfig(values);
         if (result.success) {
           toast.success("Configuration WhatsApp sauvegardée");
-        } else {
-          toast.error(result.error ?? "Une erreur est survenue");
+          return;
         }
+        if (result.fieldErrors) {
+          for (const [field, messages] of Object.entries(result.fieldErrors)) {
+            const message = messages?.[0];
+            if (message && isFieldName(field)) {
+              setError(field, { type: "server", message });
+            }
+          }
+          toast.error(
+            Object.values(result.fieldErrors).flat()[0] ?? "Erreur de validation"
+          );
+          return;
+        }
+        toast.error(result.error ?? "Une erreur est survenue");
       } catch {
         toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
       }
@@ -36,7 +90,7 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
   }
 
   return (
-    <form action={handleSubmit}>
+    <form onSubmit={handleSubmit(onSubmit)}>
       <div className="space-y-6">
         {/* Public display — minimal config for storefront buttons */}
         <Card>
@@ -52,10 +106,15 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
               <Label htmlFor="display_phone_number">Numéro public</Label>
               <Input
                 id="display_phone_number"
-                name="display_phone_number"
-                defaultValue={config?.display_phone_number ?? ""}
+                {...register("display_phone_number")}
+                aria-invalid={!!errors.display_phone_number}
                 placeholder="Ex: 2250700000001"
               />
+              {errors.display_phone_number && (
+                <p className="text-sm text-destructive">
+                  {errors.display_phone_number.message}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 Format international sans « + », entre 8 et 15 chiffres. Utilisé pour les liens wa.me.
               </p>
@@ -77,10 +136,15 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
               <Label htmlFor="phone_number_id">Phone Number ID</Label>
               <Input
                 id="phone_number_id"
-                name="phone_number_id"
-                defaultValue={config?.phone_number_id ?? ""}
+                {...register("phone_number_id")}
+                aria-invalid={!!errors.phone_number_id}
                 placeholder="Ex: 123456789012345"
               />
+              {errors.phone_number_id && (
+                <p className="text-sm text-destructive">
+                  {errors.phone_number_id.message}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 ID opaque fourni par Meta (différent du numéro public).
               </p>
@@ -90,10 +154,15 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
               <Label htmlFor="business_account_id">Business Account ID</Label>
               <Input
                 id="business_account_id"
-                name="business_account_id"
-                defaultValue={config?.business_account_id ?? ""}
+                {...register("business_account_id")}
+                aria-invalid={!!errors.business_account_id}
                 placeholder="Ex: 123456789012345"
               />
+              {errors.business_account_id && (
+                <p className="text-sm text-destructive">
+                  {errors.business_account_id.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -101,9 +170,9 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
               <div className="flex gap-2">
                 <Input
                   id="access_token"
-                  name="access_token"
                   type={showAccessToken ? "text" : "password"}
-                  defaultValue={config?.access_token ?? ""}
+                  {...register("access_token")}
+                  aria-invalid={!!errors.access_token}
                   placeholder="EAAxxxxxxxx..."
                   className="flex-1"
                 />
@@ -117,16 +186,26 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                   {showAccessToken ? "Masquer" : "Afficher"}
                 </Button>
               </div>
+              {errors.access_token && (
+                <p className="text-sm text-destructive">
+                  {errors.access_token.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="verify_token">Verify Token (webhook)</Label>
               <Input
                 id="verify_token"
-                name="verify_token"
-                defaultValue={config?.verify_token ?? ""}
+                {...register("verify_token")}
+                aria-invalid={!!errors.verify_token}
                 placeholder="Token de vérification du webhook"
               />
+              {errors.verify_token && (
+                <p className="text-sm text-destructive">
+                  {errors.verify_token.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -134,9 +213,9 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
               <div className="flex gap-2">
                 <Input
                   id="webhook_secret"
-                  name="webhook_secret"
                   type={showWebhookSecret ? "text" : "password"}
-                  defaultValue={config?.webhook_secret ?? ""}
+                  {...register("webhook_secret")}
+                  aria-invalid={!!errors.webhook_secret}
                   placeholder="Secret HMAC pour valider les webhooks"
                   className="flex-1"
                 />
@@ -150,6 +229,11 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                   {showWebhookSecret ? "Masquer" : "Afficher"}
                 </Button>
               </div>
+              {errors.webhook_secret && (
+                <p className="text-sm text-destructive">
+                  {errors.webhook_secret.message}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -164,11 +248,16 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
               <Label htmlFor="admin_phones">Numéros WhatsApp (JSON)</Label>
               <Textarea
                 id="admin_phones"
-                name="admin_phones"
                 rows={3}
-                defaultValue={config?.admin_phones ?? "[]"}
+                {...register("admin_phones")}
+                aria-invalid={!!errors.admin_phones}
                 placeholder='["2250700000001", "2250700000002"]'
               />
+              {errors.admin_phones && (
+                <p className="text-sm text-destructive">
+                  {errors.admin_phones.message}
+                </p>
+              )}
               <p className="text-muted-foreground text-xs">
                 Tableau JSON des numéros WhatsApp qui recevront les alertes d&apos;escalade
                 (avec indicatif pays, sans « + »). Ex&nbsp;: <code>[&quot;2250700000001&quot;]</code>
@@ -185,24 +274,23 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <Label>Bot WhatsApp actif</Label>
+                <Label htmlFor="is_active">Bot WhatsApp actif</Label>
                 <p className="text-muted-foreground text-sm">
                   Active le bot conversationnel (nécessite l&apos;intégration API complète).
                 </p>
               </div>
-              <input
-                type="hidden"
+              <Controller
+                control={control}
                 name="is_active"
-                ref={isActiveRef}
-                defaultValue={config?.is_active ?? 0}
-              />
-              <Switch
-                defaultChecked={config ? config.is_active === 1 : false}
-                onCheckedChange={(checked) => {
-                  if (isActiveRef.current) {
-                    isActiveRef.current.value = checked ? "1" : "0";
-                  }
-                }}
+                render={({ field }) => (
+                  <Switch
+                    id="is_active"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                  />
+                )}
               />
             </div>
           </CardContent>
