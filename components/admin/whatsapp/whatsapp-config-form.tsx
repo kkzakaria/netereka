@@ -35,6 +35,19 @@ function isFieldName(value: string): value is (typeof FIELD_NAMES)[number] {
   return (FIELD_NAMES as readonly string[]).includes(value);
 }
 
+/**
+ * Construit la valeur `aria-describedby` d'un champ : le message d'erreur quand il
+ * est affiché, plus l'indication de format quand le champ en porte une. `aria-invalid`
+ * seul fait annoncer « champ invalide » par un lecteur d'écran sans jamais dire
+ * pourquoi — la relation doit être explicite pour que le message soit lu.
+ */
+function fieldDescribedBy(name: string, error: unknown, hasHint: boolean): string | undefined {
+  const ids: string[] = [];
+  if (error) ids.push(`${name}-error`);
+  if (hasHint) ids.push(`${name}-hint`);
+  return ids.length > 0 ? ids.join(" ") : undefined;
+}
+
 export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
   const [isPending, startTransition] = useTransition();
   const [showAccessToken, setShowAccessToken] = useState(false);
@@ -108,14 +121,15 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 id="display_phone_number"
                 {...register("display_phone_number")}
                 aria-invalid={!!errors.display_phone_number}
+                aria-describedby={fieldDescribedBy("display_phone_number", errors.display_phone_number, true)}
                 placeholder="Ex: 2250700000001"
               />
               {errors.display_phone_number && (
-                <p className="text-sm text-destructive">
+                <p id="display_phone_number-error" className="text-sm text-destructive">
                   {errors.display_phone_number.message}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p id="display_phone_number-hint" className="text-xs text-muted-foreground">
                 Format international sans « + », entre 8 et 15 chiffres. Utilisé pour les liens wa.me.
               </p>
             </div>
@@ -138,14 +152,15 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 id="phone_number_id"
                 {...register("phone_number_id")}
                 aria-invalid={!!errors.phone_number_id}
+                aria-describedby={fieldDescribedBy("phone_number_id", errors.phone_number_id, true)}
                 placeholder="Ex: 123456789012345"
               />
               {errors.phone_number_id && (
-                <p className="text-sm text-destructive">
+                <p id="phone_number_id-error" className="text-sm text-destructive">
                   {errors.phone_number_id.message}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p id="phone_number_id-hint" className="text-xs text-muted-foreground">
                 ID opaque fourni par Meta (différent du numéro public).
               </p>
             </div>
@@ -156,10 +171,11 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 id="business_account_id"
                 {...register("business_account_id")}
                 aria-invalid={!!errors.business_account_id}
+                aria-describedby={fieldDescribedBy("business_account_id", errors.business_account_id, false)}
                 placeholder="Ex: 123456789012345"
               />
               {errors.business_account_id && (
-                <p className="text-sm text-destructive">
+                <p id="business_account_id-error" className="text-sm text-destructive">
                   {errors.business_account_id.message}
                 </p>
               )}
@@ -173,6 +189,7 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                   type={showAccessToken ? "text" : "password"}
                   {...register("access_token")}
                   aria-invalid={!!errors.access_token}
+                  aria-describedby={fieldDescribedBy("access_token", errors.access_token, false)}
                   placeholder="EAAxxxxxxxx..."
                   className="flex-1"
                 />
@@ -187,7 +204,7 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 </Button>
               </div>
               {errors.access_token && (
-                <p className="text-sm text-destructive">
+                <p id="access_token-error" className="text-sm text-destructive">
                   {errors.access_token.message}
                 </p>
               )}
@@ -199,10 +216,11 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 id="verify_token"
                 {...register("verify_token")}
                 aria-invalid={!!errors.verify_token}
+                aria-describedby={fieldDescribedBy("verify_token", errors.verify_token, false)}
                 placeholder="Token de vérification du webhook"
               />
               {errors.verify_token && (
-                <p className="text-sm text-destructive">
+                <p id="verify_token-error" className="text-sm text-destructive">
                   {errors.verify_token.message}
                 </p>
               )}
@@ -216,6 +234,7 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                   type={showWebhookSecret ? "text" : "password"}
                   {...register("webhook_secret")}
                   aria-invalid={!!errors.webhook_secret}
+                  aria-describedby={fieldDescribedBy("webhook_secret", errors.webhook_secret, false)}
                   placeholder="Secret HMAC pour valider les webhooks"
                   className="flex-1"
                 />
@@ -230,7 +249,7 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 </Button>
               </div>
               {errors.webhook_secret && (
-                <p className="text-sm text-destructive">
+                <p id="webhook_secret-error" className="text-sm text-destructive">
                   {errors.webhook_secret.message}
                 </p>
               )}
@@ -251,14 +270,15 @@ export function WhatsAppConfigForm({ config }: WhatsAppConfigFormProps) {
                 rows={3}
                 {...register("admin_phones")}
                 aria-invalid={!!errors.admin_phones}
+                aria-describedby={fieldDescribedBy("admin_phones", errors.admin_phones, true)}
                 placeholder='["2250700000001", "2250700000002"]'
               />
               {errors.admin_phones && (
-                <p className="text-sm text-destructive">
+                <p id="admin_phones-error" className="text-sm text-destructive">
                   {errors.admin_phones.message}
                 </p>
               )}
-              <p className="text-muted-foreground text-xs">
+              <p id="admin_phones-hint" className="text-muted-foreground text-xs">
                 Tableau JSON des numéros WhatsApp qui recevront les alertes d&apos;escalade
                 (avec indicatif pays, sans « + »). Ex&nbsp;: <code>[&quot;2250700000001&quot;]</code>
               </p>
