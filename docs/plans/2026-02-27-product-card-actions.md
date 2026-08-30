@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Create `actions/variants.ts`
+## Task 1: Create `actions/variants.ts`
 
 **Files:**
 - Create: `actions/variants.ts`
@@ -116,7 +116,7 @@ git commit -m "feat(variants): add getProductVariants server action"
 
 ---
 
-### Task 2: Create `components/storefront/variant-picker-dialog.tsx`
+## Task 2: Create `components/storefront/variant-picker-dialog.tsx`
 
 This dialog is opened by `ProductCardActions` when a multi-variant product's cart button is clicked. It fetches variants lazily, lets the user pick one, then adds to cart and closes.
 
@@ -256,7 +256,7 @@ git commit -m "feat(product-card): add VariantPickerDialog for multi-variant pro
 
 ---
 
-### Task 3: Create `components/storefront/product-card-actions.tsx`
+## Task 3: Create `components/storefront/product-card-actions.tsx`
 
 Client component that renders the two action buttons at the bottom of the card.
 
@@ -367,7 +367,7 @@ git commit -m "feat(product-card): add ProductCardActions with cart and wishlist
 
 ---
 
-### Task 4: Integrate `ProductCardActions` into `ProductCard`
+## Task 4: Integrate `ProductCardActions` into `ProductCard`
 
 **Files:**
 - Modify: `components/storefront/product-card.tsx`
@@ -387,7 +387,7 @@ import { ProductCardActions } from "@/components/storefront/product-card-actions
 ```
 
 Final structure inside `<Link>`:
-```
+```tsx
 <Link>
   {/* Image */}
   <div>...</div>
@@ -422,7 +422,7 @@ git commit -m "feat(product-card): integrate cart and wishlist action buttons"
 
 ---
 
-### Task 5: Create branch and open PR
+## Task 5: Create branch and open PR
 
 **Step 1: Create branch (at start of implementation — do this first)**
 

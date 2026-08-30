@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1 : Branche de travail
+## Task 1 : Branche de travail
 
 **Files:**
 - Aucun
@@ -31,7 +31,7 @@ Expected output : `feat/cloudflare-image-loader`
 
 ---
 
-### Task 2 : Tests du loader
+## Task 2 : Tests du loader
 
 **Files:**
 - Create: `__tests__/unit/cloudflare-image-loader.test.ts`
@@ -143,7 +143,7 @@ Expected : FAIL — `Cannot find module '@/lib/utils/cloudflare-image-loader'`
 
 ---
 
-### Task 3 : Implémenter le loader
+## Task 3 : Implémenter le loader
 
 **Files:**
 - Create: `lib/utils/cloudflare-image-loader.ts`
@@ -186,7 +186,7 @@ git commit -m "feat(images): add Cloudflare Image Resizing custom loader"
 
 ---
 
-### Task 4 : Brancher le loader dans Next.js
+## Task 4 : Brancher le loader dans Next.js
 
 **Files:**
 - Modify: `next.config.ts`
@@ -242,7 +242,7 @@ git commit -m "feat(images): plug Cloudflare loader into next.config.ts"
 
 ---
 
-### Task 5 : PR et déploiement
+## Task 5 : PR et déploiement
 
 **Step 1 : Pousser la branche**
 
@@ -288,8 +288,11 @@ EOF
 **Step 3 : Merger**
 
 ```bash
-gh pr merge --squash --delete-branch --admin
+gh pr merge --squash --delete-branch
 ```
+
+> Ne pas ajouter `--admin` : ce flag contourne les protections de branche (CI et revues requises).
+> Attendre que la CI passe et que la PR soit approuvée.
 
 ---
 
