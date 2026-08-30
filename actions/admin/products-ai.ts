@@ -2,9 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
+import { and, eq, ne, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { requireAdmin } from "@/lib/auth/guards";
-import { execute, queryFirst } from "@/lib/db";
-import { getDB } from "@/lib/cloudflare/context";
+import { getDrizzle } from "@/lib/db/drizzle";
+import { categories, productAttributes, productImages, products } from "@/lib/db/schema";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { fetchAndUploadImage, type FetchImageResult } from "@/lib/ai/image-fetch";
@@ -21,6 +23,9 @@ import {
 type ImportResult = ActionResult & { id?: string; warnings?: string[] };
 
 type FetchSuccess = Extract<FetchImageResult, { ok: true }>;
+
+/** Statements queued for the single D1 batch (one implicit transaction). */
+type Statement = BatchItem<"sqlite">;
 
 /** Create a draft + populate every AI-sourced field + attach selected images.
  *  Price, stock, SKU, visibility flags remain at their draft defaults; the admin
@@ -63,23 +68,33 @@ export async function importCandidateImages(
   const featureBlocks = storyFeatureBlocks.data;
   const faq = storyFaq.data;
 
+  const db = await getDrizzle();
+
   const draftId = nanoid();
   const placeholderSlug = `draft-${draftId}`;
   try {
-    await execute(
-      `INSERT INTO products (id, category_id, name, slug, base_price, is_active, is_draft, created_at, updated_at)
-       VALUES (?, NULL, '', ?, 0, 0, 1, datetime('now'), datetime('now'))`,
-      [draftId, placeholderSlug],
-    );
+    await db.insert(products).values({
+      id: draftId,
+      category_id: null,
+      name: "",
+      slug: placeholderSlug,
+      base_price: 0,
+      is_active: 0,
+      is_draft: 1,
+      created_at: sql`datetime('now')`,
+      updated_at: sql`datetime('now')`,
+    });
   } catch (err) {
     console.error("[admin/products-ai] draft insert failed", err);
     return { success: false, error: "Erreur lors de la création du brouillon" };
   }
 
-  const category = await queryFirst<{ id: string }>(
-    "SELECT id FROM categories WHERE LOWER(slug) = LOWER(?) LIMIT 1",
-    [output.category_suggestion],
-  );
+  const category = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(sql`lower(${categories.slug}) = lower(${output.category_suggestion})`)
+    .limit(1)
+    .get();
   const categoryId = category?.id ?? null;
 
   const baseSlug = slugify(output.name);
@@ -89,10 +104,12 @@ export async function importCandidateImages(
   if (baseSlug) {
     let candidate = baseSlug;
     for (let suffix = 1; suffix <= 20; suffix++) {
-      const taken = await queryFirst<{ id: string }>(
-        "SELECT id FROM products WHERE slug = ? AND id != ? LIMIT 1",
-        [candidate, draftId],
-      );
+      const taken = await db
+        .select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.slug, candidate), ne(products.id, draftId)))
+        .limit(1)
+        .get();
       if (!taken) { finalSlug = candidate; break; }
       candidate = `${baseSlug}-${suffix + 1}`;
     }
@@ -119,40 +136,37 @@ export async function importCandidateImages(
     ? sanitizeDescriptionHtml(output.description_html, draftId)
     : null;
 
-  const db = await getDB();
-  const stmts: ReturnType<typeof db.prepare>[] = [];
-
-  stmts.push(
-    db.prepare(
-      `UPDATE products SET
-         category_id = ?, name = ?, slug = ?, brand = ?,
-         description = ?, description_type = 'html', short_description = ?,
-         meta_title = ?, meta_description = ?,
-         tagline = ?, highlights = ?, feature_blocks = ?, faq = ?,
-         updated_at = datetime('now')
-       WHERE id = ? AND is_draft = 1`,
-    ).bind(
-      categoryId,
-      output.name,
-      finalSlug,
-      output.brand ?? null,
-      descriptionHtml,
-      output.short_description ?? null,
-      output.seo.meta_title ?? null,
-      output.seo.meta_description ?? null,
+  // The UPDATE always leads the batch, which keeps the array non-empty for db.batch().
+  const productUpdate: Statement = db
+    .update(products)
+    .set({
+      category_id: categoryId,
+      name: output.name,
+      slug: finalSlug,
+      brand: output.brand ?? null,
+      description: descriptionHtml,
+      description_type: "html",
+      short_description: output.short_description ?? null,
+      meta_title: output.seo.meta_title ?? null,
+      meta_description: output.seo.meta_description ?? null,
       tagline,
-      highlights ? JSON.stringify(highlights) : null,
-      featureBlocks ? JSON.stringify(featureBlocks) : null,
-      faq ? JSON.stringify(faq) : null,
-      draftId,
-    ),
-  );
+      highlights: highlights ? JSON.stringify(highlights) : null,
+      feature_blocks: featureBlocks ? JSON.stringify(featureBlocks) : null,
+      faq: faq ? JSON.stringify(faq) : null,
+      updated_at: sql`datetime('now')`,
+    })
+    .where(and(eq(products.id, draftId), eq(products.is_draft, 1)));
+
+  const stmts: Statement[] = [];
 
   for (const c of output.attributes.colors) {
     stmts.push(
-      db.prepare(
-        `INSERT INTO product_attributes (id, product_id, name, value) VALUES (?, ?, 'Couleur', ?)`,
-      ).bind(nanoid(), draftId, `${c.name}|${c.hex}`),
+      db.insert(productAttributes).values({
+        id: nanoid(),
+        product_id: draftId,
+        name: "Couleur",
+        value: `${c.name}|${c.hex}`,
+      }),
     );
   }
   const dims = output.attributes.dimensions;
@@ -165,30 +179,43 @@ export async function importCandidateImages(
   for (const [label, val] of dimFields) {
     if (val != null) {
       stmts.push(
-        db.prepare(`INSERT INTO product_attributes (id, product_id, name, value) VALUES (?, ?, ?, ?)`)
-          .bind(nanoid(), draftId, label, String(val)),
+        db.insert(productAttributes).values({
+          id: nanoid(),
+          product_id: draftId,
+          name: label,
+          value: String(val),
+        }),
       );
     }
   }
   for (const s of output.attributes.specs) {
     stmts.push(
-      db.prepare(`INSERT INTO product_attributes (id, product_id, name, value) VALUES (?, ?, ?, ?)`)
-        .bind(nanoid(), draftId, s.name, s.value),
+      db.insert(productAttributes).values({
+        id: nanoid(),
+        product_id: draftId,
+        name: s.name,
+        value: s.value,
+      }),
     );
   }
 
   succeeded.forEach(({ url, r }, idx) => {
     const alt = output.image_candidates.find((c) => c.url === url)?.alt ?? null;
     stmts.push(
-      db.prepare(
-        `INSERT INTO product_images (id, product_id, url, alt, is_primary, sort_order, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-      ).bind(nanoid(), draftId, r.key, alt, idx === 0 ? 1 : 0, idx),
+      db.insert(productImages).values({
+        id: nanoid(),
+        product_id: draftId,
+        url: r.key,
+        alt,
+        is_primary: idx === 0 ? 1 : 0,
+        sort_order: idx,
+        created_at: sql`datetime('now')`,
+      }),
     );
   });
 
   try {
-    await db.batch(stmts);
+    await db.batch([productUpdate, ...stmts]);
   } catch (err) {
     console.error("[admin/products-ai] batch write failed", err);
     // Compensating cleanup — the draft row, any pending attribute/image inserts,
@@ -199,7 +226,7 @@ export async function importCandidateImages(
       ...succeeded.map(({ r }) => deleteFromR2(r.key).catch((e) => {
         console.warn("[admin/products-ai] orphan R2 cleanup failed for key", r.key, e);
       })),
-      execute("DELETE FROM products WHERE id = ?", [draftId]).catch((e) => {
+      db.delete(products).where(eq(products.id, draftId)).catch((e) => {
         console.warn("[admin/products-ai] orphan draft cleanup failed for id", draftId, e);
       }),
     ]);
