@@ -18,6 +18,24 @@ const SOURCE = readFileSync(
 const BUTTON_SIZE_RE = /<Button\b[^>]*?\bsize="([^"]+)"/g;
 const TOUCH_SIZES = ["touch", "icon-touch"];
 
+/**
+ * Vrai pour une classe de dimension non préfixée qui rendrait le bouton plus court
+ * que 44 px. Décide sur la valeur plutôt que sur une énumération : une liste figée
+ * (`h-0`…`h-10`) laissait passer `size-10` — la famille même qui pilote les boutons
+ * icônes — et les valeurs arbitraires comme `h-[40px]`.
+ */
+function isSubTouch(token: string): boolean {
+  const match = /^(?:h|size)-(.+)$/.exec(token);
+  if (!match) return false;
+  const value = match[1];
+  // Échelle Tailwind : 1 unité = 4 px, donc 44 px = 11.
+  if (/^\d+(?:\.\d+)?$/.test(value)) return parseFloat(value) * 4 < 44;
+  const arbitraryPx = /^\[(\d+(?:\.\d+)?)px\]$/.exec(value);
+  if (arbitraryPx) return parseFloat(arbitraryPx[1]) < 44;
+  // rem, %, calc()… non décidables statiquement : hors périmètre de ce garde.
+  return false;
+}
+
 describe("step-variants — cibles tactiles 44 px (#147)", () => {
   it("déclare une taille explicite sur chaque <Button>", () => {
     const buttonCount = (SOURCE.match(/<Button\b/g) ?? []).length;
@@ -39,7 +57,7 @@ describe("step-variants — cibles tactiles 44 px (#147)", () => {
     const classNames = [...SOURCE.matchAll(/className="([^"]*)"/g)].map((m) => m[1]);
     const subTouch = classNames
       .flatMap((cls) => cls.split(/\s+/))
-      .filter((token) => /^h-(?:[0-9]|10)$/.test(token));
+      .filter(isSubTouch);
     expect(subTouch).toEqual([]);
   });
 });
