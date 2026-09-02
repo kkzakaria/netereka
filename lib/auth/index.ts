@@ -256,9 +256,13 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         // their token request to it.
         resource: `${cfEnv.SITE_URL}/api/mcp`,
         oidcConfig: {
-          // OIDCOptions.loginPage is distinct from the top-level MCPOptions
-          // one above (used if a client requests the `login` prompt) and is
-          // required by the type — same admin login page in both places.
+          // OIDCOptions.loginPage is required by the type, but the plugin
+          // unconditionally overwrites it with the outer options.loginPage
+          // above (better-auth/dist/plugins/mcp/index.mjs: `{ ...defaults,
+          // ...options.oidcConfig, loginPage: options.loginPage, ... }` —
+          // the spread runs first, so this value is never read). Kept
+          // identical to the outer one purely so the two literals don't
+          // drift apart; it has no effect on runtime behaviour.
           loginPage: "/admin/login",
           consentPage: "/admin/mcp/consent",
           requirePKCE: true,
