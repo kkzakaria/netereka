@@ -1,11 +1,13 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { captcha, emailOTP, admin } from "better-auth/plugins";
+import { captcha, emailOTP, admin, mcp } from "better-auth/plugins";
+import { createAuthMiddleware } from "better-auth/api";
 import { createAccessControl } from "better-auth/plugins/access";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 import { sendEmail } from "@/lib/notifications/email";
 import { otpEmail } from "@/lib/notifications/templates";
+import { forceConsentQuery } from "@/lib/auth/mcp-consent-hook";
 
 // Statement universe for the better-auth admin plugin's ACL: every action
 // any role declared below may be granted. Scoped to what a role in this app
@@ -198,6 +200,16 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         maxAge: 5 * 60,
       },
     },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        // See lib/auth/mcp-consent-hook.ts — every /mcp/authorize must show
+        // the consent page. Returning { context } merges into the endpoint
+        // context (better-auth/dist/api/dispatch.mjs, defuReplaceArrays).
+        const query = forceConsentQuery(ctx.path, ctx.query as Record<string, unknown> | undefined);
+        if (!query) return;
+        return { context: { query } };
+      }),
+    },
     plugins: [
       admin({
         defaultRole: "customer",
@@ -237,6 +249,20 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         allowedAttempts: 3,
         sendVerificationOnSignUp: true,
         overrideDefaultEmailVerification: true,
+      }),
+      mcp({
+        loginPage: "/admin/login",
+        // Advertised in the protected-resource metadata; MCP clients bind
+        // their token request to it.
+        resource: `${cfEnv.SITE_URL}/api/mcp`,
+        oidcConfig: {
+          // OIDCOptions.loginPage is distinct from the top-level MCPOptions
+          // one above (used if a client requests the `login` prompt) and is
+          // required by the type — same admin login page in both places.
+          loginPage: "/admin/login",
+          consentPage: "/admin/mcp/consent",
+          requirePKCE: true,
+        },
       }),
     ],
     trustedOrigins: [
