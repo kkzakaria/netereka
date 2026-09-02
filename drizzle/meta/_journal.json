@@ -120,6 +120,13 @@
       "when": 1784974150690,
       "tag": "0016_chief_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788391162706,
+      "tag": "0017_sticky_calypso",
+      "breakpoints": true
     }
   ]
 }

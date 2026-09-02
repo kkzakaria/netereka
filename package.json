@@ -55,6 +55,7 @@
     "@lexical/rich-text": "^0.41.0",
     "@lexical/selection": "^0.41.0",
     "@lexical/utils": "^0.41.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@opennextjs/cloudflare": "^1.16.4",
     "@tailwindcss/typography": "^0.5.19",
     "better-auth": "^1.6.25",
