@@ -348,6 +348,206 @@ export async function deleteDraft(id: string): Promise<void> {
   }
 }
 
-// ─── Images and variants: see Task 8 ───
-export { fetchAndUploadImage as _fetchAndUploadImage };
-export type { FetchImageResult as _FetchImageResult, AddImagesInput as _AddImagesInput, SetVariantsInput as _SetVariantsInput };
+// ─── Images ───
+
+export interface ImageImportResult {
+  url: string;
+  ok: boolean;
+  image_id?: string;
+  reason?: string;
+}
+
+type FetchSuccess = Extract<FetchImageResult, { ok: true }>;
+
+export async function addImagesFromUrls(
+  id: string,
+  images: AddImagesInput["images"],
+): Promise<{ results: ImageImportResult[]; primary_image_id: string | null }> {
+  const db = await getDrizzle();
+  await requireDraft(db, id);
+
+  const existing = await db
+    .select({ id: productImages.id, is_primary: productImages.is_primary, sort_order: productImages.sort_order })
+    .from(productImages)
+    .where(eq(productImages.product_id, id))
+    .all();
+
+  if (existing.length + images.length > MAX_IMAGES_PER_PRODUCT) {
+    throw new DraftError(
+      "limit_exceeded",
+      `Au plus ${MAX_IMAGES_PER_PRODUCT} images par produit (${existing.length} déjà présentes)`,
+    );
+  }
+
+  const fetched = await Promise.all(
+    images.map(async (img) => ({ img, r: await fetchAndUploadImage(id, img.url) })),
+  );
+  const succeeded = fetched.filter((x): x is { img: typeof x.img; r: FetchSuccess } => x.r.ok);
+
+  let primaryId: string | null = existing.find((e) => e.is_primary === 1)?.id ?? null;
+  let nextSort = existing.reduce((max, e) => Math.max(max, e.sort_order + 1), 0);
+
+  const idByUrl = new Map<string, string>();
+  const stmts: Statement[] = [];
+  for (const { img, r } of succeeded) {
+    const imageId = nanoid();
+    idByUrl.set(img.url, imageId);
+    const isPrimary = primaryId === null ? 1 : 0;
+    if (isPrimary) primaryId = imageId;
+    stmts.push(
+      db.insert(productImages).values({
+        id: imageId,
+        product_id: id,
+        url: r.key,
+        alt: img.alt ?? null,
+        is_primary: isPrimary,
+        sort_order: nextSort++,
+        created_at: sql`datetime('now')`,
+      }),
+    );
+  }
+
+  if (stmts.length > 0) {
+    try {
+      await db.batch(stmts as Batch);
+    } catch (err) {
+      console.error("[product-drafts] image batch failed, cleaning R2", { id }, err);
+      await Promise.allSettled(succeeded.map(({ r }) => deleteFromR2(r.key)));
+      throw err;
+    }
+  }
+
+  const results: ImageImportResult[] = fetched.map(({ img, r }) =>
+    r.ok ? { url: img.url, ok: true, image_id: idByUrl.get(img.url) } : { url: img.url, ok: false, reason: r.reason },
+  );
+  if (fetched.some((f) => !f.r.ok)) {
+    console.error("[product-drafts] image fetch failures", { id }, results.filter((x) => !x.ok));
+  }
+  return { results, primary_image_id: primaryId };
+}
+
+export async function removeImage(id: string, imageId: string): Promise<void> {
+  const db = await getDrizzle();
+  await requireDraft(db, id);
+
+  const img = await db
+    .select({ id: productImages.id, url: productImages.url, is_primary: productImages.is_primary })
+    .from(productImages)
+    .where(and(eq(productImages.id, imageId), eq(productImages.product_id, id)))
+    .limit(1)
+    .get();
+  if (!img) throw new DraftError("not_found", "Image introuvable sur ce brouillon");
+
+  const stmts: Batch = [db.delete(productImages).where(eq(productImages.id, imageId))];
+  if (img.is_primary === 1) {
+    const next = await db
+      .select({ id: productImages.id })
+      .from(productImages)
+      .where(and(eq(productImages.product_id, id), ne(productImages.id, imageId)))
+      .orderBy(asc(productImages.sort_order))
+      .limit(1)
+      .get();
+    if (next) stmts.push(db.update(productImages).set({ is_primary: 1 }).where(eq(productImages.id, next.id)));
+  }
+  await db.batch(stmts);
+
+  await deleteFromR2(r2KeyFromImageUrl(img.url)).catch((e) => {
+    console.warn("[product-drafts] orphan R2 object after removeImage", img.url, e);
+  });
+}
+
+// ─── Colour variants ───
+
+export interface VariantRow {
+  id: string;
+  color_name: string;
+  color_hex: string;
+  price: number;
+  stock: number;
+}
+
+/** Wizard convention (step-pricing.tsx): `{ color: "<name>:<#hex>" }`. */
+function colorKey(name: string, hex: string): string {
+  return `${name}:${hex}`;
+}
+
+/** Port of actions/admin/products.ts saveColorVariants, Drizzle + draft-only. */
+export async function setColorVariants(
+  id: string,
+  input: SetVariantsInput,
+): Promise<{ variants: VariantRow[]; stock_quantity: number }> {
+  const db = await getDrizzle();
+  const product = await db
+    .select({ id: products.id, slug: products.slug, base_price: products.base_price, compare_price: products.compare_price })
+    .from(products)
+    .where(and(eq(products.id, id), eq(products.is_draft, 1)))
+    .limit(1)
+    .get();
+  if (!product) throw new DraftError("not_found", "Brouillon introuvable (ou produit déjà publié)");
+
+  const existing = await db
+    .select({ id: productVariants.id, attributes: productVariants.attributes })
+    .from(productVariants)
+    .where(eq(productVariants.product_id, id))
+    .all();
+
+  // Only colour-only variants (single "color" key) are managed here.
+  const existingByColor = new Map<string, string>();
+  for (const v of existing) {
+    try {
+      const attrs = JSON.parse(v.attributes) as Record<string, unknown>;
+      const keys = Object.keys(attrs);
+      if (keys.length === 1 && keys[0] === "color" && typeof attrs.color === "string") existingByColor.set(attrs.color, v.id);
+    } catch (e) {
+      console.error("[product-drafts] malformed variant attributes", v.id, e);
+    }
+  }
+
+  const stmts: Statement[] = [];
+  const out: VariantRow[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+
+  input.variants.forEach((entry, index) => {
+    const key = colorKey(entry.color_name, entry.color_hex);
+    seen.add(key);
+    const price = input.uniform_price || entry.price == null ? product.base_price : entry.price;
+    const comparePrice = input.uniform_price ? product.compare_price : null;
+    const attrs = JSON.stringify({ color: key });
+    total += entry.stock;
+
+    const existingId = existingByColor.get(key);
+    const variantId = existingId ?? nanoid();
+    if (existingId) {
+      stmts.push(
+        db.update(productVariants)
+          .set({ name: entry.color_name, price, compare_price: comparePrice, stock_quantity: entry.stock, attributes: attrs })
+          .where(eq(productVariants.id, existingId)),
+      );
+    } else {
+      stmts.push(
+        db.insert(productVariants).values({
+          id: variantId, product_id: id, name: entry.color_name, price, compare_price: comparePrice,
+          stock_quantity: entry.stock, attributes: attrs, is_active: 1, sort_order: index,
+          created_at: sql`datetime('now')`,
+        }),
+      );
+    }
+    out.push({ id: variantId, color_name: entry.color_name, color_hex: entry.color_hex, price, stock: entry.stock });
+  });
+
+  for (const [key, variantId] of existingByColor) {
+    if (seen.has(key)) continue;
+    stmts.push(db.update(productImages).set({ variant_id: null }).where(eq(productImages.variant_id, variantId)));
+    stmts.push(db.delete(productVariants).where(eq(productVariants.id, variantId)));
+  }
+
+  stmts.push(
+    db.update(products)
+      .set({ stock_quantity: total, updated_at: sql`datetime('now')` })
+      .where(and(eq(products.id, id), eq(products.is_draft, 1))),
+  );
+
+  await db.batch(stmts as Batch);
+  return { variants: out, stock_quantity: total };
+}
