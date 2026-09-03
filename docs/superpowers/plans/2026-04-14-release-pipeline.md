@@ -26,9 +26,13 @@
 >   version dans chaque workflow la faisait diverger d'un fichier à l'autre,
 >   `.nvmrc` est désormais la source unique de vérité.
 > - `actions/checkout@v4` et `actions/setup-node@v4` → `@v5`.
-> - Les steps `checkout` réels portent en plus `persist-credentials: false`, et
->   chaque job un bloc `permissions:` explicite — durcissements absents du plan
->   d'origine, non repris dans les extraits pour ne pas les alourdir.
+> - `persist-credentials: false` sur chaque step `checkout`, et un bloc
+>   `permissions:` explicite sur chaque job. Ces deux durcissements sont absents
+>   du plan d'origine et ont été ajoutés aux extraits : `actions/checkout`
+>   persiste sinon le `GITHUB_TOKEN` dans `.git/config` (CWE-522) et un job sans
+>   bloc `permissions:` hérite des défauts du dépôt (CWE-732). Des extraits faits
+>   pour être copiés doivent porter ces contrôles, sans quoi ils propagent la
+>   faiblesse à chaque copie.
 >
 > Le reste du document (séquence des tâches, décisions d'architecture, scripts)
 > est laissé intact : c'est la trace de ce qui a été décidé à l'époque. Pour
@@ -618,10 +622,13 @@ jobs:
   lint-and-typecheck:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 0  # needed for migration-safety diff base
 
       - uses: actions/setup-node@v5
@@ -845,10 +852,13 @@ jobs:
   ci:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - uses: actions/setup-node@v5
@@ -880,6 +890,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
@@ -1070,6 +1082,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
@@ -1180,6 +1194,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
@@ -1577,9 +1593,13 @@ jobs:
   deploy:
     name: Deploy WhatsApp Worker to Cloudflare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
