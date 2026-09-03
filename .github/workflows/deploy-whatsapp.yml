@@ -16,6 +16,8 @@ jobs:
   deploy:
     name: Deploy WhatsApp Worker to Cloudflare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v5

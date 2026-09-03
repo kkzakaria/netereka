@@ -10,6 +10,8 @@ jobs:
   lint-and-typecheck:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       # persist-credentials: false keeps GITHUB_TOKEN out of .git/config, so
