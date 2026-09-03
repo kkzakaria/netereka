@@ -15,6 +15,29 @@
 
 ---
 
+> **Note d'actualisation — 2026-09-03.** Ce document est le plan tel qu'exécuté
+> en avril 2026 ; il n'est pas maintenu comme une description de l'état courant
+> du pipeline. Une divergence a depuis été corrigée dans les extraits YAML
+> ci-dessous, parce qu'ils sont faits pour être copiés-collés et
+> reconduisaient une version de Node en fin de vie :
+>
+> - `node-version: 20` → `node-version-file: .nvmrc` (le fichier `.nvmrc`, à la
+>   racine, contient `24`). Node 20 est EOL depuis avril 2026 ; épingler la
+>   version dans chaque workflow la faisait diverger d'un fichier à l'autre,
+>   `.nvmrc` est désormais la source unique de vérité.
+> - `actions/checkout@v4` et `actions/setup-node@v4` → `@v5`.
+> - Les steps `checkout` réels portent en plus `persist-credentials: false`, et
+>   chaque job un bloc `permissions:` explicite — durcissements absents du plan
+>   d'origine, non repris dans les extraits pour ne pas les alourdir.
+>
+> Le reste du document (séquence des tâches, décisions d'architecture, scripts)
+> est laissé intact : c'est la trace de ce qui a été décidé à l'époque. Pour
+> l'état courant du pipeline, la référence est
+> [`docs/RELEASE_PIPELINE.md`](../../RELEASE_PIPELINE.md) et les fichiers
+> `.github/workflows/` eux-mêmes.
+
+---
+
 ## Phase 0 — Pré-flight (actions hors-code)
 
 ### Task 0.1 : Vérifier la rétention Cloudflare Versions
@@ -597,13 +620,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0  # needed for migration-safety diff base
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -824,13 +847,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -856,11 +879,11 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -1046,11 +1069,11 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -1156,11 +1179,11 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -1556,11 +1579,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
