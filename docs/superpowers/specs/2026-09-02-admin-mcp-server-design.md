@@ -25,7 +25,7 @@ Le MCP est **généraliste** : serveur distant, transport standard, authentifica
 
 ```
 Client MCP ──POST /api/mcp (Authorization: Bearer)──▶ withMcpAuth (better-auth)
-   ▶ buildMcpContext : lecture fraîche de l'utilisateur en D1, rôle admin|super_admin, non banni
+   ▶ buildMcpContext() : lecture fraîche de l'utilisateur en D1, rôle admin|super_admin, non banni
    ▶ McpServer (SDK officiel, instance par requête, mode stateless)
    ▶ handler d'outil ──▶ lib/db/product-drafts.ts (Drizzle) ──▶ D1 / R2
    ▶ audit_log (details.via = "mcp")
@@ -41,14 +41,19 @@ Mode stateless : un `McpServer` et un transport sont créés par requête, sans 
 | `app/.well-known/oauth-authorization-server/route.ts` | `oAuthDiscoveryMetadata(auth)` — exposé à la racine car certains clients cherchent là plutôt que sous `/api/auth`. |
 | `app/.well-known/oauth-protected-resource/route.ts` | `oAuthProtectedResourceMetadata(auth)`. |
 | `lib/mcp/server.ts` | Construit le `McpServer`, enregistre les outils depuis le registre. |
-| `lib/mcp/context.ts` | `McpContext { user: { id, name, role }, clientId, clientName }` et `assertAdminContext()`. |
+| `lib/mcp/context.ts` | `McpContext { user: { id, name, role }, clientId }` et `buildMcpContext()`. |
 | `lib/mcp/result.ts` | Helpers `ok(data)` / `fail(code, message, fieldErrors?)` — format de réponse uniforme. |
 | `lib/mcp/tools/categories.ts` | `list_categories`. |
 | `lib/mcp/tools/products.ts` | Outils produits (section 4). |
+| `lib/mcp/tools/types.ts` | `ToolDefinition` et `defineTool()` — le type commun d'un outil MCP (nom, description, schéma d'entrée, handler typé sur `McpContext`). |
 | `lib/validations/mcp-product.ts` | Schémas Zod d'entrée des outils, composés à partir de `product-story.ts` et `product-ai.ts`. Aucune règle métier dupliquée. |
 | `lib/db/product-drafts.ts` | Module Drizzle portant toute la logique brouillon : création, mise à jour partielle, slug unique, images, variantes, suppression. Chaque `UPDATE`/`DELETE` porte `is_draft = 1` dans son `WHERE`. |
-| `lib/db/audit.ts` | `recordAudit()` en Drizzle. |
+| audit via `createAuditLog()` de `lib/db/admin/audit-log.ts` (existant) | Aucun nouveau module d'audit : les outils MCP réutilisent la fonction existante. |
 | `app/(admin-auth)/admin/mcp/consent/page.tsx` | Page de consentement OAuth (section 2). |
+| `app/(admin-auth)/admin/mcp/consent/consent-form.tsx` | Formulaire client du consentement : POST `{ accept, consent_code }` vers `/api/auth/oauth2/consent`. |
+| `lib/auth/mcp-consent-hook.ts` | `forceConsentQuery()` — force `prompt=consent` sur `/mcp/authorize`, fonction pure testable sans contexte better-auth. |
+| `lib/auth/mcp-consent-client.ts` | `findOAuthClientName()` et `findConsentRequest()` — résolution de la demande de consentement depuis `verification.identifier` (section 2). |
+| `lib/auth/oauth-resume.ts` | `getOAuthResumeUrl()` — reconstruit l'URL `/api/auth/mcp/authorize?...` après connexion (section 2, « Reprise après login »). |
 
 ### Fichiers modifiés
 
@@ -83,14 +88,14 @@ En 1.6.25, `authorizeMCPOAuth` émet le code **sans écran de consentement** dè
 Mitigation :
 
 - Un hook `before` sur `/mcp/authorize` force `prompt=consent` sur toute requête, quelle que soit la valeur envoyée par le client.
-- `oidcConfig.consentPage = "/admin/mcp/consent"`. La page lit `client_id` et `scope` dans ses paramètres, charge le nom du client dans `oauthApplication` (nom fourni par le client, donc affiché échappé), et propose « Autoriser » / « Refuser ». Elle appelle l'endpoint de consentement du plugin (`/api/auth/oauth2/consent`, cookie signé `oidc_consent_prompt`), qui redirige vers le client avec le code et le `state`.
-- Résultat : aucun jeton n'est émis sans un clic humain explicite sur une page du domaine.
+- `oidcConfig.consentPage = "/admin/mcp/consent"`. La page lit `consent_code` dans ses paramètres (pas `client_id`, contrôlé par l'attaquant à l'enregistrement dynamique) et résout la demande depuis `verification` (`findConsentRequest()`) : nom du client (`oauthApplication`, nom fourni par le client, donc affiché échappé) **et** hôte de redirection (`new URL(redirectURI).host`), affichés ensemble. Le formulaire poste `consent_code` à l'endpoint de consentement du plugin (`/api/auth/oauth2/consent`), qui consomme le code du corps de préférence au cookie signé `oidc_consent_prompt`, puis redirige vers le client avec le code et le `state`.
+- Résultat : aucun jeton n'est émis sans un clic humain explicite sur une page du domaine, et ce clic porte sur la même demande que celle affichée — le nom du client seul ne suffisant pas (l'attaquant peut s'enregistrer sous n'importe quel nom), l'hôte de redirection est le signal fiable.
 
-La page de consentement vit dans `(admin-auth)` (layout sans sidebar) et exige une session : sans session elle redirige vers `/admin/login` en conservant ses paramètres.
+La page de consentement vit dans `(admin-auth)` (layout sans sidebar) et exige une session : sans session elle redirige vers `/admin/login` en conservant ses paramètres. `/mcp/token` ne vérifie pas `requireConsent` : le code de consentement ne doit jamais quitter le navigateur de l'admin, d'où le `no-referrer` sur la page.
 
 ### Autorisation métier
 
-Un compte `customer` peut techniquement terminer le flux OAuth. La frontière de sécurité est `assertAdminContext()`, appelée dans `app/api/mcp/route.ts` avant toute instanciation du serveur MCP :
+Un compte `customer` peut techniquement terminer le flux OAuth. La frontière de sécurité est `buildMcpContext()`, appelée dans `app/api/mcp/route.ts` avant toute instanciation du serveur MCP :
 
 - lecture fraîche de l'utilisateur en D1 à partir de `session.userId` (pas de cache cookie, même principe que `requireAdmin()`) ;
 - rôle `admin` ou `super_admin` ;
@@ -159,7 +164,7 @@ Toutes refusent une cible qui n'est pas un brouillon (`not_found`).
 
 - Obligatoires : `name` (1–150), `category_id` (doit exister).
 - Optionnels : `brand` (≤80), `short_description` (≤120), `description_html` (passé par `sanitizeDescriptionHtml`, stocké avec `description_type = "html"`), `story { tagline, highlights[3–6], feature_blocks[2–4], faq[≤5] }`, `seo { meta_title ≤60, meta_description ≤160 }`, `attributes { colors[≤12], dimensions { length_mm, height_mm, width_mm, weight_g }, specs[≤20] }`, `pricing { base_price, compare_price, sku, stock_quantity, low_stock_threshold, weight_grams }`.
-- Les schémas `story` et `attributes` sont ceux de `lib/validations/product-story.ts` et `lib/validations/product-ai.ts`, réutilisés tels quels.
+- Les schémas `story` et `attributes` sont ceux de `lib/validations/product-story.ts` et `lib/validations/product-ai.ts`, réutilisés tels quels. `product-ai.ts` exporte désormais ses trois sous-schémas d'attributs (`colorSchema`, `dimensionsSchema`, `specSchema`) pour cette réutilisation.
 - Les couleurs s'écrivent en attributs `Couleur` = `nom|#hex`, les dimensions en `Longueur`, `Hauteur`, `Largeur`, `Poids` (convention du wizard et de `products-ai.ts`).
 - Slug généré depuis le nom via `slugify`, suffixe anti-collision (`-2`, `-3`, … jusqu'à 20 essais, puis slug placeholder `draft-<id>`), même logique que `products-ai.ts`.
 - `base_price` par défaut 0 si absent : le brouillon peut être créé avant la tarification et complété ensuite.
@@ -197,11 +202,11 @@ Toutes refusent une cible qui n'est pas un brouillon (`not_found`).
 
 - Aucun outil n'accepte ni n'écrit `is_draft`, `is_active`, `is_featured`.
 - Chaque `UPDATE`/`DELETE` porte `is_draft = 1` dans son `WHERE`.
-- Chaque outil d'écriture enregistre une ligne `audit_log` : `actor_id`/`actor_name` = admin porteur du jeton, `target_type = "product"`, `details = { via: "mcp", tool, client_id, client_name }`.
+- Chaque outil d'écriture enregistre une ligne `audit_log` : `actor_id`/`actor_name` = admin porteur du jeton, `target_type = "product"`, `details = { via: "mcp", tool, client_id }`.
 
 ## 5. Gestion d'erreurs
 
-- **Avant les outils** : 401 par `withMcpAuth` (jeton absent, invalide ou expiré), 403 par `assertAdminContext` (rôle insuffisant, ban, utilisateur supprimé). Réponses JSON-RPC ; le serveur MCP n'est jamais instancié.
+- **Avant les outils** : 401 par `withMcpAuth` (jeton absent, invalide ou expiré), 403 par `buildMcpContext` (rôle insuffisant, ban, utilisateur supprimé). Réponses JSON-RPC ; le serveur MCP n'est jamais instancié.
 - **Codes d'erreur d'outil** : `validation_error` (avec `fieldErrors`), `not_found`, `conflict` (slug ou SKU déjà pris), `limit_exceeded`, `internal_error`. Messages en français, destinés à être relayés à l'admin par l'IA.
 - **Atomicité** : écritures multi-tables via `db.batch` (une transaction D1 implicite), comme `importCandidateImages`. Pour les images : upload R2 d'abord, puis batch d'insertion ; en cas d'échec du batch, suppression compensatoire des objets R2 uploadés, échecs de nettoyage journalisés mais non propagés.
 - **Journalisation** : `console.error("[mcp/<outil>] …")` avec l'id du produit et de l'utilisateur, jamais le jeton. Workers Logs retient 7 jours.
@@ -212,7 +217,7 @@ Toutes refusent une cible qui n'est pas un brouillon (`not_found`).
 ### Unitaires (Vitest, `__tests__/unit/`)
 
 - `lib/validations/mcp-product.ts` : bornes, hex, tailles de listes, `null` vs absent.
-- `assertAdminContext` : `customer` → 403, banni → 403, `admin`/`super_admin` → ok, utilisateur inexistant → 403.
+- `buildMcpContext` : `customer` → 403, banni → 403, `admin`/`super_admin` → ok, utilisateur inexistant → 403.
 - Hook `before` sur `/mcp/authorize` : `prompt=consent` forcé quelle que soit l'entrée (absent, `none`, `login`).
 - Handlers d'outils avec `product-drafts` mocké : mapping des erreurs, forme des résultats, succès partiel des images, refus d'un produit publié, audit enregistré.
 - `product-drafts.ts` : génération de slug avec collisions, calcul de `stock_quantity` des variantes, réattribution de l'image primaire, sur le pattern de mock DB des tests existants.

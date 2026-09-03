@@ -208,6 +208,7 @@ Remote MCP endpoint at `POST /api/mcp` (Streamable HTTP, stateless) for AI clien
 - **Audit:** each write tool records `product.draft_*` in `audit_log` with `details.via = "mcp"`.
 - **Local test:** `claude mcp add --transport http netereka-local http://localhost:3000/api/mcp`, then `/mcp` in Claude Code. Discovery documents: `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`.
 - **Adding a tool:** `defineTool({ name, description, inputSchema: <zod raw shape>, handler })` in a `lib/mcp/tools/*.ts` file, add it to `ALL_TOOLS`, map domain errors to `fail(code, message)`; never let a stack trace reach the client.
+- **Consent page:** `/admin/mcp/consent` must keep showing the redirect host and posting the `consent_code` it displayed — `/mcp/token` does not check `requireConsent`, so the consent code must never leave the admin's browser (page is `no-referrer`).
 
 ## Release Pipeline
 
