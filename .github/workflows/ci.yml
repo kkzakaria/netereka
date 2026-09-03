@@ -12,8 +12,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # persist-credentials: false keeps GITHUB_TOKEN out of .git/config, so
+      # the repo code this job then runs (npm ci and its postinstall scripts)
+      # can't read it back out. Safe here despite fetch-depth: 0 — that flag
+      # makes checkout fetch every ref up front, and check-migration-safety.mjs
+      # only ever runs `git diff` against refs already on disk. Nothing in this
+      # job fetches or pushes after checkout, so the token has no reader left.
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 0  # needed for migration-safety diff base (origin/<base>...HEAD)
 
       - uses: actions/setup-node@v5
