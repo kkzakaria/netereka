@@ -198,6 +198,17 @@ Public number flow: `getPublicWhatsAppNumber()` (server, React-cached) → `What
 
 Masked secret pattern: admin config form shows secrets as `••••••••` + last 4 chars. Detect "unchanged" on save by exact equality against the expected mask (not `startsWith("••")`), otherwise a real secret starting with bullets gets silently discarded.
 
+## Admin MCP Server
+
+Remote MCP endpoint at `POST /api/mcp` (Streamable HTTP, stateless) for AI clients (claude.ai, Claude Desktop, Claude Code, ChatGPT, Cursor…). Spec: `docs/superpowers/specs/2026-09-02-admin-mcp-server-design.md`.
+
+- **Auth:** OAuth 2.1 via better-auth's `mcp` plugin (`lib/auth/index.ts`). Dynamic client registration is open, so `lib/auth/mcp-consent-hook.ts` forces `prompt=consent` on every `/mcp/authorize` and `/admin/mcp/consent` requires a human click — without it a signed-in admin could be phished into issuing a token silently. Do not remove the hook.
+- **Authorization:** `lib/mcp/context.ts` re-reads the user from D1 on every request; only `admin`/`super_admin`, not banned. A `customer` can finish the OAuth flow but every call gets 403.
+- **Tools:** `lib/mcp/tools/*.ts`, registered by `lib/mcp/server.ts`. All product writes go through `lib/db/product-drafts.ts`, whose every UPDATE/DELETE carries `is_draft = 1`. No tool can publish; that stays in the wizard.
+- **Audit:** each write tool records `product.draft_*` in `audit_log` with `details.via = "mcp"`.
+- **Local test:** `claude mcp add --transport http netereka-local http://localhost:3000/api/mcp`, then `/mcp` in Claude Code. Discovery documents: `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`.
+- **Adding a tool:** `defineTool({ name, description, inputSchema: <zod raw shape>, handler })` in a `lib/mcp/tools/*.ts` file, add it to `ALL_TOOLS`, map domain errors to `fail(code, message)`; never let a stack trace reach the client.
+
 ## Release Pipeline
 
 Full reference : **[`docs/RELEASE_PIPELINE.md`](./docs/RELEASE_PIPELINE.md)**.

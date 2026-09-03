@@ -1,7 +1,7 @@
 # Spec — Serveur MCP d'administration (phase 1 : brouillons produits)
 
 **Date :** 2026-09-02
-**Statut :** Design validé, à implémenter
+**Statut :** Implémenté (2026-09-02)
 **Périmètre :** Phase 1 — création et édition de brouillons produits par une IA externe
 
 ---
