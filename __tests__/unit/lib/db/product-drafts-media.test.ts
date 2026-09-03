@@ -72,6 +72,30 @@ describe("addImagesFromUrls", () => {
     await expect(addImagesFromUrls("p1", [{ url: "https://x/a.jpg" }])).rejects.toThrow("D1 down");
     expect(mocks.deleteFromR2).toHaveBeenCalledWith("products/p1/a.jpg");
   });
+
+  it("journalise les échecs de nettoyage R2 après un batch en échec", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => (/"is_draft" = \?/i.test(stmt.sql) ? DRAFT_ROW : []));
+    d1.current!.batch.mockRejectedValue(new Error("D1 down"));
+    mocks.deleteFromR2.mockImplementation(async (key: string) => {
+      if (key === "products/p1/a.jpg") throw new Error("R2 unreachable");
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(addImagesFromUrls("p1", [{ url: "https://x/a.jpg" }, { url: "https://x/b.jpg" }]))
+      .rejects.toThrow("D1 down");
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[product-drafts] orphan R2 object after failed image batch",
+      "products/p1/a.jpg",
+      expect.any(Error),
+    );
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "products/p1/b.jpg",
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
 });
 
 describe("removeImage", () => {

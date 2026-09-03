@@ -412,7 +412,12 @@ export async function addImagesFromUrls(
       await db.batch(stmts as Batch);
     } catch (err) {
       console.error("[product-drafts] image batch failed, cleaning R2", { id }, err);
-      await Promise.allSettled(succeeded.map(({ r }) => deleteFromR2(r.key)));
+      const cleanup = await Promise.allSettled(succeeded.map(({ r }) => deleteFromR2(r.key)));
+      cleanup.forEach((c, i) => {
+        if (c.status === "rejected") {
+          console.warn("[product-drafts] orphan R2 object after failed image batch", succeeded[i].r.key, c.reason);
+        }
+      });
       throw err;
     }
   }
