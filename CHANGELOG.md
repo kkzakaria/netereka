@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.16.1](https://github.com/kkzakaria/netereka/compare/v1.16.0...v1.16.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **admin:** raise product-wizard step-variants buttons to the 44px touch target ([#269](https://github.com/kkzakaria/netereka/issues/269)) ([c0b1ddd](https://github.com/kkzakaria/netereka/commit/c0b1ddd33cc48c9ae38afae3b55abe211be2286f))
+* **storefront:** 44px touch targets sur la barre d'actions de la ProductCard ([#270](https://github.com/kkzakaria/netereka/issues/270)) ([053055a](https://github.com/kkzakaria/netereka/commit/053055abe5bccbca86101f791fe998904c172843))
+* **storefront:** route descriptions on their real format, not description_type ([#268](https://github.com/kkzakaria/netereka/issues/268)) ([8944129](https://github.com/kkzakaria/netereka/commit/89441296a28bd0d9265bf75c8e16967339c0bb38)), closes [#145](https://github.com/kkzakaria/netereka/issues/145)
+
+
+### Refactoring
+
+* **admin:** migrate products-ai server action to Drizzle ORM ([#272](https://github.com/kkzakaria/netereka/issues/272)) ([57e4260](https://github.com/kkzakaria/netereka/commit/57e4260b03993c22853d8aaceb577a608ceca310))
+
+
+### Documentation
+
+* fix markdownlint and typography issues in plan files ([#271](https://github.com/kkzakaria/netereka/issues/271)) ([05128f3](https://github.com/kkzakaria/netereka/commit/05128f36b7e9ca5827021dced091516b909fd8aa)), closes [#148](https://github.com/kkzakaria/netereka/issues/148)
+
 ## [1.16.0](https://github.com/kkzakaria/netereka/compare/v1.15.0...v1.16.0) (2026-07-30)
 
 
