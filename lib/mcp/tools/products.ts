@@ -1,6 +1,5 @@
-import { createAuditLog } from "@/lib/db/admin/audit-log";
-import type { AuditAction } from "@/lib/db/types";
 import {
+  type DraftAudit,
   DraftError,
   addImagesFromUrls,
   createDraft,
@@ -25,8 +24,9 @@ import { defineTool, type ToolDefinition } from "./types";
 
 /**
  * Product-draft tools. Every write goes through lib/db/product-drafts.ts,
- * which refuses anything that is not `is_draft = 1`. Publishing stays in the
- * admin wizard (/products/<id>/edit) — no tool here can flip is_draft/is_active.
+ * which refuses anything that is not `is_draft = 1` and commits the audit row
+ * in the same D1 batch as the mutation. Publishing stays in the admin wizard
+ * (/products/<id>/edit) — no tool here can flip is_draft/is_active.
  */
 
 function toolError(toolName: string, err: unknown): ToolResult {
@@ -35,20 +35,9 @@ function toolError(toolName: string, err: unknown): ToolResult {
   return fail("internal_error", "Erreur interne, réessayez ou contactez un administrateur");
 }
 
-async function audit(ctx: McpContext, tool: string, action: AuditAction, productId: string): Promise<void> {
-  try {
-    await createAuditLog({
-      actorId: ctx.user.id,
-      actorName: ctx.user.name,
-      action,
-      targetType: "product",
-      targetId: productId,
-      details: JSON.stringify({ via: "mcp", tool, client_id: ctx.clientId }),
-    });
-  } catch (err) {
-    // The write already succeeded; losing the audit row must not fail the tool.
-    console.error(`[mcp/${tool}] audit log failed`, { productId }, err);
-  }
+/** Attribution recorded with the write: the admin behind the token and the OAuth client. */
+function auditFor(ctx: McpContext, tool: string): DraftAudit {
+  return { actor: { id: ctx.user.id, name: ctx.user.name }, details: { via: "mcp", tool, client_id: ctx.clientId } };
 }
 
 const DESCRIPTION_RULES =
@@ -89,8 +78,7 @@ export const productTools: ToolDefinition[] = [
     inputSchema: createDraftSchema.shape,
     handler: async (ctx, input) => {
       try {
-        const { id, slug } = await createDraft(input);
-        await audit(ctx, "create_product_draft", "product.draft_created", id);
+        const { id, slug } = await createDraft(input, auditFor(ctx, "create_product_draft"));
         return ok({ id, slug, edit_url: `/products/${id}/edit` });
       } catch (err) {
         return toolError("create_product_draft", err);
@@ -101,13 +89,12 @@ export const productTools: ToolDefinition[] = [
   defineTool({
     name: "update_product_draft",
     description:
-      `Met à jour un brouillon. Champs absents ignorés, null efface. attributes fourni remplace tous les attributs. slug optionnel (unique). ${DESCRIPTION_RULES}`,
+      `Met à jour un brouillon. Champs absents ignorés, null efface. attributes fourni remplace tous les attributs : colors, dimensions et specs sont alors tous requis (relire le brouillon avant pour ne rien perdre). slug optionnel (unique). ${DESCRIPTION_RULES}`,
     inputSchema: { id: idSchema, ...updateDraftSchema.shape },
     handler: async (ctx, input) => {
       try {
         const { id, ...patch } = input;
-        const result = await updateDraft(id, patch);
-        await audit(ctx, "update_product_draft", "product.draft_updated", id);
+        const result = await updateDraft(id, patch, auditFor(ctx, "update_product_draft"));
         return ok(result);
       } catch (err) {
         return toolError("update_product_draft", err);
@@ -118,13 +105,11 @@ export const productTools: ToolDefinition[] = [
   defineTool({
     name: "add_product_images",
     description:
-      "Télécharge 1 à 8 images depuis des URL http(s) (≤5 Mo chacune, 12 max par produit) vers le stockage de la boutique et les attache au brouillon. Succès partiel possible : vérifier results[].ok. La première image du produit devient l'image principale.",
+      "Télécharge 1 à 8 images depuis des URL http(s) (≤5 Mo chacune, 12 max par produit) vers le stockage de la boutique et les attache au brouillon. Succès partiel possible : vérifier results[].ok (reason limit_exceeded si le quota a été atteint entre-temps). La première image du produit devient l'image principale.",
     inputSchema: { id: idSchema, ...addImagesSchema.shape },
     handler: async (ctx, input) => {
       try {
-        const result = await addImagesFromUrls(input.id, input.images);
-        if (result.results.some((r) => r.ok)) await audit(ctx, "add_product_images", "product.draft_updated", input.id);
-        return ok(result);
+        return ok(await addImagesFromUrls(input.id, input.images, auditFor(ctx, "add_product_images")));
       } catch (err) {
         return toolError("add_product_images", err);
       }
@@ -137,8 +122,7 @@ export const productTools: ToolDefinition[] = [
     inputSchema: { id: idSchema, image_id: idSchema },
     handler: async (ctx, input) => {
       try {
-        await removeImage(input.id, input.image_id);
-        await audit(ctx, "remove_product_image", "product.draft_updated", input.id);
+        await removeImage(input.id, input.image_id, auditFor(ctx, "remove_product_image"));
         return ok({ removed: true });
       } catch (err) {
         return toolError("remove_product_image", err);
@@ -154,8 +138,7 @@ export const productTools: ToolDefinition[] = [
     handler: async (ctx, input) => {
       try {
         const { id, ...rest } = input;
-        const result = await setColorVariants(id, rest);
-        await audit(ctx, "set_product_variants", "product.draft_updated", id);
+        const result = await setColorVariants(id, rest, auditFor(ctx, "set_product_variants"));
         return ok(result);
       } catch (err) {
         return toolError("set_product_variants", err);
@@ -169,8 +152,7 @@ export const productTools: ToolDefinition[] = [
     inputSchema: { id: idSchema },
     handler: async (ctx, input) => {
       try {
-        await deleteDraft(input.id);
-        await audit(ctx, "delete_product_draft", "product.draft_deleted", input.id);
+        await deleteDraft(input.id, auditFor(ctx, "delete_product_draft"));
         return ok({ deleted: true });
       } catch (err) {
         return toolError("delete_product_draft", err);

@@ -48,7 +48,7 @@ Mode stateless : un `McpServer` et un transport sont créés par requête, sans 
 | `lib/mcp/tools/types.ts` | `ToolDefinition` et `defineTool()` — le type commun d'un outil MCP (nom, description, schéma d'entrée, handler typé sur `McpContext`). |
 | `lib/validations/mcp-product.ts` | Schémas Zod d'entrée des outils, composés à partir de `product-story.ts` et `product-ai.ts`. Aucune règle métier dupliquée. |
 | `lib/db/product-drafts.ts` | Module Drizzle portant toute la logique brouillon : création, mise à jour partielle, slug unique, images, variantes, suppression. Chaque `UPDATE`/`DELETE` porte `is_draft = 1` dans son `WHERE`. |
-| audit via `createAuditLog()` de `lib/db/admin/audit-log.ts` (existant) | Aucun nouveau module d'audit : les outils MCP réutilisent la fonction existante. |
+| audit dans `lib/db/product-drafts.ts` (`DraftAudit`) | Aucun module d'audit séparé : chaque fonction d'écriture reçoit l'attribution et insère la ligne `audit_log` (Drizzle) dans le même `db.batch()` que la mutation, donc atomiquement avec elle. |
 | `app/(admin-auth)/admin/mcp/consent/page.tsx` | Page de consentement OAuth (section 2). |
 | `app/(admin-auth)/admin/mcp/consent/consent-form.tsx` | Formulaire client du consentement : POST `{ accept, consent_code }` vers `/api/auth/oauth2/consent`. |
 | `lib/auth/mcp-consent-hook.ts` | `forceConsentQuery()` — force `prompt=consent` sur `/mcp/authorize`, fonction pure testable sans contexte better-auth. |
@@ -202,7 +202,9 @@ Toutes refusent une cible qui n'est pas un brouillon (`not_found`).
 
 - Aucun outil n'accepte ni n'écrit `is_draft`, `is_active`, `is_featured`.
 - Chaque `UPDATE`/`DELETE` porte `is_draft = 1` dans son `WHERE`.
-- Chaque outil d'écriture enregistre une ligne `audit_log` : `actor_id`/`actor_name` = admin porteur du jeton, `target_type = "product"`, `details = { via: "mcp", tool, client_id }`.
+- Chaque outil d'écriture enregistre une ligne `audit_log` : `actor_id`/`actor_name` = admin porteur du jeton, `target_type = "product"`, `details = { via: "mcp", tool, client_id }`. La ligne est commise dans le même batch D1 que l'écriture : pas de mutation sans attribution.
+- `update_product_draft.attributes` remplace l'ensemble des attributs ; les trois groupes (`colors`, `dimensions`, `specs`) sont obligatoires quand il est fourni, pour qu'aucun groupe ne soit effacé par omission.
+- `add_product_images` résout `is_primary`, `sort_order` et la limite de 12 images dans l'INSERT lui-même (`INSERT … SELECT … WHERE count < 12`), donc deux appels concurrents ne peuvent ni dépasser la limite, ni dupliquer un `sort_order`, ni produire deux images principales ; une image évincée est rapportée `ok: false, reason: "limit_exceeded"`.
 
 ## 5. Gestion d'erreurs
 

@@ -19,6 +19,7 @@ import {
   searchProducts,
   deleteDraft,
   DraftError,
+  type DraftAudit,
 } from "@/lib/db/product-drafts";
 
 beforeEach(() => {
@@ -27,6 +28,8 @@ beforeEach(() => {
 });
 
 const sqlOf = (s: BoundStatement) => s.sql.replace(/\s+/g, " ");
+const AUDIT: DraftAudit = { actor: { id: "admin-1", name: "Admin" }, details: { via: "mcp", tool: "t", client_id: "c1" } };
+const isAuditInsert = (s: BoundStatement) => /insert into "audit_log"/i.test(s.sql);
 
 describe("attributesToRows", () => {
   it("encode couleurs, dimensions et specs avec les conventions du wizard", () => {
@@ -49,7 +52,7 @@ describe("attributesToRows", () => {
 
 describe("createDraft", () => {
   it("refuse une catégorie inconnue", async () => {
-    await expect(createDraft({ name: "Galaxy A55", category_id: "nope" }))
+    await expect(createDraft({ name: "Galaxy A55", category_id: "nope" }, AUDIT))
       .rejects.toMatchObject({ code: "not_found" });
   });
 
@@ -63,7 +66,7 @@ describe("createDraft", () => {
       description_html: "<p>Hi</p><script>x()</script>",
       attributes: { colors: [{ name: "Noir", hex: "#000000" }], dimensions: {}, specs: [] },
       pricing: { base_price: 150000, sku: "GA55" },
-    });
+    }, AUDIT);
 
     expect(r.slug).toBe("galaxy-a55");
     const stmts = d1.current!.batchStatements();
@@ -75,6 +78,22 @@ describe("createDraft", () => {
     expect(stmts.filter((s) => /insert into "product_attributes"/i.test(s.sql))).toHaveLength(1);
     // is_draft = 1, is_active = 0 are bound values of the products insert
     expect(insert.params).toEqual(expect.arrayContaining([1, 0]));
+    // the audit row is committed in the same batch as the product row
+    const audit = stmts.find(isAuditInsert)!;
+    expect(audit.params).toEqual(expect.arrayContaining([
+      "admin-1", "Admin", "product.draft_created", "product", r.id, JSON.stringify(AUDIT.details),
+    ]));
+    expect(d1.current!.batch).toHaveBeenCalledTimes(1);
+  });
+
+  it("n'écrit ni produit ni audit si le batch échoue (atomicité de l'attribution)", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      /from "categories"/i.test(stmt.sql) ? [["cat-1"]] : []);
+    d1.current!.batch.mockRejectedValue(new Error("audit_log insert failed"));
+    await expect(createDraft({ name: "Galaxy A55", category_id: "cat-1" }, AUDIT)).rejects.toThrow("audit_log insert failed");
+    // No separate statement was run outside the batch: the mutation and its audit share one transaction.
+    expect(d1.current!.run).not.toHaveBeenCalled();
+    expect(d1.current!.batch).toHaveBeenCalledTimes(1);
   });
 
   it("suffixe le slug quand il est pris", async () => {
@@ -86,7 +105,7 @@ describe("createDraft", () => {
       }
       return [];
     });
-    const r = await createDraft({ name: "Galaxy A55", category_id: "cat-1" });
+    const r = await createDraft({ name: "Galaxy A55", category_id: "cat-1" }, AUDIT);
     expect(r.slug).toBe("galaxy-a55-3");
   });
 
@@ -96,14 +115,14 @@ describe("createDraft", () => {
       if (/"sku" =/i.test(stmt.sql)) return [["p-other"]];
       return [];
     });
-    await expect(createDraft({ name: "X", category_id: "cat-1", pricing: { sku: "DUP" } }))
+    await expect(createDraft({ name: "X", category_id: "cat-1", pricing: { sku: "DUP" } }, AUDIT))
       .rejects.toMatchObject({ code: "conflict" });
   });
 });
 
 describe("updateDraft", () => {
   it("refuse un produit qui n'est pas un brouillon", async () => {
-    await expect(updateDraft("p1", { name: "Y" })).rejects.toMatchObject({ code: "not_found" });
+    await expect(updateDraft("p1", { name: "Y" }, AUDIT)).rejects.toMatchObject({ code: "not_found" });
     const probe = d1.current!.boundMatching(/from "products"/i)[0];
     expect(sqlOf(probe)).toMatch(/"is_draft" = \?/);
     expect(probe.params).toContain(1);
@@ -116,7 +135,7 @@ describe("updateDraft", () => {
     const r = await updateDraft("p1", {
       brand: null,
       attributes: { colors: [], dimensions: {}, specs: [{ name: "RAM", value: "8 Go" }] },
-    });
+    }, AUDIT);
 
     expect(r).toEqual({ id: "p1", slug: "old-slug" });
     const stmts = d1.current!.batchStatements();
@@ -126,6 +145,15 @@ describe("updateDraft", () => {
     expect(sqlOf(update)).toMatch(/where .*"is_draft" = \?/i);
     expect(stmts.some((s) => /delete from "product_attributes"/i.test(s.sql))).toBe(true);
     expect(stmts.filter((s) => /insert into "product_attributes"/i.test(s.sql))).toHaveLength(1);
+    expect(stmts.find(isAuditInsert)!.params).toEqual(expect.arrayContaining(["product.draft_updated", "p1"]));
+  });
+
+  it("ne touche pas aux attributs quand le patch n'en fournit pas", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      /from "products"/i.test(stmt.sql) ? [["p1", "old-slug"]] : []);
+    await updateDraft("p1", { name: "Nouveau nom" }, AUDIT);
+    const stmts = d1.current!.batchStatements().map(sqlOf);
+    expect(stmts.some((s) => /"product_attributes"/i.test(s))).toBe(false);
   });
 
   it("refuse un slug explicite déjà pris", async () => {
@@ -134,7 +162,7 @@ describe("updateDraft", () => {
       if (/"slug" = \?/i.test(stmt.sql)) return [["p2"]];
       return [];
     });
-    await expect(updateDraft("p1", { slug: "taken" })).rejects.toMatchObject({ code: "conflict" });
+    await expect(updateDraft("p1", { slug: "taken" }, AUDIT)).rejects.toMatchObject({ code: "conflict" });
   });
 });
 
@@ -169,9 +197,10 @@ describe("deleteDraft", () => {
       if (/from "product_images"/i.test(stmt.sql)) return [["products/p1/a.jpg"], ["/images/legacy.jpg"]];
       return [];
     });
-    await deleteDraft("p1");
+    await deleteDraft("p1", AUDIT);
     const stmts = d1.current!.batchStatements().map(sqlOf);
-    expect(stmts[stmts.length - 1]).toMatch(/delete from "products" where .*"is_draft" = \?/i);
+    expect(stmts[stmts.length - 1]).toMatch(/insert into "audit_log"/i);
+    expect(stmts[stmts.length - 2]).toMatch(/delete from "products" where .*"is_draft" = \?/i);
     expect(stmts.some((s) => /delete from "product_images"/i.test(s))).toBe(true);
     expect(stmts.some((s) => /delete from "product_variants"/i.test(s))).toBe(true);
     expect(stmts.some((s) => /delete from "product_attributes"/i.test(s))).toBe(true);

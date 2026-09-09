@@ -54,8 +54,20 @@ export const createDraftSchema = z.object({
   pricing: pricingSchema.optional(),
 });
 
+/**
+ * An update replaces the whole attribute set, so every group must be explicit:
+ * with the create-time defaults a colours-only patch would silently wipe the
+ * stored specs and dimensions.
+ */
+export const updateAttributesSchema = z.object({
+  colors: z.array(colorSchema).max(12),
+  dimensions: dimensionsSchema,
+  specs: z.array(specSchema).max(20),
+});
+
 export const updateDraftSchema = createDraftSchema.partial().extend({
   slug: z.string().trim().max(160).regex(SLUG_RE, "Slug invalide (minuscules, chiffres, tirets)").optional(),
+  attributes: updateAttributesSchema.optional(),
 });
 
 export const addImagesSchema = z.object({

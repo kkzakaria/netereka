@@ -52,6 +52,21 @@ describe("updateDraftSchema", () => {
     expect(updateDraftSchema.safeParse({}).success).toBe(true);
   });
 
+  it("exige les trois groupes d'attributs : un patch couleurs seules ne peut pas effacer specs et dimensions", () => {
+    // Create fills the missing groups with defaults…
+    const created = createDraftSchema.safeParse({ name: "a", category_id: "c", attributes: { colors: [{ name: "Noir", hex: "#000000" }] } });
+    expect(created.success).toBe(true);
+    expect(created.data?.attributes).toEqual({ colors: [{ name: "Noir", hex: "#000000" }], dimensions: {}, specs: [] });
+    // …but update replaces the whole set, so an omitted group is a validation error, not a silent wipe.
+    const partial = updateDraftSchema.safeParse({ attributes: { colors: [{ name: "Noir", hex: "#000000" }] } });
+    expect(partial.success).toBe(false);
+    expect(Object.keys(partial.error!.flatten().fieldErrors)).toContain("attributes");
+    const full = updateDraftSchema.safeParse({ attributes: { colors: [], dimensions: {}, specs: [{ name: "RAM", value: "8 Go" }] } });
+    expect(full.success).toBe(true);
+    // attributes stays optional: a patch without it leaves the stored set untouched.
+    expect(updateDraftSchema.safeParse({ name: "b" }).success).toBe(true);
+  });
+
   it("valide le format du slug", () => {
     expect(updateDraftSchema.safeParse({ slug: "iphone-15-pro" }).success).toBe(true);
     expect(updateDraftSchema.safeParse({ slug: "IPhone 15" }).success).toBe(false);

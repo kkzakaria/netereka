@@ -2,7 +2,8 @@ import { and, asc, eq, ne, or, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { nanoid } from "nanoid";
 import { getDrizzle, type DrizzleDB } from "@/lib/db/drizzle";
-import { categories, productAttributes, productImages, productVariants, products } from "@/lib/db/schema";
+import { auditLog, categories, productAttributes, productImages, productVariants, products } from "@/lib/db/schema";
+import type { AuditAction } from "@/lib/db/types";
 import { slugify } from "@/lib/utils";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { getImageUrl } from "@/lib/utils/images";
@@ -22,6 +23,10 @@ import type {
  * Invariant: every UPDATE/DELETE on `products` filters on `is_draft = 1`. A
  * published product is unreachable from here by construction — that is the
  * mechanical form of the "drafts only" decision in the spec.
+ *
+ * Invariant: every write takes a `DraftAudit` and commits its `audit_log` row
+ * in the same `db.batch()` as the mutation (D1 batches are transactional), so
+ * a product change can never land without its actor/client attribution.
  */
 
 export type DraftErrorCode = "not_found" | "conflict" | "limit_exceeded";
@@ -34,6 +39,12 @@ export class DraftError extends Error {
 }
 
 export const MAX_IMAGES_PER_PRODUCT = 12;
+
+/** Who performs the write and how (e.g. `{ via: "mcp", tool, client_id }`). */
+export interface DraftAudit {
+  actor: { id: string; name: string };
+  details: Record<string, unknown>;
+}
 
 type Statement = BatchItem<"sqlite">;
 type Batch = [Statement, ...Statement[]];
@@ -104,6 +115,21 @@ function r2KeyFromImageUrl(url: string): string {
   return url.replace(/^\/images\//, "");
 }
 
+// ─── Audit ───
+
+/** `audit_log` row for `productId`, to be appended to the write's batch. */
+function auditStatement(db: DrizzleDB, audit: DraftAudit, action: AuditAction, productId: string): Statement {
+  return db.insert(auditLog).values({
+    id: crypto.randomUUID(),
+    actor_id: audit.actor.id,
+    actor_name: audit.actor.name,
+    action,
+    target_type: "product",
+    target_id: productId,
+    details: JSON.stringify(audit.details),
+  });
+}
+
 // ─── DB probes ───
 
 async function requireDraft(db: DrizzleDB, id: string): Promise<{ id: string; slug: string }> {
@@ -156,7 +182,7 @@ async function ensureUniqueSlug(db: DrizzleDB, base: string, excludeId: string):
 
 // ─── Create / update / read / search / delete ───
 
-export async function createDraft(input: CreateDraftInput): Promise<{ id: string; slug: string }> {
+export async function createDraft(input: CreateDraftInput, audit: DraftAudit): Promise<{ id: string; slug: string }> {
   const db = await getDrizzle();
   await requireCategory(db, input.category_id);
   if (input.pricing?.sku) await requireSkuFree(db, input.pricing.sku, null);
@@ -182,11 +208,16 @@ export async function createDraft(input: CreateDraftInput): Promise<{ id: string
   for (const row of attributesToRows(input.attributes)) {
     stmts.push(db.insert(productAttributes).values({ id: nanoid(), product_id: id, ...row }));
   }
+  stmts.push(auditStatement(db, audit, "product.draft_created", id));
   await db.batch(stmts);
   return { id, slug };
 }
 
-export async function updateDraft(id: string, patch: UpdateDraftInput): Promise<{ id: string; slug: string }> {
+/**
+ * `patch.attributes`, when present, replaces the whole attribute set — the
+ * schema requires all three groups so nothing is dropped by omission.
+ */
+export async function updateDraft(id: string, patch: UpdateDraftInput, audit: DraftAudit): Promise<{ id: string; slug: string }> {
   const db = await getDrizzle();
   const current = await requireDraft(db, id);
   if (patch.category_id !== undefined) await requireCategory(db, patch.category_id);
@@ -210,6 +241,7 @@ export async function updateDraft(id: string, patch: UpdateDraftInput): Promise<
       stmts.push(db.insert(productAttributes).values({ id: nanoid(), product_id: id, ...row }));
     }
   }
+  stmts.push(auditStatement(db, audit, "product.draft_updated", id));
   await db.batch(stmts);
   return { id, slug };
 }
@@ -328,7 +360,7 @@ export async function searchProducts(query: string, limit: number): Promise<Prod
   return rows.map((r) => ({ ...r, is_draft: r.is_draft === 1, is_active: r.is_active === 1 }));
 }
 
-export async function deleteDraft(id: string): Promise<void> {
+export async function deleteDraft(id: string, audit: DraftAudit): Promise<void> {
   const db = await getDrizzle();
   await requireDraft(db, id);
   const imgs = await db.select({ url: productImages.url }).from(productImages).where(eq(productImages.product_id, id)).all();
@@ -340,6 +372,7 @@ export async function deleteDraft(id: string): Promise<void> {
     db.delete(productVariants).where(eq(productVariants.product_id, id)),
     db.delete(productAttributes).where(eq(productAttributes.product_id, id)),
     db.delete(products).where(and(eq(products.id, id), eq(products.is_draft, 1))),
+    auditStatement(db, audit, "product.draft_deleted", id),
   ]);
 
   const cleanup = await Promise.allSettled(imgs.map((i) => deleteFromR2(r2KeyFromImageUrl(i.url))));
@@ -354,28 +387,102 @@ export interface ImageImportResult {
   url: string;
   ok: boolean;
   image_id?: string;
-  reason?: string;
+  reason?: ImageImportFailure;
 }
 
 type FetchSuccess = Extract<FetchImageResult, { ok: true }>;
 
+export type ImageImportFailure = Extract<FetchImageResult, { ok: false }>["reason"] | "limit_exceeded";
+
+/**
+ * One `product_images` row, with `is_primary`, `sort_order` and the
+ * per-product limit all resolved inside the statement. Statements of one
+ * `db.batch()` run in a single transaction and each sees the rows the previous
+ * ones inserted, so two concurrent calls cannot both take "primary", reuse a
+ * `sort_order`, or push the product past MAX_IMAGES_PER_PRODUCT — the second
+ * one's INSERT simply selects no row. Selecting from the draft's own
+ * `products` row (not `select 1`) also re-checks `is_draft = 1` at commit time.
+ *
+ * `insert().select()` because a raw `db.run(sql)` is not batchable on D1.
+ * Drizzle requires every column of the table, in schema order.
+ */
+function insertImageStatement(
+  db: DrizzleDB,
+  productId: string,
+  row: { id: string; key: string; alt: string | null },
+): Statement {
+  const ofProduct = sql`${productImages.product_id} = ${productId}`;
+  return db.insert(productImages).select(
+    db
+      .select({
+        id: sql<string>`${row.id}`.as("id"),
+        product_id: sql<string>`${productId}`.as("product_id"),
+        variant_id: sql<null>`null`.as("variant_id"),
+        url: sql<string>`${row.key}`.as("url"),
+        alt: sql<string | null>`${row.alt}`.as("alt"),
+        sort_order: sql<number>`coalesce((select max(${productImages.sort_order}) + 1 from ${productImages} where ${ofProduct}), 0)`.as("sort_order"),
+        is_primary: sql<number>`case when exists (select 1 from ${productImages} where ${ofProduct} and ${productImages.is_primary} = 1) then 0 else 1 end`.as("is_primary"),
+        created_at: sql<string>`datetime('now')`.as("created_at"),
+      })
+      .from(products)
+      .where(and(
+        eq(products.id, productId),
+        eq(products.is_draft, 1),
+        sql`(select count(*) from ${productImages} where ${ofProduct}) < ${MAX_IMAGES_PER_PRODUCT}`,
+      )),
+  );
+}
+
+/** Audit row committed only if at least one of `imageIds` made it past the limit guard. */
+function imagesAuditStatement(db: DrizzleDB, audit: DraftAudit, productId: string, imageIds: string[]): Statement {
+  const action: AuditAction = "product.draft_updated";
+  return db.insert(auditLog).select(
+    db
+      .select({
+        id: sql<string>`${crypto.randomUUID()}`.as("id"),
+        actor_id: sql<string>`${audit.actor.id}`.as("actor_id"),
+        actor_name: sql<string>`${audit.actor.name}`.as("actor_name"),
+        action: sql<string>`${action}`.as("action"),
+        target_type: sql<string>`${"product"}`.as("target_type"),
+        target_id: sql<string>`${productId}`.as("target_id"),
+        details: sql<string>`${JSON.stringify(audit.details)}`.as("details"),
+        created_at: sql<string>`datetime('now')`.as("created_at"),
+      })
+      .from(products)
+      .where(and(
+        eq(products.id, productId),
+        sql`exists (select 1 from ${productImages} where ${productImages.id} in (${sql.join(imageIds.map((i) => sql`${i}`), sql`, `)}))`,
+      )),
+  );
+}
+
+async function cleanupR2(keys: string[], context: string): Promise<void> {
+  const cleanup = await Promise.allSettled(keys.map((k) => deleteFromR2(k)));
+  cleanup.forEach((c, i) => {
+    if (c.status === "rejected") console.warn(`[product-drafts] orphan R2 object after ${context}`, keys[i], c.reason);
+  });
+}
+
 export async function addImagesFromUrls(
   id: string,
   images: AddImagesInput["images"],
+  audit: DraftAudit,
 ): Promise<{ results: ImageImportResult[]; primary_image_id: string | null }> {
   const db = await getDrizzle();
   await requireDraft(db, id);
 
-  const existing = await db
-    .select({ id: productImages.id, is_primary: productImages.is_primary, sort_order: productImages.sort_order })
+  // Early refusal so an obviously over-limit call fails before any download.
+  // Not authoritative: the WHERE guard of insertImageStatement is.
+  const counted = await db
+    .select({ count: sql<number>`count(*)` })
     .from(productImages)
     .where(eq(productImages.product_id, id))
-    .all();
-
-  if (existing.length + images.length > MAX_IMAGES_PER_PRODUCT) {
+    .get();
+  const existingCount = counted?.count ?? 0;
+  if (existingCount + images.length > MAX_IMAGES_PER_PRODUCT) {
     throw new DraftError(
       "limit_exceeded",
-      `Au plus ${MAX_IMAGES_PER_PRODUCT} images par produit (${existing.length} déjà présentes)`,
+      `Au plus ${MAX_IMAGES_PER_PRODUCT} images par produit (${existingCount} déjà présentes)`,
     );
   }
 
@@ -384,54 +491,52 @@ export async function addImagesFromUrls(
   );
   const succeeded = fetched.filter((x): x is { img: typeof x.img; r: FetchSuccess } => x.r.ok);
 
-  let primaryId: string | null = existing.find((e) => e.is_primary === 1)?.id ?? null;
-  let nextSort = existing.reduce((max, e) => Math.max(max, e.sort_order + 1), 0);
-
   const idByUrl = new Map<string, string>();
   const stmts: Statement[] = [];
   for (const { img, r } of succeeded) {
     const imageId = nanoid();
     idByUrl.set(img.url, imageId);
-    const isPrimary = primaryId === null ? 1 : 0;
-    if (isPrimary) primaryId = imageId;
-    stmts.push(
-      db.insert(productImages).values({
-        id: imageId,
-        product_id: id,
-        url: r.key,
-        alt: img.alt ?? null,
-        is_primary: isPrimary,
-        sort_order: nextSort++,
-        created_at: sql`datetime('now')`,
-      }),
-    );
+    stmts.push(insertImageStatement(db, id, { id: imageId, key: r.key, alt: img.alt ?? null }));
   }
 
   if (stmts.length > 0) {
+    stmts.push(imagesAuditStatement(db, audit, id, [...idByUrl.values()]));
     try {
       await db.batch(stmts as Batch);
     } catch (err) {
       console.error("[product-drafts] image batch failed, cleaning R2", { id }, err);
-      const cleanup = await Promise.allSettled(succeeded.map(({ r }) => deleteFromR2(r.key)));
-      cleanup.forEach((c, i) => {
-        if (c.status === "rejected") {
-          console.warn("[product-drafts] orphan R2 object after failed image batch", succeeded[i].r.key, c.reason);
-        }
-      });
+      await cleanupR2(succeeded.map(({ r }) => r.key), "failed image batch");
       throw err;
     }
   }
 
-  const results: ImageImportResult[] = fetched.map(({ img, r }) =>
-    r.ok ? { url: img.url, ok: true, image_id: idByUrl.get(img.url) } : { url: img.url, ok: false, reason: r.reason },
-  );
-  if (fetched.some((f) => !f.r.ok)) {
-    console.error("[product-drafts] image fetch failures", { id }, results.filter((x) => !x.ok));
+  // Read back what the transaction actually kept: the primary is decided in
+  // SQL, and an insert the limit guard skipped leaves no row behind.
+  const rows = await db
+    .select({ id: productImages.id, is_primary: productImages.is_primary })
+    .from(productImages)
+    .where(eq(productImages.product_id, id))
+    .all();
+  const landed = new Set(rows.map((r) => r.id));
+  const primaryId = rows.find((r) => r.is_primary === 1)?.id ?? null;
+
+  const skipped = succeeded.filter(({ img }) => !landed.has(idByUrl.get(img.url)!));
+  if (skipped.length > 0) await cleanupR2(skipped.map(({ r }) => r.key), "limit_exceeded");
+
+  const results: ImageImportResult[] = fetched.map(({ img, r }) => {
+    if (!r.ok) return { url: img.url, ok: false, reason: r.reason };
+    const imageId = idByUrl.get(img.url)!;
+    return landed.has(imageId)
+      ? { url: img.url, ok: true, image_id: imageId }
+      : { url: img.url, ok: false, reason: "limit_exceeded" };
+  });
+  if (results.some((x) => !x.ok)) {
+    console.error("[product-drafts] image import failures", { id }, results.filter((x) => !x.ok));
   }
   return { results, primary_image_id: primaryId };
 }
 
-export async function removeImage(id: string, imageId: string): Promise<void> {
+export async function removeImage(id: string, imageId: string, audit: DraftAudit): Promise<void> {
   const db = await getDrizzle();
   await requireDraft(db, id);
 
@@ -454,6 +559,7 @@ export async function removeImage(id: string, imageId: string): Promise<void> {
       .get();
     if (next) stmts.push(db.update(productImages).set({ is_primary: 1 }).where(eq(productImages.id, next.id)));
   }
+  stmts.push(auditStatement(db, audit, "product.draft_updated", id));
   await db.batch(stmts);
 
   await deleteFromR2(r2KeyFromImageUrl(img.url)).catch((e) => {
@@ -480,6 +586,7 @@ function colorKey(name: string, hex: string): string {
 export async function setColorVariants(
   id: string,
   input: SetVariantsInput,
+  audit: DraftAudit,
 ): Promise<{ variants: VariantRow[]; stock_quantity: number }> {
   const db = await getDrizzle();
   const product = await db
@@ -552,6 +659,7 @@ export async function setColorVariants(
       .set({ stock_quantity: total, updated_at: sql`datetime('now')` })
       .where(and(eq(products.id, id), eq(products.is_draft, 1))),
   );
+  stmts.push(auditStatement(db, audit, "product.draft_updated", id));
 
   await db.batch(stmts as Batch);
   return { variants: out, stock_quantity: total };
