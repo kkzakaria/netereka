@@ -85,9 +85,24 @@ try {
   if (!/"code":1000[13]/.test(String(err.message))) throw err;
 }
 
-const existing = entrypoint?.rules?.find(
-  (r) => r.description === DESCRIPTION || r.action_parameters?.headers?.[HEADER],
-);
+// Transform Rules run in order and a later rule can overwrite the header, so the
+// managed rule must be the ONLY writer of the version key. Any other writer is a
+// conflict to fix by hand, not something to silently patch over.
+function assertSingleWriter(rules) {
+  const writers = rules.filter((r) => r.action_parameters?.headers?.[HEADER]);
+  const foreign = writers.filter((r) => r.description !== DESCRIPTION);
+  if (foreign.length > 0 || writers.length > 1) {
+    console.error(`Conflict: ${writers.length} rule(s) write ${HEADER} in phase ${PHASE}:`);
+    for (const r of writers) {
+      console.error(`  - ${r.id} "${r.description}" enabled=${r.enabled} expression=${r.expression}`);
+    }
+    console.error("Remove the extra rule(s) in the dashboard (Rules → Transform Rules) and re-run.");
+    process.exit(1);
+  }
+  return writers[0];
+}
+
+const existing = assertSingleWriter(entrypoint?.rules ?? []);
 
 if (existing && ruleMatches(existing)) {
   console.log(`OK: rule already present and up to date (rule ${existing.id}).`);
@@ -117,7 +132,7 @@ if (existing) {
   console.log(`Created ruleset ${result.id} with the rule.`);
 }
 
-const applied = result.rules.find((r) => r.description === DESCRIPTION);
+const applied = assertSingleWriter(result.rules);
 if (!applied || !ruleMatches(applied)) {
   console.error("Rule applied but does not match desired state:", JSON.stringify(applied));
   process.exit(1);
