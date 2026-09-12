@@ -226,6 +226,7 @@ Always prefer the GitHub workflows (`promote.yml` / `rollback.yml`) over `wrangl
 
 **Operational lessons (hard-learned)** :
 
+- **Canary = two builds live at once, and Cloudflare routes per request at random.** Without version affinity a browser gets HTML from one version and 404s on the other version's hashed chunks (`Failed to load chunk … from module N`, or a 500 when the chunk belongs to the root layout). A zone Transform Rule sets `Cloudflare-Workers-Version-Key: ip.src` to pin each client to one version; it is managed by `npm run cf:version-affinity` (idempotent, needs a token with Zone:Read + Transform Rules:Edit). Re-run it if the rule disappears from the dashboard. See `docs/RELEASE_PIPELINE.md` → Version affinity.
 - **Always promote (or rollback) the current canary before merging the next PR to `main`.** A new merge triggers a new canary that displaces the previous one — the old 10% version becomes orphaned (never promoted, never reaches 100%). The "Pending promotion" GitHub issue is the visual reminder; don't ignore it.
 - **If curating the v`X.Y.Z` CHANGELOG before merging a Release PR**, edit `CHANGELOG.md` on the `release-please--branches--main--components--netereka` branch and push. **But** the GitHub Release page body is "locked in" when release-please first created the PR — it won't pick up your edit automatically. After merge, sync the Release body manually :
   ```bash
