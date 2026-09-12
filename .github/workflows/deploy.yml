@@ -16,12 +16,12 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -49,11 +49,11 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -191,7 +191,7 @@ jobs:
       # that could produce unexpected content.
       - name: Create pending-promotion issue (canary)
         if: steps.strategy.outputs.mode == 'canary'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           VERSION_ID: ${{ steps.upload.outputs.version_id }}
           SHORT_SHA: ${{ steps.upload.outputs.short_sha }}
