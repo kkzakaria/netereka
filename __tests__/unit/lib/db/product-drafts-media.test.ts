@@ -122,6 +122,41 @@ describe("addImagesFromUrls", () => {
     expect(mocks.deleteFromR2).toHaveBeenCalledWith("products/p1/b.jpg");
   });
 
+  it("attribue un image_id distinct à chaque entrée, même quand la même URL est envoyée deux fois", async () => {
+    // Capacity for both: two rows, two different ids, and both reported ok.
+    simulateImagesTable([]);
+    let n = 0;
+    mocks.fetchAndUploadImage.mockImplementation(async () =>
+      ({ ok: true, key: `products/p1/dup-${++n}.jpg`, contentType: "image/jpeg", size: 1 }));
+
+    const r = await addImagesFromUrls("p1", [{ url: "https://x/dup.jpg" }, { url: "https://x/dup.jpg" }], AUDIT);
+
+    const inserted = d1.current!.batchStatements().filter(isImageInsert).map((st) => st.params[0]);
+    expect(inserted).toHaveLength(2);
+    expect(r.results).toEqual([
+      { url: "https://x/dup.jpg", ok: true, image_id: inserted[0] },
+      { url: "https://x/dup.jpg", ok: true, image_id: inserted[1] },
+    ]);
+    expect(r.results[0].image_id).not.toBe(r.results[1].image_id);
+  });
+
+  it("réconcilie chaque entrée séparément quand une URL dupliquée est évincée par la limite", async () => {
+    // Pre-check sees 10 images (room for 2) but only one slot is left at batch time:
+    // the first entry lands, the second is evicted and its own R2 object is cleaned.
+    simulateImagesTable(Array.from({ length: 10 }, (_, i): [string, number] => [`img-${i}`, i === 0 ? 1 : 0]), 1);
+    let n = 0;
+    mocks.fetchAndUploadImage.mockImplementation(async () =>
+      ({ ok: true, key: `products/p1/dup-${++n}.jpg`, contentType: "image/jpeg", size: 1 }));
+
+    const r = await addImagesFromUrls("p1", [{ url: "https://x/dup.jpg" }, { url: "https://x/dup.jpg" }], AUDIT);
+
+    const landedId = d1.current!.batchStatements().filter(isImageInsert)[0].params[0];
+    expect(r.results[0]).toEqual({ url: "https://x/dup.jpg", ok: true, image_id: landedId });
+    expect(r.results[1]).toEqual({ url: "https://x/dup.jpg", ok: false, reason: "limit_exceeded" });
+    expect(mocks.deleteFromR2).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteFromR2).toHaveBeenCalledWith("products/p1/dup-2.jpg");
+  });
+
   it("commet l'audit dans le même batch, conditionné à au moins une image réellement insérée", async () => {
     simulateImagesTable([]);
     const r = await addImagesFromUrls("p1", [{ url: "https://x/a.jpg" }], AUDIT);

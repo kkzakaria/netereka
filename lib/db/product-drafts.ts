@@ -486,21 +486,26 @@ export async function addImagesFromUrls(
     );
   }
 
-  const fetched = await Promise.all(
-    images.map(async (img) => ({ img, r: await fetchAndUploadImage(id, img.url) })),
+  // One record per input entry, id generated up front so the same URL sent
+  // twice is still reconciled entry by entry (rows, audit, read-back, R2).
+  type Entry = { img: AddImagesInput["images"][number] } & (
+    | { r: FetchSuccess; imageId: string }
+    | { r: Exclude<FetchImageResult, { ok: true }>; imageId: null }
   );
-  const succeeded = fetched.filter((x): x is { img: typeof x.img; r: FetchSuccess } => x.r.ok);
+  const fetched: Entry[] = await Promise.all(
+    images.map(async (img): Promise<Entry> => {
+      const r = await fetchAndUploadImage(id, img.url);
+      return r.ok ? { img, r, imageId: nanoid() } : { img, r, imageId: null };
+    }),
+  );
+  const succeeded = fetched.filter((x): x is Extract<Entry, { imageId: string }> => x.imageId !== null);
 
-  const idByUrl = new Map<string, string>();
-  const stmts: Statement[] = [];
-  for (const { img, r } of succeeded) {
-    const imageId = nanoid();
-    idByUrl.set(img.url, imageId);
-    stmts.push(insertImageStatement(db, id, { id: imageId, key: r.key, alt: img.alt ?? null }));
-  }
+  const stmts: Statement[] = succeeded.map(({ img, r, imageId }) =>
+    insertImageStatement(db, id, { id: imageId, key: r.key, alt: img.alt ?? null }),
+  );
 
   if (stmts.length > 0) {
-    stmts.push(imagesAuditStatement(db, audit, id, [...idByUrl.values()]));
+    stmts.push(imagesAuditStatement(db, audit, id, succeeded.map((x) => x.imageId)));
     try {
       await db.batch(stmts as Batch);
     } catch (err) {
@@ -520,15 +525,14 @@ export async function addImagesFromUrls(
   const landed = new Set(rows.map((r) => r.id));
   const primaryId = rows.find((r) => r.is_primary === 1)?.id ?? null;
 
-  const skipped = succeeded.filter(({ img }) => !landed.has(idByUrl.get(img.url)!));
+  const skipped = succeeded.filter(({ imageId }) => !landed.has(imageId));
   if (skipped.length > 0) await cleanupR2(skipped.map(({ r }) => r.key), "limit_exceeded");
 
-  const results: ImageImportResult[] = fetched.map(({ img, r }) => {
-    if (!r.ok) return { url: img.url, ok: false, reason: r.reason };
-    const imageId = idByUrl.get(img.url)!;
-    return landed.has(imageId)
-      ? { url: img.url, ok: true, image_id: imageId }
-      : { url: img.url, ok: false, reason: "limit_exceeded" };
+  const results: ImageImportResult[] = fetched.map((e) => {
+    if (e.imageId === null) return { url: e.img.url, ok: false, reason: e.r.reason };
+    return landed.has(e.imageId)
+      ? { url: e.img.url, ok: true, image_id: e.imageId }
+      : { url: e.img.url, ok: false, reason: "limit_exceeded" };
   });
   if (results.some((x) => !x.ok)) {
     console.error("[product-drafts] image import failures", { id }, results.filter((x) => !x.ok));
