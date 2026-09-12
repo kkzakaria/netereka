@@ -1,0 +1,121 @@
+# Dependabot version updates — monthly, grouped so peer-coupled packages move
+# together (a lone bump of next / wrangler / @opennextjs/cloudflare fails with
+# ERESOLVE, see PR #288). Every PR still goes through CI + CodeRabbit and a
+# human merge: each merge on main creates a canary that must be promoted
+# (docs/RELEASE_PIPELINE.md), which is why the cadence is monthly, not daily.
+# Security alerts are handled separately by "Dependabot security updates"
+# (repository setting), which is not gated by this schedule.
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Africa/Abidjan"
+    open-pull-requests-limit: 6
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    groups:
+      # Runtime/platform trio + its typings: OpenNext pins a Next range and a
+      # wrangler range, wrangler pins workers-types. Always bump together.
+      cloudflare-platform:
+        patterns:
+          - "next"
+          - "eslint-config-next"
+          - "@opennextjs/cloudflare"
+          - "wrangler"
+          - "@cloudflare/workers-types"
+        update-types:
+          - "minor"
+          - "patch"
+      lexical:
+        patterns:
+          - "lexical"
+          - "@lexical/*"
+      codemirror:
+        patterns:
+          - "codemirror"
+          - "@codemirror/*"
+      ui:
+        patterns:
+          - "radix-ui"
+          - "@base-ui/react"
+          - "@hugeicons/*"
+          - "react-hook-form"
+          - "@hookform/resolvers"
+          - "tailwindcss"
+          - "@tailwindcss/*"
+          - "tailwind-merge"
+          - "tw-animate-css"
+          - "class-variance-authority"
+          - "sonner"
+          - "embla-carousel-*"
+      dev-tooling:
+        dependency-type: "development"
+        patterns:
+          - "eslint"
+          - "vitest"
+          - "typescript"
+          - "husky"
+          - "@commitlint/*"
+          - "@types/*"
+          - "better-sqlite3"
+          - "ajv*"
+          - "shadcn"
+        update-types:
+          - "minor"
+          - "patch"
+      # Everything else that is not a major: one PR instead of twenty.
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Majors handled by hand: each of these needs a real regression pass
+      # (auth flows incl. MCP OAuth, DB access, rendering).
+      - dependency-name: "better-auth"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "drizzle-orm"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "drizzle-kit"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "kysely"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@modelcontextprotocol/sdk"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      # Node runtime typings follow .nvmrc (24), not the newest release.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Africa/Abidjan"
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
+    groups:
+      actions:
+        patterns:
+          - "*"
