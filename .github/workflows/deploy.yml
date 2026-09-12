@@ -191,7 +191,7 @@ jobs:
       # that could produce unexpected content.
       - name: Create pending-promotion issue (canary)
         if: steps.strategy.outputs.mode == 'canary'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           VERSION_ID: ${{ steps.upload.outputs.version_id }}
           SHORT_SHA: ${{ steps.upload.outputs.short_sha }}
