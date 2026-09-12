@@ -101,3 +101,31 @@ describe("auth configuration — captcha coverage", () => {
     expect(endpoints).toEqual([...CAPTCHA_ENDPOINTS]);
   });
 });
+
+describe("auth configuration — MCP OAuth provider", () => {
+  function mcpPlugin() {
+    const opts = buildAuthOptions(env);
+    return opts.plugins.find((p) => p.id === "mcp") as
+      | { id: string; options?: { loginPage?: string; resource?: string; oidcConfig?: { consentPage?: string; requirePKCE?: boolean } } }
+      | undefined;
+  }
+
+  it("registers the mcp plugin against the admin login page", () => {
+    expect(mcpPlugin()).toBeDefined();
+    expect(mcpPlugin()?.options?.loginPage).toBe("/admin/login");
+  });
+
+  it("declares /api/mcp as the protected resource", () => {
+    expect(mcpPlugin()?.options?.resource).toBe("https://netereka.ci/api/mcp");
+  });
+
+  it("routes consent through the admin consent page and requires PKCE", () => {
+    expect(mcpPlugin()?.options?.oidcConfig?.consentPage).toBe("/admin/mcp/consent");
+    expect(mcpPlugin()?.options?.oidcConfig?.requirePKCE).toBe(true);
+  });
+
+  it("installs a before hook (the forced-consent guard)", () => {
+    const opts = buildAuthOptions(env);
+    expect(typeof opts.hooks?.before).toBe("function");
+  });
+});

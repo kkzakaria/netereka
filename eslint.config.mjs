@@ -16,6 +16,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "NETEREKA_Homepage_Concept.jsx",
     "scripts/**",
+    // Nested git worktrees created by Claude Code agents. They carry a full
+    // copy of the repo, so linting the root would lint them too and the
+    // pre-commit hook fails on files that belong to another branch.
+    ".claude/worktrees/**",
   ]),
 ]);
 

@@ -96,6 +96,57 @@ export const rateLimit = sqliteTable("rateLimit", {
   lastRequest: integer("lastRequest").notNull(),
 });
 
+// better-auth `mcp` plugin (OAuth 2.1 provider for MCP clients). Column names
+// mirror node_modules/better-auth/dist/plugins/oidc-provider/schema.mjs exactly:
+// better-auth reaches these tables through its own Kysely adapter, so a
+// mismatch here fails at request time, not at compile time. Dates are ISO
+// strings (the adapter runs with supportsDates: false on sqlite), booleans 0/1.
+export const oauthApplication = sqliteTable("oauthApplication", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  icon: text("icon"),
+  metadata: text("metadata"),
+  clientId: text("clientId").unique().notNull(),
+  clientSecret: text("clientSecret"),
+  redirectUrls: text("redirectUrls").notNull(),
+  type: text("type").notNull(),
+  disabled: integer("disabled").notNull().default(0),
+  userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
+  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_oauthApplication_userId").on(table.userId),
+]);
+
+export const oauthAccessToken = sqliteTable("oauthAccessToken", {
+  id: text("id").primaryKey(),
+  accessToken: text("accessToken").unique().notNull(),
+  refreshToken: text("refreshToken").unique().notNull(),
+  accessTokenExpiresAt: text("accessTokenExpiresAt").notNull(),
+  refreshTokenExpiresAt: text("refreshTokenExpiresAt").notNull(),
+  clientId: text("clientId").notNull().references(() => oauthApplication.clientId, { onDelete: "cascade" }),
+  userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
+  scopes: text("scopes").notNull(),
+  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_oauthAccessToken_clientId").on(table.clientId),
+  index("idx_oauthAccessToken_userId").on(table.userId),
+]);
+
+export const oauthConsent = sqliteTable("oauthConsent", {
+  id: text("id").primaryKey(),
+  clientId: text("clientId").notNull().references(() => oauthApplication.clientId, { onDelete: "cascade" }),
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  scopes: text("scopes").notNull(),
+  consentGiven: integer("consentGiven").notNull().default(0),
+  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("idx_oauthConsent_clientId").on(table.clientId),
+  index("idx_oauthConsent_userId").on(table.userId),
+]);
+
 // =============================================================================
 // Delivery Zones
 // =============================================================================

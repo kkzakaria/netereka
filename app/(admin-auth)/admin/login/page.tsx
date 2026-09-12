@@ -3,7 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,6 +20,7 @@ import {
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { authClient } from "@/lib/auth/client";
 import { verifyAdminRole } from "@/actions/admin/auth";
+import { getOAuthResumeUrl } from "@/lib/auth/oauth-resume";
 
 const TurnstileCaptcha = dynamic(
   () =>
@@ -50,6 +51,8 @@ const errorTextMessages: Record<string, string> = {
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const resumeUrl = getOAuthResumeUrl(searchParams);
   const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaToken, setCaptchaToken] = useState("");
   const [serverError, setServerError] = useState("");
@@ -86,6 +89,17 @@ export default function AdminLoginPage() {
       });
 
       if (error) {
+        // OAuth resume: the mcp plugin's after-hook turns a successful sign-in
+        // into a 302 that fetch follows to an HTML page, so the client lib can
+        // report an error although the session cookie was set. Trust the
+        // server-side role check instead of the parse failure.
+        if (resumeUrl) {
+          const check = await verifyAdminRole();
+          if (check.success) {
+            window.location.assign(resumeUrl);
+            return;
+          }
+        }
         resetCaptcha();
         setServerError(
           errorCodeMessages[error.code ?? ""] ??
@@ -99,6 +113,12 @@ export default function AdminLoginPage() {
       const result = await verifyAdminRole();
       if (!result.success) {
         setServerError(result.error ?? "Accès refusé.");
+        return;
+      }
+
+      if (resumeUrl) {
+        // Full navigation, not router.push: the target is an API route.
+        window.location.assign(resumeUrl);
         return;
       }
 

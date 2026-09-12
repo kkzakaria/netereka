@@ -17,19 +17,19 @@ export const aiPromptSchema = z
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur hex invalide (format #rrggbb)");
 
-const colorSchema = z.object({
+export const colorSchema = z.object({
   name: z.string().trim().min(1).max(40),
   hex: hexColor,
 });
 
-const dimensionsSchema = z.object({
+export const dimensionsSchema = z.object({
   length_mm: z.number().int().positive().optional(),
   height_mm: z.number().int().positive().optional(),
   width_mm:  z.number().int().positive().optional(),
   weight_g:  z.number().int().positive().optional(),
 });
 
-const specSchema = z.object({
+export const specSchema = z.object({
   name:  z.string().trim().min(1).max(60),
   value: z.string().trim().min(1).max(200),
 });

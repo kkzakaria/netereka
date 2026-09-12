@@ -348,7 +348,10 @@ export type AuditAction =
   | "user.created"
   | "user.role_changed"
   | "user.banned"
-  | "user.unbanned";
+  | "user.unbanned"
+  | "product.draft_created"
+  | "product.draft_updated"
+  | "product.draft_deleted";
 
 export interface AuditLog {
   id: string;
