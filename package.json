@@ -32,7 +32,8 @@
     "whatsapp:deploy": "OPEN_NEXT_DEPLOY=1 npx wrangler deploy --config workers/whatsapp/wrangler.jsonc",
     "whatsapp:tail": "npx wrangler tail --config workers/whatsapp/wrangler.jsonc",
     "prepare": "husky",
-    "postinstall": "node scripts/patch-opennext.mjs"
+    "postinstall": "node scripts/patch-opennext.mjs",
+    "cf:version-affinity": "node scripts/version-affinity.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

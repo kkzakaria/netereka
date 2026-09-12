@@ -284,6 +284,7 @@ Four npm scripts for pipeline operations from a developer machine :
 | `npm run check:migrations` | Run migration-safety lint locally |
 | `npm run promote` | Interactive : shows current traffic split + recent versions, prompts for ID + confirmation, promotes to 100% + re-seeds hero KV |
 | `npm run rollback` | Interactive : lists 10 recent versions, prompts for ID + reason + confirmation, runs `wrangler rollback` |
+| `npm run cf:version-affinity` | Idempotent : ensures the zone Transform Rule that pins each client to one Worker version during a canary (see [Version affinity](#version-affinity)). Needs a token with `Zone:Read` + `Transform Rules:Edit` |
 
 **When to use local over workflows** :
 
@@ -306,6 +307,19 @@ Two related concepts that are easy to confuse :
 `wrangler deployments list` → history of traffic routing changes (only versions that got traffic)
 
 This is why `promote.yml` queries **deployments** (to find the actual canary), not versions — an uploaded-but-never-deployed version has `deployed_percentage: 0` in versions list, which would match the naive filter `< 100%` and get promoted to 100% by mistake.
+
+### Version affinity
+
+During a canary, Cloudflare picks a version **per request, at random**. A browser can receive HTML from version A and then fetch `/_next/static/chunks/<hash>.js` from version B, where that file does not exist → 404 → `Failed to load chunk … from module N` (storefront/admin error boundary, or the 500 page when the missing chunk belongs to the root layout). Server Action IDs are hashed per build and break the same way.
+
+Incident : 2026-09-11 — canary `sha-dfba7fe` was left at 10% for 8 days (issue #284), users hit chunk 404s and a 500 all day.
+
+Mitigation : a zone **Transform Rule** (phase `http_request_late_transform`) sets the request header `Cloudflare-Workers-Version-Key` to `ip.src` on every request. Cloudflare hashes the key against the split percentages, so a given client always lands on the same version for the whole canary (and stays on the new version once it has been assigned to it). Docs : https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/version-affinity/
+
+- Managed by `scripts/version-affinity.mjs` (`npm run cf:version-affinity`), idempotent. Re-run it if the rule is ever deleted from the dashboard.
+- Keyed on client IP, not session cookie : anonymous visitors must be covered too, and an empty cookie would collapse all of them onto a single key.
+- Trade-off : the canary's 10% is now 10% of client IPs, not of requests. Users behind one NAT share a version. A user whose IP changes mid-session (mobile) can still skew, but that is rare compared to per-request randomness.
+- This does **not** remove the rule "promote or rollback before the next merge" — it makes a forgotten canary harmless for users, not correct.
 
 ### Retention
 
