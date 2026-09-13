@@ -25,7 +25,7 @@ Ce document couvre le **lot A**. La généralisation du serveur MCP (produits co
 4. **L'encadrement du contenu libre est posé dans ce lot, pas dans le lot B.** Le script de conversion est le premier auteur de contenu libre du site : un vocabulaire visuel défini après lui obligerait à reconvertir tout le corpus. Il avertit sans refuser — un refus reproduirait, un cran plus loin, la rigidité que ce lot supprime.
 5. **La fiche produit s'organise en quatre onglets** — Description, Détails produit, Avis, FAQ — inspirés de la page de référence `tradingshenzhen.com`. L'onglet est le cadre, son contenu reste libre : la structure en onglets n'est pas un retour au schéma fermé, elle donne au contenu libre une place identifiable. L'onglet « Questions » de la référence est écarté : il suppose une modération de questions clients qui n'existe pas ici.
 6. **La FAQ revient en contenu libre**, dans une colonne `faq_html` propre, et non en JSON structuré. L'accordéon se fait en `<details>` / `<summary>` natifs, sans JavaScript. L'argument SEO qui aurait justifié le JSON ne tient plus : Google a restreint les rich results `FAQPage` aux sites gouvernementaux et de santé en 2023, et la boutique n'émet aujourd'hui aucun `FAQPage`.
-7. **Les images viennent d'une recherche puis d'une génération**, dans cet ordre. La recherche ancre le modèle dans le réel — sans elle il invente un produit qui n'existe pas ; la génération produit ensuite le visuel contextuel. La génération porte sur le **contexte** (décors, scènes, visuels de bannière), jamais sur le produit lui-même, dont la photo reste réelle : sur une boutique en paiement à la livraison, un visuel qui ne correspond pas à ce qui est livré se paie en refus de colis. L'outillage appartient au lot B ; le lot A se contente de ne pas supprimer ce qui servira.
+7. **Les images viennent d'une recherche puis d'une génération**, dans cet ordre, et la génération se fait en **mode édition** : la photo réelle du produit est l'image source, le modèle compose le contexte autour d'elle. Ce n'est pas un compromis mais la garantie centrale — sur une boutique en paiement à la livraison, un visuel qui ne correspond pas à ce qui est livré se paie en refus de colis. Le moteur retenu est `grok-imagine-image-2.0` de xAI, qui accepte une image source et jusqu'à cinq sources pour composer une scène. L'outillage appartient au lot B ; le lot A se contente de ne pas supprimer ce qui servira.
 8. **Suppression de colonnes différée.** Les colonnes devenues inutiles restent en base (phase *expand*) et seront retirées par une migration *contract* ultérieure. `scripts/check-migration-safety.mjs` bloque `DROP COLUMN` en pre-commit et en CI, et le pipeline canary fait tourner deux versions du code simultanément : supprimer une colonne dans la même migration casserait la version encore déployée.
 
 ## 1. Modèle de données
@@ -243,15 +243,21 @@ Les imports de `lib/validations/product-story.ts` disparaissent ; le fichier est
 ## Hors périmètre
 
 - La généralisation du serveur MCP aux produits publiés et aux bannières, et la transmission du vocabulaire au client IA (lot B, § 2.3).
-- **Le pipeline d'images du lot B** : un outil de recherche adossé à `lib/media/image-search.ts`, puis un outil de génération. Le choix du moteur de génération est ouvert et se tranchera à ce moment-là, sur trois critères déjà identifiés.
+- **Le pipeline d'images du lot B** : un outil de recherche adossé à `lib/media/image-search.ts`, puis un outil de génération sur `grok-imagine-image-2.0` (xAI).
 
-  **Qualité en édition d'image.** Le binding `AI` de Cloudflare est le chemin le plus court — pas de clé, pas de sortie réseau — mais ses modèles modernes (Flux 2, Lucid Origin, Phoenix) sont **text-to-image uniquement** ; les seuls acceptant une image en entrée sont `stable-diffusion-v1-5-img2img` et `stable-diffusion-v1-5-inpainting`, dont le rendu date de 2022. Un service externe est donc admis, et probablement nécessaire dès qu'il s'agit de composer à partir d'une photo réelle.
+  Le binding `AI` de Cloudflare a été écarté : ses modèles modernes (Flux 2, Lucid Origin, Phoenix) sont text-to-image uniquement, et les seuls acceptant une image en entrée — `stable-diffusion-v1-5-img2img`, `stable-diffusion-v1-5-inpainting` — ont un rendu de 2022. Le mode édition, qui est le cœur de la décision 7, n'y est pas atteignable.
 
-  **Gestion du secret.** Une clé de service externe vit comme secret Wrangler, jamais dans la table `ai_config` — celle-ci reste condamnée, le retrait de l'IA embarquée n'est pas rouvert par ce choix.
+  L'API xAI accepte l'image source en **URL publique** ou en base64. C'est ce qui rend l'enchaînement direct : l'outil de recherche rend des URL, elles partent telles quelles en source de génération, sans passage par R2. Jusqu'à cinq sources peuvent être combinées — de quoi poser le produit réel dans une scène, ou aligner une bannière sur la charte à partir d'un visuel de référence.
 
-  **Latence.** Un appel d'outil MCP est un aller-retour HTTP synchrone. Une génération de dix à trente secondes tient, mais c'est l'ordre de grandeur à vérifier avant de choisir : au-delà, il faudra un outil qui lance la génération et un second qui récupère le résultat, ce qui change le contrat des outils.
+  Trois points restent à trancher au lot B.
 
-  Le cadrage de la décision 7 tient quel que soit le moteur retenu : la recherche fournit la photo réelle du produit, la génération ne produit que le contexte autour.
+  **Provenance de l'image source.** Envoyer une URL trouvée au hasard du web à un modèle pour en tirer un dérivé n'est pas neutre. La source doit être, par ordre de préférence : une image déjà dans R2 pour ce produit, une image de presse du fabricant, et seulement ensuite un résultat de recherche.
+
+  **Secret.** `XAI_API_KEY` vit comme secret Wrangler, jamais dans la table `ai_config` — celle-ci reste condamnée, le retrait de l'IA embarquée n'est pas rouvert par ce choix.
+
+  **Latence.** Un appel d'outil MCP est un aller-retour HTTP synchrone. À mesurer avant d'arrêter le contrat des outils : si la génération dépasse la trentaine de secondes, il faudra un outil qui lance et un second qui récupère.
+
+  Coût, pour mémoire : 0,04 $ par image en `grok-imagine-image-2.0`, et une édition est facturée sur l'image d'entrée **et** l'image de sortie.
 - La migration *contract* supprimant les colonnes legacy et la table `ai_config`.
 - La migration de `actions/admin/products.ts` de SQL brut vers Drizzle.
 - Le retrait des variables d'environnement Anthropic et Brave de `env.d.ts`.
