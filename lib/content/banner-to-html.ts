@@ -36,12 +36,15 @@ function esc(text: string): string {
  *  à ses appelants. Une valeur hors allowlist retombe sur l'accueil, ce qui est
  *  visible, plutôt que sur un lien mort. */
 function safeHref(url: string): string {
-  const trimmed = url.trim();
-  // "//host" et "/\host" ne sont pas des chemins relatifs : le navigateur les lit
-  // comme des URL absolues protocol-relative. Les écarter AVANT le test sur "/",
-  // sinon le garde laisse passer exactement ce qu'il prétend interdire.
-  if (/^\/[/\\]/.test(trimmed)) return "/";
-  if (trimmed.startsWith("/") || /^https?:/i.test(trimmed)) return esc(trimmed);
+  // Un navigateur retire les caractères de contrôle C0 avant d'analyser une URL,
+  // donc un filtre qui juge la chaîne brute lit un autre document que celui qui
+  // s'exécutera : "/\t/evil.example" passe pour un chemin relatif et se résout en
+  // "https://evil.example". On normalise avant de décider — et on émet la forme
+  // normalisée, puisqu'un caractère de contrôle n'a rien à faire dans un lien de
+  // bannière. Même doctrine que isSafeUri dans lib/utils/sanitize-html.ts.
+  const cleaned = url.replace(/[\x00-\x20\x7f]/g, "");
+  if (/^\/[/\\]/.test(cleaned)) return "/";
+  if (cleaned.startsWith("/") || /^https?:/i.test(cleaned)) return esc(cleaned);
   return "/";
 }
 

@@ -55,6 +55,21 @@ describe("bannerTemplateToHtml", () => {
     expect(html).not.toContain('"alert(1)"');
   });
 
+  it("échappe chacun des quatre caractères, et traite & en premier", () => {
+    const html = bannerTemplateToHtml({
+      ...BASE,
+      title: 'Tom & Jerry <b>"gras"</b> 5 > 3',
+    });
+    expect(html).toContain("Tom &amp; Jerry");
+    expect(html).toContain("&lt;b&gt;");
+    expect(html).toContain("&quot;gras&quot;");
+    expect(html).toContain("5 &gt; 3");
+    // Si & était remplacé après <, le "<" deviendrait "&amp;lt;" et le client
+    // verrait le texte de l'entité à l'écran.
+    expect(html).not.toContain("&amp;lt;");
+    expect(html).not.toContain("&amp;quot;");
+  });
+
   it("produit un document conforme à la charte", () => {
     const html = bannerTemplateToHtml({
       ...BASE,
@@ -75,6 +90,10 @@ describe("bannerTemplateToHtml", () => {
     expect(bannerTemplateToHtml({ ...BASE, link_url: "/c/promos" }))
       .toContain('href="/c/promos"');
 
+    // Chemin relatif avec espace en début : l'espace C0 est retiré, le chemin est conservé
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "\t/p/x" }))
+      .toContain('href="/p/x"');
+
     // URL http/https : conservée
     expect(bannerTemplateToHtml({ ...BASE, link_url: "https://example.com" }))
       .toContain("href=\"https://example.com\"");
@@ -85,6 +104,18 @@ describe("bannerTemplateToHtml", () => {
 
     // URL protocol-relative avec /\ : bloqué, retombe sur l'accueil
     expect(bannerTemplateToHtml({ ...BASE, link_url: "/\\evil.example/x" }))
+      .toContain('href="/"');
+
+    // URL protocol-relative avec /\t (tab après le slash) : bloqué, retombe sur l'accueil
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/\t/evil.example/x" }))
+      .toContain('href="/"');
+
+    // URL protocol-relative avec /\n (newline après le slash) : bloqué, retombe sur l'accueil
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/\n/evil.example/x" }))
+      .toContain('href="/"');
+
+    // URL protocol-relative avec /\r (carriage return après le slash) : bloqué, retombe sur l'accueil
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/\r/evil.example/x" }))
       .toContain('href="/"');
 
     // javascript: : bloqué, retombe sur l'accueil
