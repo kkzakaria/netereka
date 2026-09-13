@@ -23,13 +23,24 @@ Ce document couvre le **lot A**. La généralisation du serveur MCP (produits co
 2. **L'existant est converti une fois pour toutes**, pas maintenu en cohabitation. Deux chemins de rendu et des éditeurs structurés survivants annuleraient l'intérêt du changement.
 3. **Le retrait de l'IA embarquée appartient à ce lot**, pas à un chantier ultérieur : dès que la story structurée disparaît, `actions/admin/products-ai.ts` écrit dans des colonnes mortes.
 4. **L'encadrement du contenu libre est posé dans ce lot, pas dans le lot B.** Le script de conversion est le premier auteur de contenu libre du site : un vocabulaire visuel défini après lui obligerait à reconvertir tout le corpus. Il avertit sans refuser — un refus reproduirait, un cran plus loin, la rigidité que ce lot supprime.
-5. **Suppression de colonnes différée.** Les colonnes devenues inutiles restent en base (phase *expand*) et seront retirées par une migration *contract* ultérieure. `scripts/check-migration-safety.mjs` bloque `DROP COLUMN` en pre-commit et en CI, et le pipeline canary fait tourner deux versions du code simultanément : supprimer une colonne dans la même migration casserait la version encore déployée.
+5. **La fiche produit s'organise en quatre onglets** — Description, Détails produit, Avis, FAQ — inspirés de la page de référence `tradingshenzhen.com`. L'onglet est le cadre, son contenu reste libre : la structure en onglets n'est pas un retour au schéma fermé, elle donne au contenu libre une place identifiable. L'onglet « Questions » de la référence est écarté : il suppose une modération de questions clients qui n'existe pas ici.
+6. **La FAQ revient en contenu libre**, dans une colonne `faq_html` propre, et non en JSON structuré. L'accordéon se fait en `<details>` / `<summary>` natifs, sans JavaScript. L'argument SEO qui aurait justifié le JSON ne tient plus : Google a restreint les rich results `FAQPage` aux sites gouvernementaux et de santé en 2023, et la boutique n'émet aujourd'hui aucun `FAQPage`.
+7. **Les images viennent d'une recherche puis d'une génération**, dans cet ordre. La recherche ancre le modèle dans le réel — sans elle il invente un produit qui n'existe pas ; la génération produit ensuite le visuel contextuel. La génération porte sur le **contexte** (décors, scènes, visuels de bannière), jamais sur le produit lui-même, dont la photo reste réelle : sur une boutique en paiement à la livraison, un visuel qui ne correspond pas à ce qui est livré se paie en refus de colis. L'outillage appartient au lot B ; le lot A se contente de ne pas supprimer ce qui servira.
+8. **Suppression de colonnes différée.** Les colonnes devenues inutiles restent en base (phase *expand*) et seront retirées par une migration *contract* ultérieure. `scripts/check-migration-safety.mjs` bloque `DROP COLUMN` en pre-commit et en CI, et le pipeline canary fait tourner deux versions du code simultanément : supprimer une colonne dans la même migration casserait la version encore déployée.
 
 ## 1. Modèle de données
 
 ### 1.1 Produits
 
-Le contenu long de la fiche devient `description` + `description_type = "html"`, c'est-à-dire le bloc libre qui existe déjà. Aucune colonne n'est ajoutée.
+Le contenu de l'onglet Description devient `description` + `description_type = "html"`, c'est-à-dire le bloc libre qui existe déjà.
+
+Une colonne est ajoutée pour l'onglet FAQ :
+
+```ts
+faq_html: text("faq_html"),
+```
+
+Les attributs du produit (`product_attributes`) alimentent l'onglet Détails produit et les avis (`reviews`) l'onglet Avis : les deux existent déjà et ne changent pas.
 
 Passent en legacy, conservées en base jusqu'au *contract* : `tagline`, `highlights`, `feature_blocks`, `faq`.
 
@@ -53,7 +64,7 @@ Passent en legacy, conservés jusqu'au *contract* : `subtitle`, `badge_text`, `b
 
 ### 1.3 Migration
 
-Une seule migration Drizzle en phase *expand* : `ALTER TABLE banners ADD COLUMN content_html TEXT`. Workflow habituel — éditer `lib/db/schema.ts`, `npm run db:generate`, relire le SQL produit dans `drizzle/`, `npm run db:migrate`, committer `schema.ts` + `drizzle/*.sql` + `drizzle/meta/`.
+Une seule migration Drizzle en phase *expand*, ajoutant deux colonnes : `banners.content_html` et `products.faq_html`. Workflow habituel — éditer `lib/db/schema.ts`, `npm run db:generate`, relire le SQL produit dans `drizzle/`, `npm run db:migrate`, committer `schema.ts` + `drizzle/*.sql` + `drizzle/meta/`.
 
 La migration *contract* qui supprimera `tagline`, `highlights`, `feature_blocks`, `faq`, les cinq colonnes legacy de `banners` et la table `ai_config` est **hors périmètre** de ce lot. Elle devra porter le marqueur `-- migration-safety: acknowledged reason="..."` et n'être appliquée qu'après promotion à 100 % de la version qui cesse de lire ces colonnes.
 
@@ -67,7 +78,8 @@ Un `@layer` dédié de `app/globals.css` expose un jeu de classes préfixées `n
 
 - rythme vertical et pleine largeur — `nk-section`, `nk-section-alt` (fond `--muted`), `nk-container` (largeur de lecture confortable pour les blocs de texte) ;
 - mise en grille — `nk-grid` (colonnes automatiques, s'effondre en une colonne sous 640 px), `nk-split` (deux colonnes texte / media) ;
-- contenu — `nk-lead` (chapô), `nk-card`, `nk-media` (image avec `border-radius: var(--radius)`), `nk-specs` (liste clé / valeur), `nk-quote`, `nk-cta`.
+- contenu — `nk-lead` (chapô), `nk-card`, `nk-media` (image avec `border-radius: var(--radius)`), `nk-specs` (liste clé / valeur), `nk-quote`, `nk-cta` ;
+- FAQ — `nk-faq`, qui habille une suite de `<details>` / `<summary>` en accordéon sans JavaScript.
 
 Chaque classe est documentée en commentaire dans le même fichier, avec un exemple minimal. C'est cette documentation que le lot B reprendra pour la transmettre au client IA.
 
@@ -97,7 +109,9 @@ Un script `scripts/convert-content-to-html.mjs`, exécutable contre D1 local pui
 
 ### 3.1 Produits
 
-Pour chaque produit dont au moins un champ story est renseigné, le script agrège en un seul document HTML, dans l'ordre de rendu actuel : la `tagline`, les `highlights`, les `feature_blocks`, la `faq`, puis la description existante. Le markup produit emploie le vocabulaire de la § 2.1 — `nk-section` pour le rythme, `nk-grid` pour les highlights, `nk-card` pour les blocs, `nk-specs` pour les listes clé / valeur — et non un balisage ad hoc : c'est ce qui fait de la conversion le premier corpus conforme à la charte. Le résultat est écrit dans `description` avec `description_type = 'html'`, et les quatre colonnes story sont mises à `NULL`.
+Pour chaque produit dont au moins un champ story est renseigné, le script agrège en un seul document HTML, dans l'ordre de rendu actuel : la `tagline`, les `highlights`, les `feature_blocks`, puis la description existante. La `faq` ne rejoint pas ce document : elle est convertie à part en une suite de `<details>` / `<summary>` écrite dans `faq_html`, puisqu'elle a désormais son propre onglet. Le markup produit emploie le vocabulaire de la § 2.1 — `nk-section` pour le rythme, `nk-grid` pour les highlights, `nk-card` pour les blocs, `nk-specs` pour les listes clé / valeur — et non un balisage ad hoc : c'est ce qui fait de la conversion le premier corpus conforme à la charte. Le résultat est écrit dans `description` avec `description_type = 'html'`, et les quatre colonnes story sont mises à `NULL`.
+
+La conversion de la `faq` suit la même règle : écrite dans `faq_html`, la colonne `faq` est vidée.
 
 Vider ces colonnes n'est pas un détail : c'est ce qui rend la conversion compatible avec le déploiement canary (§ 3.4) et ce qui donne au script son marqueur d'idempotence. La donnée d'origine n'est récupérable que par l'export D1 pris juste avant l'exécution distante — cet export est une étape obligatoire du runbook, pas une précaution facultative.
 
@@ -130,15 +144,32 @@ Le repli gabarit du hero introduit au déploiement 1 est une béquille de transi
 
 ### 4.1 Sanitizer
 
+`details` et `summary` rejoignent `ALLOWED_TAGS` de `lib/utils/sanitize-html.ts` — sans eux l'accordéon FAQ est impossible en contenu libre. Ce sont des éléments purement déclaratifs, sans surface d'exécution : l'ajout n'ouvre aucun vecteur. L'attribut `open` est également autorisé.
+
 `sanitizeDescriptionHtml(html, productId?)` est généralisé : le second paramètre devient `scopeId` et conserve exactement le même comportement — le préfixe émis reste `.desc-<scopeId>`. Les bannières passent `banner-<id>`, ce qui produit `.desc-banner-12` et ne peut entrer en collision avec un identifiant produit. Aucun changement de format sur les données déjà stockées, donc aucune reprise.
 
-### 4.2 Fiche produit
+### 4.2 Onglets de la fiche produit
+
+`components/storefront/product-details.tsx` passe de deux onglets (Description, Caractéristiques) à quatre :
+
+| Onglet | Source |
+| --- | --- |
+| Description | `description` en contenu libre |
+| Détails produit | `product_attributes`, rendu par l'`AttributesTable` existante |
+| Avis | `getProductRatingStats` + `getProductReviews`, déjà écrits |
+| FAQ | `faq_html` en contenu libre |
+
+Les avis sont aujourd'hui rendus par `ProductReviews`, un composant serveur asynchrone placé sous les onglets dans `app/(storefront)/p/[slug]/page.tsx`. Il ne peut pas être appelé depuis l'intérieur de `Tabs`, qui est un composant client. `ProductDetails` reçoit donc un prop `reviews: React.ReactNode` et la page lui passe son `<Suspense>` existant — le streaming des avis est préservé, le composant n'est pas réécrit.
+
+`ProductReviews` retourne `null` quand aucun avis n'existe ; dans une structure à onglets cela laisserait un onglet vide. L'onglet Avis reste toujours présent et affiche un état vide invitant au premier avis. Un onglet dont la source est vide — FAQ sans `faq_html`, Détails sans attributs — n'est pas affiché.
+
+### 4.3 Contenu de l'onglet Description
 
 `components/storefront/product-story/` se réduit à `StoryFreeContent`. Sont supprimés : `story-tagline.tsx`, `story-highlights.tsx`, `story-feature-block.tsx`, `story-faq.tsx`, `icons.ts`, et les props correspondantes de `index.tsx` et `components/storefront/product-details.tsx`.
 
 `StoryFreeContent` perd son conteneur contraignant : le `mx-auto max-w-3xl px-6` et les classes `prose` disparaissent quand `description_type === "html"`. Le contenu est rendu pleine largeur et c'est l'auteur du HTML qui décide de sa propre mise en page — `nk-container` lui rend la largeur de lecture confortable quand il la veut, au lieu de la lui imposer. Le rendu `richtext` conserve le conteneur `prose` actuel — c'est ce qui le rend lisible sans effort de mise en forme.
 
-### 4.3 Hero
+### 4.4 Hero
 
 `hero-banner.tsx` garde son carrousel Embla, son autoplay, son dégradé et son `next/image`. Le contenu textuel du gabarit est remplacé par `content_html`, injecté via `dangerouslySetInnerHTML` — le HTML a été assaini au moment de l'écriture, jamais au rendu, ce qui évite de faire tourner le sanitizer dans un composant client. Quand `content_html` est vide, la slide n'affiche que l'image et le dégradé.
 
@@ -163,7 +194,7 @@ Sont supprimés : `components/admin/product-story-section.tsx`, `components/admi
 - `actions/admin/products-ai.ts`
 - `app/(admin)/ai-settings/`
 - `components/admin/ai/`
-- `lib/ai/client.ts`, `config.ts`, `product-research.ts`, `image-search.ts`, `image-vision-filter.ts`, `submit-tool-schema.ts`, `rate-limit.ts`
+- `lib/ai/client.ts`, `config.ts`, `product-research.ts`, `image-vision-filter.ts`, `submit-tool-schema.ts`, `rate-limit.ts`
 - l'entrée « Config AI » de `components/admin/sidebar.tsx` et le bouton de création assistée de `app/(admin)/products/products-page-client.tsx`
 - les suites de test correspondantes sous `__tests__/unit/ai/` et `__tests__/unit/actions/products-ai.test.ts`
 
@@ -171,7 +202,10 @@ Sont supprimés : `components/admin/product-story-section.tsx`, `components/admi
 
 - `lib/ai/image-fetch.ts` → déplacé en `lib/storage/fetch-image.ts`. Le MCP s'en sert pour `add_product_images` ; il porte la garde SSRF, la limite de 5 Mo, le timeout de 10 s et le suivi sûr des redirections. Son test suit le déplacement. La construction de clé `products/<id>/<nanoid>.<ext>` y est codée en dur : elle reste inchangée dans ce lot, le lot B la généralisera pour les bannières.
 - `lib/rate-limit/kv-window-limit.ts` — utilisé par `lib/rate-limit/orders.ts`, `csp-report.ts` et `promo.ts`. Seul `lib/ai/rate-limit.ts`, spécifique à l'IA, est retiré.
+- `lib/ai/image-search.ts` → déplacé en `lib/media/image-search.ts`. La recherche d'images survit au retrait parce qu'elle ancre le modèle dans le réel (décision 7) ; le lot B la branchera sur un outil MCP. Elle lit aujourd'hui sa clé Brave depuis `ai_config` — elle lira désormais le secret `BRAVE_API_KEY`, ce qui la détache de la table condamnée.
 - La table `ai_config` et son entrée dans `lib/db/schema.ts` restent en place jusqu'au *contract*.
+
+`lib/ai/image-vision-filter.ts` est supprimé sans remplacement, et c'est un gain, pas une perte. Il existait parce que le pipeline embarqué devait juger seul la pertinence des résultats Brave : il envoyait chaque vignette à Claude en vision, via la clé Anthropic de `ai_config`. Avec le MCP, le client **est** le modèle — l'outil de recherche lui rend les vignettes et sa propre vision les juge. Le filtre serveur disparaît, et avec lui la dernière raison de conserver une clé Anthropic côté boutique.
 
 Les variables d'environnement de clés Anthropic et Brave cessent d'être lues. Elles ne sont pas retirées de `env.d.ts` dans ce lot, pour ne pas casser un déploiement dont les secrets sont encore définis.
 
@@ -193,6 +227,8 @@ Les imports de `lib/validations/product-story.ts` disparaissent ; le fichier est
 - **Script de conversion** — story complète, story partielle, story vide, icône inconnue, produit déjà en HTML (ignoré), et rejouabilité : deux exécutions successives produisent le même résultat.
 - **Hero** — rendu avec `content_html`, sans `content_html`, et repli sur les produits en vedette.
 - **Story produit** — rendu pleine largeur en `html`, conteneur `prose` conservé en `richtext`, rendu nul quand la description est vide.
+- **Onglets** — les quatre onglets s'affichent quand leurs sources sont renseignées ; un onglet dont la source est vide n'est pas rendu ; l'onglet Avis reste présent et affiche son état vide quand aucun avis n'existe ; les avis passés en `ReactNode` sont bien rendus dans leur onglet.
+- **FAQ** — `<details>` / `<summary>` survivent au sanitizer ; la conversion d'une `faq` JSON produit un accordéon conforme au vocabulaire.
 - **Non-régression** — `__tests__/unit/actions/admin-banners.test.ts` et les tests du wizard produit passent après élagage. `__tests__/unit/lib/db/product-drafts.test.ts` et `__tests__/unit/lib/validations/mcp-product.test.ts` sont amputés de leurs cas story.
 - Le hook de pre-commit (`tsc --noEmit`, `eslint`, `vitest run`) doit passer avant tout commit.
 
@@ -207,6 +243,15 @@ Les imports de `lib/validations/product-story.ts` disparaissent ; le fichier est
 ## Hors périmètre
 
 - La généralisation du serveur MCP aux produits publiés et aux bannières, et la transmission du vocabulaire au client IA (lot B, § 2.3).
+- **Le pipeline d'images du lot B** : un outil de recherche adossé à `lib/media/image-search.ts`, puis un outil de génération. Le choix du moteur de génération est ouvert et se tranchera à ce moment-là, sur trois critères déjà identifiés.
+
+  **Qualité en édition d'image.** Le binding `AI` de Cloudflare est le chemin le plus court — pas de clé, pas de sortie réseau — mais ses modèles modernes (Flux 2, Lucid Origin, Phoenix) sont **text-to-image uniquement** ; les seuls acceptant une image en entrée sont `stable-diffusion-v1-5-img2img` et `stable-diffusion-v1-5-inpainting`, dont le rendu date de 2022. Un service externe est donc admis, et probablement nécessaire dès qu'il s'agit de composer à partir d'une photo réelle.
+
+  **Gestion du secret.** Une clé de service externe vit comme secret Wrangler, jamais dans la table `ai_config` — celle-ci reste condamnée, le retrait de l'IA embarquée n'est pas rouvert par ce choix.
+
+  **Latence.** Un appel d'outil MCP est un aller-retour HTTP synchrone. Une génération de dix à trente secondes tient, mais c'est l'ordre de grandeur à vérifier avant de choisir : au-delà, il faudra un outil qui lance la génération et un second qui récupère le résultat, ce qui change le contrat des outils.
+
+  Le cadrage de la décision 7 tient quel que soit le moteur retenu : la recherche fournit la photo réelle du produit, la génération ne produit que le contexte autour.
 - La migration *contract* supprimant les colonnes legacy et la table `ai_config`.
 - La migration de `actions/admin/products.ts` de SQL brut vers Drizzle.
 - Le retrait des variables d'environnement Anthropic et Brave de `env.d.ts`.
