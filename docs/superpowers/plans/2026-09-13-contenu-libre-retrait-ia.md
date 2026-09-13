@@ -2266,6 +2266,13 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
 
   **C'est le seul filet — et il ne fait PAS ce qu'on croit spontanément.** `wrangler d1 export` dump la base *entière*. Restaurer ce dump reviendrait à annuler toutes les commandes, tous les clients et tous les mouvements de stock enregistrés depuis, sur une boutique en paiement à la livraison où une commande, c'est un camion et un livreur déjà engagés. **Ne jamais restaurer ce dump tel quel.**
 
+  **Attention au schéma du dump que vous tenez en main.** Une sauvegarde prise *avant* le déploiement de la phase 1 n'a ni `products.faq_html` ni `banners.content_html` — la migration ne s'est pas encore appliquée. Vérifié le 2026-09-13 sur un export réel. La recette ci-dessous s'applique telle quelle à un dump pris **à cette étape R6** (donc après la migration) ; contre un dump antérieur, retirer `faq_html` de la liste des colonnes et remettre explicitement `faq_html = NULL` sur les lignes restaurées, faute de quoi la FAQ convertie survivrait à une restauration censée l'annuler. Contrôler avant toute récupération :
+
+  ```bash
+  sqlite3 /tmp/verif.db < <le-dump>.sql
+  sqlite3 /tmp/verif.db "SELECT count(*) FROM pragma_table_info('products') WHERE name='faq_html';"
+  ```
+
   La récupération réelle, si la conversion doit être défaite : extraire du dump les colonnes `id, description, description_type, tagline, highlights, feature_blocks, faq, faq_html` (table `products`) — ou `id, content_html` (table `banners`) — et ré-appliquer **ces colonnes-là, ligne par ligne**, sur la base courante, jamais la base entière. Les quatre colonnes story ne suffisent pas : `scripts/convert-content-to-html.ts` écrit aussi `description`, `description_type = 'html'` et `faq_html` en même temps qu'il vide les colonnes story — restaurer seulement `tagline, highlights, feature_blocks, faq` laisserait `description` porter la version convertie de la story et `description_type` à `'html'`, donc chaque produit « récupéré » afficherait sa story deux fois (en blocs, puis à nouveau dans la description).
 
   Mécanique concrète : charger le dump dans un SQLite local (`sqlite3 recovery.db < backup-avant-conversion-AAAAMMJJ-HHMM.sql`), puis y lire, pour chaque produit à restaurer, les huit colonnes ci-dessus afin de générer une instruction `UPDATE products SET description = …, description_type = …, tagline = …, highlights = …, feature_blocks = …, faq = …, faq_html = … WHERE id = …` par ligne, à exécuter ensuite contre la base de production — jamais un remplacement de table entière.
