@@ -129,6 +129,22 @@ describe("bannerTemplateToHtml", () => {
     // data: : bloqué
     expect(bannerTemplateToHtml({ ...BASE, link_url: "data:text/html,<img src=x onerror=alert(1)>" }))
       .toContain('href="/"');
+
+    // Chemin avec espace dans le slug : conservé (l'espace n'est pas un C0)
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/p/mon produit" }))
+      .toContain('href="/p/mon produit"');
+
+    // Chemin avec espace dans la query string : conservé
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/p/x?q=a b" }))
+      .toContain('href="/p/x?q=a b"');
+
+    // Caractère de contrôle null (0x00) : rejeté, retombe sur l'accueil
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/p/x\x00bad" }))
+      .toContain('href="/"');
+
+    // Espacements en début/fin : conservés car retirés par trim()
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "  /p/x  " }))
+      .toContain('href="/p/x"');
   });
 
   it("survit à l'assainissement, qui est ce que la conversion lui fera subir", async () => {
