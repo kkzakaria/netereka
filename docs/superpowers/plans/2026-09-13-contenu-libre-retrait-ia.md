@@ -2193,24 +2193,54 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
 
 **À faire dans cet ordre, entre les deux déploiements. Ne saute aucune étape.**
 
+**Opération irréversible.** Le seul filet est l'export de R5, et ce n'est pas un bouton « annuler » — voir R5 pour ce qu'il permet réellement de récupérer et ce qu'il ne permet pas.
+
 - [ ] **R1.** Fusionner la PR de la phase 1 sur `main` et laisser le déploiement canary partir.
 - [ ] **R2.** Promouvoir à 100 % via le workflow `promote.yml` (Actions → « Promote », jamais le tableau de bord Cloudflare ni `wrangler` en direct). Vérifier que l'issue « Pending promotion » se ferme.
 - [ ] **R3.** Vérifier en production que le hero est inchangé et que `/p/<un-produit>` affiche toujours sa story.
-- [ ] **R4.** **Exporter la base distante.** C'est le seul filet : la conversion vide les colonnes story et rien ne les restaure sans cet export.
+- [ ] **R4. Pré-vol : mesurer le cas « richtext seul ».** `conversion-plan.ts` convertit aussi un produit qui n'a **aucune** colonne story mais dont la description richtext n'est pas vide : son JSON Lexical passe par `descriptionToHtml`, part en base comme HTML, et la source Lexical disparaît. Ce cas déborde du § 3.1 du spec (limité aux produits avec au moins un champ story renseigné) et collide avec deux décisions du lot : le spec § 5 garde l'éditeur richtext comme chemin court pour du texte simple, et la phase 2 rend `description_type === "html"` sans `prose` ni contrainte de largeur — une description écrite en richtext deviendrait du texte plein-large non typeset.
+
+  Mesurer avant de décider quoi que ce soit, contre la base distante :
+  ```bash
+  npx wrangler d1 execute netereka-db --remote --json --command \
+    "SELECT count(*) AS richtext_non_vides FROM products WHERE description_type='richtext' AND trim(coalesce(description,''))<>'', \
+            sum(description LIKE '%<section%' OR description LIKE '%<svg%' OR description LIKE '%<details%') AS deja_balises_neuves FROM products"
+  ```
+  - `richtext_non_vides` : nombre de produits que ce cas concerne réellement.
+    - Si **0** : le cas est sans objet. Cocher cette case et consigner « 0 ligne concernée en production, mesuré le AAAA-MM-JJ » ici même avant de poursuivre — c'est la raison écrite qui dispense de trancher.
+    - Si **≠ 0** : **s'arrêter** et décider explicitement avant R5 — soit exclure ces lignes de la conversion (ajouter leur id à une liste d'exclusion), soit accepter la conversion en sachant que leur source Lexical est perdue. Ne pas continuer sur un silence.
+  - `deja_balises_neuves` : seule vérification empirique de l'invisibilité de la phase 1. Le sanitizer élargi (balises `section`, `svg`, `details`…) s'applique à la lecture sur des descriptions déjà en base — un nombre non nul signifie qu'un contenu stocké va déjà s'afficher différemment dès ce déploiement, avant toute conversion. Si non nul, inspecter ces lignes avant de continuer.
+- [ ] **R5. Exporter la base distante.**
   ```bash
   npx wrangler d1 export netereka-db --remote --output=backup-avant-conversion-$(date +%Y%m%d-%H%M).sql
   ```
   Vérifier que le fichier n'est pas vide et le ranger hors du dépôt.
-- [ ] **R5.** Simulation distante, et **relire la sortie** :
+
+  **C'est le seul filet — et il ne fait PAS ce qu'on croit spontanément.** `wrangler d1 export` dump la base *entière*. Restaurer ce dump reviendrait à annuler toutes les commandes, tous les clients et tous les mouvements de stock enregistrés depuis, sur une boutique en paiement à la livraison où une commande, c'est un camion et un livreur déjà engagés. **Ne jamais restaurer ce dump tel quel.**
+
+  La récupération réelle, si la conversion doit être défaite : extraire du dump les colonnes `id, tagline, highlights, feature_blocks, faq` (table `products`) — ou `id, content_html` (table `banners`) — et ré-appliquer **ces colonnes-là, ligne par ligne**, sur la base courante, jamais la base entière.
+- [ ] **R6. Geler l'édition de contenu.** `actions/admin/products.ts` et `lib/db/product-drafts.ts` écrivent encore les quatre colonnes story ; tant que le déploiement 2 n'est pas en place, une sauvegarde admin ou un appel MCP de brouillon les re-remplit, et la fiche produit affiche alors à la fois la story ET la description qui la contient déjà. **Aucune édition de contenu produit ou bannière (admin comme MCP) entre R6 et le déploiement 2.** Prévenir l'équipe admin avant de lancer R8.
+- [ ] **R7.** Simulation distante, avec la variable d'environnement requise et **relire la sortie** :
   ```bash
-  npm run content:convert -- --remote --dry-run
+  NEXT_PUBLIC_R2_URL=https://r2.netereka.ci npm run content:convert -- --remote --dry-run
   ```
-- [ ] **R6.** Conversion réelle :
+  `NEXT_PUBLIC_R2_URL` compte : `getImageUrl()` la résout au moment de la conversion, donc la valeur utilisée ici est figée pour toujours dans le `src` de chaque image de bloc convertie et ne pourra plus être corrigée sans relancer une seconde conversion. La valeur ci-dessus est celle de `.env.local` ; ne pas la deviner ni la laisser vide (le script refuse de démarrer sans elle, mais un mauvais hôte ne serait pas détecté).
+
+  **Condition d'arrêt.** Le résumé affiche `colonnes illisibles, contenu perdu : …` pour chaque produit dont une colonne story n'a pas validé le schéma — précisément pour qu'un humain puisse refuser de continuer. **Si le bilan rapporte au moins un produit concerné, s'arrêter** : réparer ou consigner ces lignes avant de lancer R8. Ne pas continuer sur un silence ici non plus.
+- [ ] **R8. Conversion réelle**, avec la même variable, et la sortie conservée (le seul autre enregistrement de ce qui a été écrit est le scrollback du terminal) :
   ```bash
-  npm run content:convert -- --remote
+  NEXT_PUBLIC_R2_URL=https://r2.netereka.ci npm run content:convert -- --remote 2>&1 | tee conversion-$(date +%Y%m%d-%H%M).log
   ```
-- [ ] **R7.** Vérifier en production : le hero affiche toujours son gabarit (désormais rendu depuis `content_html`), et une fiche produit affiche sa description — l'ancienne version du code lit `description`, qui contient maintenant toute la story, et des colonnes story vides.
-- [ ] **R8.** Rejouer le script pour confirmer l'idempotence : tout doit ressortir « ignoré », zéro conversion.
+  Le script demande de taper `CONVERTIR` pour confirmer avant d'écrire — c'est attendu, pas un blocage à contourner.
+- [ ] **R9.** Vérifier en production. Le hero ne rend plus le même gabarit qu'avant — c'est le but du lot, pas une régression à corriger :
+  - le badge s'affiche toujours dans `--hero-accent`, quelle que soit sa couleur d'origine (mint, orange, rouge, bleu) — `badge_color` n'existe pas dans `banner-to-html.ts` ;
+  - la carte de verre n'a plus l'ombre portée `shadow-2xl` — `.nk-banner` ne définit aucun `box-shadow` ;
+  - le titre perd son palier `lg:text-4xl` — `.nk-banner-title` n'a que deux tailles (mobile, ≥640px), pas de troisième au-delà ;
+  - le texte du bouton grossit légèrement — `.nk-cta` ne fixe aucun `font-size`, il hérite du contexte au lieu du `text-xs`/`text-sm` d'avant ;
+  - le bouton devient un `<a>` ordinaire au lieu d'un `next/link` : cliquer dessus déclenche désormais un rechargement complet de la page plutôt qu'une navigation côté client. Conséquence connue de la décision de contenu libre, pas un défaut.
+
+  Vérifier en parallèle qu'une fiche produit affiche sa description — l'ancienne version du code lit `description`, qui contient maintenant toute la story, et des colonnes story vides.
+- [ ] **R10.** Rejouer le script pour confirmer l'idempotence : tout doit ressortir « ignoré », zéro conversion. Le gel de l'édition (R6) reste actif jusqu'à ce que le déploiement 2 (tâche 11 et suivantes) soit en production.
 
 ---
 

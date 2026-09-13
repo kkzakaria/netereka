@@ -83,7 +83,7 @@ Un `@layer` dédié de `app/globals.css` expose un jeu de classes préfixées `n
 
 Chaque classe est documentée en commentaire dans le même fichier, avec un exemple minimal. C'est cette documentation que le lot B reprendra pour la transmettre au client IA.
 
-Le `@layer` se place après `base` et avant `utilities`. Une règle écrite par l'auteur dans son propre bloc `<style>` — déjà préfixée `.desc-<scopeId>` par le sanitizer, donc plus spécifique — l'emporte toujours. **Le vocabulaire propose, il n'impose pas** : c'est ce qui le distingue du schéma fermé qu'on retire.
+Le vocabulaire rejoint `@layer components` — pas un layer `nk-` à part. La cascade CSS ordonne les layers nommés par leur première apparition dans le document, jamais par leur position textuelle dans le fichier : `@import "tailwindcss"` déclare `@layer theme, base, components, utilities;` en tête, ce qui fixe l'ordre de ces quatre noms avant que `app/globals.css` ne déclare quoi que ce soit. Un layer nommé mais absent de cette liste serait ajouté ensuite, donc en dernier, et l'emporterait alors sur `utilities` — l'inverse de l'effet recherché, quelle que soit sa position textuelle dans le fichier. Rejoindre `components`, un nom déjà dans la liste, place ces règles au bon endroit : après `base`, avant `utilities`. Une règle écrite par l'auteur dans son propre bloc `<style>` — déjà préfixée `.desc-<scopeId>` par le sanitizer, donc plus spécifique — l'emporte toujours, quel que soit le layer. **Le vocabulaire propose, il n'impose pas** : c'est ce qui le distingue du schéma fermé qu'on retire.
 
 ### 2.2 Contrôle à l'écriture
 
