@@ -16,6 +16,12 @@ import { iconToSvg } from "@/lib/content/icon-to-svg";
  * c'est ce qui la rend conforme à la charte dès le premier jour. Le test
  * story-to-html.test.ts vérifie cette conformité en appelant
  * checkDesignConformance sur sa propre sortie.
+ *
+ * Les blocs à image alternent image/texte d'un bloc à l'autre (zig-zag) pour
+ * reproduire la disposition de story-feature-block.tsx. Ce comportement inverse
+ * l'ordre DOM pour les blocs de rang impair : le résultat visuel corresponds
+ * mais l'ordre de lecture aux lecteurs d'écran est inversé pour ces blocs
+ * (conséquence acceptable du vocabulaire `nk-` sans crochet `order` CSS).
  */
 
 export interface StoryInput {

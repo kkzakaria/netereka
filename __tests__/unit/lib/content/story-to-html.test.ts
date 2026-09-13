@@ -75,6 +75,31 @@ describe("storyToHtml", () => {
     expect(html).toContain('alt="Photo"');
   });
 
+  it("alterne image et texte d'un bloc à l'autre", () => {
+    const { html } = storyToHtml({
+      ...EMPTY,
+      feature_blocks: [
+        { title: "Pair", body: "x", image_url: "products/p1/a.jpg", image_alt: "A" },
+        { title: "Impair", body: "y", image_url: "products/p1/b.jpg", image_alt: "B" },
+      ],
+    });
+    // Rang pair (index 0) : image puis texte.
+    // Rang impair (index 1) : texte puis image.
+    // Extraire les sections complètes entre les balises <section>
+    const sections = html.split(/<section[^>]*>/);
+    // sections[0] = avant le premier <section>, sections[1] = contenu du 1er bloc, etc.
+    const pairBlock = sections[1] || "";
+    const impairBlock = sections[2] || "";
+
+    expect(pairBlock.indexOf("<img")).toBeGreaterThan(-1);
+    expect(pairBlock.indexOf("<h3>")).toBeGreaterThan(-1);
+    expect(pairBlock.indexOf("<img")).toBeLessThan(pairBlock.indexOf("<h3>"));
+
+    expect(impairBlock.indexOf("<img")).toBeGreaterThan(-1);
+    expect(impairBlock.indexOf("<h3>")).toBeGreaterThan(-1);
+    expect(impairBlock.indexOf("<img")).toBeGreaterThan(impairBlock.indexOf("<h3>"));
+  });
+
   it("place la description existante en dernier, sans la modifier", () => {
     const existing = '<section class="nk-section"><p>Déjà écrit</p></section>';
     const { html } = storyToHtml({ ...EMPTY, tagline: "Accroche", description_html: existing });

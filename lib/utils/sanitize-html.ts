@@ -17,7 +17,10 @@ const ALLOWED_TAGS = new Set([
 
 const ALLOWED_ATTRS = new Set([
   "class", "style", "href", "src", "alt", "width", "height",
-  "colspan", "rowspan", "target", "rel", "open", "loading",
+  "colspan", "rowspan", "target", "rel", "open",
+  // Énumération fermée (lazy, eager, auto) émise par le convertisseur de
+  // contenu libre sur toute image ; pas de résolution d'URI ni de CSS.
+  "loading",
   // Attributs de dessin SVG. `viewbox` est en minuscules parce que la boucle
   // d'attributs met tout nom en minuscules ; l'analyseur HTML le remappe vers
   // `viewBox` pour les éléments SVG, donc rien à corriger ici.
