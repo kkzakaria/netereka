@@ -1418,6 +1418,10 @@ describe("accordéon FAQ", () => {
     expect(out).not.toContain("href");
     expect(out).toBe("<a>x</a>");
   });
+
+  it("retire un event handler sans valeur sur une balise nouvellement autorisée (details)", () => {
+    expect(sanitizeDescriptionHtml("<details ontoggle>x</details>")).toBe("<details>x</details>");
+  });
 });
 
 describe("portée CSS d'une bannière", () => {

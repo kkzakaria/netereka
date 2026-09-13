@@ -11,13 +11,14 @@ const ALLOWED_ATTRS = new Set([
   "colspan", "rowspan", "target", "rel", "open",
 ]);
 
-/** HTML boolean attributes this file allows through with no value at all —
- *  `<details open>`, not `<details open="">`. Safe to emit bare on every tag
- *  in ALLOWED_TAGS: none of them carries a URL, runs script, or applies CSS —
- *  its mere presence can only reveal an accordion panel. Every OTHER valueless
- *  attribute (`<div hidden>`) is still dropped; this set is deliberately not
- *  the same thing as ALLOWED_ATTRS, which governs attributes that carry a
- *  value. */
+/** Of the attributes ALLOWED_ATTRS already allows, the ones that may ALSO
+ *  appear with no value at all — `<details open>`, not `<details open="">`.
+ *  Membership here is NEVER sufficient on its own: the call site requires
+ *  `ALLOWED_ATTRS.has(name) && !EVENT_HANDLER_RE.test(name)` alongside it, so
+ *  adding a name to this set alone grants it nothing. Do not treat this as a
+ *  second allowlist a name can pass through instead of those two checks — it
+ *  narrows an already-allowed, already-vetted attribute, it does not replace
+ *  the vetting. */
 const BOOLEAN_ATTRS = new Set(["open"]);
 
 const EVENT_HANDLER_RE = /^on[a-z]/i;
@@ -957,12 +958,18 @@ export function sanitizeDescriptionHtml(html: string, scopeId?: string): string 
       while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
         const attrName = attrMatch[1].toLowerCase();
         const rawValue = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4];
-        // Valueless attribute ("<div hidden>"): dropped, UNLESS its name is one
-        // of the narrow set of boolean attributes in BOOLEAN_ATTRS ("open"),
-        // which is emitted bare — "<details open>", matching what an author
-        // actually writes, rather than silently degrading to a collapsed panel.
+        // Valueless attribute ("<div hidden>"): dropped, UNLESS its name is
+        // BOTH in BOOLEAN_ATTRS ("open" only) AND already allowed and vetted
+        // by the same two checks every valued attribute goes through below —
+        // ALLOWED_ATTRS and EVENT_HANDLER_RE. BOOLEAN_ATTRS narrows that set
+        // further to the names safe to emit bare; it never substitutes for
+        // either check. What survives is emitted bare — "<details open>",
+        // matching what an author actually writes, rather than silently
+        // degrading to a collapsed panel.
         if (rawValue === undefined) {
-          if (BOOLEAN_ATTRS.has(attrName)) attrs.push(attrName);
+          if (BOOLEAN_ATTRS.has(attrName) && ALLOWED_ATTRS.has(attrName) && !EVENT_HANDLER_RE.test(attrName)) {
+            attrs.push(attrName);
+          }
           continue;
         }
         const attrValue = rawValue;
