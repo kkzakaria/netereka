@@ -42,4 +42,19 @@ describe("iconToSvg", () => {
     const { checkDesignConformance } = await import("@/lib/content/check-design-conformance");
     expect(checkDesignConformance(iconToSvg("battery")!)).toEqual([]);
   });
+
+  it("survit à l'assainissement, qui est ce que la conversion lui fera subir", async () => {
+    const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
+    const svg = iconToSvg("battery", "nk-highlight-icon")!;
+    const out = sanitizeDescriptionHtml(`<li class="nk-card">${svg}<p>7300 mAh</p></li>`, "prod-1");
+    expect(out).toContain("<svg");
+    expect(out).toContain("<path");
+    expect(out).toContain("7300 mAh");
+  });
+
+  it("ferme explicitement chaque nœud, faute de quoi ils s'imbriqueraient", () => {
+    const svg = iconToSvg("battery")!;
+    expect(svg).not.toContain("/>");
+    expect(svg).toContain("></path>");
+  });
 });

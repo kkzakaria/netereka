@@ -31,6 +31,14 @@ function escapeAttr(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Balise fermante explicite : `sanitizeDescriptionHtml` retire la barre
+ * auto-fermante (`<br/>` en ressort `<br>`, `<hr />` en ressort `<hr>`), sans
+ * effet sur les éléments vides de HTML mais catastrophique ici — un
+ * `<path … />` ressortirait `<path>` resté ouvert, et les `path` suivants
+ * s'imbriqueraient dedans au lieu d'être frères. On n'attend rien de
+ * l'indulgence des navigateurs : on émet nous-mêmes la paire ouvrante/fermante.
+ */
 function serializeNode([tag, attrs]: IconNode): string {
   const parts: string[] = [];
   for (const [name, value] of Object.entries(attrs)) {
@@ -38,7 +46,7 @@ function serializeNode([tag, attrs]: IconNode): string {
     if (name === "key") continue;
     parts.push(`${toKebab(name)}="${escapeAttr(String(value))}"`);
   }
-  return `<${tag}${parts.length ? ` ${parts.join(" ")}` : ""} />`;
+  return `<${tag}${parts.length ? ` ${parts.join(" ")}` : ""}></${tag}>`;
 }
 
 export function iconToSvg(name: string, className?: string): string | null {

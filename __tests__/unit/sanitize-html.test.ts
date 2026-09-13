@@ -504,9 +504,13 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).not.toBe("<img/src=x/onerror=alert(document.domain)>");
   });
 
+  // L'exemple était `<svg>` jusqu'à ce que la tâche 5b autorise ce tag dans
+  // le contenu libre ; il a été déplacé vers `<math>`, resté interdit, pour
+  // que ce test continue de vérifier ce que son nom promet. Si `<math>` est
+  // autorisé un jour, déplace-le encore plutôt que de le supprimer.
   it("strips a disallowed tag written with a '/' separator", () => {
-    const result = sanitizeDescriptionHtml("<svg/onload=alert(1)>content");
-    expect(result).not.toContain("<svg");
+    const result = sanitizeDescriptionHtml("<math/onload=alert(1)>content");
+    expect(result).not.toContain("<math");
     expect(result).not.toMatch(/\bonload\s*=/i);
     expect(result).toContain("content");
   });
@@ -1421,6 +1425,62 @@ describe("accordéon FAQ", () => {
 
   it("retire un event handler sans valeur sur une balise nouvellement autorisée (details)", () => {
     expect(sanitizeDescriptionHtml("<details ontoggle>x</details>")).toBe("<details>x</details>");
+  });
+});
+
+describe("SVG inline", () => {
+  it("laisse passer un svg et ses path", () => {
+    const out = sanitizeDescriptionHtml(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M2 12" stroke-width="1.5" stroke-linecap="round"></path></svg>',
+    );
+    expect(out).toContain("<svg");
+    expect(out).toContain("<path");
+    expect(out).toContain('d="M2 12"');
+    expect(out).toContain('stroke-width="1.5"');
+    expect(out).toContain('viewbox="0 0 24 24"');
+  });
+
+  it("retire un script niché dans un svg", () => {
+    const out = sanitizeDescriptionHtml('<svg><script>alert(1)</script><path d="M0 0"></path></svg>');
+    expect(out).not.toContain("alert(1)");
+    expect(out).not.toContain("<script");
+  });
+
+  it("retire un gestionnaire d'événement sur un svg", () => {
+    const out = sanitizeDescriptionHtml('<svg onload="alert(1)"><path d="M0 0"></path></svg>');
+    expect(out).not.toContain("onload");
+    expect(out).not.toContain("alert(1)");
+  });
+
+  it("jette les éléments SVG non listés", () => {
+    for (const markup of [
+      '<svg><foreignObject><p>x</p></foreignObject></svg>',
+      '<svg><animate onbegin="alert(1)" attributeName="x"></animate></svg>',
+      '<svg><use xlink:href="#a"></use></svg>',
+      '<svg><set attributeName="x"></set></svg>',
+    ]) {
+      const out = sanitizeDescriptionHtml(markup);
+      expect(out).not.toContain("foreignObject");
+      expect(out).not.toContain("animate");
+      expect(out).not.toContain("xlink");
+      expect(out).not.toContain("<set");
+      expect(out).not.toContain("alert(1)");
+    }
+  });
+
+  it("jette un href sur un élément svg", () => {
+    // `href` est dans ALLOWED_ATTRS pour les liens ; sur un <svg> il ouvrirait
+    // une navigation. Le sanitizer ne distingue pas les contextes, donc ce test
+    // documente ce qui se passe réellement plutôt qu'un vœu.
+    const out = sanitizeDescriptionHtml('<svg href="javascript:alert(1)"><path d="M0 0"></path></svg>');
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("neutralise un gestionnaire glissé après un séparateur '/' sur un svg", () => {
+    const result = sanitizeDescriptionHtml("<svg/onload=alert(1)>content");
+    // La balise est désormais autorisée, donc elle survit — mais nue.
+    expect(result).toBe("<svg>content");
+    expect(result).not.toMatch(/\bonload\s*=/i);
   });
 });
 
