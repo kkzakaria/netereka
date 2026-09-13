@@ -52,6 +52,7 @@ next-env.d.ts
 
 # git worktrees
 .worktrees/
+.claude/worktrees/
 
 # playwright test artifacts
 .playwright-mcp
@@ -74,3 +75,9 @@ scripts/images/
 security-audit/
 *security*audit*.tar.gz
 /*.tar.gz
+
+# conversion runbook artefacts (Étape R) — le second est un dump complet de la
+# base de production (commandes, clients, téléphones) : ne doit jamais être
+# suivi par git, même un instant avant d'être rangé hors du dépôt
+conversion-*.log
+backup-avant-conversion-*.sql

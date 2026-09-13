@@ -18,6 +18,7 @@
     "promote": "bash scripts/promote.sh",
     "versions:list": "wrangler versions list",
     "check:migrations": "node scripts/check-migration-safety.mjs",
+    "content:convert": "tsx scripts/convert-content-to-html.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -106,6 +107,7 @@
     "husky": "^9.1.7",
     "shadcn": "^3.8.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "5.9.3",
     "vitest": "^4.0.18",
     "wrangler": "^4.61.1"

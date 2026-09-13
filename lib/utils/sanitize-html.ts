@@ -3,12 +3,50 @@ const ALLOWED_TAGS = new Set([
   "ul", "ol", "li", "a", "img", "strong", "em", "u", "s",
   "br", "hr", "table", "thead", "tbody", "tr", "th", "td",
   "blockquote", "pre", "code", "style", "figure", "figcaption",
+  "details", "summary",
+  // Conteneur inerte du vocabulaire de contenu libre : aucun attribut
+  // d'intérêt, aucun sink. Les classes nk- et le rythme vertical qu'elles
+  // orchestrent sont construits dessus.
+  "section",
+  // SVG inline, strictement limité au dessin : `svg`, `path` et `circle`,
+  // rien d'autre. Tout le reste du vocabulaire SVG — foreignObject, use,
+  // animate, set, script — n'est pas listé, donc jeté, et c'est ce qui rend
+  // cet élargissement sûr. Ne l'étends pas sans rejouer les tests « SVG inline ».
+  //
+  // RÈGLE PERMANENTE — ne JAMAIS ajouter `foreignObject`, `use`, `title`,
+  // `desc`, `animate`, `set` ou `math` à ce Set. Chacun est soit un
+  // changement de contexte de parseur (foreignObject et math permettent à du
+  // HTML ou du MathML de reprendre la main à l'intérieur d'un SVG, comme
+  // `<style>` ne le permet pas), soit un vecteur de script (`use` peut
+  // référencer un `<symbol>` distant, `animate`/`set` peuvent réécrire un
+  // attribut au chargement). Chacun arrivera un jour avec une justification
+  // aussi raisonnable que celle qui a fait entrer `section` — ce n'est pas
+  // une raison de céder.
+  "svg", "path", "circle",
 ]);
 
 const ALLOWED_ATTRS = new Set([
   "class", "style", "href", "src", "alt", "width", "height",
-  "colspan", "rowspan", "target", "rel",
+  "colspan", "rowspan", "target", "rel", "open",
+  // Énumération fermée (lazy, eager, auto) émise par le convertisseur de
+  // contenu libre sur toute image ; pas de résolution d'URI ni de CSS.
+  "loading",
+  // Attributs de dessin SVG. `viewbox` est en minuscules parce que la boucle
+  // d'attributs met tout nom en minuscules ; l'analyseur HTML le remappe vers
+  // `viewBox` pour les éléments SVG, donc rien à corriger ici.
+  "viewbox", "d", "stroke", "fill", "stroke-width", "stroke-linecap",
+  "stroke-linejoin", "xmlns", "aria-hidden", "cx", "cy", "r",
 ]);
+
+/** Of the attributes ALLOWED_ATTRS already allows, the ones that may ALSO
+ *  appear with no value at all — `<details open>`, not `<details open="">`.
+ *  Membership here is NEVER sufficient on its own: the call site requires
+ *  `ALLOWED_ATTRS.has(name) && !EVENT_HANDLER_RE.test(name)` alongside it, so
+ *  adding a name to this set alone grants it nothing. Do not treat this as a
+ *  second allowlist a name can pass through instead of those two checks — it
+ *  narrows an already-allowed, already-vetted attribute, it does not replace
+ *  the vetting. */
+const BOOLEAN_ATTRS = new Set(["open"]);
 
 const EVENT_HANDLER_RE = /^on[a-z]/i;
 
@@ -215,6 +253,127 @@ function isSafeUri(rawValue: string): boolean {
   // deliberately NOT decoded here — a browser does not decode it before parsing
   // the scheme either, so "%6aavascript:" is a relative path to both of us.
   return !ANY_SCHEME_RE.test(value);
+}
+
+/** A complete, well-formed `url(...)` function, quoted or not. Global so every
+ *  occurrence in a value is checked, not just the first — but never trusted
+ *  on its own to decide safety, because it can only report what it manages to
+ *  MATCH. An unclosed `url(` matches nothing here and would silently read as
+ *  "no url() present" if this were the only check; see isSafePaintValue for
+ *  why the presence check (CSS_FETCHING_RE) has to run first.
+ *
+ *  Every quantifier here is bounded or delimiter-excluded on purpose. This
+ *  regex runs on every product-page render (description-to-html →
+ *  StoryFreeContent) inside a CPU-metered Worker, and sanitizeDescriptionHtml
+ *  accepts input up to MAX_INPUT_LENGTH — 512,000 characters — so "how does
+ *  this behave at the ceiling" is a reachable question, not a theoretical one.
+ *  Two DISTINCT quadratic shapes were measured against the previous form and
+ *  are closed here by construction:
+ *
+ *  1. `\s{0,32}` rather than `\s*`, on both sides. When the required `\)`
+ *     fails to turn up, the leading and the trailing whitespace run trade the
+ *     same spaces back and forth: "url(" + N spaces costs O(N²). An earlier
+ *     round excluded whitespace from the INNER run and asserted that this
+ *     left "exactly one possible split, so there is nothing left to backtrack
+ *     over" — that assertion was false, and the numbers below were measured on
+ *     that supposedly-fixed form: 42 ms at 12,500 spaces, 692 ms at 50,000,
+ *     3,091 ms at 100,000, 73,789 ms at the 512,000 ceiling. The two `\s`
+ *     runs traded with EACH OTHER; excluding whitespace from the inner run
+ *     never touched that. Bounding both runs caps the split space at a
+ *     constant (33 × 33 attempts per start position), which is linear overall.
+ *
+ *  2. `(` is excluded from the inner run, alongside the quotes, `)` and
+ *     whitespace. Without that exclusion the run swallows the entire rest of
+ *     the value and then hands it back one character at a time — and it does
+ *     so once per start position, because "url(url(url(…" offers the engine a
+ *     fresh start every four characters. Measured on the previous form:
+ *     104 ms at 3,000 repetitions, 1,903 ms at 12,000, 30,212 ms at 50,000,
+ *     198,701 ms at the 512,000 ceiling. Three minutes of Worker CPU, per view,
+ *     for one stored description. Note that fix 1 alone does nothing for this
+ *     shape — it is not a whitespace problem. With `(` excluded, the run stops
+ *     at most three characters into the next candidate — it can still consume
+ *     that candidate's "u", "r" and "l" before halting at its "(" — so
+ *     successive starts' work overlaps by at most that fixed span rather than
+ *     never touching at all, and the total stays linear: bounded by 2n rather
+ *     than the n² of the unexcluded form.
+ *
+ *  Consequence accepted in both cases, and it is the safe direction: a url()
+ *  whose content holds an inner space or a `(` no longer MATCHES at all.
+ *  `url(#a b)` and `url(#a(b)` become openings with no well-formed match, and
+ *  isSafePaintValue rejects those rather than accepting them silently. */
+const PAINT_URL_RE = /url\(\s{0,32}(['"]?)([^'"()\s]*)\1?\s{0,32}\)/gi;
+
+/**
+ * `fill`/`stroke` are SVG presentation attributes whose value is a CSS
+ * `<paint>` production, so a browser resolves character references and CSS
+ * escapes before deciding whether it names a function at all — the same
+ * order `stripDangerousCss` uses. `href`/`src` are gated by scheme via
+ * `isSafeUri`; a paint value has no scheme of its own to allowlist.
+ *
+ * Fails CLOSED, like `stripDangerousCss`, on the mere PRESENCE of a
+ * resource-fetching construct (`CSS_FETCHING_RE` — `url(`, `image-set(`,
+ * `src(`, `expression(`, `@import`), then re-opens only for the one shape
+ * that is safe by construction: one or more fully well-formed, closed
+ * `url(#fragment-id)` references to the current document (a `<lineargradient>`
+ * a future icon might define), and nothing else naming a resource.
+ *
+ * The first version of this function inspected only what `PAINT_URL_RE`
+ * MATCHED and returned true when nothing matched — which let an unclosed
+ * `url(https://evil/x` (no closing paren) through unexamined, along with
+ * `src(...)`/`image-set(...)`/`expression(...)`, none of which that regex
+ * even looks for. CSS Syntax Level 3 §4.3.6 has a browser tokenize an
+ * unterminated `url(` as a url token anyway, returned on EOF — so "doesn't
+ * match" is not "doesn't fetch". Counting closed, well-formed `url(#…)`
+ * matches against the raw count of `url(` occurrences is what catches the
+ * unclosed case: if a `url(` never closes, or closes on something other than
+ * a bare `#fragment`, the counts disagree and the value is rejected.
+ *
+ * An external `url(https://…)`, `src(...)` or `image-set(...)` here is
+ * exactly the request-exfiltration shape closed for inline `style` by
+ * GHSA-m888, arriving through a different attribute — `isSafeUri` and
+ * `stripDangerousCss` do not cover it, so nothing upstream of this function
+ * catches it.
+ *
+ * `xmlns` is the one other allowlisted attribute whose value is URI-shaped
+ * and carries no check at all — harmless, since a browser never fetches a
+ * namespace declaration, but worth naming here so the next reader does not
+ * have to rediscover it while looking for the next gap of this shape.
+ */
+function isSafePaintValue(rawValue: string): boolean {
+  const resolved = resolveCssEscapes(preprocessCssNewlines(decodeCharacterReferences(rawValue)));
+
+  // Échec fermé, comme stripDangerousCss : la seule PRÉSENCE d'une construction
+  // qui va chercher une ressource condamne la valeur. On ne rouvre ensuite que
+  // pour la forme même-document, et seulement si elle est intégralement
+  // bien formée.
+  if (!CSS_FETCHING_RE.test(resolved)) return true;
+
+  // Aucune de ces fonctions n'a de forme même-document : rien à exempter.
+  if (/(?:image-set|src|expression)\(|@import/i.test(resolved)) return false;
+
+  // Chaque `url(` doit être un url(#…) bien formé. Compter les ouvertures et
+  // les correspondances complètes est ce qui ferme la porte à la forme non
+  // fermée : elle ouvre sans correspondre, et le navigateur la lit quand même
+  // comme un token url (CSS Syntax L3 §4.3.6 — le token est rendu sur EOF).
+  const opens = (resolved.match(/url\(/gi) ?? []).length;
+  let wellFormedSameDocument = 0;
+  PAINT_URL_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PAINT_URL_RE.exec(resolved)) !== null) {
+    if (!match[2].startsWith("#")) return false;
+    wellFormedSameDocument++;
+  }
+  // `opens > 0 &&` : sans ce garde-fou, un CSS_FETCHING_RE positif sur une
+  // construction que la ligne "image-set|src|expression|@import" ci-dessus
+  // ne reconnaît pas (parce qu'elle recopie à la main l'alternance de
+  // CSS_FETCHING_RE plutôt que de la réutiliser) tomberait dans ce dernier
+  // return avec opens = 0 et wellFormedSameDocument = 0, soit 0 === 0 → true.
+  // Aujourd'hui les deux listes sont exactement complémentaires, donc rien ne
+  // passe au travers — mais le commentaire de CSS_FETCHING_RE invite à
+  // l'étendre, et un ajout qui n'est pas répercuté ici tomberait alors en
+  // succès plutôt qu'en échec. Ne simplifie pas ce garde en te fiant à l'état
+  // actuel des deux listes.
+  return opens > 0 && wellFormedSameDocument === opens;
 }
 
 /**
@@ -610,8 +769,8 @@ function scopeSelectorList(selectors: string, scopePrefix: string): string {
 }
 
 /**
- * Prefix every style-rule selector in `css` with `scopePrefix`, so a product
- * description's stylesheet cannot restyle the rest of the page.
+ * Prefix every style-rule selector in `css` with `scopePrefix`, so a free-content
+ * stylesheet cannot restyle the rest of the page.
  *
  * WHAT THIS REPLACED, AND WHY A REGEX COULD NOT DO IT
  * ---------------------------------------------------
@@ -766,10 +925,10 @@ function scopeCssSelectors(css: string, scopePrefix: string): string {
   return copied === 0 ? css : out + css.slice(copied);
 }
 
-export function sanitizeDescriptionHtml(html: string, productId?: string): string {
+export function sanitizeDescriptionHtml(html: string, scopeId?: string): string {
   if (!html || !html.trim()) return "";
   if (html.length > MAX_INPUT_LENGTH) {
-    console.error("[sanitize-html] Input exceeds max length — returning empty (fail-closed)", { length: html.length, productId });
+    console.error("[sanitize-html] Input exceeds max length — returning empty (fail-closed)", { length: html.length, scopeId });
     return "";
   }
 
@@ -849,11 +1008,11 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       css = css.trim();
       if (!css) return "";
       // Scoping runs only on the admin save paths, which are the ones that
-      // pass a productId and persist what comes back. The storefront read path
+      // pass a scopeId and persist what comes back. The storefront read path
       // passes none, so this branch is skipped there and the stored markup is
       // returned byte for byte.
-      if (productId) {
-        css = scopeCssSelectors(css, `.desc-${productId}`);
+      if (scopeId) {
+        css = scopeCssSelectors(css, `.desc-${scopeId}`);
       }
       return `<style>${css}</style>`;
     },
@@ -947,8 +1106,20 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
         const attrName = attrMatch[1].toLowerCase();
         const rawValue = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4];
-        // Valueless attribute ("<div hidden>"): never emitted before either.
-        if (rawValue === undefined) continue;
+        // Valueless attribute ("<div hidden>"): dropped, UNLESS its name is
+        // BOTH in BOOLEAN_ATTRS ("open" only) AND already allowed and vetted
+        // by the same two checks every valued attribute goes through below —
+        // ALLOWED_ATTRS and EVENT_HANDLER_RE. BOOLEAN_ATTRS narrows that set
+        // further to the names safe to emit bare; it never substitutes for
+        // either check. What survives is emitted bare — "<details open>",
+        // matching what an author actually writes, rather than silently
+        // degrading to a collapsed panel.
+        if (rawValue === undefined) {
+          if (BOOLEAN_ATTRS.has(attrName) && ALLOWED_ATTRS.has(attrName) && !EVENT_HANDLER_RE.test(attrName)) {
+            attrs.push(attrName);
+          }
+          continue;
+        }
         const attrValue = rawValue;
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
@@ -957,6 +1128,10 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
         // explicitly permitted — including a scheme-relative "//host/…" — is
         // dropped. If it passes, the ORIGINAL value is what gets emitted.
         if ((attrName === "href" || attrName === "src") && !isSafeUri(attrValue)) continue;
+        // fill/stroke take a CSS <paint> value, not a URI with a scheme to
+        // allowlist — see isSafePaintValue for why href/src's check does not
+        // cover this door too.
+        if ((attrName === "fill" || attrName === "stroke") && !isSafePaintValue(attrValue)) continue;
         let cleanValue = attrValue;
         if (attrName === "style") {
           // Inline style values were not filtered, unlike <style> blocks, so
@@ -976,7 +1151,7 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   return result;
 
   } catch (err) {
-    console.error("[sanitize-html] Sanitization failed — returning empty (fail-closed)", err, { productId, inputLength: html.length });
+    console.error("[sanitize-html] Sanitization failed — returning empty (fail-closed)", err, { scopeId, inputLength: html.length });
     return "";
   }
 }

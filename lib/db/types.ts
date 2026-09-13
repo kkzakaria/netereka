@@ -50,6 +50,7 @@ export interface Product {
   highlights: ProductHighlight[] | null;
   feature_blocks: ProductFeatureBlock[] | null;
   faq: ProductFaqItem[] | null;
+  faq_html: string | null;
   is_draft: number;
   created_at: string;
   updated_at: string;
@@ -378,6 +379,7 @@ export interface Banner {
   price: number | null;
   bg_gradient_from: string;
   bg_gradient_to: string;
+  content_html: string | null;
   display_order: number;
   is_active: number;
   starts_at: string | null;
