@@ -21,6 +21,7 @@ interface Slide {
   price: number | null;
   bg_from: string;
   bg_to: string;
+  content_html: string | null;
 }
 
 const badgeColorMap: Record<BadgeColor, string> = {
@@ -30,7 +31,7 @@ const badgeColorMap: Record<BadgeColor, string> = {
   blue: "bg-blue-500/20 text-blue-300",
 };
 
-function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Slide[] {
+export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Slide[] {
   if (banners.length > 0) {
     return banners.map((b) => ({
       title: b.title,
@@ -43,6 +44,7 @@ function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Sl
       price: b.price,
       bg_from: b.bg_gradient_from || "#183C78",
       bg_to: b.bg_gradient_to || "#1E4A8F",
+      content_html: b.content_html,
     }));
   }
 
@@ -57,6 +59,7 @@ function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Sl
     price: p.base_price,
     bg_from: "#183C78",
     bg_to: "#1E4A8F",
+    content_html: null,
   }));
 }
 
@@ -125,42 +128,51 @@ export function HeroBanner({
 
               <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
                 {/* Text content with glass card */}
-                <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
-                  {slide.badge_text && (
-                    <span
-                      className={cn(
-                        "mb-2 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide sm:mb-3",
-                        badgeColorMap[slide.badge_color]
-                      )}
+                {slide.content_html ? (
+                  /* Contenu libre. Le HTML a été assaini À L'ÉCRITURE
+                     (actions/admin/banners.ts, ou le script de conversion),
+                     jamais ici : faire tourner le sanitizer dans un composant
+                     client l'embarquerait dans le bundle pour rien. */
+                  <div dangerouslySetInnerHTML={{ __html: slide.content_html }} />
+                ) : (
+                  /* BÉQUILLE DE TRANSITION — supprimée au déploiement 2.
+                     Elle couvre la fenêtre entre le déploiement 1 et la
+                     conversion, pendant laquelle content_html est encore vide.
+                     Elle sert aussi le repli sur les produits en vedette, qui
+                     lui n'a pas de content_html par conception. */
+                  <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
+                    {slide.badge_text && (
+                      <span
+                        className={cn(
+                          "mb-2 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide sm:mb-3",
+                          badgeColorMap[slide.badge_color]
+                        )}
+                      >
+                        {slide.badge_text}
+                      </span>
+                    )}
+                    <h2 className="text-lg font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
+                      {slide.title}
+                    </h2>
+                    {slide.subtitle && (
+                      <p className="mt-2 hidden text-sm text-white/70 sm:block sm:text-base">
+                        {slide.subtitle}
+                      </p>
+                    )}
+                    {slide.price != null && (
+                      <p className="mt-2 text-sm font-semibold text-emerald-300 sm:mt-3 sm:text-lg">
+                        {formatPrice(slide.price)}
+                      </p>
+                    )}
+                    <Link
+                      href={slide.link_url}
+                      className="mt-2 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 sm:mt-4 sm:px-6 sm:py-3 sm:text-sm"
+                      style={{ color: slide.bg_from }}
                     >
-                      {slide.badge_text}
-                    </span>
-                  )}
-
-                  <h2 className="text-lg font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
-                    {slide.title}
-                  </h2>
-
-                  {slide.subtitle && (
-                    <p className="mt-2 hidden text-sm text-white/70 sm:block sm:text-base">
-                      {slide.subtitle}
-                    </p>
-                  )}
-
-                  {slide.price != null && (
-                    <p className="mt-2 text-sm font-semibold text-emerald-300 sm:mt-3 sm:text-lg">
-                      {formatPrice(slide.price)}
-                    </p>
-                  )}
-
-                  <Link
-                    href={slide.link_url}
-                    className="mt-2 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 sm:mt-4 sm:px-6 sm:py-3 sm:text-sm"
-                    style={{ color: slide.bg_from }}
-                  >
-                    {slide.cta_text}
-                  </Link>
-                </div>
+                      {slide.cta_text}
+                    </Link>
+                  </div>
+                )}
 
                 {/* Image */}
                 {slide.image_url && (
