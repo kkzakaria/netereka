@@ -145,15 +145,28 @@
  * tokens définis dans :root, donc justes en thème clair comme en thème sombre,
  * et responsives par construction.
  *
- * Ce layer se place AVANT `utilities` : une règle écrite par l'auteur dans son
- * propre bloc <style> est préfixée `.desc-<scopeId>` par le sanitizer, donc
- * plus spécifique, et l'emporte toujours. Le vocabulaire propose, il n'impose
- * pas.
+ * DANS `@layer components` — PAS un layer `nk-content` à part, comme une
+ * version antérieure de ce fichier le faisait. `@import "tailwindcss"`, tout
+ * en tête de ce fichier, déclare `@layer theme, base, components, utilities;`
+ * en toute première ligne : cette instruction fixe l'ordre de ces quatre noms
+ * dans la cascade avant que ce fichier ne déclare quoi que ce soit. Un layer
+ * NOMMÉ mais absent de cette liste est ajouté ensuite, donc en DERNIER, et
+ * l'emporte alors sur `utilities` — l'inverse de l'effet recherché. C'était
+ * l'erreur de `nk-content` : son ordre textuel, ici, avant `@layer utilities`,
+ * ne dit rien de l'ordre réel de la cascade. Rejoindre `components` — un nom
+ * déjà dans la liste — place ces règles au bon endroit : après `base`, avant
+ * `utilities`, de sorte qu'une classe Tailwind écrite à côté d'une classe
+ * `nk-` (par ex. `class="nk-card p-0"`) l'emporte bien comme attendu.
+ *
+ * Une règle écrite par l'auteur dans son propre bloc <style> reste, elle,
+ * toujours prioritaire quel que soit le layer : le sanitizer la préfixe
+ * `.desc-<scopeId>`, ce qui la rend plus spécifique que n'importe quelle
+ * classe de ce fichier. Le vocabulaire propose, il n'impose pas.
  *
  * Toute couleur vient d'un token. Aucun hex, aucun rgb() ici — le test
  * __tests__/unit/content-vocabulary.test.ts le vérifie.
  * ------------------------------------------------------------------------- */
-@layer nk-content {
+@layer components {
   /* Rythme vertical pleine largeur.
      <section class="nk-section"> … </section> */
   .nk-section {
@@ -230,6 +243,20 @@
     border-radius: var(--radius);
     color: var(--card-foreground);
     padding: 1.25rem;
+  }
+
+  /* Icône d'un highlight converti, posée dans une .nk-card. 2.5rem (40px) et
+     var(--foreground) reprennent exactement ce que story-highlights.tsx
+     rendait avant conversion (`size={40}` d'un HugeiconsIcon, classe
+     text-foreground) — sans cette règle, l'icône hérite du 24×24 codé en dur
+     dans icon-to-svg.ts et rétrécit de façon permanente à la conversion.
+     <svg class="nk-highlight-icon"> … </svg> */
+  .nk-highlight-icon {
+    color: var(--foreground);
+    display: block;
+    height: 2.5rem;
+    margin-inline: auto;
+    width: 2.5rem;
   }
 
   /* Media : toute image du contenu libre.

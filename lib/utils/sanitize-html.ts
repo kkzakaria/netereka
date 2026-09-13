@@ -12,6 +12,16 @@ const ALLOWED_TAGS = new Set([
   // rien d'autre. Tout le reste du vocabulaire SVG — foreignObject, use,
   // animate, set, script — n'est pas listé, donc jeté, et c'est ce qui rend
   // cet élargissement sûr. Ne l'étends pas sans rejouer les tests « SVG inline ».
+  //
+  // RÈGLE PERMANENTE — ne JAMAIS ajouter `foreignObject`, `use`, `title`,
+  // `desc`, `animate`, `set` ou `math` à ce Set. Chacun est soit un
+  // changement de contexte de parseur (foreignObject et math permettent à du
+  // HTML ou du MathML de reprendre la main à l'intérieur d'un SVG, comme
+  // `<style>` ne le permet pas), soit un vecteur de script (`use` peut
+  // référencer un `<symbol>` distant, `animate`/`set` peuvent réécrire un
+  // attribut au chargement). Chacun arrivera un jour avec une justification
+  // aussi raisonnable que celle qui a fait entrer `section` — ce n'est pas
+  // une raison de céder.
   "svg", "path", "circle",
 ]);
 
@@ -280,9 +290,12 @@ function isSafeUri(rawValue: string): boolean {
  *     104 ms at 3,000 repetitions, 1,903 ms at 12,000, 30,212 ms at 50,000,
  *     198,701 ms at the 512,000 ceiling. Three minutes of Worker CPU, per view,
  *     for one stored description. Note that fix 1 alone does nothing for this
- *     shape — it is not a whitespace problem. With `(` excluded, the run can
- *     never reach the next candidate start, so each start's work is bounded by
- *     a span disjoint from the next start's, and the total is linear in input.
+ *     shape — it is not a whitespace problem. With `(` excluded, the run stops
+ *     at most three characters into the next candidate — it can still consume
+ *     that candidate's "u", "r" and "l" before halting at its "(" — so
+ *     successive starts' work overlaps by at most that fixed span rather than
+ *     never touching at all, and the total stays linear: bounded by 2n rather
+ *     than the n² of the unexcluded form.
  *
  *  Consequence accepted in both cases, and it is the safe direction: a url()
  *  whose content holds an inner space or a `(` no longer MATCHES at all.
