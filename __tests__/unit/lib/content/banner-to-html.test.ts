@@ -18,8 +18,13 @@ describe("bannerTemplateToHtml", () => {
 
   it("omet les champs vides", () => {
     const html = bannerTemplateToHtml(BASE);
-    expect(html).not.toContain("nk-badge");
-    expect(html).not.toContain("XOF");
+    // La classe réelle est "nk-banner-badge" (jamais "nk-badge") et le prix est
+    // rendu par formatPrice() en "199 000 F CFA" (jamais "XOF") : les deux
+    // anciennes assertions ne pouvaient donc jamais échouer, même si le
+    // convertisseur avait émis un badge ou un prix vides. On vérifie ici
+    // l'absence des éléments eux-mêmes.
+    expect(html).not.toContain('class="nk-banner-badge"');
+    expect(html).not.toContain('class="nk-banner-price"');
   });
 
   it("rend le badge, le sous-titre et le prix quand ils existent", () => {
@@ -145,6 +150,13 @@ describe("bannerTemplateToHtml", () => {
     // Espacements en début/fin : conservés car retirés par trim()
     expect(bannerTemplateToHtml({ ...BASE, link_url: "  /p/x  " }))
       .toContain('href="/p/x"');
+
+    // Espace insécable (NBSP) en tête : PAS un espace ASCII, un navigateur ne
+    // le retire pas d'un bord d'URL — donc on ne le retire pas non plus. La
+    // valeur ne commence alors plus par "/" et retombe, visiblement, sur
+    // l'accueil plutôt que d'être silencieusement lue comme "/p/x".
+    expect(bannerTemplateToHtml({ ...BASE, link_url: " /p/x" }))
+      .toContain('href="/"');
   });
 
   it("survit à l'assainissement, qui est ce que la conversion lui fera subir", async () => {

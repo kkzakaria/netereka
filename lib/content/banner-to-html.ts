@@ -43,7 +43,15 @@ function safeHref(url: string): string {
   // l'espace au navigateur. Même doctrine que isSafeUri dans
   // lib/utils/sanitize-html.ts : normaliser pour DÉCIDER, sans inventer une URL
   // que l'auteur n'a pas écrite.
-  const cleaned = url.replace(/[\t\n\r]/g, "").trim();
+  //
+  // `.trim()` en retirait plus que cela : il retire tout ce que `String.prototype
+  // .trim` considère comme un espace Unicode — NBSP (U+00A0), BOM (U+FEFF),
+  // séparateur de ligne/paragraphe (U+2028/U+2029), U+3000… — alors qu'un
+  // navigateur ne retire de bord d'URL que les contrôles C0 et l'espace ASCII
+  // (0x00-0x20) ; ces caractères-là, il les garde et les pourcent-encode. La
+  // deuxième expression ne retire donc que ce bord-là, jamais un caractère
+  // qu'un navigateur conserverait.
+  const cleaned = url.replace(/[\t\n\r]/g, "").replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "");
   if (/[\x00-\x1f\x7f]/.test(cleaned)) return "/";
   if (/^\/[/\\]/.test(cleaned)) return "/";
   if (cleaned.startsWith("/") || /^https?:/i.test(cleaned)) return esc(cleaned);

@@ -129,10 +129,13 @@ export function HeroBanner({
               <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
                 {/* Text content with glass card */}
                 {slide.content_html ? (
-                  /* Contenu libre. Le HTML a été assaini À L'ÉCRITURE
-                     (actions/admin/banners.ts, ou le script de conversion),
-                     jamais ici : faire tourner le sanitizer dans un composant
-                     client l'embarquerait dans le bundle pour rien. */
+                  /* Contenu libre. Aujourd'hui, la seule source de content_html
+                     est le script de conversion (scripts/convert-content-to-html.ts) ;
+                     l'écriture admin arrive en phase 2. `getActiveBanners()`
+                     (lib/db/storefront/banners.ts) ré-assainit ce HTML une étape
+                     plus haut, en défense en profondeur, avant qu'il n'atteigne ce
+                     composant — pas ici : faire tourner le sanitizer dans un
+                     composant client l'embarquerait dans le bundle pour rien. */
                   <div dangerouslySetInnerHTML={{ __html: slide.content_html }} />
                 ) : (
                   /* BÉQUILLE DE TRANSITION — supprimée au déploiement 2.
