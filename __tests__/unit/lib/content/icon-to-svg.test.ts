@@ -43,13 +43,22 @@ describe("iconToSvg", () => {
     expect(checkDesignConformance(iconToSvg("battery")!)).toEqual([]);
   });
 
-  it("survit à l'assainissement, qui est ce que la conversion lui fera subir", async () => {
+  it("chaque icône traverse l'assainissement sans perdre un nœud", async () => {
     const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
-    const svg = iconToSvg("battery", "nk-highlight-icon")!;
-    const out = sanitizeDescriptionHtml(`<li class="nk-card">${svg}<p>7300 mAh</p></li>`, "prod-1");
-    expect(out).toContain("<svg");
-    expect(out).toContain("<path");
-    expect(out).toContain("7300 mAh");
+    const { HIGHLIGHT_ICON_MAP } = await import("@/components/storefront/product-story/icons");
+    for (const name of Object.keys(HIGHLIGHT_ICON_MAP)) {
+      const svg = iconToSvg(name)!;
+      // Le sanitizer met les noms d'attributs en minuscules : viewBox ressort
+      // viewbox, ce que l'analyseur HTML remappe. C'est la seule différence tolérée.
+      const expected = svg.replace(/viewBox=/g, "viewbox=");
+      expect(sanitizeDescriptionHtml(svg), `icône ${name}`).toBe(expected);
+    }
+  });
+
+  it("conserve le cercle de l'icône compass, seule icône à porter un node circle", async () => {
+    const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
+    const svg = iconToSvg("compass")!;
+    expect(sanitizeDescriptionHtml(svg)).toContain("<circle");
   });
 
   it("ferme explicitement chaque nœud, faute de quoi ils s'imbriqueraient", () => {

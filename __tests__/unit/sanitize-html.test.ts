@@ -1454,9 +1454,7 @@ describe("SVG inline", () => {
 
   it("jette les éléments SVG non listés", () => {
     for (const markup of [
-      '<svg><foreignObject><p>x</p></foreignObject></svg>',
       '<svg><animate onbegin="alert(1)" attributeName="x"></animate></svg>',
-      '<svg><use xlink:href="#a"></use></svg>',
       '<svg><set attributeName="x"></set></svg>',
     ]) {
       const out = sanitizeDescriptionHtml(markup);
@@ -1466,6 +1464,35 @@ describe("SVG inline", () => {
       expect(out).not.toContain("<set");
       expect(out).not.toContain("alert(1)");
     }
+  });
+
+  // `foreignObject` et `foreignobject` sont deux entrées différentes pour
+  // `toContain` mais la même pour le sanitizer, qui met tout nom de balise en
+  // minuscules avant de l'émettre — `not.toContain("foreignObject")` resterait
+  // vert même si `foreignobject` rejoignait ALLOWED_TAGS. On pin donc la forme
+  // exacte : seuls les délimiteurs disparaissent, pas le contenu qu'ils
+  // portaient.
+  it("jette foreignObject en ne retirant que ses délimiteurs, pas son contenu", () => {
+    expect(sanitizeDescriptionHtml('<svg><foreignObject><p>x</p></foreignObject></svg>')).toBe(
+      "<svg><p>x</p></svg>",
+    );
+  });
+
+  // `not.toContain("xlink")` ne prouve rien : le nom d'attribut ne peut de
+  // toute façon jamais contenir ":", donc "xlink" est déjà improductible quel
+  // que soit le sort de `use`. `use` + `xlink:href` est le contournement
+  // canonique des sanitizers SVG ; c'est le cas qui compte le plus ici, donc
+  // on pin sa forme exacte plutôt que d'en déduire l'absence d'un mot.
+  it("jette use et son xlink:href, le contournement canonique du sanitizer SVG", () => {
+    expect(sanitizeDescriptionHtml('<svg><use xlink:href="#a"></use></svg>')).toBe("<svg></svg>");
+  });
+
+  // Le préfixe xlink: est mangé par la regex de nom d'attribut ([a-zA-Z_][\w-]*
+  // exclut ":"), donc "xlink" disparaît sur N'IMPORTE QUEL élément, y compris
+  // un élément désormais autorisé — c'est le cas réellement atteignable
+  // maintenant que <svg> passe la porte.
+  it("jette le préfixe xlink: sur un élément désormais autorisé", () => {
+    expect(sanitizeDescriptionHtml('<svg xlink:href="javascript:alert(1)"></svg>')).toBe("<svg></svg>");
   });
 
   it("jette un href sur un élément svg", () => {
@@ -1481,6 +1508,22 @@ describe("SVG inline", () => {
     // La balise est désormais autorisée, donc elle survit — mais nue.
     expect(result).toBe("<svg>content");
     expect(result).not.toMatch(/\bonload\s*=/i);
+  });
+
+  // `href`/`src` sont filtrés par schéma via isSafeUri ; `fill`/`stroke` sont
+  // des valeurs CSS <paint> qui n'ont pas de schéma à elles, mais peuvent tout
+  // de même nommer une ressource via url(...) — la même forme que
+  // style="background:url(…)" (GHSA-m888), par une porte différente.
+  it("jette un fill pointant vers une ressource externe via url()", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(https://evil/x)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("laisse passer un fill référençant un fragment du même document", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#grad)" d="M0 0"></path></svg>')).toContain(
+      'fill="url(#grad)"',
+    );
   });
 });
 

@@ -4,11 +4,11 @@ const ALLOWED_TAGS = new Set([
   "br", "hr", "table", "thead", "tbody", "tr", "th", "td",
   "blockquote", "pre", "code", "style", "figure", "figcaption",
   "details", "summary",
-  // SVG inline, strictement limité au dessin : `svg` et `path`, rien d'autre.
-  // Tout le reste du vocabulaire SVG — foreignObject, use, animate, set,
-  // script — n'est pas listé, donc jeté, et c'est ce qui rend cet
-  // élargissement sûr. Ne l'étends pas sans rejouer les tests « SVG inline ».
-  "svg", "path",
+  // SVG inline, strictement limité au dessin : `svg`, `path` et `circle`,
+  // rien d'autre. Tout le reste du vocabulaire SVG — foreignObject, use,
+  // animate, set, script — n'est pas listé, donc jeté, et c'est ce qui rend
+  // cet élargissement sûr. Ne l'étends pas sans rejouer les tests « SVG inline ».
+  "svg", "path", "circle",
 ]);
 
 const ALLOWED_ATTRS = new Set([
@@ -18,7 +18,7 @@ const ALLOWED_ATTRS = new Set([
   // d'attributs met tout nom en minuscules ; l'analyseur HTML le remappe vers
   // `viewBox` pour les éléments SVG, donc rien à corriger ici.
   "viewbox", "d", "stroke", "fill", "stroke-width", "stroke-linecap",
-  "stroke-linejoin", "xmlns", "aria-hidden",
+  "stroke-linejoin", "xmlns", "aria-hidden", "cx", "cy", "r",
 ]);
 
 /** Of the attributes ALLOWED_ATTRS already allows, the ones that may ALSO
@@ -236,6 +236,34 @@ function isSafeUri(rawValue: string): boolean {
   // deliberately NOT decoded here — a browser does not decode it before parsing
   // the scheme either, so "%6aavascript:" is a relative path to both of us.
   return !ANY_SCHEME_RE.test(value);
+}
+
+/** Any `url(...)` function, quoted or not. Sticky-free and global so every
+ *  occurrence in a value is checked, not just the first. */
+const PAINT_URL_RE = /url\(\s*(['"]?)([^'")]*)\1?\s*\)/gi;
+
+/**
+ * `fill`/`stroke` are SVG presentation attributes whose value is a CSS
+ * `<paint>` production, so a browser resolves character references and CSS
+ * escapes before deciding whether it names a function at all — the same
+ * order `stripDangerousCss` uses. `href`/`src` are gated by scheme via
+ * `isSafeUri`; a paint value has no scheme of its own to allowlist, so this
+ * checks the one shape that matters directly: `url(#fragment-id)` — a
+ * reference already inside the current document, such as a `<lineargradient>`
+ * a future icon might define — is fine, anything else naming a resource is
+ * not. An external `url(https://…)` here is exactly the request-exfiltration
+ * shape closed for inline `style` by GHSA-m888, arriving through a different
+ * attribute — `isSafeUri` and `stripDangerousCss` do not cover it, so nothing
+ * upstream of this function catches it.
+ */
+function isSafePaintValue(rawValue: string): boolean {
+  const resolved = resolveCssEscapes(preprocessCssNewlines(decodeCharacterReferences(rawValue)));
+  PAINT_URL_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PAINT_URL_RE.exec(resolved)) !== null) {
+    if (!match[2].startsWith("#")) return false;
+  }
+  return true;
 }
 
 /**
@@ -990,6 +1018,10 @@ export function sanitizeDescriptionHtml(html: string, scopeId?: string): string 
         // explicitly permitted — including a scheme-relative "//host/…" — is
         // dropped. If it passes, the ORIGINAL value is what gets emitted.
         if ((attrName === "href" || attrName === "src") && !isSafeUri(attrValue)) continue;
+        // fill/stroke take a CSS <paint> value, not a URI with a scheme to
+        // allowlist — see isSafePaintValue for why href/src's check does not
+        // cover this door too.
+        if ((attrName === "fill" || attrName === "stroke") && !isSafePaintValue(attrValue)) continue;
         let cleanValue = attrValue;
         if (attrName === "style") {
           // Inline style values were not filtered, unlike <style> blocks, so
