@@ -23,15 +23,22 @@ export interface BannerTemplateInput {
 }
 
 function esc(text: string): string {
-  // Retire d'abord les balises HTML — ce qui garantit que les attributs
-  // malveillants (onerror, onclick…) sont complètement supprimés, pas juste échappés.
-  // Puis échappe les caractères spéciaux du HTML.
-  const stripped = text.replace(/<[^>]*>/g, "");
-  return stripped
+  return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Le gabarit ne produit que des liens internes : l'admin impose déjà un chemin
+ *  relatif à l'écriture, et le sanitizer filtre les schémas en aval. Ce garde
+ *  existe pour que le module tienne sa propre garantie plutôt que de l'emprunter
+ *  à ses appelants. Une valeur hors allowlist retombe sur l'accueil, ce qui est
+ *  visible, plutôt que sur un lien mort. */
+function safeHref(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed.startsWith("/") || /^https?:/i.test(trimmed)) return esc(trimmed);
+  return "/";
 }
 
 export function bannerTemplateToHtml(input: BannerTemplateInput): string {
@@ -48,7 +55,7 @@ export function bannerTemplateToHtml(input: BannerTemplateInput): string {
     parts.push(`<p class="nk-banner-price">${esc(formatPrice(input.price))}</p>`);
   }
   parts.push(
-    `<a class="nk-cta" href="${esc(input.link_url)}">${esc(input.cta_text?.trim() || "Découvrir")}</a>`,
+    `<a class="nk-cta" href="${safeHref(input.link_url)}">${esc(input.cta_text?.trim() || "Découvrir")}</a>`,
   );
 
   return `<div class="nk-banner">${parts.join("")}</div>`;

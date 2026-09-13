@@ -46,8 +46,13 @@ describe("bannerTemplateToHtml", () => {
   });
 
   it("échappe le HTML des champs texte", () => {
-    expect(bannerTemplateToHtml({ ...BASE, title: '<img src=x onerror="alert(1)">' }))
-      .not.toContain("onerror");
+    const html = bannerTemplateToHtml({ ...BASE, title: '<img src=x onerror="alert(1)">' });
+    // Le HTML dangereux est échappé en entités : &lt;img…&gt;, pas <img…>
+    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("<img");
+    // L'attribut malveillant est aussi échappé : &quot;alert(1)&quot;, pas "alert(1)"
+    expect(html).toContain("&quot;alert(1)&quot;");
+    expect(html).not.toContain('"alert(1)"');
   });
 
   it("produit un document conforme à la charte", () => {
@@ -59,6 +64,28 @@ describe("bannerTemplateToHtml", () => {
       cta_text: "Voir",
     });
     expect(checkDesignConformance(html)).toEqual([]);
+  });
+
+  it("garde le lien contre les schémas dangereux", () => {
+    // Chemin relatif : conservé
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/p/oneplus-15" }))
+      .toContain('href="/p/oneplus-15"');
+
+    // URL http/https : conservée
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "https://example.com" }))
+      .toContain("href=\"https://example.com\"");
+
+    // javascript: : bloqué, retombe sur l'accueil
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "javascript:alert(1)" }))
+      .toContain('href="/"');
+
+    // Case-insensitif pour javascript:
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "JaVaScRiPt:alert(1)" }))
+      .toContain('href="/"');
+
+    // data: : bloqué
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "data:text/html,<img src=x onerror=alert(1)>" }))
+      .toContain('href="/"');
   });
 
   it("survit à l'assainissement, qui est ce que la conversion lui fera subir", async () => {
