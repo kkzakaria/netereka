@@ -8,6 +8,13 @@
  *   npm run content:convert -- --remote  --dry-run
  *   npm run content:convert -- --remote
  *
+ * Par défaut, la sortie ne détaille QUE ce qui mérite un regard humain avant
+ * l'écriture irréversible : les lignes converties, les échecs et les lignes
+ * dont des colonnes story sont illisibles. Les lignes ignorées sont résumées
+ * en un tally par raison — sur une grosse base, un flux d'une ligne par
+ * produit ignoré noie précisément la ligne qui compte. `--verbose` restaure
+ * le détail ligne à ligne complet (une ligne par ignoré compris).
+ *
  * Idempotent : une ligne déjà convertie est ignorée. Rejouable sans risque.
  *
  * IMPORTANT — ce script s'exécute ENTRE deux déploiements (§ 3.4 du spec), pas
@@ -31,6 +38,7 @@ const args = process.argv.slice(2);
 const remote = args.includes("--remote");
 const local = args.includes("--local");
 const dryRun = args.includes("--dry-run");
+const verbose = args.includes("--verbose");
 
 if (remote === local) {
   console.error("Choisis exactement une cible : --local ou --remote");
@@ -75,6 +83,26 @@ function lit(value: string | null): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+// Raisons de skip connues, telles que retournées par planProduct / planBanner
+// (lib/content/conversion-plan.ts). Pré-initialisées à 0 pour que le tally par
+// défaut montre aussi les raisons qui n'ont déclenché aucune ligne — utile par
+// exemple pour vérifier d'un coup d'œil qu'aucune ligne n'était déjà convertie.
+const PRODUCT_SKIP_REASONS = ["aucun contenu", "déjà converti"];
+const BANNER_SKIP_REASONS = ["déjà converti"];
+
+function newTally(reasons: string[]): Map<string, number> {
+  return new Map(reasons.map((reason) => [reason, 0]));
+}
+
+function tally(map: Map<string, number>, reason: string): void {
+  map.set(reason, (map.get(reason) ?? 0) + 1);
+}
+
+function printTally(map: Map<string, number>): void {
+  const parts = [...map.entries()].map(([reason, count]) => `${count} ignoré(s) (${reason})`);
+  console.log(`  · ${parts.join(", ")}`);
+}
+
 let converted = 0;
 let skipped = 0;
 let failed = 0;
@@ -88,12 +116,15 @@ const products = d1Query<ProductRow>(
      FROM products`,
 );
 
+const productSkipTally = newTally(PRODUCT_SKIP_REASONS);
+
 for (const row of products) {
   try {
     const plan = planProduct(row);
     if (plan.action === "skip") {
       skipped++;
-      console.log(`  · ${row.id} — ignoré (${plan.reason})`);
+      tally(productSkipTally, plan.reason);
+      if (verbose) console.log(`  · ${row.id} — ignoré (${plan.reason})`);
       continue;
     }
     const icons = plan.unresolvedIcons.length
@@ -122,18 +153,23 @@ for (const row of products) {
   }
 }
 
+if (!verbose) printTally(productSkipTally);
+
 console.log(`\n=== Bannières (${target}${dryRun ? ", simulation" : ""}) ===`);
 
 const banners = d1Query<BannerRow>(
   `SELECT id, title, subtitle, badge_text, price, cta_text, link_url, content_html FROM banners`,
 );
 
+const bannerSkipTally = newTally(BANNER_SKIP_REASONS);
+
 for (const row of banners) {
   try {
     const plan = planBanner(row);
     if (plan.action === "skip") {
       skipped++;
-      console.log(`  · bannière ${row.id} — ignorée (${plan.reason})`);
+      tally(bannerSkipTally, plan.reason);
+      if (verbose) console.log(`  · bannière ${row.id} — ignorée (${plan.reason})`);
       continue;
     }
     console.log(`  ✓ bannière ${row.id} — convertie`);
@@ -148,7 +184,12 @@ for (const row of banners) {
   }
 }
 
+if (!verbose) printTally(bannerSkipTally);
+
 console.log(`\n=== Bilan ===`);
+console.log(
+  `  mode      : ${verbose ? "détaillé (--verbose)" : "résumé (ajoute --verbose pour le détail ligne à ligne)"}`,
+);
 console.log(`  convertis : ${converted}`);
 console.log(`  ignorés   : ${skipped}`);
 console.log(`  échecs    : ${failed}`);
