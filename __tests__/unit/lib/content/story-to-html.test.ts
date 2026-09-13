@@ -91,6 +91,24 @@ describe("storyToHtml", () => {
     });
     expect(checkDesignConformance(html)).toEqual([]);
   });
+
+  it("survit à l'assainissement, qui est ce que la conversion lui fera subir", async () => {
+    const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
+    const { html } = storyToHtml({
+      tagline: "Accroche",
+      highlights: [{ icon: "battery", label: "7300 mAh" }, { icon: "compass", label: "GPS" }],
+      feature_blocks: [
+        { title: "Écran", body: "AMOLED" },
+        { title: "Photo", body: "x", image_url: "products/p1/a.jpg", image_alt: "Module" },
+      ],
+      description_html: null,
+    });
+    // Égalité stricte : un toContain ne verrait pas une balise retirée au milieu.
+    // Compte pour la normalisation de viewBox → viewbox (comportement du sanitizer).
+    const sanitized = sanitizeDescriptionHtml(html, "prod-1");
+    const normalized = html.replace(/\bviewBox\b/g, "viewbox");
+    expect(sanitized).toBe(normalized);
+  });
 });
 
 describe("faqToHtml", () => {
@@ -116,5 +134,11 @@ describe("faqToHtml", () => {
   it("produit un document conforme à la charte", () => {
     const html = faqToHtml([{ question: "Q", answer: "R" }]);
     expect(checkDesignConformance(html)).toEqual([]);
+  });
+
+  it("la FAQ survit elle aussi à l'assainissement", async () => {
+    const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
+    const faq = faqToHtml([{ question: "Garantie ?", answer: "12 mois." }]);
+    expect(sanitizeDescriptionHtml(faq, "prod-1")).toBe(faq);
   });
 });

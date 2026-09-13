@@ -4,6 +4,10 @@ const ALLOWED_TAGS = new Set([
   "br", "hr", "table", "thead", "tbody", "tr", "th", "td",
   "blockquote", "pre", "code", "style", "figure", "figcaption",
   "details", "summary",
+  // Conteneur inerte du vocabulaire de contenu libre : aucun attribut
+  // d'intérêt, aucun sink. Les classes nk- et le rythme vertical qu'elles
+  // orchestrent sont construits dessus.
+  "section",
   // SVG inline, strictement limité au dessin : `svg`, `path` et `circle`,
   // rien d'autre. Tout le reste du vocabulaire SVG — foreignObject, use,
   // animate, set, script — n'est pas listé, donc jeté, et c'est ce qui rend
@@ -13,7 +17,7 @@ const ALLOWED_TAGS = new Set([
 
 const ALLOWED_ATTRS = new Set([
   "class", "style", "href", "src", "alt", "width", "height",
-  "colspan", "rowspan", "target", "rel", "open",
+  "colspan", "rowspan", "target", "rel", "open", "loading",
   // Attributs de dessin SVG. `viewbox` est en minuscules parce que la boucle
   // d'attributs met tout nom en minuscules ; l'analyseur HTML le remappe vers
   // `viewBox` pour les éléments SVG, donc rien à corriger ici.

@@ -85,6 +85,11 @@ describe("sanitizeDescriptionHtml", () => {
     expect(sanitizeDescriptionHtml(input)).toBe(input);
   });
 
+  it("laisse passer une section, conteneur du vocabulaire de contenu libre", () => {
+    const out = sanitizeDescriptionHtml('<section class="nk-section"><p>x</p></section>');
+    expect(out).toBe('<section class="nk-section"><p>x</p></section>');
+  });
+
   it("blocks vbscript: in href", () => {
     const input = '<a href="vbscript:MsgBox(1)">click</a>';
     const result = sanitizeDescriptionHtml(input);
