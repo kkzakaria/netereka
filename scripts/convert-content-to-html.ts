@@ -27,7 +27,7 @@
  * Cet export est une étape obligatoire du runbook.
  */
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { planProduct, planBanner, type ProductRow, type BannerRow } from "../lib/content/conversion-plan";
@@ -61,20 +61,42 @@ function d1Query<T>(sql: string): T[] {
     ["wrangler", "d1", "execute", DB_NAME, target, "--json", "--command", sql],
     { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
   );
-  const parsed = JSON.parse(out) as { results: T[] }[];
-  return parsed[0]?.results ?? [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(out);
+  } catch {
+    throw new Error("Réponse Wrangler illisible : ce n'est pas du JSON. Lecture interrompue.");
+  }
+  // Un échec de lecture DOIT planter. Rendre [] ferait dire au bilan « rien à
+  // convertir » sur une base qui a tout à convertir — le pire signal possible
+  // avant une opération irréversible.
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("Réponse Wrangler inattendue : tableau de résultats absent.");
+  }
+  const first = parsed[0] as { results?: unknown; success?: boolean };
+  if (first.success === false) throw new Error("Wrangler signale un échec de requête.");
+  if (!Array.isArray(first.results)) {
+    throw new Error("Réponse Wrangler inattendue : champ `results` absent ou non-tableau.");
+  }
+  return first.results as T[];
 }
 
 function d1Exec(statements: string[]): void {
   if (statements.length === 0) return;
   const dir = mkdtempSync(path.join(tmpdir(), "netereka-convert-"));
   const file = path.join(dir, "convert.sql");
-  writeFileSync(file, statements.join("\n"), "utf8");
-  execFileSync("npx", ["wrangler", "d1", "execute", DB_NAME, target, "--file", file], {
-    encoding: "utf8",
-    stdio: "inherit",
-    maxBuffer: 256 * 1024 * 1024,
-  });
+  try {
+    writeFileSync(file, statements.join("\n"), "utf8");
+    execFileSync("npx", ["wrangler", "d1", "execute", DB_NAME, target, "--file", file], {
+      encoding: "utf8",
+      stdio: "inherit",
+      maxBuffer: 256 * 1024 * 1024,
+    });
+  } finally {
+    // Le fichier temporaire contient tout le contenu converti en clair : ne
+    // pas le laisser traîner dans le répertoire temp de l'OS après un run réel.
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /** Littéral SQLite : on double l'apostrophe, et c'est tout. */
@@ -176,7 +198,7 @@ for (const row of banners) {
     converted++;
     statements.push(
       `UPDATE banners SET content_html = ${lit(plan.updates.content_html)}, ` +
-        `updated_at = datetime('now') WHERE id = ${row.id};`,
+        `updated_at = datetime('now') WHERE id = ${lit(String(row.id))};`,
     );
   } catch (err) {
     failed++;
