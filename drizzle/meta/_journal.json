@@ -127,6 +127,13 @@
       "when": 1788391162706,
       "tag": "0017_sticky_calypso",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1789297775388,
+      "tag": "0018_awesome_adam_warlock",
+      "breakpoints": true
     }
   ]
 }
