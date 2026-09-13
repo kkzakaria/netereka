@@ -71,9 +71,21 @@ describe("bannerTemplateToHtml", () => {
     expect(bannerTemplateToHtml({ ...BASE, link_url: "/p/oneplus-15" }))
       .toContain('href="/p/oneplus-15"');
 
+    // Chemin relatif dans d'autres catégories : conservé
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/c/promos" }))
+      .toContain('href="/c/promos"');
+
     // URL http/https : conservée
     expect(bannerTemplateToHtml({ ...BASE, link_url: "https://example.com" }))
       .toContain("href=\"https://example.com\"");
+
+    // URL protocol-relative avec // : bloqué, retombe sur l'accueil
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "//evil.example/x" }))
+      .toContain('href="/"');
+
+    // URL protocol-relative avec /\ : bloqué, retombe sur l'accueil
+    expect(bannerTemplateToHtml({ ...BASE, link_url: "/\\evil.example/x" }))
+      .toContain('href="/"');
 
     // javascript: : bloqué, retombe sur l'accueil
     expect(bannerTemplateToHtml({ ...BASE, link_url: "javascript:alert(1)" }))

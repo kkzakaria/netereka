@@ -37,6 +37,10 @@ function esc(text: string): string {
  *  visible, plutôt que sur un lien mort. */
 function safeHref(url: string): string {
   const trimmed = url.trim();
+  // "//host" et "/\host" ne sont pas des chemins relatifs : le navigateur les lit
+  // comme des URL absolues protocol-relative. Les écarter AVANT le test sur "/",
+  // sinon le garde laisse passer exactement ce qu'il prétend interdire.
+  if (/^\/[/\\]/.test(trimmed)) return "/";
   if (trimmed.startsWith("/") || /^https?:/i.test(trimmed)) return esc(trimmed);
   return "/";
 }
