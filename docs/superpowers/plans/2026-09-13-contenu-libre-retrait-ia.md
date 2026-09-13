@@ -2228,7 +2228,7 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
 
 **Opération irréversible.** Le seul filet est l'export de R6, et ce n'est pas un bouton « annuler » — voir R6 pour ce qu'il permet réellement de récupérer et ce qu'il ne permet pas.
 
-- [ ] **R1. Pré-vol : mesurer l'invisibilité du déploiement de la phase 1.** `deja_balises_neuves` est la seule vérification empirique que ce déploiement est invisible. Le sanitizer élargi (balises `section`, `svg`, `details`…) s'applique **à la lecture**, sur des descriptions déjà en base aujourd'hui — un nombre non nul signifie qu'un contenu stocké va s'afficher différemment dès que la phase 1 sera fusionnée et promue, avant toute conversion. Rien dans cette mesure ne dépend du code déployé : elle lit la base de production telle qu'elle est déjà. La faire **avant** R2 (fusion) est donc possible, et c'est le seul moment où elle sert encore d'avertissement plutôt que de constat après coup.
+- [x] **R1. Pré-vol : mesurer l'invisibilité du déploiement de la phase 1.** ✅ **MESURÉ LE 2026-09-13 : `deja_balises_neuves` = 0** sur 1018 produits en production. Aucun contenu déjà stocké ne s'affichera différemment. Étape close, ne pas la rejouer. `deja_balises_neuves` est la seule vérification empirique que ce déploiement est invisible. Le sanitizer élargi (balises `section`, `svg`, `details`…) s'applique **à la lecture**, sur des descriptions déjà en base aujourd'hui — un nombre non nul signifie qu'un contenu stocké va s'afficher différemment dès que la phase 1 sera fusionnée et promue, avant toute conversion. Rien dans cette mesure ne dépend du code déployé : elle lit la base de production telle qu'elle est déjà. La faire **avant** R2 (fusion) est donc possible, et c'est le seul moment où elle sert encore d'avertissement plutôt que de constat après coup.
 
   ```bash
   npx wrangler d1 execute netereka-db --remote --json --command \
@@ -2239,7 +2239,7 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
 - [ ] **R2.** Fusionner la PR de la phase 1 sur `main` et laisser le déploiement canary partir.
 - [ ] **R3.** Promouvoir à 100 % via le workflow `promote.yml` (Actions → « Promote », jamais le tableau de bord Cloudflare ni `wrangler` en direct). Vérifier que l'issue « Pending promotion » se ferme.
 - [ ] **R4.** Vérifier en production que le hero est inchangé et que `/p/<un-produit>` affiche toujours sa story.
-- [ ] **R5. Pré-vol : mesurer le cas « richtext seul ».** `conversion-plan.ts` convertit aussi un produit qui n'a **aucune** colonne story mais dont la description richtext n'est pas vide : son JSON Lexical passe par `descriptionToHtml`, part en base comme HTML, et la source Lexical disparaît. Ce cas déborde du § 3.1 du spec (limité aux produits avec au moins un champ story renseigné) et collide avec deux décisions du lot : le spec § 5 garde l'éditeur richtext comme chemin court pour du texte simple, et la phase 2 rend `description_type === "html"` sans `prose` ni contrainte de largeur — une description écrite en richtext deviendrait du texte plein-large non typeset.
+- [x] **R5. Pré-vol : mesurer le cas « richtext seul ».** `conversion-plan.ts` convertit aussi un produit qui n'a **aucune** colonne story mais dont la description richtext n'est pas vide : son JSON Lexical passe par `descriptionToHtml`, part en base comme HTML, et la source Lexical disparaît. Ce cas déborde du § 3.1 du spec (limité aux produits avec au moins un champ story renseigné) et collide avec deux décisions du lot : le spec § 5 garde l'éditeur richtext comme chemin court pour du texte simple, et la phase 2 rend `description_type === "html"` sans `prose` ni contrainte de largeur — une description écrite en richtext deviendrait du texte plein-large non typeset.
 
   Mesurer avant de décider quoi que ce soit, contre la base distante :
   ```bash
@@ -2252,6 +2252,12 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
   `richtext_seul` : nombre de produits sans **aucune** colonne story renseignée, avec une description non vide qui n'est pas déjà en HTML — exactement le cas hors-scope décrit ci-dessus (une simple description `description_type='html'` n'est pas comptée : elle est déjà dans le scope normal de la conversion, pas dans ce cas-là).
   - Si **0** : le cas est sans objet. Cocher cette case et consigner « 0 ligne concernée en production, mesuré le AAAA-MM-JJ » ici même avant de poursuivre — c'est la raison écrite qui dispense de trancher.
   - Si **≠ 0** : **s'arrêter** et décider explicitement avant R6 — soit exclure ces lignes de la conversion (ajouter leur id à une liste d'exclusion), soit accepter la conversion en sachant que leur source Lexical est perdue. Ne pas continuer sur un silence.
+
+  **MESURÉ LE 2026-09-13 : `richtext_seul` = 24.** Les 24 produits sont actifs, leurs descriptions vont de 315 à 30 311 caractères (moyenne ~10 000), et 19 d'entre eux portent du JSON Lexical.
+
+  **DÉCISION PRISE PAR LE PROPRIÉTAIRE DU PROJET : les convertir, en acceptant la perte.** Leur source Lexical sera détruite et, à partir du déploiement 2, leurs descriptions seront rendues sans `prose` ni contrainte de largeur — texte plein-large sur 24 fiches en ligne. Ces deux conséquences ont été exposées avant la décision et sont assumées.
+
+  **Cette étape est donc close : ne pas s'arrêter ici, ne pas rejouer la mesure, ne pas construire de liste d'exclusion.** Poursuivre à R6.
 - [ ] **R6. Exporter la base distante.**
   ```bash
   npx wrangler d1 export netereka-db --remote --output=backup-avant-conversion-$(date +%Y%m%d-%H%M).sql
@@ -2264,7 +2270,12 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
 
   Mécanique concrète : charger le dump dans un SQLite local (`sqlite3 recovery.db < backup-avant-conversion-AAAAMMJJ-HHMM.sql`), puis y lire, pour chaque produit à restaurer, les huit colonnes ci-dessus afin de générer une instruction `UPDATE products SET description = …, description_type = …, tagline = …, highlights = …, feature_blocks = …, faq = …, faq_html = … WHERE id = …` par ligne, à exécuter ensuite contre la base de production — jamais un remplacement de table entière.
 - [ ] **R7. Geler l'édition de contenu.** `actions/admin/products.ts` et `lib/db/product-drafts.ts` écrivent encore les quatre colonnes story ; tant que le déploiement 2 n'est pas en place, une sauvegarde admin ou un appel MCP de brouillon les re-remplit, et la fiche produit affiche alors à la fois la story ET la description qui la contient déjà. Prévenir l'équipe admin **avant** d'établir le gel — la prévenir après reviendrait à autoriser exactement la fenêtre d'édition que ce gel interdit. **Aucune édition de contenu produit ou bannière (admin comme MCP) entre R7 et le déploiement 2.**
-- [ ] **R8.** Simulation distante, avec la variable d'environnement requise et **relire la sortie** :
+- [ ] **R8.** Simulation distante, avec la variable d'environnement requise et **relire la sortie**.
+
+  **Mesuré le 2026-09-13 : 709 produits portent une story en production**, contre 1 seul en base locale. L'essai à blanc local n'a donc exercé qu'une fraction du travail réel — c'est ici, et seulement ici, que les 708 autres seront vus avant d'être convertis. Prévoir le temps de lire, pas de survoler.
+
+  Mesuré le même jour : **aucune ligne hors schéma** (`highlights`, `feature_blocks` et `faq` tous conformes aux bornes attendues). `colonnes illisibles` ne devrait donc rien signaler. S'il signale quelque chose, la base a changé depuis cette mesure — s'arrêter et comprendre pourquoi avant R9.
+
   ```bash
   NEXT_PUBLIC_R2_URL=https://r2.netereka.ci npm run content:convert -- --remote --dry-run
   ```
