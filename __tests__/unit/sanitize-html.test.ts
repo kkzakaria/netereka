@@ -1520,9 +1520,84 @@ describe("SVG inline", () => {
     );
   });
 
+  // `PAINT_URL_RE` ne peut signaler que ce qu'elle réussit à MATCHER — un
+  // `url(` jamais refermé ne matche rien et repasserait pour « aucun url()
+  // présent » si c'était la seule vérification. La première version de
+  // isSafePaintValue faisait exactement cette erreur et laissait passer un
+  // url( non fermé octet pour octet. Ces cas verrouillent l'échec fermé sur
+  // la simple PRÉSENCE d'une construction de récupération de ressource,
+  // avant toute tentative de matcher sa forme.
+  it("jette un fill dont le url() n'est jamais refermé", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(https://evil/x" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un stroke dont le url() entre guillemets n'est jamais refermé", () => {
+    expect(sanitizeDescriptionHtml('<svg><path stroke="url(\'https://evil/x" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un fill utilisant src() plutôt que url()", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="src(https://evil/x)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un fill utilisant image-set()", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="image-set(https://evil/x)" d="M0 0"></path></svg>'),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  it("jette un fill utilisant expression()", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="expression(alert(1))" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un fill mêlant une référence même-document valide et une ressource externe", () => {
+    expect(
+      sanitizeDescriptionHtml(
+        '<svg><path fill="url(#a);background:url(https://evil/x)" d="M0 0"></path></svg>',
+      ),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
   it("laisse passer un fill référençant un fragment du même document", () => {
     expect(sanitizeDescriptionHtml('<svg><path fill="url(#grad)" d="M0 0"></path></svg>')).toContain(
       'fill="url(#grad)"',
+    );
+  });
+
+  it("laisse passer un fill dont la référence même-document a des espaces internes", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url( #a )" d="M0 0"></path></svg>')).toContain(
+      'fill="url( #a )"',
+    );
+  });
+
+  it("laisse passer un fill dont la référence même-document est entre guillemets", () => {
+    expect(sanitizeDescriptionHtml("<svg><path fill=\"url('#a')\" d=\"M0 0\"></path></svg>")).toContain(
+      "fill=\"url('#a')\"",
+    );
+  });
+
+  it("laisse passer plusieurs références même-document dans un seul fill", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#a) url(#b)" d="M0 0"></path></svg>')).toContain(
+      'fill="url(#a) url(#b)"',
+    );
+  });
+
+  // Ce sont les valeurs que produit réellement iconToSvg pour chaque icône du
+  // paquet — une réécriture en échec fermé qui les casserait serait pire que
+  // le défaut qu'elle corrige.
+  it("laisse passer les valeurs fill/stroke ordinaires que produisent les icônes", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="none" d="M0 0"></path></svg>')).toContain(
+      'fill="none"',
+    );
+    expect(sanitizeDescriptionHtml('<svg><path stroke="currentColor" d="M0 0"></path></svg>')).toContain(
+      'stroke="currentColor"',
     );
   });
 });

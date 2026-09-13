@@ -55,7 +55,7 @@ describe("iconToSvg", () => {
     }
   });
 
-  it("conserve le cercle de l'icône compass, seule icône à porter un node circle", async () => {
+  it("conserve le cercle de l'icône compass, l'une des cinq icônes à porter un node circle", async () => {
     const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
     const svg = iconToSvg("compass")!;
     expect(sanitizeDescriptionHtml(svg)).toContain("<circle");

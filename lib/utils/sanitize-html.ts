@@ -238,8 +238,12 @@ function isSafeUri(rawValue: string): boolean {
   return !ANY_SCHEME_RE.test(value);
 }
 
-/** Any `url(...)` function, quoted or not. Sticky-free and global so every
- *  occurrence in a value is checked, not just the first. */
+/** A complete, well-formed `url(...)` function, quoted or not. Global so every
+ *  occurrence in a value is checked, not just the first — but never trusted
+ *  on its own to decide safety, because it can only report what it manages to
+ *  MATCH. An unclosed `url(` matches nothing here and would silently read as
+ *  "no url() present" if this were the only check; see isSafePaintValue for
+ *  why the presence check (CSS_FETCHING_RE) has to run first. */
 const PAINT_URL_RE = /url\(\s*(['"]?)([^'")]*)\1?\s*\)/gi;
 
 /**
@@ -247,23 +251,62 @@ const PAINT_URL_RE = /url\(\s*(['"]?)([^'")]*)\1?\s*\)/gi;
  * `<paint>` production, so a browser resolves character references and CSS
  * escapes before deciding whether it names a function at all — the same
  * order `stripDangerousCss` uses. `href`/`src` are gated by scheme via
- * `isSafeUri`; a paint value has no scheme of its own to allowlist, so this
- * checks the one shape that matters directly: `url(#fragment-id)` — a
- * reference already inside the current document, such as a `<lineargradient>`
- * a future icon might define — is fine, anything else naming a resource is
- * not. An external `url(https://…)` here is exactly the request-exfiltration
- * shape closed for inline `style` by GHSA-m888, arriving through a different
- * attribute — `isSafeUri` and `stripDangerousCss` do not cover it, so nothing
- * upstream of this function catches it.
+ * `isSafeUri`; a paint value has no scheme of its own to allowlist.
+ *
+ * Fails CLOSED, like `stripDangerousCss`, on the mere PRESENCE of a
+ * resource-fetching construct (`CSS_FETCHING_RE` — `url(`, `image-set(`,
+ * `src(`, `expression(`, `@import`), then re-opens only for the one shape
+ * that is safe by construction: one or more fully well-formed, closed
+ * `url(#fragment-id)` references to the current document (a `<lineargradient>`
+ * a future icon might define), and nothing else naming a resource.
+ *
+ * The first version of this function inspected only what `PAINT_URL_RE`
+ * MATCHED and returned true when nothing matched — which let an unclosed
+ * `url(https://evil/x` (no closing paren) through unexamined, along with
+ * `src(...)`/`image-set(...)`/`expression(...)`, none of which that regex
+ * even looks for. CSS Syntax Level 3 §4.3.6 has a browser tokenize an
+ * unterminated `url(` as a url token anyway, returned on EOF — so "doesn't
+ * match" is not "doesn't fetch". Counting closed, well-formed `url(#…)`
+ * matches against the raw count of `url(` occurrences is what catches the
+ * unclosed case: if a `url(` never closes, or closes on something other than
+ * a bare `#fragment`, the counts disagree and the value is rejected.
+ *
+ * An external `url(https://…)`, `src(...)` or `image-set(...)` here is
+ * exactly the request-exfiltration shape closed for inline `style` by
+ * GHSA-m888, arriving through a different attribute — `isSafeUri` and
+ * `stripDangerousCss` do not cover it, so nothing upstream of this function
+ * catches it.
+ *
+ * `xmlns` is the one other allowlisted attribute whose value is URI-shaped
+ * and carries no check at all — harmless, since a browser never fetches a
+ * namespace declaration, but worth naming here so the next reader does not
+ * have to rediscover it while looking for the next gap of this shape.
  */
 function isSafePaintValue(rawValue: string): boolean {
   const resolved = resolveCssEscapes(preprocessCssNewlines(decodeCharacterReferences(rawValue)));
+
+  // Échec fermé, comme stripDangerousCss : la seule PRÉSENCE d'une construction
+  // qui va chercher une ressource condamne la valeur. On ne rouvre ensuite que
+  // pour la forme même-document, et seulement si elle est intégralement
+  // bien formée.
+  if (!CSS_FETCHING_RE.test(resolved)) return true;
+
+  // Aucune de ces fonctions n'a de forme même-document : rien à exempter.
+  if (/(?:image-set|src|expression)\(|@import/i.test(resolved)) return false;
+
+  // Chaque `url(` doit être un url(#…) bien formé. Compter les ouvertures et
+  // les correspondances complètes est ce qui ferme la porte à la forme non
+  // fermée : elle ouvre sans correspondre, et le navigateur la lit quand même
+  // comme un token url (CSS Syntax L3 §4.3.6 — le token est rendu sur EOF).
+  const opens = (resolved.match(/url\(/gi) ?? []).length;
+  let wellFormedSameDocument = 0;
   PAINT_URL_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = PAINT_URL_RE.exec(resolved)) !== null) {
     if (!match[2].startsWith("#")) return false;
+    wellFormedSameDocument++;
   }
-  return true;
+  return wellFormedSameDocument === opens;
 }
 
 /**
