@@ -27,7 +27,7 @@
  * Cet export est une étape obligatoire du runbook.
  */
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync, readSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { planProduct, planBanner, type ProductRow, type BannerRow } from "../lib/content/conversion-plan";
@@ -51,6 +51,58 @@ if (!process.env.NEXT_PUBLIC_R2_URL) {
       "de façon permanente. Exporte la variable (voir .env.local) et relance.",
   );
   process.exit(1);
+}
+
+/**
+ * Lit une ligne sur l'entrée standard, de façon SYNCHRONE — le reste du script
+ * est écrit en style synchrone (execFileSync partout), et une confirmation
+ * async casserait ce style pour un seul appel. `readSync(0, …)` bloque jusqu'à
+ * ce qu'un octet arrive, ce qui suffit pour une invite interactive.
+ *
+ * EAGAIN peut survenir sur un fd 0 non bloquant (observé sur certains
+ * terminaux) : on retente plutôt que de laisser planter la confirmation sur
+ * un faux négatif. Toute autre erreur — ou un pipe fermé (bytesRead === 0,
+ * EOF immédiat) — remonte telle quelle : une entrée non interactive doit
+ * échouer, pas boucler indéfiniment ni être lue comme une confirmation vide.
+ */
+function readLineSync(): string {
+  const buffer = Buffer.alloc(1);
+  let input = "";
+  for (;;) {
+    let bytesRead: number;
+    try {
+      bytesRead = readSync(0, buffer, 0, 1, null);
+    } catch (err) {
+      if (err instanceof Error && "code" in err && err.code === "EAGAIN") continue;
+      throw err;
+    }
+    if (bytesRead === 0) break;
+    const char = buffer.toString("utf8");
+    if (char === "\n") break;
+    if (char !== "\r") input += char;
+  }
+  return input;
+}
+
+/**
+ * Confirmation tapée, requise uniquement pour une écriture réelle contre la
+ * base distante — la combinaison la plus destructrice possible et, avant ce
+ * garde, celle obtenue par défaut (pas de flag à ajouter, contrairement à
+ * --dry-run qui lui doit être explicitement retiré). Le chemin --dry-run et
+ * toute exécution --local ne posent aucune question : ils n'écrivent rien
+ * d'irréversible, ou n'écrivent rien du tout.
+ */
+if (remote && !dryRun) {
+  process.stdout.write(
+    "\n⚠️  Conversion RÉELLE contre la base distante (aucune annulation au-delà de l'export D1 — " +
+      "voir Étape R du runbook). Tape CONVERTIR pour continuer : ",
+  );
+  const answer = readLineSync();
+  if (answer.trim() !== "CONVERTIR") {
+    console.error("\nConfirmation refusée ou incorrecte. Rien n'a été lu ni écrit.");
+    process.exit(1);
+  }
+  console.log("");
 }
 
 const target = remote ? "--remote" : "--local";
