@@ -325,6 +325,66 @@
     color: var(--muted-foreground);
     padding-bottom: 1rem;
   }
+  /* Bannière hero : la carte translucide posée sur le dégradé rendu par React.
+     Les couleurs sont fixes et non tokenisées ici — c'est volontaire : ce bloc
+     vit TOUJOURS sur un fond sombre, jamais sur le fond de page, donc il ne
+     suit pas le thème. Les valeurs sont exprimées en color-mix sur des
+     couleurs nommées CSS pour éviter tout littéral hexadécimal.
+     <div class="nk-banner"> … </div> */
+  .nk-banner {
+    backdrop-filter: blur(16px);
+    background-color: color-mix(in oklch, white 10%, transparent);
+    border: 1px solid color-mix(in oklch, white 20%, transparent);
+    border-radius: var(--radius-xl);
+    color: white;
+    padding: 0.75rem;
+  }
+  @media (min-width: 640px) {
+    .nk-banner {
+      padding: 2rem;
+    }
+  }
+  .nk-banner-badge {
+    background-color: color-mix(in oklch, var(--hero-accent) 20%, transparent);
+    border-radius: 9999px;
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    text-transform: uppercase;
+  }
+  .nk-banner-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  @media (min-width: 640px) {
+    .nk-banner-title {
+      font-size: 1.875rem;
+    }
+  }
+  .nk-banner-subtitle {
+    color: color-mix(in oklch, white 70%, transparent);
+    display: none;
+    margin-top: 0.5rem;
+  }
+  @media (min-width: 640px) {
+    .nk-banner-subtitle {
+      display: block;
+    }
+  }
+  .nk-banner-price {
+    color: var(--hero-accent);
+    font-weight: 600;
+    margin-top: 0.5rem;
+  }
+  .nk-banner .nk-cta {
+    background-color: white;
+    color: var(--hero-bg);
+    margin-top: 0.5rem;
+  }
 }
 
 @layer utilities {

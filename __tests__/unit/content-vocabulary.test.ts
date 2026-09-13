@@ -8,6 +8,7 @@ const CLASSES = [
   "nk-section", "nk-section-alt", "nk-container",
   "nk-grid", "nk-split",
   "nk-lead", "nk-card", "nk-media", "nk-specs", "nk-quote", "nk-cta",
+  "nk-banner",
   "nk-faq",
 ];
 
