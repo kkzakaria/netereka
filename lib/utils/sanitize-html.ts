@@ -243,8 +243,20 @@ function isSafeUri(rawValue: string): boolean {
  *  on its own to decide safety, because it can only report what it manages to
  *  MATCH. An unclosed `url(` matches nothing here and would silently read as
  *  "no url() present" if this were the only check; see isSafePaintValue for
- *  why the presence check (CSS_FETCHING_RE) has to run first. */
-const PAINT_URL_RE = /url\(\s*(['"]?)([^'")]*)\1?\s*\)/gi;
+ *  why the presence check (CSS_FETCHING_RE) has to run first.
+ *
+ *  The inner run excludes whitespace ([^'")\s]), not just the closing
+ *  delimiters. Without that exclusion, "url(" followed by N spaces gave the
+ *  engine N+1 ways to split the same input between the leading `\s*` and the
+ *  inner `[^'")]*` before failing to find the required ")" — superlinear
+ *  backtracking that measured 2.5s at 3000 spaces and did not terminate in
+ *  reasonable time at 5000, on every storefront render inside a CPU-metered
+ *  Worker. Excluding whitespace from the inner run leaves exactly one
+ *  possible split, so there is nothing left to backtrack over. `url(#a b)` no
+ *  longer matches as a result — an opening with no well-formed match, which
+ *  is the safe direction: it gets rejected by isSafePaintValue rather than
+ *  silently accepted. */
+const PAINT_URL_RE = /url\(\s*(['"]?)([^'")\s]*)\1?\s*\)/gi;
 
 /**
  * `fill`/`stroke` are SVG presentation attributes whose value is a CSS
@@ -306,7 +318,17 @@ function isSafePaintValue(rawValue: string): boolean {
     if (!match[2].startsWith("#")) return false;
     wellFormedSameDocument++;
   }
-  return wellFormedSameDocument === opens;
+  // `opens > 0 &&` : sans ce garde-fou, un CSS_FETCHING_RE positif sur une
+  // construction que la ligne "image-set|src|expression|@import" ci-dessus
+  // ne reconnaît pas (parce qu'elle recopie à la main l'alternance de
+  // CSS_FETCHING_RE plutôt que de la réutiliser) tomberait dans ce dernier
+  // return avec opens = 0 et wellFormedSameDocument = 0, soit 0 === 0 → true.
+  // Aujourd'hui les deux listes sont exactement complémentaires, donc rien ne
+  // passe au travers — mais le commentaire de CSS_FETCHING_RE invite à
+  // l'étendre, et un ajout qui n'est pas répercuté ici tomberait alors en
+  // succès plutôt qu'en échec. Ne simplifie pas ce garde en te fiant à l'état
+  // actuel des deux listes.
+  return opens > 0 && wellFormedSameDocument === opens;
 }
 
 /**

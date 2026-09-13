@@ -1600,6 +1600,54 @@ describe("SVG inline", () => {
       'stroke="currentColor"',
     );
   });
+
+  // PAINT_URL_RE excluait seulement les délimiteurs de fermeture de son run
+  // interne, pas l'espace — donc "url(" suivi de N espaces donnait au moteur
+  // N+1 façons de partager le même espace entre le `\s*` de tête et le run
+  // interne avant d'échouer à trouver le ")" requis. Retour en arrière
+  // superlinéaire mesuré à ~2,5 s pour 3000 espaces et sans fin raisonnable à
+  // 5000, sur chaque rendu de fiche produit dans un Worker facturé au CPU. Le
+  // seuil est large à dessein — il ne mesure pas la performance, il attrape un
+  // retour en arrière superlinéaire.
+  it("ne dégénère pas sur un url( suivi de milliers d'espaces", () => {
+    const payload = `<svg><path fill="url(${" ".repeat(5000)}" d="M0 0"></path></svg>`;
+    const start = Date.now();
+    const out = sanitizeDescriptionHtml(payload);
+    expect(Date.now() - start).toBeLessThan(500);
+    expect(out).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  // Les orthographes échappées/référencées sont la classe qui a historiquement
+  // cassé le filtre voisin (stripDangerousCss / GHSA-m888) : ce sont elles qui
+  // prouvent que resolveCssEscapes + decodeCharacterReferences tournent
+  // effectivement avant le test, pas seulement la forme littérale "url(".
+  it("jette un fill dont le nom de fonction est échappé en CSS (u\\72 l)", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="u\\72 l(https://evil/x)" d="M0 0"></path></svg>'),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  it("jette un fill dont le nom de fonction passe par une référence de caractère (&#117;rl)", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="&#117;rl(https://evil/x)" d="M0 0"></path></svg>'),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  it("jette un fill utilisant URL() en majuscules", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="URL(https://evil/x)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  // "url (" avec un espace avant la parenthèse est un identifiant suivi d'un
+  // bloc parenthésé, pas un jeton fonction — il ne récupère rien. Le fichier
+  // documente déjà cette règle pour stripDangerousCss ; isSafePaintValue doit
+  // s'accorder avec elle plutôt que la sur-bloquer.
+  it("laisse passer url suivi d'un espace avant la parenthèse, qui ne récupère rien", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="url (https://evil/x)" d="M0 0"></path></svg>'),
+    ).toContain('fill="url (https://evil/x)"');
+  });
 });
 
 describe("portée CSS d'une bannière", () => {
