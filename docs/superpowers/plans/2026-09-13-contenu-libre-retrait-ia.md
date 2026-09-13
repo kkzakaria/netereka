@@ -302,8 +302,13 @@ describe("vocabulaire de contenu libre", () => {
 
   it("n'emploie aucune couleur littérale dans le layer du vocabulaire", () => {
     const start = css.indexOf("@layer nk-content");
+    const end = css.indexOf("@layer utilities");
     expect(start).toBeGreaterThan(-1);
-    const layer = css.slice(start);
+    expect(end).toBeGreaterThan(start);
+    // Borné au layer lui-même : sans la borne haute, ce test inspecterait tout
+    // ce qui suit dans le fichier et interdirait une couleur littérale là où
+    // elle est légitime, tout en prétendant ne vérifier que le vocabulaire.
+    const layer = css.slice(start, end);
     // Les couleurs doivent venir des tokens : var(--...), jamais d'un hex ou d'un rgb().
     expect(layer).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(layer).not.toMatch(/\brgba?\(/);
