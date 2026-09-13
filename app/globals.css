@@ -137,6 +137,196 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Vocabulaire du contenu libre (`nk-`).
+ *
+ * Ces classes sont le seul point de contact entre le HTML rédigé à la main ou
+ * par une IA et la charte du site. Elles sont bâties exclusivement sur les
+ * tokens définis dans :root, donc justes en thème clair comme en thème sombre,
+ * et responsives par construction.
+ *
+ * Ce layer se place AVANT `utilities` : une règle écrite par l'auteur dans son
+ * propre bloc <style> est préfixée `.desc-<scopeId>` par le sanitizer, donc
+ * plus spécifique, et l'emporte toujours. Le vocabulaire propose, il n'impose
+ * pas.
+ *
+ * Toute couleur vient d'un token. Aucun hex, aucun rgb() ici — le test
+ * __tests__/unit/content-vocabulary.test.ts le vérifie.
+ * ------------------------------------------------------------------------- */
+@layer nk-content {
+  /* Rythme vertical pleine largeur.
+     <section class="nk-section"> … </section> */
+  .nk-section {
+    padding-block: 3rem;
+  }
+  @media (min-width: 640px) {
+    .nk-section {
+      padding-block: 5rem;
+    }
+  }
+
+  /* Variante sur fond sourd, pour alterner le rythme.
+     <section class="nk-section nk-section-alt"> … </section> */
+  .nk-section-alt {
+    background-color: var(--muted);
+  }
+
+  /* Largeur de lecture confortable. À poser SOUS une nk-section quand le
+     contenu est du texte ; à omettre pour un bloc qui doit filer pleine largeur.
+     <div class="nk-container"> … </div> */
+  .nk-container {
+    margin-inline: auto;
+    max-width: 48rem;
+    padding-inline: 1.5rem;
+  }
+
+  /* Grille à colonnes automatiques, une seule colonne sous 640px.
+     <ul class="nk-grid"> <li class="nk-card"> … </li> </ul> */
+  .nk-grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: 1fr;
+    margin-inline: auto;
+    max-width: 72rem;
+    padding-inline: 1.5rem;
+    list-style: none;
+  }
+  @media (min-width: 640px) {
+    .nk-grid {
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    }
+  }
+
+  /* Deux colonnes texte / media, empilées sous 768px.
+     <div class="nk-split"> <div> … </div> <img class="nk-media" …> </div> */
+  .nk-split {
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: 1fr;
+    align-items: center;
+    margin-inline: auto;
+    max-width: 72rem;
+    padding-inline: 1.5rem;
+  }
+  @media (min-width: 768px) {
+    .nk-split {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  /* Chapô : la phrase d'accroche sous un titre de section.
+     <p class="nk-lead">La batterie qui tient trois jours.</p> */
+  .nk-lead {
+    color: var(--muted-foreground);
+    font-size: 1.125rem;
+    line-height: 1.7;
+  }
+
+  /* Carte : un bloc de contenu détouré.
+     <li class="nk-card"> <h3>…</h3> <p>…</p> </li> */
+  .nk-card {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--card-foreground);
+    padding: 1.25rem;
+  }
+
+  /* Media : toute image du contenu libre.
+     <img class="nk-media" src="…" alt="…"> */
+  .nk-media {
+    border-radius: var(--radius);
+    display: block;
+    height: auto;
+    max-width: 100%;
+  }
+
+  /* Liste clé / valeur.
+     <dl class="nk-specs"> <div><dt>Écran</dt><dd>6,7"</dd></div> </dl> */
+  .nk-specs {
+    display: grid;
+    gap: 1px;
+    background-color: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .nk-specs > div {
+    background-color: var(--background);
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+  }
+  .nk-specs dt {
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+    font-size: 0.875rem;
+  }
+  .nk-specs dd {
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-left: auto;
+    text-align: right;
+  }
+
+  /* Citation mise en avant.
+     <blockquote class="nk-quote">…</blockquote> */
+  .nk-quote {
+    border-left: 3px solid var(--primary);
+    color: var(--foreground);
+    font-size: 1.125rem;
+    padding-left: 1.25rem;
+  }
+
+  /* Bouton d'appel à l'action.
+     <a class="nk-cta" href="/c/telephones">Voir la gamme</a> */
+  .nk-cta {
+    background-color: var(--primary);
+    border-radius: 9999px;
+    color: var(--primary-foreground);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    /* 44px de hauteur minimale : cible tactile. */
+    min-height: 2.75rem;
+    padding: 0.625rem 1.5rem;
+    text-decoration: none;
+  }
+
+  /* Accordéon FAQ, sans JavaScript.
+     <div class="nk-faq">
+       <details><summary>Question ?</summary><p>Réponse.</p></details>
+     </div> */
+  .nk-faq details {
+    border-bottom: 1px solid var(--border);
+  }
+  .nk-faq summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+    /* 44px de hauteur minimale : cible tactile. */
+    min-height: 2.75rem;
+    padding-block: 0.875rem;
+  }
+  .nk-faq summary::-webkit-details-marker {
+    display: none;
+  }
+  .nk-faq summary::after {
+    content: "+";
+    color: var(--muted-foreground);
+    float: right;
+  }
+  .nk-faq details[open] summary::after {
+    content: "−";
+  }
+  .nk-faq details > *:not(summary) {
+    color: var(--muted-foreground);
+    padding-bottom: 1rem;
+  }
+}
+
 @layer utilities {
   .scrollbar-none {
     -ms-overflow-style: none;
