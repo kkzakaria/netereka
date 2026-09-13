@@ -105,7 +105,7 @@ Le lot B n'étend pas l'encadrement, il l'enseigne : la documentation du vocabul
 
 ## 3. Conversion de l'existant
 
-Un script `scripts/convert-content-to-html.mjs`, exécutable contre D1 local puis distant, **idempotent et rejouable**.
+Un script `scripts/convert-content-to-html.ts`, exécutable contre D1 local puis distant, **idempotent et rejouable**.
 
 ### 3.1 Produits
 
@@ -171,7 +171,7 @@ Les avis sont aujourd'hui rendus par `ProductReviews`, un composant serveur asyn
 
 ### 4.4 Hero
 
-`hero-banner.tsx` garde son carrousel Embla, son autoplay, son dégradé et son `next/image`. Le contenu textuel du gabarit est remplacé par `content_html`, injecté via `dangerouslySetInnerHTML` — le HTML a été assaini au moment de l'écriture, jamais au rendu, ce qui évite de faire tourner le sanitizer dans un composant client. Quand `content_html` est vide, la slide n'affiche que l'image et le dégradé.
+`hero-banner.tsx` garde son carrousel Embla, son autoplay, son dégradé et son `next/image`. Le contenu textuel du gabarit est remplacé par `content_html`, injecté via `dangerouslySetInnerHTML`. Le HTML passe par deux assainissements, pas un seul : à l'écriture (`sanitizeDescriptionHtml`, appelé depuis `lib/content/conversion-plan.ts` puis, plus tard, depuis l'éditeur admin et les outils MCP) — c'est cette passe qui écrit la forme préfixée `.desc-banner-<id>` en base — et une seconde fois à la lecture, dans `getActiveBanners()` (`lib/db/storefront/banners.ts`), juste avant que `content_html` n'atteigne ce composant. Cette seconde passe est une défense en profondeur : elle ne coûte rien, tourne côté serveur donc jamais dans le bundle client, et surtout elle ne dépend pas de la mémoire de chaque futur écrivain. La garantie « assaini à l'écriture » suppose qu'aucun code présent ou futur ne puisse écrire `content_html` sans passer par le bon chemin ; le jour où un éditeur admin ou un outil MCP l'oublie, la relecture côté serveur rattrape l'omission avant qu'elle n'atteigne le navigateur. C'est pourquoi ce second passage doit rester : le retirer au nom de la redondance supprimerait exactement le filet qui le justifie. Quand `content_html` est vide, la slide n'affiche que l'image et le dégradé.
 
 Le repli sur les produits en vedette (`buildSlides` quand aucune bannière n'est active) reste un gabarit React : c'est notre propre code, pas du contenu éditorial, et rien ne justifie de le faire transiter par une chaîne HTML.
 
