@@ -3,12 +3,22 @@ const ALLOWED_TAGS = new Set([
   "ul", "ol", "li", "a", "img", "strong", "em", "u", "s",
   "br", "hr", "table", "thead", "tbody", "tr", "th", "td",
   "blockquote", "pre", "code", "style", "figure", "figcaption",
+  "details", "summary",
 ]);
 
 const ALLOWED_ATTRS = new Set([
   "class", "style", "href", "src", "alt", "width", "height",
-  "colspan", "rowspan", "target", "rel",
+  "colspan", "rowspan", "target", "rel", "open",
 ]);
+
+/** HTML boolean attributes this file allows through with no value at all —
+ *  `<details open>`, not `<details open="">`. Safe to emit bare on every tag
+ *  in ALLOWED_TAGS: none of them carries a URL, runs script, or applies CSS —
+ *  its mere presence can only reveal an accordion panel. Every OTHER valueless
+ *  attribute (`<div hidden>`) is still dropped; this set is deliberately not
+ *  the same thing as ALLOWED_ATTRS, which governs attributes that carry a
+ *  value. */
+const BOOLEAN_ATTRS = new Set(["open"]);
 
 const EVENT_HANDLER_RE = /^on[a-z]/i;
 
@@ -610,8 +620,8 @@ function scopeSelectorList(selectors: string, scopePrefix: string): string {
 }
 
 /**
- * Prefix every style-rule selector in `css` with `scopePrefix`, so a product
- * description's stylesheet cannot restyle the rest of the page.
+ * Prefix every style-rule selector in `css` with `scopePrefix`, so a free-content
+ * stylesheet cannot restyle the rest of the page.
  *
  * WHAT THIS REPLACED, AND WHY A REGEX COULD NOT DO IT
  * ---------------------------------------------------
@@ -766,10 +776,10 @@ function scopeCssSelectors(css: string, scopePrefix: string): string {
   return copied === 0 ? css : out + css.slice(copied);
 }
 
-export function sanitizeDescriptionHtml(html: string, productId?: string): string {
+export function sanitizeDescriptionHtml(html: string, scopeId?: string): string {
   if (!html || !html.trim()) return "";
   if (html.length > MAX_INPUT_LENGTH) {
-    console.error("[sanitize-html] Input exceeds max length — returning empty (fail-closed)", { length: html.length, productId });
+    console.error("[sanitize-html] Input exceeds max length — returning empty (fail-closed)", { length: html.length, scopeId });
     return "";
   }
 
@@ -849,11 +859,11 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       css = css.trim();
       if (!css) return "";
       // Scoping runs only on the admin save paths, which are the ones that
-      // pass a productId and persist what comes back. The storefront read path
+      // pass a scopeId and persist what comes back. The storefront read path
       // passes none, so this branch is skipped there and the stored markup is
       // returned byte for byte.
-      if (productId) {
-        css = scopeCssSelectors(css, `.desc-${productId}`);
+      if (scopeId) {
+        css = scopeCssSelectors(css, `.desc-${scopeId}`);
       }
       return `<style>${css}</style>`;
     },
@@ -947,8 +957,14 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
       while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
         const attrName = attrMatch[1].toLowerCase();
         const rawValue = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4];
-        // Valueless attribute ("<div hidden>"): never emitted before either.
-        if (rawValue === undefined) continue;
+        // Valueless attribute ("<div hidden>"): dropped, UNLESS its name is one
+        // of the narrow set of boolean attributes in BOOLEAN_ATTRS ("open"),
+        // which is emitted bare — "<details open>", matching what an author
+        // actually writes, rather than silently degrading to a collapsed panel.
+        if (rawValue === undefined) {
+          if (BOOLEAN_ATTRS.has(attrName)) attrs.push(attrName);
+          continue;
+        }
         const attrValue = rawValue;
         if (EVENT_HANDLER_RE.test(attrName)) continue;
         if (!ALLOWED_ATTRS.has(attrName)) continue;
@@ -976,7 +992,7 @@ export function sanitizeDescriptionHtml(html: string, productId?: string): strin
   return result;
 
   } catch (err) {
-    console.error("[sanitize-html] Sanitization failed — returning empty (fail-closed)", err, { productId, inputLength: html.length });
+    console.error("[sanitize-html] Sanitization failed — returning empty (fail-closed)", err, { scopeId, inputLength: html.length });
     return "";
   }
 }

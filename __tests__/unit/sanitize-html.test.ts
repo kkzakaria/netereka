@@ -1026,14 +1026,14 @@ describe("sanitizeDescriptionHtml", () => {
       error.mockRestore();
     });
 
-    it("reports the offending length and product so an operator can act", () => {
+    it("reports the offending length and scope so an operator can act", () => {
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
       sanitizeDescriptionHtml(paragraphOfLength(MAX + 1), "prod-42");
 
       expect(error.mock.calls[0][1]).toMatchObject({
         length: MAX + 1,
-        productId: "prod-42",
+        scopeId: "prod-42",
       });
 
       error.mockRestore();
@@ -1382,5 +1382,56 @@ describe("sanitizeDescriptionHtml", () => {
       expect(scoped).toContain(`.desc-${id} .blk-119 .product-title {`);
       expect(scoped).not.toContain(`.desc-${id} .desc-${id} .desc-${id}`);
     });
+  });
+});
+
+describe("accordéon FAQ", () => {
+  it("conserve details, summary et l'attribut open", () => {
+    const out = sanitizeDescriptionHtml(
+      "<details open><summary>Livraison ?</summary><p>48h à Abidjan.</p></details>",
+    );
+    expect(out).toContain("<details open>");
+    expect(out).toContain("<summary>Livraison ?</summary>");
+    expect(out).toContain("48h à Abidjan.");
+  });
+
+  it("assainit toujours ce qui est à l'intérieur d'un details", () => {
+    const out = sanitizeDescriptionHtml(
+      '<details><summary>X</summary><img src=x onerror="alert(1)"></details>',
+    );
+    expect(out).not.toContain("onerror");
+  });
+
+  // BOOLEAN_ATTRS is a narrow, explicit allowlist ("open" only) — not a general
+  // reprieve for every valueless attribute. These pin that the widening did not
+  // leak: a valueless attribute outside BOOLEAN_ATTRS is still dropped exactly
+  // as before, even when its bare name (ALLOWED_ATTRS membership for "href") or
+  // its tag survives sanitization.
+  it("continue de retirer un attribut booléen non listé (hidden)", () => {
+    const out = sanitizeDescriptionHtml("<div hidden>x</div>");
+    expect(out).not.toContain("hidden");
+    expect(out).toBe("<div>x</div>");
+  });
+
+  it("continue de retirer href sans valeur", () => {
+    const out = sanitizeDescriptionHtml("<a href>x</a>");
+    expect(out).not.toContain("href");
+    expect(out).toBe("<a>x</a>");
+  });
+});
+
+describe("portée CSS d'une bannière", () => {
+  it("préfixe les sélecteurs avec l'identifiant de bannière", () => {
+    const out = sanitizeDescriptionHtml(
+      "<style>.title{color:red}</style><p class='title'>Hi</p>",
+      "banner-12",
+    );
+    expect(out).toContain(".desc-banner-12 .title");
+  });
+
+  it("ne préfixe pas deux fois une règle déjà préfixée", () => {
+    const once = sanitizeDescriptionHtml("<style>.t{color:red}</style>", "banner-12");
+    const twice = sanitizeDescriptionHtml(once, "banner-12");
+    expect(twice).toBe(once);
   });
 });
