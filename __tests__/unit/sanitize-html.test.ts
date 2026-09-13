@@ -1601,20 +1601,80 @@ describe("SVG inline", () => {
     );
   });
 
-  // PAINT_URL_RE excluait seulement les délimiteurs de fermeture de son run
-  // interne, pas l'espace — donc "url(" suivi de N espaces donnait au moteur
-  // N+1 façons de partager le même espace entre le `\s*` de tête et le run
-  // interne avant d'échouer à trouver le ")" requis. Retour en arrière
-  // superlinéaire mesuré à ~2,5 s pour 3000 espaces et sans fin raisonnable à
-  // 5000, sur chaque rendu de fiche produit dans un Worker facturé au CPU. Le
-  // seuil est large à dessein — il ne mesure pas la performance, il attrape un
-  // retour en arrière superlinéaire.
-  it("ne dégénère pas sur un url( suivi de milliers d'espaces", () => {
-    const payload = `<svg><path fill="url(${" ".repeat(5000)}" d="M0 0"></path></svg>`;
+  // Retour en arrière superlinéaire de PAINT_URL_RE.
+  //
+  // Ces trois cas se mesurent à la TAILLE QUE LE CODE ACCEPTE RÉELLEMENT, pas à
+  // une taille commode : sanitizeDescriptionHtml laisse passer jusqu'à
+  // MAX_INPUT_LENGTH = 512 000 caractères, et lib/validations/mcp-product.ts
+  // sanctionne explicitement cette taille sur le chemin d'écriture MCP. Un round
+  // précédent a testé à 5 000 caractères et conclu à la victoire alors que le
+  // défaut coûtait encore 3 s à 100 000 et 74 s au plafond. Le coût n'est pas
+  // qu'à l'écriture : description-to-html rappelle ce filtre à CHAQUE rendu de
+  // fiche produit, dans un Worker facturé au CPU.
+  //
+  // Le seuil est large à dessein — environ 85 fois le pire temps mesuré après
+  // correctif (23,5 ms). Il n'évalue pas la performance, il attrape une courbe
+  // superlinéaire : un retour au quadratique se compte en dizaines de secondes,
+  // pas en millisecondes. Ne le resserre pas — un garde-fou qui devient
+  // instable finit supprimé, et ne garde alors plus rien.
+  const CEILING = 512_000;
+  /** Marge x85 sur le pire temps mesuré ; voir le commentaire ci-dessus. */
+  const NO_BLOWUP_MS = 2_000;
+
+  function tempsDAssainissement(valeurFill: string): { ms: number; out: string } {
+    const payload = `<svg><path fill="${valeurFill}" d="M0 0"></path></svg>`;
+    expect(payload.length).toBeLessThanOrEqual(CEILING);
     const start = Date.now();
     const out = sanitizeDescriptionHtml(payload);
-    expect(Date.now() - start).toBeLessThan(500);
+    return { ms: Date.now() - start, out };
+  }
+
+  // Forme 1 : les deux `\s` s'échangeaient les mêmes espaces. C'est la forme que
+  // le round précédent croyait avoir fermée en excluant l'espace du run interne —
+  // à tort : l'échange se faisait entre le `\s*` de tête et celui de queue, que
+  // cette exclusion ne touchait pas. Mesurée sur la forme d'alors : 42 ms à
+  // 12 500 espaces, 3 091 ms à 100 000, 73 789 ms au plafond.
+  it("ne dégénère pas sur un url( suivi d'un demi-million d'espaces", () => {
+    const { ms, out } = tempsDAssainissement(`url(${" ".repeat(511_900)}`);
+    expect(ms).toBeLessThan(NO_BLOWUP_MS);
     expect(out).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  // Forme 2 : sans exclusion de `(` du run interne, celui-ci avalait tout le
+  // reste de la valeur puis le rendait caractère par caractère — et recommençait
+  // à chaque `url(`, soit une position de départ tous les quatre caractères.
+  // Rien à voir avec l'espace : borner les `\s` seul n'y change rien. Mesurée sur
+  // la forme d'alors : 104 ms à 3 000 répétitions, 30 212 ms à 50 000,
+  // 198 701 ms au plafond — trois minutes de CPU par affichage de fiche.
+  it("ne dégénère pas sur un url( répété cent mille fois sans fermeture", () => {
+    const { ms, out } = tempsDAssainissement("url(".repeat(127_000));
+    expect(ms).toBeLessThan(NO_BLOWUP_MS);
+    expect(out).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  // Forme 3 : le pire mélange atteignable une fois les deux correctifs posés —
+  // chaque occurrence porte exactement 32 espaces, la borne des `\s{0,32}`, donc
+  // chaque position de départ paie le maximum d'essais que la borne autorise
+  // (33 x 33). C'est ce cas qui prouve que la borne est bien une CONSTANTE et
+  // pas un seuil déplacé : 23,5 ms au plafond, le pire des trois.
+  it("ne dégénère pas quand chaque url( porte pile la borne de 32 espaces", () => {
+    const { ms, out } = tempsDAssainissement(`${"url(" + " ".repeat(32)}`.repeat(14_000));
+    expect(ms).toBeLessThan(NO_BLOWUP_MS);
+    expect(out).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  // Contrepartie acceptée des deux exclusions : une référence même-document dont
+  // le contenu porte un espace interne ou un `(` ne CORRESPOND plus, donc elle
+  // compte comme une ouverture sans correspondance bien formée et se fait
+  // rejeter. C'est la direction sûre, et elle est testée pour qu'un futur
+  // élargissement du run interne ne la réouvre pas par inadvertance.
+  it("jette une référence même-document mal formée (espace ou parenthèse interne)", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#a b)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#a(b)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
   });
 
   // Les orthographes échappées/référencées sont la classe qui a historiquement

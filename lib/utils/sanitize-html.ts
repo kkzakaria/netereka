@@ -245,18 +245,43 @@ function isSafeUri(rawValue: string): boolean {
  *  "no url() present" if this were the only check; see isSafePaintValue for
  *  why the presence check (CSS_FETCHING_RE) has to run first.
  *
- *  The inner run excludes whitespace ([^'")\s]), not just the closing
- *  delimiters. Without that exclusion, "url(" followed by N spaces gave the
- *  engine N+1 ways to split the same input between the leading `\s*` and the
- *  inner `[^'")]*` before failing to find the required ")" — superlinear
- *  backtracking that measured 2.5s at 3000 spaces and did not terminate in
- *  reasonable time at 5000, on every storefront render inside a CPU-metered
- *  Worker. Excluding whitespace from the inner run leaves exactly one
- *  possible split, so there is nothing left to backtrack over. `url(#a b)` no
- *  longer matches as a result — an opening with no well-formed match, which
- *  is the safe direction: it gets rejected by isSafePaintValue rather than
- *  silently accepted. */
-const PAINT_URL_RE = /url\(\s*(['"]?)([^'")\s]*)\1?\s*\)/gi;
+ *  Every quantifier here is bounded or delimiter-excluded on purpose. This
+ *  regex runs on every product-page render (description-to-html →
+ *  StoryFreeContent) inside a CPU-metered Worker, and sanitizeDescriptionHtml
+ *  accepts input up to MAX_INPUT_LENGTH — 512,000 characters — so "how does
+ *  this behave at the ceiling" is a reachable question, not a theoretical one.
+ *  Two DISTINCT quadratic shapes were measured against the previous form and
+ *  are closed here by construction:
+ *
+ *  1. `\s{0,32}` rather than `\s*`, on both sides. When the required `\)`
+ *     fails to turn up, the leading and the trailing whitespace run trade the
+ *     same spaces back and forth: "url(" + N spaces costs O(N²). An earlier
+ *     round excluded whitespace from the INNER run and asserted that this
+ *     left "exactly one possible split, so there is nothing left to backtrack
+ *     over" — that assertion was false, and the numbers below were measured on
+ *     that supposedly-fixed form: 42 ms at 12,500 spaces, 692 ms at 50,000,
+ *     3,091 ms at 100,000, 73,789 ms at the 512,000 ceiling. The two `\s`
+ *     runs traded with EACH OTHER; excluding whitespace from the inner run
+ *     never touched that. Bounding both runs caps the split space at a
+ *     constant (33 × 33 attempts per start position), which is linear overall.
+ *
+ *  2. `(` is excluded from the inner run, alongside the quotes, `)` and
+ *     whitespace. Without that exclusion the run swallows the entire rest of
+ *     the value and then hands it back one character at a time — and it does
+ *     so once per start position, because "url(url(url(…" offers the engine a
+ *     fresh start every four characters. Measured on the previous form:
+ *     104 ms at 3,000 repetitions, 1,903 ms at 12,000, 30,212 ms at 50,000,
+ *     198,701 ms at the 512,000 ceiling. Three minutes of Worker CPU, per view,
+ *     for one stored description. Note that fix 1 alone does nothing for this
+ *     shape — it is not a whitespace problem. With `(` excluded, the run can
+ *     never reach the next candidate start, so each start's work is bounded by
+ *     a span disjoint from the next start's, and the total is linear in input.
+ *
+ *  Consequence accepted in both cases, and it is the safe direction: a url()
+ *  whose content holds an inner space or a `(` no longer MATCHES at all.
+ *  `url(#a b)` and `url(#a(b)` become openings with no well-formed match, and
+ *  isSafePaintValue rejects those rather than accepting them silently. */
+const PAINT_URL_RE = /url\(\s{0,32}(['"]?)([^'"()\s]*)\1?\s{0,32}\)/gi;
 
 /**
  * `fill`/`stroke` are SVG presentation attributes whose value is a CSS
