@@ -81,9 +81,29 @@ const RULES: Rule[] = [
 
 const IMG_RE = /<img\b[^<>]*>/gi;
 
-function excerptOf(line: string): string {
-  const t = line.trim();
+function excerptOf(text: string): string {
+  const t = text.trim();
   return t.length <= EXCERPT_MAX ? t : `${t.slice(0, EXCERPT_MAX - 1)}…`;
+}
+
+/** Aplatit les espaces (retours à la ligne compris) en un seul espace, pour
+ *  qu'un extrait reste lisible quand la balise qu'il décrit s'étend sur
+ *  plusieurs lignes — sinon l'extrait contiendrait le saut de ligne brut. */
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ");
+}
+
+/** Numéro de ligne 1-indexé de la position `index` dans `html`, à partir des
+ *  décalages (croissants) de chaque retour à la ligne. */
+function lineAt(newlineOffsets: number[], index: number): number {
+  let lo = 0;
+  let hi = newlineOffsets.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (newlineOffsets[mid] < index) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo + 1;
 }
 
 export function checkDesignConformance(html: string): ConformanceIssue[] {
@@ -108,23 +128,40 @@ export function checkDesignConformance(html: string): ConformanceIssue[] {
         issues.push({ code: rule.code, line: at, excerpt: excerptOf(line), suggestion: rule.suggestion });
       }
     }
-
-    IMG_RE.lastIndex = 0;
-    let img: RegExpExecArray | null;
-    while ((img = IMG_RE.exec(line)) !== null) {
-      // alt="" compte comme absent : une image décorative n'a rien à faire
-      // dans un contenu éditorial, et un alt vide est le plus souvent un oubli.
-      if (!/\balt\s*=\s*("[^"]+"|'[^']+'|[^\s"'<>]+)/i.test(img[0])) {
-        issues.push({
-          code: "image-without-alt",
-          line: at,
-          excerpt: excerptOf(line),
-          suggestion: "Décris l'image dans un attribut alt : sans lui, elle est invisible aux lecteurs d'écran et à Google.",
-        });
-        break;
-      }
-    }
   }
+
+  // Les <img> sont cherchées sur le document entier, pas ligne à ligne : une
+  // balise coupée par un retour à la ligne (ex. `<img\n  src="/a.jpg">`) ne
+  // correspond jamais à une regex bornée à une seule ligne, et son alt
+  // manquant passait alors inaperçu. Les autres règles restent ligne à ligne —
+  // elles n'ont pas ce problème, seule l'image a besoin de la vue document.
+  const newlineOffsets: number[] = [];
+  for (let i = 0; i < html.length; i++) {
+    if (html.charCodeAt(i) === 10) newlineOffsets.push(i);
+  }
+
+  const reportedLines = new Set<number>();
+  IMG_RE.lastIndex = 0;
+  let img: RegExpExecArray | null;
+  while ((img = IMG_RE.exec(html)) !== null) {
+    // alt="" compte comme absent : une image décorative n'a rien à faire
+    // dans un contenu éditorial, et un alt vide est le plus souvent un oubli.
+    if (/\balt\s*=\s*("[^"]+"|'[^']+'|[^\s"'<>]+)/i.test(img[0])) continue;
+    const at = lineAt(newlineOffsets, img.index);
+    // Comme avant le passage en vue document : au plus un avertissement par
+    // ligne de départ, pour ne pas noyer l'éditeur si plusieurs images sans
+    // alt se suivent sur la même ligne.
+    if (reportedLines.has(at)) continue;
+    reportedLines.add(at);
+    issues.push({
+      code: "image-without-alt",
+      line: at,
+      excerpt: excerptOf(collapseWhitespace(img[0])),
+      suggestion: "Décris l'image dans un attribut alt : sans lui, elle est invisible aux lecteurs d'écran et à Google.",
+    });
+  }
+
+  issues.sort((a, b) => a.line - b.line);
 
   return issues;
 }

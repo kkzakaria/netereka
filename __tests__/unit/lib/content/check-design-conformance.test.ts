@@ -53,6 +53,16 @@ describe("checkDesignConformance", () => {
     expect(checkDesignConformance('<img src="/a.jpg" alt="Vue">')).toEqual([]);
   });
 
+  it("repère une balise <img> coupée par un retour à la ligne", () => {
+    const html = '<p>ok</p>\n<img\n  src="/a.jpg">\n<p>fin</p>';
+    const issues = checkDesignConformance(html);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe("image-without-alt");
+    expect(issues[0].line).toBe(2);
+    expect(issues[0].excerpt).toContain("<img");
+    expect(issues[0].excerpt).not.toContain("\n");
+  });
+
   it("tronque l'extrait à 80 caractères", () => {
     const long = `<p style="color:#fff">${"a".repeat(300)}</p>`;
     expect(checkDesignConformance(long)[0].excerpt.length).toBeLessThanOrEqual(80);

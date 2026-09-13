@@ -11,6 +11,10 @@ import { getImageUrl } from "@/lib/utils/images";
 import { cn } from "@/lib/utils";
 
 interface Slide {
+  /** Id de la bannière source, ou `null` pour le repli sur les produits en
+   *  vedette (qui n'a pas de bannière derrière lui). Sert à reconstruire la
+   *  classe de scope `desc-banner-<id>` posée sur le conteneur du HTML libre. */
+  id: number | null;
   title: string;
   subtitle: string | null;
   badge_text: string | null;
@@ -24,6 +28,16 @@ interface Slide {
   content_html: string | null;
 }
 
+/** Reconstruit la classe de scope posée sur le conteneur du HTML libre d'une
+ *  bannière. `sanitizeDescriptionHtml` (lib/utils/sanitize-html.ts), appelé à
+ *  l'écriture avec `banner-<id>`, préfixe déjà chaque sélecteur du <style>
+ *  stocké par `.desc-banner-<id>` — sans cette même classe sur un ancêtre au
+ *  rendu, le CSS de l'auteur ne correspond plus à rien. `null` (repli produits
+ *  en vedette, sans bannière) ne pose aucune classe. */
+export function buildBannerScopeClass(id: number | null): string | undefined {
+  return id != null ? `desc-banner-${id}` : undefined;
+}
+
 const badgeColorMap: Record<BadgeColor, string> = {
   mint: "bg-emerald-500/20 text-emerald-300",
   red: "bg-red-500/20 text-red-300",
@@ -34,6 +48,7 @@ const badgeColorMap: Record<BadgeColor, string> = {
 export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Slide[] {
   if (banners.length > 0) {
     return banners.map((b) => ({
+      id: b.id,
       title: b.title,
       subtitle: b.subtitle,
       badge_text: b.badge_text,
@@ -49,6 +64,7 @@ export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData
   }
 
   return fallbackProducts.slice(0, 3).map((p) => ({
+    id: null,
     title: p.name,
     subtitle: p.brand || null,
     badge_text: p.is_featured ? "En vedette" : null,
@@ -136,7 +152,10 @@ export function HeroBanner({
                      plus haut, en défense en profondeur, avant qu'il n'atteigne ce
                      composant — pas ici : faire tourner le sanitizer dans un
                      composant client l'embarquerait dans le bundle pour rien. */
-                  <div dangerouslySetInnerHTML={{ __html: slide.content_html }} />
+                  <div
+                    className={buildBannerScopeClass(slide.id)}
+                    dangerouslySetInnerHTML={{ __html: slide.content_html }}
+                  />
                 ) : (
                   /* BÉQUILLE DE TRANSITION — supprimée au déploiement 2.
                      Elle couvre la fenêtre entre le déploiement 1 et la
