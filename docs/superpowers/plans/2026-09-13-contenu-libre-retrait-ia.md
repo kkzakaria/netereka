@@ -275,6 +275,8 @@ git commit -m "feat(storefront): autoriser details/summary et généraliser la p
 - Consumes: les tokens `--muted`, `--card`, `--border`, `--radius`, `--primary`, `--foreground`, `--muted-foreground` définis dans `:root`.
 - Produces: les classes `nk-section`, `nk-section-alt`, `nk-container`, `nk-grid`, `nk-split`, `nk-lead`, `nk-card`, `nk-media`, `nk-specs`, `nk-quote`, `nk-cta`, `nk-faq`.
 
+**Note post-exécution (revue finale).** Cette tâche a été exécutée avec un layer `@layer nk-content` dédié, tel que décrit plus bas. Une revue finale a trouvé que ce choix plaçait le vocabulaire APRÈS `utilities` dans la cascade réelle : `@import "tailwindcss"` déclare `@layer theme, base, components, utilities;` en toute première ligne de `app/globals.css`, ce qui fixe l'ordre de ces quatre noms avant que ce fichier ne déclare quoi que ce soit — un layer nommé mais absent de cette liste, comme `nk-content`, est ajouté ensuite, donc en dernier, et l'emporte sur `utilities` au lieu de s'effacer devant elle. Son ordre *textuel* dans le fichier (avant `@layer utilities`) ne disait rien de l'ordre réel de la cascade, qui se fixe par le nom, pas par la position. Le vocabulaire a donc été déplacé dans `@layer components` — un nom déjà dans la liste, positionné après `base` et avant `utilities` — et le test a été réécrit pour vérifier le nom du layer réellement utilisé plutôt qu'un décalage de caractères dans le fichier. Le code ci-dessous reflète l'état **avant** cette correction ; il documente comment la tâche a été exécutée, pas l'état actuel de `app/globals.css` ni de `__tests__/unit/content-vocabulary.test.ts` (voir ces fichiers pour le contenu réel).
+
 - [ ] **Step 1: Écrire le test qui échoue**
 
 `__tests__/unit/content-vocabulary.test.ts` :
@@ -300,12 +302,12 @@ describe("vocabulaire de contenu libre", () => {
     }
   });
 
-  it("n'emploie aucune couleur littérale dans le layer du vocabulaire", () => {
-    const start = css.indexOf("@layer nk-content");
+  it("n'emploie aucune couleur littérale dans le bloc du vocabulaire", () => {
+    const start = css.indexOf("@layer components {");
     const end = css.indexOf("@layer utilities");
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
-    // Borné au layer lui-même : sans la borne haute, ce test inspecterait tout
+    // Borné au bloc lui-même : sans la borne haute, ce test inspecterait tout
     // ce qui suit dans le fichier et interdirait une couleur littérale là où
     // elle est légitime, tout en prétendant ne vérifier que le vocabulaire.
     const layer = css.slice(start, end);
@@ -314,8 +316,28 @@ describe("vocabulaire de contenu libre", () => {
     expect(layer).not.toMatch(/\brgba?\(/);
   });
 
-  it("place le layer avant les utilities pour que l'auteur garde la main", () => {
-    expect(css.indexOf("@layer nk-content")).toBeLessThan(css.indexOf("@layer utilities"));
+  // PAS un test « le texte de @layer components apparaît avant le texte de
+  // @layer utilities dans le fichier » : la cascade CSS ordonne les layers
+  // NOMMÉS par leur PREMIÈRE apparition dans le document, jamais par leur
+  // position textuelle plus bas dans le fichier. `@import "tailwindcss"`, en
+  // tête de ce fichier, résout vers node_modules/tailwindcss/index.css, dont
+  // la toute première ligne déclare `@layer theme, base, components, utilities;`
+  // — cette instruction fixe l'ordre des quatre noms AVANT que ce fichier ne
+  // déclare quoi que ce soit. Un layer qui n'y figure pas serait ajouté
+  // ensuite, donc en DERNIER, et l'emporterait sur `utilities` : l'inverse de
+  // ce que ce vocabulaire doit faire. D'où le choix de rejoindre `components`
+  // — un nom déjà dans la liste — plutôt que d'ouvrir un layer à part.
+  it("rejoint le layer components de Tailwind plutôt que d'ouvrir un layer à part", () => {
+    const tailwindIndexPath = path.resolve(__dirname, "../../node_modules/tailwindcss/index.css");
+    const tailwindIndex = readFileSync(tailwindIndexPath, "utf8");
+    expect(tailwindIndex).toMatch(/^@layer\s+theme,\s*base,\s*components,\s*utilities;/);
+    expect(css).toContain('@import "tailwindcss"');
+
+    const vocabAnchor = css.indexOf(".nk-section {");
+    expect(vocabAnchor).toBeGreaterThan(-1);
+    const layerOpen = css.lastIndexOf("@layer components {", vocabAnchor);
+    expect(layerOpen).toBeGreaterThan(-1);
+    expect(layerOpen).toBeLessThan(vocabAnchor);
   });
 });
 ```
@@ -323,9 +345,9 @@ describe("vocabulaire de contenu libre", () => {
 - [ ] **Step 2: Lancer le test pour vérifier qu'il échoue**
 
 Run: `npx vitest run __tests__/unit/content-vocabulary.test.ts`
-Expected: FAIL — `@layer nk-content` est introuvable.
+Expected: FAIL — le bloc `@layer components` contenant `.nk-section` est introuvable.
 
-- [ ] **Step 3: Écrire le layer**
+- [ ] **Step 3: Écrire le bloc de vocabulaire**
 
 Dans `app/globals.css`, **entre** le second `@layer base` (variables hero) et `@layer utilities`, insère :
 
@@ -338,15 +360,26 @@ Dans `app/globals.css`, **entre** le second `@layer base` (variables hero) et `@
  * tokens définis dans :root, donc justes en thème clair comme en thème sombre,
  * et responsives par construction.
  *
- * Ce layer se place AVANT `utilities` : une règle écrite par l'auteur dans son
- * propre bloc <style> est préfixée `.desc-<scopeId>` par le sanitizer, donc
- * plus spécifique, et l'emporte toujours. Le vocabulaire propose, il n'impose
- * pas.
+ * DANS `@layer components` — PAS un layer `nk-content` à part. `@import
+ * "tailwindcss"`, tout en tête de ce fichier, déclare
+ * `@layer theme, base, components, utilities;` en toute première ligne : cette
+ * instruction fixe l'ordre de ces quatre noms dans la cascade avant que ce
+ * fichier ne déclare quoi que ce soit. Un layer nommé mais absent de cette
+ * liste serait ajouté ensuite, donc en DERNIER, et l'emporterait sur
+ * `utilities` — l'inverse de l'effet recherché. Rejoindre `components` — un
+ * nom déjà dans la liste — place ces règles au bon endroit : après `base`,
+ * avant `utilities`, de sorte qu'une classe Tailwind écrite à côté d'une
+ * classe `nk-` (par ex. `class="nk-card p-0"`) l'emporte bien comme attendu.
+ *
+ * Une règle écrite par l'auteur dans son propre bloc <style> reste, elle,
+ * toujours prioritaire quel que soit le layer : le sanitizer la préfixe
+ * `.desc-<scopeId>`, ce qui la rend plus spécifique que n'importe quelle
+ * classe de ce fichier. Le vocabulaire propose, il n'impose pas.
  *
  * Toute couleur vient d'un token. Aucun hex, aucun rgb() ici — le test
  * __tests__/unit/content-vocabulary.test.ts le vérifie.
  * ------------------------------------------------------------------------- */
-@layer nk-content {
+@layer components {
   /* Rythme vertical pleine largeur.
      <section class="nk-section"> … </section> */
   .nk-section {
@@ -1402,7 +1435,7 @@ export function bannerTemplateToHtml(input: BannerTemplateInput): string {
 
 - [ ] **Step 4: Ajouter les classes de bannière au vocabulaire**
 
-Dans `app/globals.css`, à la fin du `@layer nk-content` ajouté en tâche 3, avant l'accolade fermante :
+Dans `app/globals.css`, à la fin du bloc `@layer components` du vocabulaire ajouté en tâche 3 (voir la note post-exécution en tête de cette tâche : ce bloc a été renommé de `nk-content` vers `components` après une revue finale), avant l'accolade fermante :
 
 ```css
   /* Bannière hero : la carte translucide posée sur le dégradé rendu par React.
@@ -2193,24 +2226,33 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
 
 **À faire dans cet ordre, entre les deux déploiements. Ne saute aucune étape.**
 
-**Opération irréversible.** Le seul filet est l'export de R5, et ce n'est pas un bouton « annuler » — voir R5 pour ce qu'il permet réellement de récupérer et ce qu'il ne permet pas.
+**Opération irréversible.** Le seul filet est l'export de R6, et ce n'est pas un bouton « annuler » — voir R6 pour ce qu'il permet réellement de récupérer et ce qu'il ne permet pas.
 
-- [ ] **R1.** Fusionner la PR de la phase 1 sur `main` et laisser le déploiement canary partir.
-- [ ] **R2.** Promouvoir à 100 % via le workflow `promote.yml` (Actions → « Promote », jamais le tableau de bord Cloudflare ni `wrangler` en direct). Vérifier que l'issue « Pending promotion » se ferme.
-- [ ] **R3.** Vérifier en production que le hero est inchangé et que `/p/<un-produit>` affiche toujours sa story.
-- [ ] **R4. Pré-vol : mesurer le cas « richtext seul ».** `conversion-plan.ts` convertit aussi un produit qui n'a **aucune** colonne story mais dont la description richtext n'est pas vide : son JSON Lexical passe par `descriptionToHtml`, part en base comme HTML, et la source Lexical disparaît. Ce cas déborde du § 3.1 du spec (limité aux produits avec au moins un champ story renseigné) et collide avec deux décisions du lot : le spec § 5 garde l'éditeur richtext comme chemin court pour du texte simple, et la phase 2 rend `description_type === "html"` sans `prose` ni contrainte de largeur — une description écrite en richtext deviendrait du texte plein-large non typeset.
+- [ ] **R1. Pré-vol : mesurer l'invisibilité du déploiement de la phase 1.** `deja_balises_neuves` est la seule vérification empirique que ce déploiement est invisible. Le sanitizer élargi (balises `section`, `svg`, `details`…) s'applique **à la lecture**, sur des descriptions déjà en base aujourd'hui — un nombre non nul signifie qu'un contenu stocké va s'afficher différemment dès que la phase 1 sera fusionnée et promue, avant toute conversion. Rien dans cette mesure ne dépend du code déployé : elle lit la base de production telle qu'elle est déjà. La faire **avant** R2 (fusion) est donc possible, et c'est le seul moment où elle sert encore d'avertissement plutôt que de constat après coup.
+
+  ```bash
+  npx wrangler d1 execute netereka-db --remote --json --command \
+    "SELECT sum(description_type='html' AND (description LIKE '%<section%' OR description LIKE '%<svg%' OR description LIKE '%<details%')) AS deja_balises_neuves FROM products"
+  ```
+  - Si **0** : rien de déjà stocké n'est concerné. Cocher cette case et consigner « 0 ligne concernée en production, mesuré le AAAA-MM-JJ » avant de poursuivre.
+  - Si **≠ 0** : **s'arrêter** et inspecter ces lignes avant de fusionner. Une fois R2 fusionné et R3 promu à 100 %, ce contenu s'affiche déjà différemment pour tous les visiteurs — ce n'est plus une hypothèse à vérifier mais un fait en production.
+- [ ] **R2.** Fusionner la PR de la phase 1 sur `main` et laisser le déploiement canary partir.
+- [ ] **R3.** Promouvoir à 100 % via le workflow `promote.yml` (Actions → « Promote », jamais le tableau de bord Cloudflare ni `wrangler` en direct). Vérifier que l'issue « Pending promotion » se ferme.
+- [ ] **R4.** Vérifier en production que le hero est inchangé et que `/p/<un-produit>` affiche toujours sa story.
+- [ ] **R5. Pré-vol : mesurer le cas « richtext seul ».** `conversion-plan.ts` convertit aussi un produit qui n'a **aucune** colonne story mais dont la description richtext n'est pas vide : son JSON Lexical passe par `descriptionToHtml`, part en base comme HTML, et la source Lexical disparaît. Ce cas déborde du § 3.1 du spec (limité aux produits avec au moins un champ story renseigné) et collide avec deux décisions du lot : le spec § 5 garde l'éditeur richtext comme chemin court pour du texte simple, et la phase 2 rend `description_type === "html"` sans `prose` ni contrainte de largeur — une description écrite en richtext deviendrait du texte plein-large non typeset.
 
   Mesurer avant de décider quoi que ce soit, contre la base distante :
   ```bash
   npx wrangler d1 execute netereka-db --remote --json --command \
-    "SELECT count(*) AS richtext_non_vides FROM products WHERE description_type='richtext' AND trim(coalesce(description,''))<>'', \
-            sum(description LIKE '%<section%' OR description LIKE '%<svg%' OR description LIKE '%<details%') AS deja_balises_neuves FROM products"
+    "SELECT
+       sum(trim(coalesce(tagline,''))='' AND trim(coalesce(highlights,''))='' AND trim(coalesce(feature_blocks,''))=''
+           AND trim(coalesce(faq,''))='' AND description_type<>'html' AND trim(coalesce(description,''))<>'') AS richtext_seul
+     FROM products"
   ```
-  - `richtext_non_vides` : nombre de produits que ce cas concerne réellement.
-    - Si **0** : le cas est sans objet. Cocher cette case et consigner « 0 ligne concernée en production, mesuré le AAAA-MM-JJ » ici même avant de poursuivre — c'est la raison écrite qui dispense de trancher.
-    - Si **≠ 0** : **s'arrêter** et décider explicitement avant R5 — soit exclure ces lignes de la conversion (ajouter leur id à une liste d'exclusion), soit accepter la conversion en sachant que leur source Lexical est perdue. Ne pas continuer sur un silence.
-  - `deja_balises_neuves` : seule vérification empirique de l'invisibilité de la phase 1. Le sanitizer élargi (balises `section`, `svg`, `details`…) s'applique à la lecture sur des descriptions déjà en base — un nombre non nul signifie qu'un contenu stocké va déjà s'afficher différemment dès ce déploiement, avant toute conversion. Si non nul, inspecter ces lignes avant de continuer.
-- [ ] **R5. Exporter la base distante.**
+  `richtext_seul` : nombre de produits sans **aucune** colonne story renseignée, avec une description non vide qui n'est pas déjà en HTML — exactement le cas hors-scope décrit ci-dessus (une simple description `description_type='html'` n'est pas comptée : elle est déjà dans le scope normal de la conversion, pas dans ce cas-là).
+  - Si **0** : le cas est sans objet. Cocher cette case et consigner « 0 ligne concernée en production, mesuré le AAAA-MM-JJ » ici même avant de poursuivre — c'est la raison écrite qui dispense de trancher.
+  - Si **≠ 0** : **s'arrêter** et décider explicitement avant R6 — soit exclure ces lignes de la conversion (ajouter leur id à une liste d'exclusion), soit accepter la conversion en sachant que leur source Lexical est perdue. Ne pas continuer sur un silence.
+- [ ] **R6. Exporter la base distante.**
   ```bash
   npx wrangler d1 export netereka-db --remote --output=backup-avant-conversion-$(date +%Y%m%d-%H%M).sql
   ```
@@ -2218,29 +2260,35 @@ git commit -m "feat(storefront): le hero rend content_html, gabarit en repli de 
 
   **C'est le seul filet — et il ne fait PAS ce qu'on croit spontanément.** `wrangler d1 export` dump la base *entière*. Restaurer ce dump reviendrait à annuler toutes les commandes, tous les clients et tous les mouvements de stock enregistrés depuis, sur une boutique en paiement à la livraison où une commande, c'est un camion et un livreur déjà engagés. **Ne jamais restaurer ce dump tel quel.**
 
-  La récupération réelle, si la conversion doit être défaite : extraire du dump les colonnes `id, tagline, highlights, feature_blocks, faq` (table `products`) — ou `id, content_html` (table `banners`) — et ré-appliquer **ces colonnes-là, ligne par ligne**, sur la base courante, jamais la base entière.
-- [ ] **R6. Geler l'édition de contenu.** `actions/admin/products.ts` et `lib/db/product-drafts.ts` écrivent encore les quatre colonnes story ; tant que le déploiement 2 n'est pas en place, une sauvegarde admin ou un appel MCP de brouillon les re-remplit, et la fiche produit affiche alors à la fois la story ET la description qui la contient déjà. **Aucune édition de contenu produit ou bannière (admin comme MCP) entre R6 et le déploiement 2.** Prévenir l'équipe admin avant de lancer R8.
-- [ ] **R7.** Simulation distante, avec la variable d'environnement requise et **relire la sortie** :
+  La récupération réelle, si la conversion doit être défaite : extraire du dump les colonnes `id, description, description_type, tagline, highlights, feature_blocks, faq, faq_html` (table `products`) — ou `id, content_html` (table `banners`) — et ré-appliquer **ces colonnes-là, ligne par ligne**, sur la base courante, jamais la base entière. Les quatre colonnes story ne suffisent pas : `scripts/convert-content-to-html.ts` écrit aussi `description`, `description_type = 'html'` et `faq_html` en même temps qu'il vide les colonnes story — restaurer seulement `tagline, highlights, feature_blocks, faq` laisserait `description` porter la version convertie de la story et `description_type` à `'html'`, donc chaque produit « récupéré » afficherait sa story deux fois (en blocs, puis à nouveau dans la description).
+
+  Mécanique concrète : charger le dump dans un SQLite local (`sqlite3 recovery.db < backup-avant-conversion-AAAAMMJJ-HHMM.sql`), puis y lire, pour chaque produit à restaurer, les huit colonnes ci-dessus afin de générer une instruction `UPDATE products SET description = …, description_type = …, tagline = …, highlights = …, feature_blocks = …, faq = …, faq_html = … WHERE id = …` par ligne, à exécuter ensuite contre la base de production — jamais un remplacement de table entière.
+- [ ] **R7. Geler l'édition de contenu.** `actions/admin/products.ts` et `lib/db/product-drafts.ts` écrivent encore les quatre colonnes story ; tant que le déploiement 2 n'est pas en place, une sauvegarde admin ou un appel MCP de brouillon les re-remplit, et la fiche produit affiche alors à la fois la story ET la description qui la contient déjà. Prévenir l'équipe admin **avant** d'établir le gel — la prévenir après reviendrait à autoriser exactement la fenêtre d'édition que ce gel interdit. **Aucune édition de contenu produit ou bannière (admin comme MCP) entre R7 et le déploiement 2.**
+- [ ] **R8.** Simulation distante, avec la variable d'environnement requise et **relire la sortie** :
   ```bash
   NEXT_PUBLIC_R2_URL=https://r2.netereka.ci npm run content:convert -- --remote --dry-run
   ```
   `NEXT_PUBLIC_R2_URL` compte : `getImageUrl()` la résout au moment de la conversion, donc la valeur utilisée ici est figée pour toujours dans le `src` de chaque image de bloc convertie et ne pourra plus être corrigée sans relancer une seconde conversion. La valeur ci-dessus est celle de `.env.local` ; ne pas la deviner ni la laisser vide (le script refuse de démarrer sans elle, mais un mauvais hôte ne serait pas détecté).
 
-  **Condition d'arrêt.** Le résumé affiche `colonnes illisibles, contenu perdu : …` pour chaque produit dont une colonne story n'a pas validé le schéma — précisément pour qu'un humain puisse refuser de continuer. **Si le bilan rapporte au moins un produit concerné, s'arrêter** : réparer ou consigner ces lignes avant de lancer R8. Ne pas continuer sur un silence ici non plus.
-- [ ] **R8. Conversion réelle**, avec la même variable, et la sortie conservée (le seul autre enregistrement de ce qui a été écrit est le scrollback du terminal) :
+  **Condition d'arrêt.** Le résumé affiche `colonnes illisibles, contenu perdu : …` pour chaque produit dont une colonne story n'a pas validé le schéma — précisément pour qu'un humain puisse refuser de continuer. **Si le bilan rapporte au moins un produit concerné, s'arrêter** : réparer ou consigner ces lignes avant de lancer R9. Ne pas continuer sur un silence ici non plus.
+- [ ] **R9. Conversion réelle**, avec la même variable, et la sortie conservée (le seul autre enregistrement de ce qui a été écrit est le scrollback du terminal) :
   ```bash
   NEXT_PUBLIC_R2_URL=https://r2.netereka.ci npm run content:convert -- --remote 2>&1 | tee conversion-$(date +%Y%m%d-%H%M).log
   ```
   Le script demande de taper `CONVERTIR` pour confirmer avant d'écrire — c'est attendu, pas un blocage à contourner.
-- [ ] **R9.** Vérifier en production. Le hero ne rend plus le même gabarit qu'avant — c'est le but du lot, pas une régression à corriger :
+
+  `wrangler d1 execute --file` envoie tout le fichier généré en une fois : si la commande échoue en cours de route, une partie des produits est convertie et l'autre non. Ne pas tenter de trier manuellement ce qui a été fait — R11 (rejouer le script) est le remède déjà prévu : la conversion est idempotente, une ligne déjà convertie ressort « ignorée », donc rejouer la commande de R9 telle quelle termine le travail sans risque de double conversion.
+- [ ] **R10.** Vérifier en production. Le hero ne rend plus le même gabarit qu'avant — c'est le but du lot, pas une régression à corriger :
   - le badge s'affiche toujours dans `--hero-accent`, quelle que soit sa couleur d'origine (mint, orange, rouge, bleu) — `badge_color` n'existe pas dans `banner-to-html.ts` ;
   - la carte de verre n'a plus l'ombre portée `shadow-2xl` — `.nk-banner` ne définit aucun `box-shadow` ;
   - le titre perd son palier `lg:text-4xl` — `.nk-banner-title` n'a que deux tailles (mobile, ≥640px), pas de troisième au-delà ;
   - le texte du bouton grossit légèrement — `.nk-cta` ne fixe aucun `font-size`, il hérite du contexte au lieu du `text-xs`/`text-sm` d'avant ;
+  - le prix change de teinte et, au-delà de 640px, de taille — `.nk-banner-price` passe à `var(--hero-accent)` en taille héritée, au lieu de `text-emerald-300 sm:text-lg` ;
+  - le texte du bouton n'est plus teinté par diapositive — `.nk-banner .nk-cta` fixe `color: var(--hero-bg)` pour toutes les diapositives, au lieu de `style={{ color: slide.bg_from }}` (une couleur par diapositive) ;
   - le bouton devient un `<a>` ordinaire au lieu d'un `next/link` : cliquer dessus déclenche désormais un rechargement complet de la page plutôt qu'une navigation côté client. Conséquence connue de la décision de contenu libre, pas un défaut.
 
-  Vérifier en parallèle qu'une fiche produit affiche sa description — l'ancienne version du code lit `description`, qui contient maintenant toute la story, et des colonnes story vides.
-- [ ] **R10.** Rejouer le script pour confirmer l'idempotence : tout doit ressortir « ignoré », zéro conversion. Le gel de l'édition (R6) reste actif jusqu'à ce que le déploiement 2 (tâche 11 et suivantes) soit en production.
+  Vérifier en parallèle qu'une fiche produit affiche sa description — l'ancienne version du code lit `description`, qui contient maintenant toute la story, et des colonnes story vides. Sur la fiche produit convertie, les highlights deviennent `<li class="nk-card">` et `.nk-card` ne fixe aucun `text-align`, alors que l'ancien rendu les centrait (`items-center text-center`) : les libellés de highlight passeront donc à gauche après conversion — attendu, pas une régression.
+- [ ] **R11.** Rejouer le script pour confirmer l'idempotence : tout doit ressortir « ignoré », zéro conversion. Le gel de l'édition (R7) reste actif jusqu'à ce que le déploiement 2 (tâche 11 et suivantes) soit en production.
 
 ---
 

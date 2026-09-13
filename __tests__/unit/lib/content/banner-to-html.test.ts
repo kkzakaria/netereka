@@ -147,7 +147,8 @@ describe("bannerTemplateToHtml", () => {
     expect(bannerTemplateToHtml({ ...BASE, link_url: "/p/x\x00bad" }))
       .toContain('href="/"');
 
-    // Espacements en début/fin : conservés car retirés par trim()
+    // Espaces ASCII en début/fin : retirés (bord [\x00-\x20], comme le ferait
+    // un navigateur), le chemin lui-même est conservé
     expect(bannerTemplateToHtml({ ...BASE, link_url: "  /p/x  " }))
       .toContain('href="/p/x"');
 
