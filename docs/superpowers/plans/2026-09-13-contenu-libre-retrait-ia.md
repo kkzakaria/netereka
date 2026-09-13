@@ -2768,7 +2768,7 @@ git commit -m "feat(storefront): contenu libre pleine largeur, story structurée
 
 **Contexte pour l'implémenteur :** la béquille posée en tâche 10 a fait son office — la conversion (étape R) a rempli `content_html` pour toutes les bannières. Il reste un cas légitime sans `content_html` : le repli sur les produits en vedette, qui n'est pas du contenu éditorial (décision 1). Il garde donc son gabarit React.
 
-Ne fais cette tâche **qu'après** avoir vérifié que l'étape R6 est passée en production.
+Ne fais cette tâche **qu'après** avoir vérifié que l'étape R9 — la conversion réelle, pas l'export — est passée en production.
 
 - [ ] **Step 1: Ajouter le test du repli**
 
