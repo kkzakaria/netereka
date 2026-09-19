@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/input-group";
 import { ColorPicker } from "@/components/admin/color-picker";
 import { ImageUpload } from "@/components/admin/image-upload";
+import { ConformanceNotices } from "@/components/admin/conformance-notices";
 import { getImageUrl } from "@/lib/utils/images";
 import type { ProductDetail } from "@/lib/db/types";
 import {
@@ -36,12 +38,16 @@ import {
 } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
 
+const HtmlEditor = dynamic(
+  () => import("@/components/admin/html-editor").then((m) => m.HtmlEditor),
+);
+
 
 const SECTIONS: SectionDef[] = [
   { id: "section-general", label: "Informations" },
   { id: "section-category", label: "Catégorie" },
   { id: "section-specs", label: "Caractéristiques" },
-  { id: "section-story", label: "Story" },
+  { id: "section-faq", label: "FAQ" },
   { id: "section-pricing", label: "Tarification" },
   { id: "section-images", label: "Images" },
   { id: "section-seo", label: "SEO" },
@@ -125,6 +131,7 @@ export function ProductFormSections({
   const router = useRouter();
   const isActiveRef = useRef<HTMLInputElement>(null);
   const isFeaturedRef = useRef<HTMLInputElement>(null);
+  const [faqHtml, setFaqHtml] = useState(product.faq_html ?? "");
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -231,17 +238,11 @@ export function ProductFormSections({
             </CardContent>
           </Card>
 
-          {/* Section: Story */}
-          <Card id="section-story">
+          {/* Section: FAQ */}
+          <Card id="section-faq">
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <CardTitle>Story produit</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Blocs éditoriaux rendus en pleine largeur sur la fiche produit.
-                    Tous les blocs sont optionnels.
-                  </p>
-                </div>
+                <CardTitle>FAQ</CardTitle>
                 {!isNew && product.slug && (
                   <Button variant="outline" size="touch" asChild className="shrink-0">
                     <a href={`/p/${product.slug}`} target="_blank" rel="noopener noreferrer">
@@ -252,22 +253,17 @@ export function ProductFormSections({
               </div>
             </CardHeader>
             <CardContent>
-              <div
-                data-slot="story-migration-notice"
-                className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"
-              >
-                <p>
-                  Les champs Story (accroche, points forts, feature blocks, FAQ) ont été
-                  migrés vers la description en HTML libre. La conversion des produits
-                  existants a déjà été effectuée : leur contenu est désormais visible
-                  dans la section Informations ci-dessus.
-                </p>
-                <p className="mt-2">
-                  L&apos;éditeur dédié à ce nouveau format arrive avec la prochaine
-                  version. En attendant, ce formulaire n&apos;écrit plus dans les
-                  anciennes colonnes Story.
-                </p>
-              </div>
+              <p className="mb-3 text-sm text-muted-foreground">
+                Affichée dans son propre onglet sur la fiche. Emploie{" "}
+                <code>&lt;details&gt;</code> et <code>&lt;summary&gt;</code> dans un{" "}
+                <code>&lt;div class=&quot;nk-faq&quot;&gt;</code> pour l&apos;accordéon.
+              </p>
+              <HtmlEditor
+                name="faq_html"
+                defaultValue={product.faq_html ?? ""}
+                onContentChange={setFaqHtml}
+              />
+              <ConformanceNotices html={faqHtml} />
             </CardContent>
           </Card>
 

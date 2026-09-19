@@ -2,11 +2,17 @@
 "use client";
 
 import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { ConformanceNotices } from "@/components/admin/conformance-notices";
 import type { ProductDetail } from "@/lib/db/types";
+
+const HtmlEditor = dynamic(
+  () => import("@/components/admin/html-editor").then((m) => m.HtmlEditor),
+);
 
 interface StepFinalizationProps {
   product: ProductDetail;
@@ -27,6 +33,7 @@ export function StepFinalization({
   );
   const isActiveRef = useRef<HTMLInputElement>(null);
   const isFeaturedRef = useRef<HTMLInputElement>(null);
+  const [faqHtml, setFaqHtml] = useState(product.faq_html ?? "");
 
   return (
     <form ref={formRef} className="space-y-6">
@@ -74,25 +81,24 @@ export function StepFinalization({
         />
       </div>
 
-      {/* Story produit — migré vers la description HTML libre */}
-      <div
-        data-slot="story-migration-notice"
-        className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"
-      >
-        <p>
-          Les champs Story (accroche, points forts, feature blocks, FAQ) ont été
-          migrés vers la description en HTML libre. La conversion des produits
-          existants a déjà été effectuée : leur contenu est désormais visible
-          dans la description.
-        </p>
-        <p className="mt-2">
-          L&apos;éditeur dédié à ce nouveau format arrive avec la prochaine
-          version. En attendant, cet assistant n&apos;écrit plus dans les
-          anciennes colonnes Story.
-        </p>
-      </div>
       <input type="hidden" name="description" value={product.description ?? ""} />
       <input type="hidden" name="description_type" value={product.description_type ?? "richtext"} />
+
+      {/* FAQ */}
+      <div className="space-y-4 rounded-lg border p-4">
+        <h3 className="text-sm font-semibold">FAQ</h3>
+        <p className="text-sm text-muted-foreground">
+          Affichée dans son propre onglet sur la fiche. Emploie{" "}
+          <code>&lt;details&gt;</code> et <code>&lt;summary&gt;</code> dans un{" "}
+          <code>&lt;div class=&quot;nk-faq&quot;&gt;</code> pour l&apos;accordéon.
+        </p>
+        <HtmlEditor
+          name="faq_html"
+          defaultValue={product.faq_html ?? ""}
+          onContentChange={setFaqHtml}
+        />
+        <ConformanceNotices html={faqHtml} />
+      </div>
 
       {/* SEO */}
       <div className="space-y-4 rounded-lg border p-4">

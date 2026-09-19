@@ -21,9 +21,10 @@ const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
   category_id: z.string().min(1, "La catégorie est requise"),
   brand: z.string().optional().default(""),
-  description: z.string().optional().default(""),
+  description: z.string().max(512_000).optional().default(""),
   description_type: z.enum(["richtext", "html"]).optional().default("richtext"),
   short_description: z.string().optional().default(""),
+  faq_html: z.string().max(512_000).optional().default(""),
   base_price: z.coerce.number().int().min(0, "Le prix doit être positif"),
   compare_price: z.coerce.number().int().min(0).optional(),
   stock_quantity: z.coerce.number().int().min(0).default(0),
@@ -164,6 +165,7 @@ export async function updateProduct(
   const finalDescription = data.description_type === "html" && data.description
     ? sanitizeDescriptionHtml(data.description, id)
     : data.description || null;
+  const finalFaqHtml = data.faq_html ? sanitizeDescriptionHtml(data.faq_html, id) : null;
 
   const db = await getDrizzle();
   const buildValues = (sku: string) => ({
@@ -173,6 +175,7 @@ export async function updateProduct(
     description: finalDescription,
     description_type: data.description_type,
     short_description: data.short_description || null,
+    faq_html: finalFaqHtml,
     base_price: data.base_price,
     compare_price: data.compare_price ?? null,
     sku,
@@ -527,8 +530,9 @@ export async function saveDraftStep(
     const parsed = z
       .object({
         short_description: z.string().optional().default(""),
-        description: z.string().optional().default(""),
+        description: z.string().max(512_000).optional().default(""),
         description_type: z.enum(["richtext", "html"]).optional().default("richtext"),
+        faq_html: z.string().max(512_000).optional().default(""),
         meta_title: z
           .string()
           .max(60, "Le titre SEO ne peut pas dépasser 60 caractères")
@@ -552,6 +556,9 @@ export async function saveDraftStep(
     // Sanitize HTML description before storing draft
     if (parsed.data.description_type === "html" && parsed.data.description) {
       parsed.data.description = sanitizeDescriptionHtml(parsed.data.description, id);
+    }
+    if (parsed.data.faq_html) {
+      parsed.data.faq_html = sanitizeDescriptionHtml(parsed.data.faq_html, id);
     }
 
     return applyDraftUpdate(id, parsed.data, product.slug);
@@ -595,6 +602,7 @@ async function applyDraftUpdate(
     "weight_grams",
     "short_description",
     "description",
+    "faq_html",
     "meta_title",
     "meta_description",
   ]);
@@ -612,6 +620,7 @@ async function applyDraftUpdate(
     "short_description",
     "description",
     "description_type",
+    "faq_html",
     "meta_title",
     "meta_description",
     "is_active",
