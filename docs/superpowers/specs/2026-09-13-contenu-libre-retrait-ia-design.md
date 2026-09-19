@@ -135,10 +135,10 @@ Le pipeline déploie en canary : deux versions du code servent le trafic simulta
 
 1. **Déploiement 1** — la migration *expand* ajoutant `content_html`, et une seule modification de rendu : le hero lit `content_html` quand il est renseigné, sinon il rend le gabarit actuel. Rien d'autre ne change ; aucun effet visible.
 2. **Conversion** — export D1 distant, puis exécution du script contre le distant, une fois le déploiement 1 promu à 100 %. Pendant et après, les deux chemins de rendu restent corrects : l'ancienne version affiche `description` (qui contient désormais toute la story) et des blocs story vides ; le hero affiche `content_html`.
-3. **Déploiement 2** — suppression des composants story structurés, du repli gabarit du hero, des éditeurs admin correspondants, du pipeline IA, et élagage du contrat MCP.
+3. **Déploiement 2** — suppression des composants story structurés, des éditeurs admin correspondants, du pipeline IA, et élagage du contrat MCP. Le repli gabarit du hero n'en fait PAS partie : voir § 4.4.
 4. **Plus tard** — migration *contract*.
 
-Le repli gabarit du hero introduit au déploiement 1 est une béquille de transition, supprimée au déploiement 2. C'est la seule entorse à la décision 2.
+Le repli gabarit du hero introduit au déploiement 1 ne disparaît pas au déploiement 2 — corrigé après coup : une version antérieure de cette section affirmait le contraire, ce qui contredisait le code. Il sert deux cas distincts (détaillés en § 4.4), dont un seul retire, et seulement à la tâche 14. Ce n'est donc pas une entorse ponctuelle à la décision 2 mais un repli qui reste nécessaire tant que toute bannière n'est pas garantie de porter `content_html`.
 
 ## 4. Rendu storefront
 
@@ -173,14 +173,12 @@ Les avis sont aujourd'hui rendus par `ProductReviews`, un composant serveur asyn
 
 `hero-banner.tsx` garde son carrousel Embla, son autoplay, son dégradé et son `next/image`. Le contenu textuel du gabarit est remplacé par `content_html`, injecté via `dangerouslySetInnerHTML`. Le HTML passe par deux assainissements, pas un seul : à l'écriture (`sanitizeDescriptionHtml`, appelé depuis `lib/content/conversion-plan.ts` puis, plus tard, depuis l'éditeur admin et les outils MCP) — c'est cette passe qui écrit la forme préfixée `.desc-banner-<id>` en base — et une seconde fois à la lecture, dans `getActiveBanners()` (`lib/db/storefront/banners.ts`), juste avant que `content_html` n'atteigne ce composant. Cette seconde passe est une défense en profondeur : elle ne coûte rien, tourne côté serveur donc jamais dans le bundle client, et surtout elle ne dépend pas de la mémoire de chaque futur écrivain. La garantie « assaini à l'écriture » suppose qu'aucun code présent ou futur ne puisse écrire `content_html` sans passer par le bon chemin ; le jour où un éditeur admin ou un outil MCP l'oublie, la relecture côté serveur rattrape l'omission avant qu'elle n'atteigne le navigateur. C'est pourquoi ce second passage doit rester : le retirer au nom de la redondance supprimerait exactement le filet qui le justifie.
 
-Le comportement quand `content_html` est vide **diffère selon la phase**, et c'est délibéré parce que ce lot est la transition :
+Le comportement quand `content_html` est vide **ne change pas entre les deux phases** — une version antérieure de cette section affirmait le contraire (« la béquille est retirée » en phase 2), ce qui contredisait `components/storefront/hero-banner.tsx` : le diff de la tâche 13 (`13823fd..117ccb7`) n'y touche à aucune ligne de code, seulement à des commentaires. Dans les deux phases, une slide sans `content_html` rend le même gabarit structuré en React — badge, titre, sous-titre, prix, bouton — pour deux cas distincts (voir le commentaire au-dessus du repli dans ce fichier) :
 
-- **Phase 1 (ce lot).** La slide rend le gabarit structuré en React — badge, titre, sous-titre, prix, bouton. C'est une béquille de transition, et c'est ce qui rend ce déploiement invisible : aucune bannière ne porte encore de `content_html`, puisque la conversion tourne en production entre ce déploiement et le suivant.
-- **Phase 2 (tâche 13), après la conversion.** La béquille est retirée. Une bannière sans `content_html` n'affiche alors plus que son image et son dégradé. Le gabarit React ne survit que pour le repli sur les produits en vedette, qui n'est pas du contenu éditorial et n'a donc jamais de `content_html`.
+- **Produits en vedette** (`buildSlides` quand aucune bannière n'est active, `id: null`). Ce n'est pas du contenu éditorial mais notre propre gabarit : il reste en React **en permanence**, y compris après la tâche 14, et rien ne justifie de le faire un jour transiter par une chaîne HTML.
+- **Bannière sans `content_html` créée avant l'éditeur de la tâche 14.** `badge_text`/`badge_color` restent modifiables depuis `components/admin/banner-form.tsx` et visibles dans son aperçu tant que cet éditeur HTML/CSS n'existe pas ; ce repli est ce qui les affiche correctement. C'est le seul des deux cas qui disparaît un jour — et seulement quand la tâche 14 livre l'éditeur de bannières, pas à ce lot (tâche 13).
 
-Confondre les deux revient à se tromper de contrat de déploiement : c'est précisément la béquille qui garantit qu'aucun visiteur ne voit de différence avant la conversion.
-
-Le repli sur les produits en vedette (`buildSlides` quand aucune bannière n'est active) reste un gabarit React : c'est notre propre code, pas du contenu éditorial, et rien ne justifie de le faire transiter par une chaîne HTML.
+Ce que la conversion en production change réellement, c'est le peuplement de `content_html` : les 4 bannières existantes en portent désormais toutes un, donc elles empruntent en pratique la branche `dangerouslySetInnerHTML` plutôt que ce repli. Aucune bannière active n'emprunte donc plus ce repli aujourd'hui — mais le code qui le rend reste nécessaire (second cas ci-dessus) et ne doit pas être retiré avant la tâche 14.
 
 ## 5. Administration
 
