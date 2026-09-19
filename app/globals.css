@@ -255,11 +255,12 @@
   }
 
   /* Carte : un bloc de contenu détouré.
-     Le <p> direct (le libellé d'un highlight converti, collé sous son icône)
-     perd sa margin explicitement : sans cette ligne, le plancher
-     `:where(.nk-prose) p` lui poserait margin-block: 1em et l'écarterait de
-     l'icône au-dessus — exactement ce que .nk-highlight-icon prétend
-     préserver. Voir le commentaire sur .nk-grid > li pour le piège complet.
+     Le <p> direct perd sa margin explicitement : sans cette ligne, le
+     plancher `:where(.nk-prose) p` lui poserait margin-block: 1em. C'est le
+     bon défaut pour une carte titre + corps (<h3>…</h3> <p>…</p>). Voir le
+     commentaire sur .nk-grid > li pour le piège complet — et la règle
+     .nk-card > .nk-highlight-icon + p juste après .nk-highlight-icon pour
+     l'exception délibérée du libellé d'un highlight.
      <li class="nk-card"> <h3>…</h3> <p>…</p> </li> */
   .nk-card {
     background-color: var(--card);
@@ -277,6 +278,8 @@
      rendait avant conversion (`size={40}` d'un HugeiconsIcon, classe
      text-foreground) — sans cette règle, l'icône hérite du 24×24 codé en dur
      dans icon-to-svg.ts et rétrécit de façon permanente à la conversion.
+     Cette règle ne garantit que la taille et la couleur — rien sur
+     l'espacement, voir la règle suivante pour ça.
      <svg class="nk-highlight-icon"> … </svg> */
   .nk-highlight-icon {
     color: var(--foreground);
@@ -284,6 +287,23 @@
     height: 2.5rem;
     margin-inline: auto;
     width: 2.5rem;
+  }
+
+  /* Le libellé d'un highlight converti : story-highlights.tsx posait
+     `mt-4` (1rem) sur ce <p>, dans un wrapper flex-col, avant sa
+     suppression (vérifié dans git history : `git show fbb5939^:components/
+     storefront/product-story/story-highlights.tsx`). `.nk-card > p` juste
+     au-dessus met cette margin à 0 par défaut — bon pour une carte
+     titre + corps, mais ça effacerait aussi cet écart-là, qui n'est pas un
+     débordement du plancher à corriger mais un espacement voulu par le
+     rendu d'origine. Restauré ici, ciblé sur ce seul <p> (celui qui suit
+     immédiatement l'icône), sans toucher au défaut de .nk-card > p pour
+     les autres cartes.
+     Spécificité : (0,2,1) — deux classes (.nk-card, .nk-highlight-icon) et
+     un type (p) — bat .nk-card > p (0,1,1) et le plancher
+     :where(.nk-prose) p (0,0,1). */
+  .nk-card > .nk-highlight-icon + p {
+    margin-top: 1rem;
   }
 
   /* Media : toute image du contenu libre.
