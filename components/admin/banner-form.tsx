@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,11 @@ import {
 } from "@/actions/admin/banners";
 import { GradientPicker } from "./gradient-picker";
 import { BannerPreview } from "./banner-preview";
+import { ConformanceNotices } from "./conformance-notices";
+
+const HtmlEditor = dynamic(
+  () => import("@/components/admin/html-editor").then((m) => m.HtmlEditor),
+);
 
 interface BannerFormProps {
   banner?: Banner | null;
@@ -50,6 +56,7 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
   const [price, setPrice] = useState<string>(banner?.price != null ? String(banner.price) : "");
   const [imagePreview, setImagePreview] = useState<string | null>(banner?.image_url ?? null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [contentHtml, setContentHtml] = useState(banner?.content_html ?? "");
 
   // Saved gradients with optimistic updates
   const [savedGradients, setSavedGradients] = useState<BannerGradient[]>(initialGradients);
@@ -123,6 +130,7 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
           bgFrom={bgFrom}
           bgTo={bgTo}
           ctaText={ctaText}
+          contentHtml={contentHtml}
         />
       </div>
 
@@ -309,6 +317,26 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
                   />
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Contenu libre */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Contenu de la bannière</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-3 text-sm text-muted-foreground">
+                HTML libre, posé sur le dégradé. Emploie les classes de la charte —{" "}
+                <code>nk-banner</code>, <code>nk-banner-title</code>, <code>nk-cta</code> — pour
+                rester cohérent avec le reste du site.
+              </p>
+              <HtmlEditor
+                name="content_html"
+                defaultValue={banner?.content_html ?? ""}
+                onContentChange={setContentHtml}
+              />
+              <ConformanceNotices html={contentHtml} />
             </CardContent>
           </Card>
         </div>

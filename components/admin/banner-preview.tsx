@@ -13,6 +13,7 @@ interface BannerPreviewProps {
   bgFrom: string;
   bgTo: string;
   ctaText: string;
+  contentHtml: string;
 }
 
 const decorativeOrbs = (
@@ -39,6 +40,7 @@ export function BannerPreview({
   bgFrom,
   bgTo,
   ctaText,
+  contentHtml,
 }: BannerPreviewProps) {
   return (
     <div className="space-y-1">
@@ -52,57 +54,68 @@ export function BannerPreview({
         {/* Decorative orbs */}
         {decorativeOrbs}
 
-        <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-4">
-          {/* Text glass card */}
-          <div className="rounded-lg border border-white/20 bg-white/10 p-3 shadow-xl backdrop-blur-xl">
-            {badgeText && (
+        {contentHtml ? (
+          // Aperçu du HTML tel que tapé, non assaini : c'est le texte de
+          // l'auteur, dans sa propre session d'administration. L'assainissement
+          // a lieu côté serveur à l'enregistrement — ne pas reproduire ce
+          // raccourci côté boutique.
+          <div
+            className="relative h-full w-full overflow-auto p-4"
+            dangerouslySetInnerHTML={{ __html: contentHtml }}
+          />
+        ) : (
+          <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-4">
+            {/* Text glass card */}
+            <div className="rounded-lg border border-white/20 bg-white/10 p-3 shadow-xl backdrop-blur-xl">
+              {badgeText && (
+                <span
+                  className={cn(
+                    "mb-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide",
+                    badgeColorMap[badgeColor]
+                  )}
+                >
+                  {badgeText}
+                </span>
+              )}
+              <p className="text-sm font-bold leading-tight text-white line-clamp-2">
+                {title || "Titre de la bannière"}
+              </p>
+              {subtitle && (
+                <p className="mt-1 text-xs text-white/70 line-clamp-2">
+                  {subtitle}
+                </p>
+              )}
+              {price != null && (
+                <p className="mt-1 text-xs font-semibold text-emerald-300">
+                  {formatPrice(price)}
+                </p>
+              )}
               <span
-                className={cn(
-                  "mb-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide",
-                  badgeColorMap[badgeColor]
-                )}
+                className="mt-2 inline-block rounded-full bg-white px-3 py-1 text-xs font-semibold"
+                style={{ color: bgFrom }}
               >
-                {badgeText}
+                {ctaText || "Découvrir"}
               </span>
-            )}
-            <p className="text-sm font-bold leading-tight text-white line-clamp-2">
-              {title || "Titre de la bannière"}
-            </p>
-            {subtitle && (
-              <p className="mt-1 text-xs text-white/70 line-clamp-2">
-                {subtitle}
-              </p>
-            )}
-            {price != null && (
-              <p className="mt-1 text-xs font-semibold text-emerald-300">
-                {formatPrice(price)}
-              </p>
-            )}
-            <span
-              className="mt-2 inline-block rounded-full bg-white px-3 py-1 text-xs font-semibold"
-              style={{ color: bgFrom }}
-            >
-              {ctaText || "Découvrir"}
-            </span>
-          </div>
+            </div>
 
-          {/* Product image */}
-          {imageUrl ? (
-            <div className="relative mx-auto h-[168px] w-full">
-              <Image
-                src={imageUrl}
-                alt={title || "Bannière"}
-                fill
-                className="object-contain"
-                sizes="300px"
-              />
-            </div>
-          ) : (
-            <div className="mx-auto flex h-[168px] w-full items-center justify-center rounded-lg border border-white/10 bg-white/5">
-              <span className="text-xs text-white/40">Image produit</span>
-            </div>
-          )}
-        </div>
+            {/* Product image */}
+            {imageUrl ? (
+              <div className="relative mx-auto h-[168px] w-full">
+                <Image
+                  src={imageUrl}
+                  alt={title || "Bannière"}
+                  fill
+                  className="object-contain"
+                  sizes="300px"
+                />
+              </div>
+            ) : (
+              <div className="mx-auto flex h-[168px] w-full items-center justify-center rounded-lg border border-white/10 bg-white/5">
+                <span className="text-xs text-white/40">Image produit</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

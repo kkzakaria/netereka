@@ -58,9 +58,12 @@ interface HtmlEditorProps {
   name: string;
   defaultValue?: string | null;
   placeholder?: string;
+  /** Appelé à chaque frappe, pour les consommateurs qui affichent quelque chose
+   *  à côté de l'éditeur (contrôle de conformité, compteur…). */
+  onContentChange?: (content: string) => void;
 }
 
-export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps) {
+export function HtmlEditor({ name, defaultValue, placeholder, onContentChange }: HtmlEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const hiddenRef = useRef<HTMLInputElement>(null);
@@ -75,8 +78,9 @@ export function HtmlEditor({ name, defaultValue, placeholder }: HtmlEditorProps)
       const content = update.state.doc.toString();
       contentRef.current = content;
       if (hiddenRef.current) hiddenRef.current.value = content;
+      onContentChange?.(content);
     },
-    [],
+    [onContentChange],
   );
 
   useEffect(() => {

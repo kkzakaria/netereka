@@ -9,6 +9,7 @@ import { getDrizzle } from "@/lib/db/drizzle";
 import { banners, bannerGradients } from "@/lib/db/schema";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
 import { getImageUrl } from "@/lib/utils/images";
+import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { getKV } from "@/lib/cloudflare/context";
 import type { ActionResult } from "@/lib/utils";
 import type { BannerGradient } from "@/lib/db/types";
@@ -70,6 +71,8 @@ const bannerSchema = z.object({
   price: z.coerce.number().int().min(0).optional(),
   bg_gradient_from: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide").default("#183C78"),
   bg_gradient_to: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide").default("#1E4A8F"),
+  // Borne haute alignée sur MAX_INPUT_LENGTH de sanitizeDescriptionHtml.
+  content_html: z.string().max(512_000).optional().default(""),
   // Only consumed by updateBanner — createBanner ignores this and computes display_order from max().
   display_order: z.coerce.number().int().min(0).default(0),
   is_active: z.coerce.number().min(0).max(1).default(1),
@@ -131,6 +134,16 @@ export async function createBanner(formData: FormData): Promise<ActionResult> {
       return { success: false, error: "Échec de la création de la bannière" };
     }
 
+    // Le scoping CSS est inscrit dans le HTML stocké et dépend de l'identifiant,
+    // qui n'existe qu'après l'INSERT. D'où ce second passage : il n'y a pas de
+    // façon d'assainir correctement avant de connaître l'id.
+    if (data.content_html) {
+      await db
+        .update(banners)
+        .set({ content_html: sanitizeDescriptionHtml(data.content_html, `banner-${inserted.id}`) })
+        .where(eq(banners.id, inserted.id));
+    }
+
     revalidatePath("/banners");
     revalidatePath("/");
     await refreshHeroPreload();
@@ -179,6 +192,9 @@ export async function updateBanner(
       price: data.price ?? null,
       bg_gradient_from: data.bg_gradient_from,
       bg_gradient_to: data.bg_gradient_to,
+      content_html: data.content_html
+        ? sanitizeDescriptionHtml(data.content_html, `banner-${id}`)
+        : null,
       display_order: data.display_order,
       is_active: data.is_active,
       starts_at: data.starts_at || null,
