@@ -353,6 +353,25 @@
     padding-left: 1.25rem;
   }
 
+  /* Interligne du mode `html`, posé sur .nk-prose lui-même (pas dans
+     :where()) : hérité par tout descendant qui ne fixe pas le sien, sans
+     contraindre ni la largeur ni la mise en page — ça ne revient donc pas
+     sur la tâche 12.
+     Retirer `prose prose-lg` (story-free-content.tsx) a aussi retiré
+     `font-size: 1.125rem; line-height: 1.7778` du conteneur. Le plancher
+     ci-dessous ne restaure pas ces deux valeurs : la typographie héritée
+     n'est pas quelque chose que le preflight aplatit, donc rien ne
+     l'imposait ici. Sur 803 descriptions en mode `html`, le corps de texte
+     passe ainsi de 18px/1,78 à 16px/1,5 — un choix délibéré (le mode `html`
+     ne doit plus contraindre la taille de police, laissée à l'auteur),
+     pas un oubli. L'interligne, lui, ne doit pas suivre à 1.5 : 1.7 rejoint
+     .nk-lead et .nk-quote plutôt que de laisser un texte dense retomber à
+     l'interligne par défaut de Tailwind.
+     <div class="nk-prose"> … </div> */
+  .nk-prose {
+    line-height: 1.7;
+  }
+
   /* Plancher typographique du mode `html`. Restaure UNIQUEMENT ce que le
      preflight de Tailwind aplatit sur les éléments nus (titres, listes, lien,
      séparateur, citation) — jamais la largeur, jamais la mise en page :
@@ -362,9 +381,15 @@
      n'ont jamais reçu le vocabulaire nk- (planProduct les a marqués « déjà
      convertis ») et s'appuyaient sur `prose` pour leur typographie — `prose`
      que le mode `html` retire précisément pour ne plus contraindre la
-     largeur. Sans ce plancher, leurs <h2>-<h6> retombent à la taille du
-     texte courant, leurs <ul>/<ol> perdent leurs puces (preflight :
+     largeur. Sans ce plancher, leurs <h1>-<h6> retombent à la taille du
+     texte courant (preflight : `font-size: inherit; font-weight: inherit`
+     sur h1..h6), leurs <ul>/<ol> perdent leurs puces (preflight :
      list-style: none), etc.
+     Liste volontairement partielle : `table`, `pre`/`code`, `dl`/`dd`,
+     `figure`/`figcaption` sont admis par le sanitizer (ALLOWED_TAGS) mais
+     n'ont aucune règle ici. Zéro instance en production à ce jour — un choix
+     documenté, pas un oubli ; à couvrir le jour où un premier auteur les
+     utilise.
      Le conteneur est enveloppé dans :where() pour ne compter pour RIEN dans
      la spécificité : une classe du vocabulaire posée sur le même élément
      (.nk-quote sur un <blockquote>, .nk-cta sur un <a>, .nk-media sur un
@@ -373,6 +398,7 @@
      (0,1,1) battrait `.nk-quote` (0,1,0) alors que c'est l'inverse qui doit
      se produire.
      <div class="nk-prose"> … </div> */
+  :where(.nk-prose) h1,
   :where(.nk-prose) h2,
   :where(.nk-prose) h3,
   :where(.nk-prose) h4,
@@ -380,6 +406,9 @@
   :where(.nk-prose) h6 {
     font-weight: 700;
     margin-top: 1.75em;
+  }
+  :where(.nk-prose) h1 {
+    font-size: 1.875rem;
   }
   :where(.nk-prose) h2 {
     font-size: 1.5rem;

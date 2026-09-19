@@ -19,6 +19,21 @@ describe("vocabulaire de contenu libre", () => {
     }
   });
 
+  it("couvre h1 à h6 dans le plancher typographique .nk-prose", () => {
+    // h1 a été omis à l'origine : le preflight de Tailwind pose
+    // `font-size: inherit; font-weight: inherit` sur h1..h6, et un <h1> sans
+    // règle de plancher retombe donc au texte courant (cas réel : la fiche
+    // "garmin-fenix-8-pro-amoled-sapphire-titane-51-mm", dont le <h1> nu
+    // n'affichait plus aucun titre). Itérer les six balises plutôt que de
+    // n'en lister que quelques-unes est le seul moyen que ce test empêche la
+    // prochaine balise oubliée de passer inaperçue.
+    for (const tag of ["h1", "h2", "h3", "h4", "h5", "h6"]) {
+      expect(css, `:where(.nk-prose) ${tag} absent du plancher`).toMatch(
+        new RegExp(`:where\\(\\.nk-prose\\)\\s*${tag}\\b`)
+      );
+    }
+  });
+
   it("rejoint le layer components de Tailwind plutôt que d'ouvrir un layer nk- à part", () => {
     // La cascade CSS ordonne les layers NOMMÉS par leur PREMIÈRE apparition
     // dans le document — jamais par leur position textuelle plus bas dans le
