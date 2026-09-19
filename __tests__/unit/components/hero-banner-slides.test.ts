@@ -86,3 +86,20 @@ describe("buildBannerScopeClass", () => {
     expect(buildBannerScopeClass(id)).toBe(`desc-banner-${id}`);
   });
 });
+
+describe("après la conversion", () => {
+  it("le repli produits en vedette garde ses champs de gabarit", () => {
+    const [slide] = buildSlides([], [PRODUCT]);
+    expect(slide.content_html).toBeNull();
+    expect(slide.title).toBe("Produit X");
+    expect(slide.cta_text).toBe("Découvrir");
+  });
+
+  it("une bannière convertie n'a plus besoin de ses champs de gabarit", () => {
+    const [slide] = buildSlides(
+      [banner({ content_html: "<div class='nk-banner'>Libre</div>", badge_text: null, subtitle: null })],
+      [],
+    );
+    expect(slide.content_html).toContain("nk-banner");
+  });
+});

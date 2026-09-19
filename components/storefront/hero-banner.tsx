@@ -38,13 +38,6 @@ export function buildBannerScopeClass(id: number | null): string | undefined {
   return id != null ? `desc-banner-${id}` : undefined;
 }
 
-const badgeColorMap: Record<BadgeColor, string> = {
-  mint: "bg-emerald-500/20 text-emerald-300",
-  red: "bg-red-500/20 text-red-300",
-  orange: "bg-orange-500/20 text-orange-300",
-  blue: "bg-blue-500/20 text-blue-300",
-};
-
 export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Slide[] {
   if (banners.length > 0) {
     return banners.map((b) => ({
@@ -145,9 +138,7 @@ export function HeroBanner({
               <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
                 {/* Text content with glass card */}
                 {slide.content_html ? (
-                  /* Contenu libre. Aujourd'hui, la seule source de content_html
-                     est le script de conversion (scripts/convert-content-to-html.ts) ;
-                     l'écriture admin arrive en phase 2. `getActiveBanners()`
+                  /* Contenu libre, assaini à l'écriture. `getActiveBanners()`
                      (lib/db/storefront/banners.ts) ré-assainit ce HTML une étape
                      plus haut, en défense en profondeur, avant qu'il n'atteigne ce
                      composant — pas ici : faire tourner le sanitizer dans un
@@ -157,22 +148,9 @@ export function HeroBanner({
                     dangerouslySetInnerHTML={{ __html: slide.content_html }}
                   />
                 ) : (
-                  /* BÉQUILLE DE TRANSITION — supprimée au déploiement 2.
-                     Elle couvre la fenêtre entre le déploiement 1 et la
-                     conversion, pendant laquelle content_html est encore vide.
-                     Elle sert aussi le repli sur les produits en vedette, qui
-                     lui n'a pas de content_html par conception. */
+                  /* Repli sur les produits en vedette : ce n'est pas du contenu
+                     éditorial mais notre propre gabarit, il reste en React. */
                   <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
-                    {slide.badge_text && (
-                      <span
-                        className={cn(
-                          "mb-2 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide sm:mb-3",
-                          badgeColorMap[slide.badge_color]
-                        )}
-                      >
-                        {slide.badge_text}
-                      </span>
-                    )}
                     <h2 className="text-lg font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
                       {slide.title}
                     </h2>
