@@ -306,6 +306,73 @@
     padding-left: 1.25rem;
   }
 
+  /* Plancher typographique du mode `html`. Restaure UNIQUEMENT ce que le
+     preflight de Tailwind aplatit sur les éléments nus (titres, listes, lien,
+     séparateur, citation) — jamais la largeur, jamais la mise en page :
+     c'est tout ce que ce plancher doit garantir, la composition reste à
+     l'auteur.
+     Nécessaire pour les documents rédigés en HTML avant la conversion : ils
+     n'ont jamais reçu le vocabulaire nk- (planProduct les a marqués « déjà
+     convertis ») et s'appuyaient sur `prose` pour leur typographie — `prose`
+     que le mode `html` retire précisément pour ne plus contraindre la
+     largeur. Sans ce plancher, leurs <h2>-<h6> retombent à la taille du
+     texte courant, leurs <ul>/<ol> perdent leurs puces (preflight :
+     list-style: none), etc.
+     Le conteneur est enveloppé dans :where() pour ne compter pour RIEN dans
+     la spécificité : une classe du vocabulaire posée sur le même élément
+     (.nk-quote sur un <blockquote>, .nk-cta sur un <a>, .nk-media sur un
+     <img>…) doit toujours l'emporter sur ce plancher, quel que soit l'ordre
+     des règles dans cette feuille — sans :where(), `.nk-prose blockquote`
+     (0,1,1) battrait `.nk-quote` (0,1,0) alors que c'est l'inverse qui doit
+     se produire.
+     <div class="nk-prose"> … </div> */
+  :where(.nk-prose) h2,
+  :where(.nk-prose) h3,
+  :where(.nk-prose) h4,
+  :where(.nk-prose) h5,
+  :where(.nk-prose) h6 {
+    font-weight: 700;
+    margin-top: 1.75em;
+  }
+  :where(.nk-prose) h2 {
+    font-size: 1.5rem;
+  }
+  :where(.nk-prose) h3 {
+    font-size: 1.25rem;
+  }
+  :where(.nk-prose) h4,
+  :where(.nk-prose) h5,
+  :where(.nk-prose) h6 {
+    font-size: 1.125rem;
+  }
+  :where(.nk-prose) p {
+    margin-block: 1em;
+  }
+  :where(.nk-prose) ul {
+    list-style: disc;
+    padding-left: 1.5rem;
+  }
+  :where(.nk-prose) ol {
+    list-style: decimal;
+    padding-left: 1.5rem;
+  }
+  :where(.nk-prose) li {
+    margin-block: 0.375em;
+  }
+  :where(.nk-prose) a {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+  :where(.nk-prose) hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin-block: 2em;
+  }
+  :where(.nk-prose) blockquote {
+    border-left: 3px solid var(--primary);
+    padding-left: 1.25rem;
+  }
+
   /* Bouton d'appel à l'action.
      <a class="nk-cta" href="/c/telephones">Voir la gamme</a> */
   .nk-cta {

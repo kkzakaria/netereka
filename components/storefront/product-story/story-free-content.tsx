@@ -10,9 +10,15 @@ interface StoryFreeContentProps {
 /**
  * Mise en page du contenu libre.
  *
- * En mode `html`, on ne contraint RIEN : ni largeur, ni typographie. C'est tout
- * l'objet de ce lot — l'auteur compose sa page, et `nk-container` lui rend une
- * largeur de lecture là où il la veut, au lieu de la lui imposer partout.
+ * En mode `html`, on ne contraint ni la largeur ni la mise en page. C'est
+ * tout l'objet de ce lot — l'auteur compose sa page, et `nk-container` lui
+ * rend une largeur de lecture là où il la veut, au lieu de la lui imposer
+ * partout. `prose` disparaît, mais pas toute typographie : `nk-prose`
+ * (app/globals.css) restaure un plancher minimal — titres, listes, lien,
+ * séparateur, citation — sur les éléments nus, sans toucher à la largeur ni
+ * à la mise en page. Nécessaire pour les documents HTML rédigés avant la
+ * conversion, qui n'ont jamais reçu le vocabulaire nk- et s'appuyaient sur
+ * `prose` pour leur mise en forme.
  *
  * En mode `richtext`, le conteneur `prose` reste : ce mode existe pour écrire
  * du texte sans penser à la mise en forme, et le priver de `prose` le rendrait
@@ -23,7 +29,7 @@ export function freeContentLayout(descriptionType: string | undefined): {
   innerClass: string;
 } {
   if (descriptionType === "html") {
-    return { outerClass: "", innerClass: "" };
+    return { outerClass: "", innerClass: "nk-prose" };
   }
   return {
     outerClass: "mx-auto max-w-3xl px-6",

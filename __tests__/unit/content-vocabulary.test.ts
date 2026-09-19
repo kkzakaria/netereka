@@ -9,7 +9,7 @@ const CLASSES = [
   "nk-grid", "nk-split",
   "nk-lead", "nk-card", "nk-media", "nk-specs", "nk-quote", "nk-cta",
   "nk-banner", "nk-highlight-icon",
-  "nk-faq",
+  "nk-faq", "nk-prose",
 ];
 
 describe("vocabulaire de contenu libre", () => {
