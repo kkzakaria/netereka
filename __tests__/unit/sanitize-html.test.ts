@@ -85,6 +85,11 @@ describe("sanitizeDescriptionHtml", () => {
     expect(sanitizeDescriptionHtml(input)).toBe(input);
   });
 
+  it("laisse passer une section, conteneur du vocabulaire de contenu libre", () => {
+    const out = sanitizeDescriptionHtml('<section class="nk-section"><p>x</p></section>');
+    expect(out).toBe('<section class="nk-section"><p>x</p></section>');
+  });
+
   it("blocks vbscript: in href", () => {
     const input = '<a href="vbscript:MsgBox(1)">click</a>';
     const result = sanitizeDescriptionHtml(input);
@@ -504,9 +509,13 @@ describe("sanitizeDescriptionHtml", () => {
     expect(result).not.toBe("<img/src=x/onerror=alert(document.domain)>");
   });
 
+  // L'exemple était `<svg>` jusqu'à ce que la tâche 5b autorise ce tag dans
+  // le contenu libre ; il a été déplacé vers `<math>`, resté interdit, pour
+  // que ce test continue de vérifier ce que son nom promet. Si `<math>` est
+  // autorisé un jour, déplace-le encore plutôt que de le supprimer.
   it("strips a disallowed tag written with a '/' separator", () => {
-    const result = sanitizeDescriptionHtml("<svg/onload=alert(1)>content");
-    expect(result).not.toContain("<svg");
+    const result = sanitizeDescriptionHtml("<math/onload=alert(1)>content");
+    expect(result).not.toContain("<math");
     expect(result).not.toMatch(/\bonload\s*=/i);
     expect(result).toContain("content");
   });
@@ -1026,14 +1035,14 @@ describe("sanitizeDescriptionHtml", () => {
       error.mockRestore();
     });
 
-    it("reports the offending length and product so an operator can act", () => {
+    it("reports the offending length and scope so an operator can act", () => {
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
       sanitizeDescriptionHtml(paragraphOfLength(MAX + 1), "prod-42");
 
       expect(error.mock.calls[0][1]).toMatchObject({
         length: MAX + 1,
-        productId: "prod-42",
+        scopeId: "prod-42",
       });
 
       error.mockRestore();
@@ -1382,5 +1391,342 @@ describe("sanitizeDescriptionHtml", () => {
       expect(scoped).toContain(`.desc-${id} .blk-119 .product-title {`);
       expect(scoped).not.toContain(`.desc-${id} .desc-${id} .desc-${id}`);
     });
+  });
+});
+
+describe("accordéon FAQ", () => {
+  it("conserve details, summary et l'attribut open", () => {
+    const out = sanitizeDescriptionHtml(
+      "<details open><summary>Livraison ?</summary><p>48h à Abidjan.</p></details>",
+    );
+    expect(out).toContain("<details open>");
+    expect(out).toContain("<summary>Livraison ?</summary>");
+    expect(out).toContain("48h à Abidjan.");
+  });
+
+  it("assainit toujours ce qui est à l'intérieur d'un details", () => {
+    const out = sanitizeDescriptionHtml(
+      '<details><summary>X</summary><img src=x onerror="alert(1)"></details>',
+    );
+    expect(out).not.toContain("onerror");
+  });
+
+  // BOOLEAN_ATTRS is a narrow, explicit allowlist ("open" only) — not a general
+  // reprieve for every valueless attribute. These pin that the widening did not
+  // leak: a valueless attribute outside BOOLEAN_ATTRS is still dropped exactly
+  // as before, even when its bare name (ALLOWED_ATTRS membership for "href") or
+  // its tag survives sanitization.
+  it("continue de retirer un attribut booléen non listé (hidden)", () => {
+    const out = sanitizeDescriptionHtml("<div hidden>x</div>");
+    expect(out).not.toContain("hidden");
+    expect(out).toBe("<div>x</div>");
+  });
+
+  it("continue de retirer href sans valeur", () => {
+    const out = sanitizeDescriptionHtml("<a href>x</a>");
+    expect(out).not.toContain("href");
+    expect(out).toBe("<a>x</a>");
+  });
+
+  it("retire un event handler sans valeur sur une balise nouvellement autorisée (details)", () => {
+    expect(sanitizeDescriptionHtml("<details ontoggle>x</details>")).toBe("<details>x</details>");
+  });
+});
+
+describe("SVG inline", () => {
+  it("laisse passer un svg et ses path", () => {
+    const out = sanitizeDescriptionHtml(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M2 12" stroke-width="1.5" stroke-linecap="round"></path></svg>',
+    );
+    expect(out).toContain("<svg");
+    expect(out).toContain("<path");
+    expect(out).toContain('d="M2 12"');
+    expect(out).toContain('stroke-width="1.5"');
+    expect(out).toContain('viewbox="0 0 24 24"');
+  });
+
+  it("retire un script niché dans un svg", () => {
+    const out = sanitizeDescriptionHtml('<svg><script>alert(1)</script><path d="M0 0"></path></svg>');
+    expect(out).not.toContain("alert(1)");
+    expect(out).not.toContain("<script");
+  });
+
+  it("retire un gestionnaire d'événement sur un svg", () => {
+    const out = sanitizeDescriptionHtml('<svg onload="alert(1)"><path d="M0 0"></path></svg>');
+    expect(out).not.toContain("onload");
+    expect(out).not.toContain("alert(1)");
+  });
+
+  it("jette les éléments SVG non listés", () => {
+    for (const markup of [
+      '<svg><animate onbegin="alert(1)" attributeName="x"></animate></svg>',
+      '<svg><set attributeName="x"></set></svg>',
+    ]) {
+      const out = sanitizeDescriptionHtml(markup);
+      expect(out).not.toContain("foreignObject");
+      expect(out).not.toContain("animate");
+      expect(out).not.toContain("xlink");
+      expect(out).not.toContain("<set");
+      expect(out).not.toContain("alert(1)");
+    }
+  });
+
+  // `foreignObject` et `foreignobject` sont deux entrées différentes pour
+  // `toContain` mais la même pour le sanitizer, qui met tout nom de balise en
+  // minuscules avant de l'émettre — `not.toContain("foreignObject")` resterait
+  // vert même si `foreignobject` rejoignait ALLOWED_TAGS. On pin donc la forme
+  // exacte : seuls les délimiteurs disparaissent, pas le contenu qu'ils
+  // portaient.
+  it("jette foreignObject en ne retirant que ses délimiteurs, pas son contenu", () => {
+    expect(sanitizeDescriptionHtml('<svg><foreignObject><p>x</p></foreignObject></svg>')).toBe(
+      "<svg><p>x</p></svg>",
+    );
+  });
+
+  // `not.toContain("xlink")` ne prouve rien : le nom d'attribut ne peut de
+  // toute façon jamais contenir ":", donc "xlink" est déjà improductible quel
+  // que soit le sort de `use`. `use` + `xlink:href` est le contournement
+  // canonique des sanitizers SVG ; c'est le cas qui compte le plus ici, donc
+  // on pin sa forme exacte plutôt que d'en déduire l'absence d'un mot.
+  it("jette use et son xlink:href, le contournement canonique du sanitizer SVG", () => {
+    expect(sanitizeDescriptionHtml('<svg><use xlink:href="#a"></use></svg>')).toBe("<svg></svg>");
+  });
+
+  // Le préfixe xlink: est mangé par la regex de nom d'attribut ([a-zA-Z_][\w-]*
+  // exclut ":"), donc "xlink" disparaît sur N'IMPORTE QUEL élément, y compris
+  // un élément désormais autorisé — c'est le cas réellement atteignable
+  // maintenant que <svg> passe la porte.
+  it("jette le préfixe xlink: sur un élément désormais autorisé", () => {
+    expect(sanitizeDescriptionHtml('<svg xlink:href="javascript:alert(1)"></svg>')).toBe("<svg></svg>");
+  });
+
+  it("jette un href sur un élément svg", () => {
+    // `href` est dans ALLOWED_ATTRS pour les liens ; sur un <svg> il ouvrirait
+    // une navigation. Le sanitizer ne distingue pas les contextes, donc ce test
+    // documente ce qui se passe réellement plutôt qu'un vœu.
+    const out = sanitizeDescriptionHtml('<svg href="javascript:alert(1)"><path d="M0 0"></path></svg>');
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("neutralise un gestionnaire glissé après un séparateur '/' sur un svg", () => {
+    const result = sanitizeDescriptionHtml("<svg/onload=alert(1)>content");
+    // La balise est désormais autorisée, donc elle survit — mais nue.
+    expect(result).toBe("<svg>content");
+    expect(result).not.toMatch(/\bonload\s*=/i);
+  });
+
+  // `href`/`src` sont filtrés par schéma via isSafeUri ; `fill`/`stroke` sont
+  // des valeurs CSS <paint> qui n'ont pas de schéma à elles, mais peuvent tout
+  // de même nommer une ressource via url(...) — la même forme que
+  // style="background:url(…)" (GHSA-m888), par une porte différente.
+  it("jette un fill pointant vers une ressource externe via url()", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(https://evil/x)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  // `PAINT_URL_RE` ne peut signaler que ce qu'elle réussit à MATCHER — un
+  // `url(` jamais refermé ne matche rien et repasserait pour « aucun url()
+  // présent » si c'était la seule vérification. La première version de
+  // isSafePaintValue faisait exactement cette erreur et laissait passer un
+  // url( non fermé octet pour octet. Ces cas verrouillent l'échec fermé sur
+  // la simple PRÉSENCE d'une construction de récupération de ressource,
+  // avant toute tentative de matcher sa forme.
+  it("jette un fill dont le url() n'est jamais refermé", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(https://evil/x" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un stroke dont le url() entre guillemets n'est jamais refermé", () => {
+    expect(sanitizeDescriptionHtml('<svg><path stroke="url(\'https://evil/x" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un fill utilisant src() plutôt que url()", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="src(https://evil/x)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un fill utilisant image-set()", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="image-set(https://evil/x)" d="M0 0"></path></svg>'),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  it("jette un fill utilisant expression()", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="expression(alert(1))" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  it("jette un fill mêlant une référence même-document valide et une ressource externe", () => {
+    expect(
+      sanitizeDescriptionHtml(
+        '<svg><path fill="url(#a);background:url(https://evil/x)" d="M0 0"></path></svg>',
+      ),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  it("laisse passer un fill référençant un fragment du même document", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#grad)" d="M0 0"></path></svg>')).toContain(
+      'fill="url(#grad)"',
+    );
+  });
+
+  it("laisse passer un fill dont la référence même-document a des espaces internes", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url( #a )" d="M0 0"></path></svg>')).toContain(
+      'fill="url( #a )"',
+    );
+  });
+
+  it("laisse passer un fill dont la référence même-document est entre guillemets", () => {
+    expect(sanitizeDescriptionHtml("<svg><path fill=\"url('#a')\" d=\"M0 0\"></path></svg>")).toContain(
+      "fill=\"url('#a')\"",
+    );
+  });
+
+  it("laisse passer plusieurs références même-document dans un seul fill", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#a) url(#b)" d="M0 0"></path></svg>')).toContain(
+      'fill="url(#a) url(#b)"',
+    );
+  });
+
+  // Ce sont les valeurs que produit réellement iconToSvg pour chaque icône du
+  // paquet — une réécriture en échec fermé qui les casserait serait pire que
+  // le défaut qu'elle corrige.
+  it("laisse passer les valeurs fill/stroke ordinaires que produisent les icônes", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="none" d="M0 0"></path></svg>')).toContain(
+      'fill="none"',
+    );
+    expect(sanitizeDescriptionHtml('<svg><path stroke="currentColor" d="M0 0"></path></svg>')).toContain(
+      'stroke="currentColor"',
+    );
+  });
+
+  // Retour en arrière superlinéaire de PAINT_URL_RE.
+  //
+  // Ces trois cas se mesurent à la TAILLE QUE LE CODE ACCEPTE RÉELLEMENT, pas à
+  // une taille commode : sanitizeDescriptionHtml laisse passer jusqu'à
+  // MAX_INPUT_LENGTH = 512 000 caractères, et lib/validations/mcp-product.ts
+  // sanctionne explicitement cette taille sur le chemin d'écriture MCP. Un round
+  // précédent a testé à 5 000 caractères et conclu à la victoire alors que le
+  // défaut coûtait encore 3 s à 100 000 et 74 s au plafond. Le coût n'est pas
+  // qu'à l'écriture : description-to-html rappelle ce filtre à CHAQUE rendu de
+  // fiche produit, dans un Worker facturé au CPU.
+  //
+  // Le seuil est large à dessein — environ 85 fois le pire temps mesuré après
+  // correctif (23,5 ms). Il n'évalue pas la performance, il attrape une courbe
+  // superlinéaire : un retour au quadratique se compte en dizaines de secondes,
+  // pas en millisecondes. Ne le resserre pas — un garde-fou qui devient
+  // instable finit supprimé, et ne garde alors plus rien.
+  const CEILING = 512_000;
+  /** Marge x85 sur le pire temps mesuré ; voir le commentaire ci-dessus. */
+  const NO_BLOWUP_MS = 2_000;
+
+  function tempsDAssainissement(valeurFill: string): { ms: number; out: string } {
+    const payload = `<svg><path fill="${valeurFill}" d="M0 0"></path></svg>`;
+    expect(payload.length).toBeLessThanOrEqual(CEILING);
+    const start = Date.now();
+    const out = sanitizeDescriptionHtml(payload);
+    return { ms: Date.now() - start, out };
+  }
+
+  // Forme 1 : les deux `\s` s'échangeaient les mêmes espaces. C'est la forme que
+  // le round précédent croyait avoir fermée en excluant l'espace du run interne —
+  // à tort : l'échange se faisait entre le `\s*` de tête et celui de queue, que
+  // cette exclusion ne touchait pas. Mesurée sur la forme d'alors : 42 ms à
+  // 12 500 espaces, 3 091 ms à 100 000, 73 789 ms au plafond.
+  it("ne dégénère pas sur un url( suivi d'un demi-million d'espaces", () => {
+    const { ms, out } = tempsDAssainissement(`url(${" ".repeat(511_900)}`);
+    expect(ms).toBeLessThan(NO_BLOWUP_MS);
+    expect(out).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  // Forme 2 : sans exclusion de `(` du run interne, celui-ci avalait tout le
+  // reste de la valeur puis le rendait caractère par caractère — et recommençait
+  // à chaque `url(`, soit une position de départ tous les quatre caractères.
+  // Rien à voir avec l'espace : borner les `\s` seul n'y change rien. Mesurée sur
+  // la forme d'alors : 104 ms à 3 000 répétitions, 30 212 ms à 50 000,
+  // 198 701 ms au plafond — trois minutes de CPU par affichage de fiche.
+  it("ne dégénère pas sur un url( répété cent mille fois sans fermeture", () => {
+    const { ms, out } = tempsDAssainissement("url(".repeat(127_000));
+    expect(ms).toBeLessThan(NO_BLOWUP_MS);
+    expect(out).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  // Forme 3 : le pire mélange atteignable une fois les deux correctifs posés —
+  // chaque occurrence porte exactement 32 espaces, la borne des `\s{0,32}`, donc
+  // chaque position de départ paie le maximum d'essais que la borne autorise
+  // (33 x 33). C'est ce cas qui prouve que la borne est bien une CONSTANTE et
+  // pas un seuil déplacé : 23,5 ms au plafond, le pire des trois.
+  it("ne dégénère pas quand chaque url( porte pile la borne de 32 espaces", () => {
+    const { ms, out } = tempsDAssainissement(`${"url(" + " ".repeat(32)}`.repeat(14_000));
+    expect(ms).toBeLessThan(NO_BLOWUP_MS);
+    expect(out).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  // Contrepartie acceptée des deux exclusions : une référence même-document dont
+  // le contenu porte un espace interne ou un `(` ne CORRESPOND plus, donc elle
+  // compte comme une ouverture sans correspondance bien formée et se fait
+  // rejeter. C'est la direction sûre, et elle est testée pour qu'un futur
+  // élargissement du run interne ne la réouvre pas par inadvertance.
+  it("jette une référence même-document mal formée (espace ou parenthèse interne)", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#a b)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+    expect(sanitizeDescriptionHtml('<svg><path fill="url(#a(b)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  // Les orthographes échappées/référencées sont la classe qui a historiquement
+  // cassé le filtre voisin (stripDangerousCss / GHSA-m888) : ce sont elles qui
+  // prouvent que resolveCssEscapes + decodeCharacterReferences tournent
+  // effectivement avant le test, pas seulement la forme littérale "url(".
+  it("jette un fill dont le nom de fonction est échappé en CSS (u\\72 l)", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="u\\72 l(https://evil/x)" d="M0 0"></path></svg>'),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  it("jette un fill dont le nom de fonction passe par une référence de caractère (&#117;rl)", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="&#117;rl(https://evil/x)" d="M0 0"></path></svg>'),
+    ).toBe('<svg><path d="M0 0"></path></svg>');
+  });
+
+  it("jette un fill utilisant URL() en majuscules", () => {
+    expect(sanitizeDescriptionHtml('<svg><path fill="URL(https://evil/x)" d="M0 0"></path></svg>')).toBe(
+      '<svg><path d="M0 0"></path></svg>',
+    );
+  });
+
+  // "url (" avec un espace avant la parenthèse est un identifiant suivi d'un
+  // bloc parenthésé, pas un jeton fonction — il ne récupère rien. Le fichier
+  // documente déjà cette règle pour stripDangerousCss ; isSafePaintValue doit
+  // s'accorder avec elle plutôt que la sur-bloquer.
+  it("laisse passer url suivi d'un espace avant la parenthèse, qui ne récupère rien", () => {
+    expect(
+      sanitizeDescriptionHtml('<svg><path fill="url (https://evil/x)" d="M0 0"></path></svg>'),
+    ).toContain('fill="url (https://evil/x)"');
+  });
+});
+
+describe("portée CSS d'une bannière", () => {
+  it("préfixe les sélecteurs avec l'identifiant de bannière", () => {
+    const out = sanitizeDescriptionHtml(
+      "<style>.title{color:red}</style><p class='title'>Hi</p>",
+      "banner-12",
+    );
+    expect(out).toContain(".desc-banner-12 .title");
+  });
+
+  it("ne préfixe pas deux fois une règle déjà préfixée", () => {
+    const once = sanitizeDescriptionHtml("<style>.t{color:red}</style>", "banner-12");
+    const twice = sanitizeDescriptionHtml(once, "banner-12");
+    expect(twice).toBe(once);
   });
 });

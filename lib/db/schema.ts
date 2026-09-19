@@ -225,6 +225,7 @@ export const products = sqliteTable("products", {
   highlights: text("highlights"),
   feature_blocks: text("feature_blocks"),
   faq: text("faq"),
+  faq_html: text("faq_html"),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
   updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
 }, (table) => [
@@ -436,6 +437,7 @@ export const banners = sqliteTable("banners", {
   price: integer("price"),
   bg_gradient_from: text("bg_gradient_from").notNull().default("#183C78"),
   bg_gradient_to: text("bg_gradient_to").notNull().default("#1E4A8F"),
+  content_html: text("content_html"),
   display_order: integer("display_order").notNull().default(0),
   is_active: integer("is_active").notNull().default(1),
   starts_at: text("starts_at"),
