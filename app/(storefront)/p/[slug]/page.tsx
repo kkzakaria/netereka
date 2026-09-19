@@ -127,11 +127,17 @@ async function ProductReviews({ productId }: { productId: string }) {
     getProductRatingStats(productId),
     getProductReviews(productId, 10),
   ]);
-  if (ratingStats.count === 0) return null;
+  if (ratingStats.count === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Aucun avis pour le moment. Soyez le premier à donner le vôtre.
+      </p>
+    );
+  }
   const stats = ratingStats;
 
   return (
-    <div className="mt-12 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center gap-3">
         <h2 className="text-lg font-semibold">Avis clients</h2>
         <div className="flex items-center gap-1.5">
@@ -398,20 +404,17 @@ export default async function ProductPage({ params }: Props) {
 
       <div className="mx-auto max-w-7xl px-4 py-6">
         <ProductDetails
-          tagline={product.tagline}
-          highlights={product.highlights}
-          featureBlocks={product.feature_blocks}
-          faq={product.faq}
           description={product.description}
           descriptionType={product.description_type}
+          faqHtml={product.faq_html}
           productId={product.id}
           attributes={product.attributes}
+          reviews={
+            <Suspense fallback={null}>
+              <ProductReviews productId={product.id} />
+            </Suspense>
+          }
         />
-
-        {/* Reviews */}
-        <Suspense fallback={null}>
-          <ProductReviews productId={product.id} />
-        </Suspense>
 
         {/* Related */}
         <Suspense fallback={<RelatedProductsSkeleton />}>

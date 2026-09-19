@@ -1,19 +1,17 @@
 import { cn } from "@/lib/utils";
-import { descriptionToHtml } from "@/lib/utils/description-to-html";
 
 interface StoryFreeContentProps {
-  description: string;
+  /** HTML déjà assaini par `descriptionToHtml` — calculé une seule fois par l'appelant. */
+  html: string;
   descriptionType?: string;
   productId?: string;
 }
 
 export function StoryFreeContent({
-  description,
+  html,
   descriptionType,
   productId,
 }: StoryFreeContentProps) {
-  const html = descriptionToHtml(description, descriptionType);
-  if (!html) return null;
   const scopeClass =
     descriptionType === "html" && productId ? `desc-${productId}` : undefined;
   return (
