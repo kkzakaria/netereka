@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { ProductDetail } from "@/lib/db/types";
-import { ProductStorySection } from "@/components/admin/product-story-section";
 
 interface StepFinalizationProps {
   product: ProductDetail;
@@ -75,19 +74,22 @@ export function StepFinalization({
         />
       </div>
 
-      {/* Story produit */}
-      <div data-slot="story-section" className="space-y-1.5">
-        <Label data-slot="story-section-label">Story produit</Label>
-        <p data-slot="story-section-help" className="text-xs text-muted-foreground">
-          Blocs éditoriaux rendus en pleine largeur sur la fiche produit. Tous optionnels.
+      {/* Story produit — migré vers la description HTML libre */}
+      <div
+        data-slot="story-migration-notice"
+        className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"
+      >
+        <p>
+          Les champs Story (accroche, points forts, feature blocks, FAQ) ont été
+          migrés vers la description en HTML libre. La conversion des produits
+          existants a déjà été effectuée : leur contenu est désormais visible
+          dans la description.
         </p>
-        <ProductStorySection
-          productId={product.id}
-          tagline={product.tagline}
-          highlights={product.highlights}
-          featureBlocks={product.feature_blocks}
-          faq={product.faq}
-        />
+        <p className="mt-2">
+          L&apos;éditeur dédié à ce nouveau format arrive avec la prochaine
+          version. En attendant, cet assistant n&apos;écrit plus dans les
+          anciennes colonnes Story.
+        </p>
       </div>
       <input type="hidden" name="description" value={product.description ?? ""} />
       <input type="hidden" name="description_type" value={product.description_type ?? "richtext"} />

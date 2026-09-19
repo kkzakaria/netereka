@@ -35,7 +35,6 @@ import {
   type CategoryOption,
 } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
-import { ProductStorySection } from "./product-story-section";
 
 
 const SECTIONS: SectionDef[] = [
@@ -253,13 +252,22 @@ export function ProductFormSections({
               </div>
             </CardHeader>
             <CardContent>
-              <ProductStorySection
-                productId={product.id}
-                tagline={product.tagline}
-                highlights={product.highlights}
-                featureBlocks={product.feature_blocks}
-                faq={product.faq}
-              />
+              <div
+                data-slot="story-migration-notice"
+                className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"
+              >
+                <p>
+                  Les champs Story (accroche, points forts, feature blocks, FAQ) ont été
+                  migrés vers la description en HTML libre. La conversion des produits
+                  existants a déjà été effectuée : leur contenu est désormais visible
+                  dans la section Informations ci-dessus.
+                </p>
+                <p className="mt-2">
+                  L&apos;éditeur dédié à ce nouveau format arrive avec la prochaine
+                  version. En attendant, ce formulaire n&apos;écrit plus dans les
+                  anciennes colonnes Story.
+                </p>
+              </div>
             </CardContent>
           </Card>
 

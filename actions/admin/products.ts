@@ -11,31 +11,11 @@ import { products } from "@/lib/db/schema";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { deleteFromR2 } from "@/lib/storage/images";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
-import {
-  taglineSchema,
-  highlightsSchema,
-  featureBlocksSchema,
-  faqSchema,
-} from "@/lib/validations/product-story";
 
 const DB_CONSTRAINT_SKU = "UNIQUE constraint failed: products.sku";
 const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
 
 const idSchema = z.string().min(1, "ID requis");
-
-// Sentinel string used to force Zod validation failure for non-parseable JSON inputs.
-const INVALID_JSON_SENTINEL = "__invalid__";
-
-/** FormData-safe JSON preprocessor: null/empty → null, valid JSON string → parsed, otherwise sentinel. */
-function parseNullableJsonString(value: unknown): unknown {
-  if (value == null || (typeof value === "string" && value.trim() === "")) return null;
-  if (typeof value !== "string") return INVALID_JSON_SENTINEL;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return INVALID_JSON_SENTINEL;
-  }
-}
 
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
@@ -53,13 +33,6 @@ const productSchema = z.object({
   meta_description: z.string().max(160).optional().default(""),
   is_active: z.coerce.number().int().min(0).max(1).default(1),
   is_featured: z.coerce.number().int().min(0).max(1).default(0),
-  tagline: z.preprocess(
-    (v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v),
-    taglineSchema,
-  ),
-  highlights: z.preprocess(parseNullableJsonString, highlightsSchema),
-  feature_blocks: z.preprocess(parseNullableJsonString, featureBlocksSchema),
-  faq: z.preprocess(parseNullableJsonString, faqSchema),
 });
 
 /** @deprecated Never called from the UI — product creation now goes through createDraftProduct() + updateProduct(). Scheduled for removal once the draft flow is confirmed stable in production. */
@@ -211,10 +184,6 @@ export async function updateProduct(
     weight_grams: data.weight_grams ?? null,
     meta_title: data.meta_title || null,
     meta_description: data.meta_description || null,
-    tagline: data.tagline ?? null,
-    highlights: data.highlights == null ? null : JSON.stringify(data.highlights),
-    feature_blocks: data.feature_blocks == null ? null : JSON.stringify(data.feature_blocks),
-    faq: data.faq == null ? null : JSON.stringify(data.faq),
     is_draft: 0,
     updated_at: sql`datetime('now')`,
   });

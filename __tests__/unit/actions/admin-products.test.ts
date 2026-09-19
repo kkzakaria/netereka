@@ -309,4 +309,29 @@ describe("updateProduct", () => {
       expect(setCall.slug).toBe("existing-slug");
     });
   });
+
+  describe("gel des colonnes Story (tagline, highlights, feature_blocks, faq)", () => {
+    it("n'écrit aucune des quatre colonnes Story, même si un client les soumet encore", async () => {
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "iphone-15-pro", sku: "NET-ABCD1234", is_draft: 0 });
+      mocks.drizzleWhere.mockResolvedValueOnce(undefined);
+      // Simulate a stale client (cached JS bundle) still posting the legacy Story fields.
+      const result = await updateProduct(
+        "prod-1",
+        baseFormData({
+          tagline: "Un écran plus grand, une autonomie qui dure.",
+          highlights: JSON.stringify([{ icon: "battery", label: "Charge rapide" }]),
+          feature_blocks: JSON.stringify([{ title: "Titre", body: "Texte" }]),
+          faq: JSON.stringify([{ question: "Q ?", answer: "R." }]),
+        }),
+      );
+      expect(result.success).toBe(true);
+      const setCall = mocks.drizzleSet.mock.calls[0][0] as Record<string, unknown>;
+      // The columns must be entirely absent from the write path, not merely nulled —
+      // this fails loudly if any of the four is ever re-added to buildValues().
+      expect(setCall).not.toHaveProperty("tagline");
+      expect(setCall).not.toHaveProperty("highlights");
+      expect(setCall).not.toHaveProperty("feature_blocks");
+      expect(setCall).not.toHaveProperty("faq");
+    });
+  });
 });
