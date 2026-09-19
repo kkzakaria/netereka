@@ -38,6 +38,13 @@ export function buildBannerScopeClass(id: number | null): string | undefined {
   return id != null ? `desc-banner-${id}` : undefined;
 }
 
+const badgeColorMap: Record<BadgeColor, string> = {
+  mint: "bg-emerald-500/20 text-emerald-300",
+  red: "bg-red-500/20 text-red-300",
+  orange: "bg-orange-500/20 text-orange-300",
+  blue: "bg-blue-500/20 text-blue-300",
+};
+
 export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData[]): Slide[] {
   if (banners.length > 0) {
     return banners.map((b) => ({
@@ -149,8 +156,24 @@ export function HeroBanner({
                   />
                 ) : (
                   /* Repli sur les produits en vedette : ce n'est pas du contenu
-                     éditorial mais notre propre gabarit, il reste en React. */
+                     éditorial mais notre propre gabarit, il reste en React.
+                     Sert aussi une bannière sans content_html créée avant
+                     l'éditeur de la tâche 14 : badge_text/badge_color restent
+                     modifiables depuis components/admin/banner-form.tsx et
+                     visibles dans son aperçu, donc rendus ici tant que ce
+                     cas existe. Ce bloc pourra disparaître une fois la
+                     tâche 14 livrée. */
                   <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
+                    {slide.badge_text && (
+                      <span
+                        className={cn(
+                          "mb-2 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide sm:mb-3",
+                          badgeColorMap[slide.badge_color]
+                        )}
+                      >
+                        {slide.badge_text}
+                      </span>
+                    )}
                     <h2 className="text-lg font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
                       {slide.title}
                     </h2>
