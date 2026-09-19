@@ -84,16 +84,12 @@ function buildProductColumns(input: UpdateDraftInput, productId: string): Produc
     cols.description = input.description_html ? sanitizeDescriptionHtml(input.description_html, productId) : null;
     cols.description_type = "html";
   }
+  if (input.faq_html !== undefined) {
+    cols.faq_html = input.faq_html ? sanitizeDescriptionHtml(input.faq_html, productId) : null;
+  }
   if (input.seo) {
     if (input.seo.meta_title !== undefined) cols.meta_title = input.seo.meta_title;
     if (input.seo.meta_description !== undefined) cols.meta_description = input.seo.meta_description;
-  }
-  if (input.story) {
-    const s = input.story;
-    if (s.tagline !== undefined) cols.tagline = s.tagline;
-    if (s.highlights !== undefined) cols.highlights = s.highlights ? JSON.stringify(s.highlights) : null;
-    if (s.feature_blocks !== undefined) cols.feature_blocks = s.feature_blocks ? JSON.stringify(s.feature_blocks) : null;
-    if (s.faq !== undefined) cols.faq = s.faq ? JSON.stringify(s.faq) : null;
   }
   if (input.pricing) {
     const p = input.pricing;
@@ -255,6 +251,7 @@ export interface DraftDetail {
   brand: string | null;
   short_description: string | null;
   description_html: string | null;
+  faq_html: string | null;
   base_price: number;
   compare_price: number | null;
   sku: string | null;
@@ -262,7 +259,6 @@ export interface DraftDetail {
   low_stock_threshold: number;
   weight_grams: number | null;
   seo: { meta_title: string | null; meta_description: string | null };
-  story: { tagline: string | null; highlights: unknown; feature_blocks: unknown; faq: unknown };
   attributes: { id: string; name: string; value: string }[];
   images: { id: string; url: string; alt: string | null; is_primary: boolean; sort_order: number; variant_id: string | null }[];
   variants: { id: string; name: string; price: number; compare_price: number | null; stock_quantity: number; attributes: unknown }[];
@@ -307,6 +303,7 @@ export async function getDraft(id: string): Promise<DraftDetail> {
     brand: p.brand,
     short_description: p.short_description,
     description_html: p.description,
+    faq_html: p.faq_html,
     base_price: p.base_price,
     compare_price: p.compare_price,
     sku: p.sku,
@@ -314,12 +311,6 @@ export async function getDraft(id: string): Promise<DraftDetail> {
     low_stock_threshold: p.low_stock_threshold,
     weight_grams: p.weight_grams,
     seo: { meta_title: p.meta_title, meta_description: p.meta_description },
-    story: {
-      tagline: p.tagline,
-      highlights: parseJson(p.highlights),
-      feature_blocks: parseJson(p.feature_blocks),
-      faq: parseJson(p.faq),
-    },
     attributes: attrs,
     images: imgs.map((i) => ({ ...i, url: getImageUrl(i.url), is_primary: i.is_primary === 1 })),
     variants: vars.map((v) => ({ ...v, attributes: parseJson(v.attributes) })),

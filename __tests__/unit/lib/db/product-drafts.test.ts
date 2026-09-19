@@ -164,6 +164,25 @@ describe("updateDraft", () => {
     });
     await expect(updateDraft("p1", { slug: "taken" }, AUDIT)).rejects.toMatchObject({ code: "conflict" });
   });
+
+  // Les colonnes story (tagline, highlights, feature_blocks, faq) ont été
+  // vidées côté production et rien ne les relit plus : un write MCP dedans
+  // serait une perte silencieuse (task-16-brief.md). buildProductColumns ne
+  // pose une colonne dans le SET que si le patch la fournit explicitement,
+  // donc son absence ici — même quand faq_html est fourni — prouve qu'aucun
+  // chemin ne les réécrit plus.
+  it("n'écrit jamais tagline, highlights, feature_blocks ou faq, même en modifiant faq_html", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      /from "products"/i.test(stmt.sql) ? [["p1", "old-slug"]] : []);
+    await updateDraft("p1", {
+      description_html: "<p>Hi</p>",
+      faq_html: "<div class=\"nk-faq\"><details><summary>Q</summary><p>R</p></details></div>",
+    }, AUDIT);
+    const stmts = d1.current!.batchStatements().map(sqlOf);
+    const update = stmts.find((s) => /update "products"/i.test(s))!;
+    expect(update).not.toMatch(/"(tagline|highlights|feature_blocks|faq)" = \?/);
+    expect(update).toMatch(/"faq_html" = \?/);
+  });
 });
 
 describe("getDraft", () => {

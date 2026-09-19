@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { colorSchema, dimensionsSchema, specSchema } from "@/lib/validations/product-ai";
-import { taglineSchema, highlightsSchema, featureBlocksSchema, faqSchema } from "@/lib/validations/product-story";
 
 /**
  * Input contracts of the MCP product tools (lib/mcp/tools/products.ts).
- * Story and attribute rules are the wizard's own schemas, reused so the MCP
- * cannot write a product the admin UI would reject.
+ * Attribute rules are the wizard's own schemas, reused so the MCP cannot
+ * write a product the admin UI would reject.
  */
 
 export const idSchema = z.string().trim().min(1).max(64);
@@ -19,13 +18,6 @@ export const draftAttributesSchema = z.object({
   colors: z.array(colorSchema).max(12).default([]),
   dimensions: dimensionsSchema.default({}),
   specs: z.array(specSchema).max(20).default([]),
-});
-
-const storyInputSchema = z.object({
-  tagline: taglineSchema.optional(),
-  highlights: highlightsSchema.optional(),
-  feature_blocks: featureBlocksSchema.optional(),
-  faq: faqSchema.optional(),
 });
 
 const seoSchema = z.object({
@@ -48,7 +40,7 @@ export const createDraftSchema = z.object({
   brand: z.string().trim().max(80).nullable().optional(),
   short_description: z.string().trim().max(120).nullable().optional(),
   description_html: z.string().max(DESCRIPTION_MAX_BYTES).nullable().optional(),
-  story: storyInputSchema.optional(),
+  faq_html: z.string().max(DESCRIPTION_MAX_BYTES).nullable().optional(),
   seo: seoSchema.optional(),
   attributes: draftAttributesSchema.optional(),
   pricing: pricingSchema.optional(),
