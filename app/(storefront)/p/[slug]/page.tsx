@@ -409,6 +409,7 @@ export default async function ProductPage({ params }: Props) {
           faqHtml={product.faq_html}
           productId={product.id}
           attributes={product.attributes}
+          hasReviews={ratingStats.count > 0}
           reviews={
             <Suspense fallback={null}>
               <ProductReviews productId={product.id} />

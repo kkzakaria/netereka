@@ -5,7 +5,7 @@ vi.mock("@/components/ui/tabs", () => ({
 }));
 vi.mock("@/components/storefront/product-story", () => ({ ProductStory: vi.fn() }));
 
-import { visibleProductTabs } from "@/components/storefront/product-details";
+import { visibleProductTabs, shouldRenderProductDetails } from "@/components/storefront/product-details";
 
 describe("visibleProductTabs", () => {
   it("affiche les quatre onglets quand tout est renseigné", () => {
@@ -38,5 +38,25 @@ describe("visibleProductTabs", () => {
     expect(tabs.indexOf("description")).toBeLessThan(tabs.indexOf("details"));
     expect(tabs.indexOf("details")).toBeLessThan(tabs.indexOf("reviews"));
     expect(tabs.indexOf("reviews")).toBeLessThan(tabs.indexOf("faq"));
+  });
+});
+
+describe("shouldRenderProductDetails", () => {
+  it("masque la section quand Avis est le seul onglet et qu'il n'y a aucun avis", () => {
+    const tabs = visibleProductTabs({ description: null, faqHtml: null, attributeCount: 0 });
+    expect(tabs).toEqual(["reviews"]);
+    expect(shouldRenderProductDetails(tabs, false)).toBe(false);
+  });
+
+  it("affiche la section quand Avis est le seul onglet mais qu'il y a de vrais avis", () => {
+    const tabs = visibleProductTabs({ description: null, faqHtml: null, attributeCount: 0 });
+    expect(tabs).toEqual(["reviews"]);
+    expect(shouldRenderProductDetails(tabs, true)).toBe(true);
+  });
+
+  it("affiche toujours la section dès qu'un autre onglet est présent, avis ou non", () => {
+    const tabs = visibleProductTabs({ description: "<p>x</p>", faqHtml: null, attributeCount: 0 });
+    expect(shouldRenderProductDetails(tabs, false)).toBe(true);
+    expect(shouldRenderProductDetails(tabs, true)).toBe(true);
   });
 });

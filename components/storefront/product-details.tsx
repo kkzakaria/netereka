@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ProductAttribute } from "@/lib/db/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProductStory } from "./product-story";
+import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 
 export type ProductTabId = "description" | "details" | "reviews" | "faq";
 
@@ -11,6 +12,12 @@ interface ProductDetailsProps {
   faqHtml: string | null;
   productId: string;
   attributes: ProductAttribute[];
+  /** La page calcule déjà `ratingStats` pour le JSON-LD (schema.org) — ce
+   *  drapeau ne coûte donc aucune requête supplémentaire. Sert uniquement à
+   *  distinguer, quand « Avis » est le seul onglet, un produit qui a déjà des
+   *  avis (la section s'affiche) d'un produit qui n'en a aucun (la section
+   *  ne s'affiche pas — voir le early return ci-dessous). */
+  hasReviews: boolean;
   /** Rendu par la page : <Suspense><ProductReviews …/></Suspense>. ProductReviews
    *  est un composant serveur asynchrone et Tabs est client — il ne peut pas être
    *  appelé d'ici, seulement reçu. */
@@ -48,12 +55,32 @@ export function visibleProductTabs(input: {
   return tabs;
 }
 
+/**
+ * Faut-il rendre la section à onglets (celle que ProductDetails retourne) ?
+ *
+ * « Avis » est toujours dans `tabs` (voir visibleProductTabs), donc un
+ * produit sans description, sans attribut visible et sans FAQ s'y résume
+ * toujours. Avant ce lot, ProductDetails renvoyait null dans ce cas et la
+ * page s'arrêtait simplement là ; sans ce garde, ces produits afficheraient
+ * une section bordée dont le seul onglet dit « Aucun avis pour le moment » —
+ * pire que pas de section du tout. `hasReviews` distingue ce cas (aucune
+ * section) du même onglet unique mais avec de vrais avis (section affichée
+ * normalement).
+ */
+export function shouldRenderProductDetails(
+  tabs: ProductTabId[],
+  hasReviews: boolean
+): boolean {
+  return !(tabs.length === 1 && tabs[0] === "reviews" && !hasReviews);
+}
+
 export function ProductDetails({
   description,
   descriptionType,
   faqHtml,
   productId,
   attributes,
+  hasReviews,
   reviews,
 }: ProductDetailsProps) {
   // La couleur est déjà exposée par le sélecteur de variante : la répéter dans
@@ -64,6 +91,20 @@ export function ProductDetails({
     faqHtml,
     attributeCount: filteredAttributes.length,
   });
+
+  if (!shouldRenderProductDetails(tabs, hasReviews)) {
+    return null;
+  }
+
+  // Assaini à la lecture comme les bannières (lib/db/storefront/banners.ts) et
+  // la description (lib/utils/description-to-html.ts) : la garantie d'écriture
+  // (scripts/convert-content-to-html.ts) suppose qu'aucun écrivain futur ne la
+  // contourne — les tâches 14-15 sont justement l'arrivée de ce futur
+  // écrivain. Ré-assainir ici est idempotent et ne coûte rien au bundle
+  // navigateur : ProductDetails est un composant serveur (pas de "use client").
+  // Hissé au-dessus du rendu de l'onglet pour que la vérification de nullité
+  // porte sur `faqHtmlSafe`, sans assertion non-null sur `faqHtml`.
+  const faqHtmlSafe = faqHtml ? sanitizeDescriptionHtml(faqHtml, productId) : null;
 
   return (
     <section className="mt-10 border-t pt-8">
@@ -94,12 +135,17 @@ export function ProductDetails({
 
         <TabsContent value="reviews">{reviews}</TabsContent>
 
-        {tabs.includes("faq") && (
+        {tabs.includes("faq") && faqHtmlSafe && (
           <TabsContent value="faq">
-            {/* Assaini à l'écriture, comme toute la famille du contenu libre. */}
+            {/* Assaini à l'écriture ET à la lecture (faqHtmlSafe ci-dessus).
+                Le conteneur Description partage le même scope `desc-<productId>`
+                que celui-ci : sans risque tant que Radix démonte les
+                TabsContent inactifs (seul l'onglet actif est dans le DOM) — si
+                un jour un `forceMount` est ajouté pour du SEO, le <style>
+                scopé de l'un pourrait atteindre l'autre. */}
             <div
               className={`desc-${productId}`}
-              dangerouslySetInnerHTML={{ __html: faqHtml! }}
+              dangerouslySetInnerHTML={{ __html: faqHtmlSafe }}
             />
           </TabsContent>
         )}
