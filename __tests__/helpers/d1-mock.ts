@@ -3,7 +3,7 @@ import { vi } from "vitest";
 /**
  * Mocks the D1 binding one level below Drizzle so the real driver compiles the
  * statements. Assertions run against the SQL/params Drizzle emits, which is
- * what catches schema/column drift. Same technique as products-ai.test.ts.
+ * what catches schema/column drift. Same technique as product-drafts.test.ts.
  *
  * `raw` feeds `.get()`/`.all()` with POSITIONAL row arrays in select order
  * (Drizzle's D1 driver reads `stmt.raw()` when a field selection exists).

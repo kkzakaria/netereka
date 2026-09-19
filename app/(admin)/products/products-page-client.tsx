@@ -25,14 +25,12 @@ interface ProductsPageClientProps {
   products: ProductData[];
   categories: { id: string; name: string }[];
   totalCount: number;
-  aiEnabled: boolean;
 }
 
 export function ProductsPageClient({
   products,
   categories,
   totalCount,
-  aiEnabled,
 }: ProductsPageClientProps) {
   return (
     <>
@@ -43,11 +41,6 @@ export function ProductsPageClient({
           <ViewSwitcher />
         </div>
         <div className="flex items-center gap-2">
-          {aiEnabled && (
-            <Button asChild size="sm" variant="outline">
-              <Link href="/products/ai-new">✨ Avec l&apos;IA</Link>
-            </Button>
-          )}
           <Button asChild size="sm">
             <Link href="/products/new">Nouveau</Link>
           </Button>
@@ -70,14 +63,9 @@ export function ProductsPageClient({
   );
 }
 
-export function ProductsPageActions({ aiEnabled }: { aiEnabled: boolean }) {
+export function ProductsPageActions() {
   return (
     <div className="flex items-center gap-2">
-      {aiEnabled && (
-        <Button asChild variant="outline">
-          <Link href="/products/ai-new">✨ Créer avec l&apos;IA</Link>
-        </Button>
-      )}
       <Button asChild>
         <Link href="/products/new">Nouveau produit</Link>
       </Button>
