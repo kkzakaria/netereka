@@ -155,14 +155,20 @@ export function HeroBanner({
                     dangerouslySetInnerHTML={{ __html: slide.content_html }}
                   />
                 ) : (
-                  /* Repli sur les produits en vedette : ce n'est pas du contenu
-                     éditorial mais notre propre gabarit, il reste en React.
-                     Sert aussi une bannière sans content_html créée avant
-                     l'éditeur de la tâche 14 : badge_text/badge_color restent
-                     modifiables depuis components/admin/banner-form.tsx et
-                     visibles dans son aperçu, donc rendus ici tant que ce
-                     cas existe. Ce bloc pourra disparaître une fois la
-                     tâche 14 livrée. */
+                  /* Ce repli sert DEUX cas distincts, pas un seul :
+                     1. Les produits en vedette (buildSlides pose id: null) :
+                        ce n'est pas du contenu éditorial mais notre propre
+                        gabarit — il reste en React et le restera après la
+                        tâche 14, `badge_text` y valant "En vedette" pour un
+                        produit is_featured. NE PAS le retirer sous prétexte
+                        que la tâche 14 livre l'éditeur de bannières : ce cas
+                        n'a rien à voir avec les bannières.
+                     2. Une bannière sans content_html créée avant l'éditeur
+                        de la tâche 14 : badge_text/badge_color restent
+                        modifiables depuis components/admin/banner-form.tsx et
+                        visibles dans son aperçu, donc rendus ici tant que ce
+                        cas existe. Seul CE cas disparaît quand la tâche 14
+                        est livrée. */
                   <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
                     {slide.badge_text && (
                       <span

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 vi.mock("embla-carousel-react", () => ({ default: vi.fn() }));
 vi.mock("embla-carousel-autoplay", () => ({ default: vi.fn() }));
@@ -101,5 +103,37 @@ describe("après la conversion", () => {
       [],
     );
     expect(slide.content_html).toContain("nk-banner");
+  });
+});
+
+// Aucun test de comportement (au sens buildSlides) ne peut échouer si le
+// rendu JSX du badge disparaît du repli — badge_text/badge_color continuent
+// d'exister sur la slide que buildSlides produit, seul le rendu React qui
+// les consomme serait retiré. Ce dépôt n'a pas de jsdom pour monter le
+// composant, donc ce garde lit le fichier source, comme
+// admin-page-guards.test.ts et product-wizard-touch-targets.test.ts :
+// il verrouille contre une seconde suppression silencieuse du badge, celle
+// que ce correctif corrige déjà une fois (round 2).
+describe("garde source — badge du repli hero", () => {
+  const source = readFileSync(
+    resolve(__dirname, "../../..", "components/storefront/hero-banner.tsx"),
+    "utf8",
+  );
+
+  it("garde la condition d'affichage du badge", () => {
+    expect(source).toMatch(/slide\.badge_text\s*&&/);
+  });
+
+  // Distinct de la condition ci-dessus : `{slide.badge_text && (…)}` peut
+  // rester intact alors que le texte affiché à l'intérieur a été remplacé
+  // par autre chose (ex. un libellé en dur) — ce qui reproduirait
+  // silencieusement la régression que ce correctif corrige. Ancré sur
+  // `</span>` pour viser précisément l'endroit où le badge est rendu.
+  it("rend toujours le texte du badge dans le <span>", () => {
+    expect(source).toMatch(/\{slide\.badge_text\}\s*<\/span>/);
+  });
+
+  it("garde badgeColorMap pour colorer ce badge", () => {
+    expect(source).toMatch(/badgeColorMap\[slide\.badge_color\]/);
   });
 });

@@ -209,6 +209,19 @@
       grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
     }
   }
+  /* Le plancher `:where(.nk-prose) li` (plus bas dans ce fichier) pose
+     margin-block: 0.375em sur tout <li> nu. `:where()` ne pèse rien dans la
+     spécificité : là où une classe du vocabulaire redéclare la même
+     propriété, elle gagne (c'est le cas de .nk-quote ou .nk-cta) — mais là
+     où elle reste silencieuse, le plancher passe sans opposition. Une
+     <li class="nk-card"> dans une .nk-grid ne disait jamais rien sur sa
+     propre margin : sans cette ligne, chaque carte convertie hériterait du
+     plancher et gonflerait le rythme voulu par `gap`. Zéro explicite ici,
+     pas silence : c'est `gap` seul qui doit régler l'espacement des lignes.
+     <ul class="nk-grid"> <li class="nk-card"> … </li> </ul> */
+  .nk-grid > li {
+    margin: 0;
+  }
 
   /* Deux colonnes texte / media, empilées sous 768px.
      <div class="nk-split"> <div> … </div> <img class="nk-media" …> </div> */
@@ -228,14 +241,25 @@
   }
 
   /* Chapô : la phrase d'accroche sous un titre de section.
+     C'est un <p> nu : sans le `margin: 0` déclaré ici, le plancher
+     `:where(.nk-prose) p` (plus bas) lui poserait margin-block: 1em qu'elle
+     n'a jamais eu — le rythme sous le titre reste au padding de la
+     nk-section qui la contient. Déclaré explicitement, pas laissé au
+     silence : voir le commentaire sur .nk-grid > li pour le piège complet.
      <p class="nk-lead">La batterie qui tient trois jours.</p> */
   .nk-lead {
     color: var(--muted-foreground);
     font-size: 1.125rem;
     line-height: 1.7;
+    margin: 0;
   }
 
   /* Carte : un bloc de contenu détouré.
+     Le <p> direct (le libellé d'un highlight converti, collé sous son icône)
+     perd sa margin explicitement : sans cette ligne, le plancher
+     `:where(.nk-prose) p` lui poserait margin-block: 1em et l'écarterait de
+     l'icône au-dessus — exactement ce que .nk-highlight-icon prétend
+     préserver. Voir le commentaire sur .nk-grid > li pour le piège complet.
      <li class="nk-card"> <h3>…</h3> <p>…</p> </li> */
   .nk-card {
     background-color: var(--card);
@@ -243,6 +267,9 @@
     border-radius: var(--radius);
     color: var(--card-foreground);
     padding: 1.25rem;
+  }
+  .nk-card > p {
+    margin: 0;
   }
 
   /* Icône d'un highlight converti, posée dans une .nk-card. 2.5rem (40px) et
@@ -417,6 +444,17 @@
   }
   .nk-faq details > *:not(summary) {
     color: var(--muted-foreground);
+    /* Marge à zéro par déclaration explicite, pas par silence : la réponse
+       est aujourd'hui toujours rendue hors de .nk-prose (l'onglet FAQ du
+       produit l'affiche via son propre conteneur, cf.
+       components/storefront/product-details.tsx), mais nk-faq reste un
+       élément du vocabulaire général — rien n'empêche un contenu libre
+       principal (donc sous .nk-prose) de le réutiliser. Sans ce zéro
+       explicite, `:where(.nk-prose) p` lui ajouterait margin-block: 1em
+       en plus du padding-bottom ci-dessous, qui doit rester le seul réglage
+       de l'espacement. Voir le commentaire sur .nk-grid > li pour le piège
+       complet. */
+    margin: 0;
     padding-bottom: 1rem;
   }
   /* Bannière hero : la carte translucide posée sur le dégradé rendu par React.
