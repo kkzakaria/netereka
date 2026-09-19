@@ -1,5 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { searchImages } from "@/lib/ai/image-search";
+
+const mocks = vi.hoisted(() => ({ getEnv: vi.fn() }));
+vi.mock("@/lib/cloudflare/context", () => ({ getEnv: mocks.getEnv }));
+
+import { searchImages } from "@/lib/media/image-search";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -9,10 +13,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("searchImages", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getEnv.mockResolvedValue({ BRAVE_API_KEY: "k" });
+  });
 
-  it("retourne no_api_key quand la clé est absente", async () => {
-    const r = await searchImages({ query: "xx" }, null);
+  it("retourne no_api_key quand la clé est absente de l'environnement", async () => {
+    mocks.getEnv.mockResolvedValue({});
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("no_api_key");
   });
@@ -44,7 +52,7 @@ describe("searchImages", () => {
       }),
     ));
 
-    const r = await searchImages({ query: "Galaxy A55" }, "test-key");
+    const r = await searchImages({ query: "Galaxy A55" });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.results).toHaveLength(1);
@@ -69,7 +77,7 @@ describe("searchImages", () => {
         ],
       }),
     ));
-    const r = await searchImages({ query: "xx" }, "k");
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.results[0].source_domain).toBe("news.samsung.com");
   });
@@ -80,16 +88,17 @@ describe("searchImages", () => {
         results: [{ properties: { url: "not a url" }, title: "junk" }],
       }),
     ));
-    const r = await searchImages({ query: "xx" }, "k");
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.results).toHaveLength(0);
   });
 
-  it("envoie le header X-Subscription-Token et la query encodée", async () => {
+  it("envoie le header X-Subscription-Token (lu depuis BRAVE_API_KEY) et la query encodée", async () => {
+    mocks.getEnv.mockResolvedValue({ BRAVE_API_KEY: "secret-key" });
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await searchImages({ query: "iPhone 15", count: 5 }, "secret-key");
+    await searchImages({ query: "iPhone 15", count: 5 });
 
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toContain("q=iPhone+15");
@@ -104,30 +113,30 @@ describe("searchImages", () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await searchImages({ query: "xx", count: 999 }, "k");
+    await searchImages({ query: "xx", count: 999 });
     expect(fetchMock.mock.calls[0][0] as string).toContain("count=20");
 
-    await searchImages({ query: "xx", count: 0 }, "k");
+    await searchImages({ query: "xx", count: 0 });
     expect(fetchMock.mock.calls[1][0] as string).toContain("count=1");
   });
 
   it("retourne auth_failed pour 401/403", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 401 })));
-    const r = await searchImages({ query: "xx" }, "bad-key");
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("auth_failed");
   });
 
   it("retourne rate_limited pour 429", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("slow down", { status: 429 })));
-    const r = await searchImages({ query: "xx" }, "k");
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("rate_limited");
   });
 
   it("retourne upstream_error pour 5xx", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("oops", { status: 503 })));
-    const r = await searchImages({ query: "xx" }, "k");
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("upstream_error");
   });
@@ -135,13 +144,13 @@ describe("searchImages", () => {
   it("retourne invalid_input pour query absente ou trop courte", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect((await searchImages({} as never, "k")).ok).toBe(false);
-    expect((await searchImages({ query: "" }, "k")).ok).toBe(false);
-    expect((await searchImages({ query: " " }, "k")).ok).toBe(false);
-    expect((await searchImages({ query: 42 as never }, "k")).ok).toBe(false);
+    expect((await searchImages({} as never)).ok).toBe(false);
+    expect((await searchImages({ query: "" })).ok).toBe(false);
+    expect((await searchImages({ query: " " })).ok).toBe(false);
+    expect((await searchImages({ query: 42 as never })).ok).toBe(false);
     // Aucun appel réseau ne doit avoir lieu — la garde côté input court-circuite.
     expect(fetchMock).not.toHaveBeenCalled();
-    const r = await searchImages({ query: "" }, "k");
+    const r = await searchImages({ query: "" });
     if (!r.ok) expect(r.reason).toBe("invalid_input");
   });
 
@@ -149,7 +158,7 @@ describe("searchImages", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
       new Response("<html>oops</html>", { status: 200, headers: { "content-type": "text/html" } }),
     ));
-    const r = await searchImages({ query: "xx" }, "k");
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("parse_failed");
   });
@@ -157,7 +166,7 @@ describe("searchImages", () => {
   it("warn quand Brave 200 OK mais results manquant (schema drift)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ unexpected: "shape" })));
-    const r = await searchImages({ query: "xx" }, "k");
+    const r = await searchImages({ query: "xx" });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.results).toEqual([]);
     expect(warnSpy).toHaveBeenCalledWith(
@@ -170,14 +179,14 @@ describe("searchImages", () => {
   it("utilise count=10 par défaut", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results: [] }));
     vi.stubGlobal("fetch", fetchMock);
-    await searchImages({ query: "xx" }, "k");
+    await searchImages({ query: "xx" });
     expect(fetchMock.mock.calls[0][0] as string).toContain("count=10");
   });
 
   it("retourne timeout quand fetch est aborted", async () => {
     const aborted = Object.assign(new Error("aborted"), { name: "AbortError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(aborted));
-    const r = await searchImages({ query: "xx" }, "k", { timeoutMs: 100 });
+    const r = await searchImages({ query: "xx" }, { timeoutMs: 100 });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("timeout");
   });

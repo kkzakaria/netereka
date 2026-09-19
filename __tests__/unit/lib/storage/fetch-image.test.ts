@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const { uploadToR2Mock } = vi.hoisted(() => ({ uploadToR2Mock: vi.fn() }));
 vi.mock("@/lib/storage/images", () => ({ uploadToR2: uploadToR2Mock }));
 
-import { fetchAndUploadImage, IMAGE_MAX_BYTES } from "@/lib/ai/image-fetch";
+import { fetchAndUploadImage, IMAGE_MAX_BYTES } from "@/lib/storage/fetch-image";
 
 function makeImageResponse(opts: {
   ok?: boolean;

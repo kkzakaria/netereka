@@ -8,7 +8,7 @@ import { slugify } from "@/lib/utils";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { getImageUrl } from "@/lib/utils/images";
 import { deleteFromR2 } from "@/lib/storage/images";
-import { fetchAndUploadImage, type FetchImageResult } from "@/lib/ai/image-fetch";
+import { fetchAndUploadImage, type FetchImageResult } from "@/lib/storage/fetch-image";
 import type {
   AddImagesInput,
   CreateDraftInput,
@@ -58,7 +58,7 @@ const DIMENSION_LABELS: Array<[keyof DraftAttributesInput["dimensions"], string]
   ["weight_g", "Poids"],
 ];
 
-/** Same encoding as the wizard's step 2 and products-ai.ts. */
+/** Same encoding as the wizard's step 2. */
 export function attributesToRows(attrs: DraftAttributesInput | undefined): { name: string; value: string }[] {
   if (!attrs) return [];
   const rows: { name: string; value: string }[] = [];

@@ -164,7 +164,7 @@ export async function fetchAndUploadImage(
     try {
       await uploadToR2(file, key);
     } catch (err) {
-      console.error("[ai-product] R2 upload failed for key", key, err);
+      console.error("[fetch-image] R2 upload failed for key", key, err);
       return { ok: false, reason: "upload_failed" };
     }
 

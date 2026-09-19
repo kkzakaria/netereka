@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { colorSchema, dimensionsSchema, specSchema } from "@/lib/validations/product-ai";
+import { colorSchema, dimensionsSchema, specSchema } from "@/lib/validations/product-attributes";
 
 /**
  * Input contracts of the MCP product tools (lib/mcp/tools/products.ts).
