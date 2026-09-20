@@ -334,4 +334,32 @@ describe("updateProduct", () => {
       expect(setCall).not.toHaveProperty("faq");
     });
   });
+
+  describe("faq_html en contenu libre", () => {
+    // Trois écrivains alimentent faq_html : la conversion, le MCP et ce formulaire.
+    // Tous doivent porter la portée sur l'identifiant nu du produit, parce que la
+    // fiche rend faq_html dans un conteneur `desc-<productId>`. Une portée qui
+    // diverge ne casse rien de visible : le CSS de l'auteur cesse simplement de
+    // matcher. Ce test est le garde-fou du chemin « formulaire complet ».
+    it("assainit faq_html en le portant sur l'identifiant du produit", async () => {
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "iphone-15-pro", sku: "NET-ABCD1234", is_draft: 0 });
+      mocks.drizzleWhere.mockResolvedValueOnce(undefined);
+      const html = '<div class="nk-faq"><style>.q { color: red }</style><p>Livraison à Abidjan ?</p></div>';
+      const result = await updateProduct("prod-1", baseFormData({ faq_html: html }));
+      expect(result.success).toBe(true);
+      const written = (mocks.drizzleSet.mock.calls[0][0] as Record<string, unknown>).faq_html;
+      expect(written).toContain(".desc-prod-1 .q");
+    });
+
+    it("écrit null plutôt qu'une chaîne vide quand la FAQ est vidée", async () => {
+      mocks.queryFirst.mockResolvedValueOnce({ slug: "iphone-15-pro", sku: "NET-ABCD1234", is_draft: 0 });
+      mocks.drizzleWhere.mockResolvedValueOnce(undefined);
+      // visibleProductTabs() distingue null de "" : une chaîne vide ferait
+      // apparaître un onglet FAQ sans contenu sur la fiche.
+      const result = await updateProduct("prod-1", baseFormData({ faq_html: "" }));
+      expect(result.success).toBe(true);
+      const written = (mocks.drizzleSet.mock.calls[0][0] as Record<string, unknown>).faq_html;
+      expect(written).toBeNull();
+    });
+  });
 });
