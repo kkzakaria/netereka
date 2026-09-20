@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import "./html-editor.css";
+import { NK_PREVIEW_CSS } from "@/lib/content/nk-preview-css";
 
 // Security note: the regex character class [a-zA-Z0-9_-] is intentionally
 // restrictive to prevent attribute injection via the scope class value.
@@ -46,6 +47,7 @@ export function buildSrcDoc(content: string) {
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{font-family:system-ui,sans-serif;padding:16px;margin:0;color:#1a1a1a;line-height:1.6}img{max-width:100%;height:auto}</style>
+<style>${NK_PREVIEW_CSS}</style>
 ${styles.join("\n")}
 </head>
 <body>${wrappedBody}</body>
