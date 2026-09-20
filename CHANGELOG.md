@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0](https://github.com/kkzakaria/netereka/compare/v1.17.0...v2.0.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* le contrat MCP des produits remplace le champ `story` par `faq_html`. Un client qui envoie encore `story` reçoit un succès et son champ est ignoré. Les règles de rédaction exposées par l'outil décrivent le nouveau champ.
+
+### Features
+
+* contenu libre pour les fiches produit et les bannières (phase 2) ([83a9d79](https://github.com/kkzakaria/netereka/commit/83a9d791ff848d86b964ee892a0b176636f7a589))
+* contenu libre pour les fiches produit et les bannières (phase 2) ([83a9d79](https://github.com/kkzakaria/netereka/commit/83a9d791ff848d86b964ee892a0b176636f7a589))
+* **storefront:** contenu libre pour le hero et la fiche produit (lot A, phase 1) ([#309](https://github.com/kkzakaria/netereka/issues/309)) ([13823fd](https://github.com/kkzakaria/netereka/commit/13823fd3f57594fa6671525524f44483d2e3c719))
+
 ## [1.17.0](https://github.com/kkzakaria/netereka/compare/v1.16.0...v1.17.0) (2026-09-12)
 
 
