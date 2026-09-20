@@ -259,6 +259,69 @@ describe("createBanner", () => {
     expect(result.success).toBe(true);
     expect(contentSetMock).not.toHaveBeenCalled();
   });
+
+  // ── Atomicité : rollback si l'assainissement échoue ─────────────────────
+
+  it("supprime la ligne insérée si l'écriture du content_html assaini échoue", async () => {
+    const fromMock = vi.fn().mockResolvedValue([{ maxOrder: 0 }]);
+    const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+    const returningMock = vi.fn().mockResolvedValue([{ id: 42 }]);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+
+    const contentWhereMock = vi.fn().mockRejectedValue(new Error("D1 update failed"));
+    const contentSetMock = vi.fn().mockReturnValue({ where: contentWhereMock });
+    mocks.dbUpdate.mockReturnValue({ set: contentSetMock });
+
+    const deleteWhereMock = vi.fn().mockResolvedValue(undefined);
+    mocks.dbDelete.mockReturnValue({ where: deleteWhereMock });
+
+    mocks.getDrizzle.mockResolvedValue({
+      select: selectMock,
+      insert: mocks.dbInsert,
+      update: mocks.dbUpdate,
+      delete: mocks.dbDelete,
+    });
+
+    const result = await createBanner(
+      makeCreateBannerFormData({ content_html: "<p>Promo</p>" })
+    );
+
+    // Retry doit repartir propre : pas de doublon en base.
+    expect(result.success).toBe(false);
+    expect(mocks.dbDelete).toHaveBeenCalled();
+    expect(deleteWhereMock).toHaveBeenCalled();
+  });
+
+  it("signale une bannière orpheline si le rollback échoue aussi (au lieu de le taire)", async () => {
+    const fromMock = vi.fn().mockResolvedValue([{ maxOrder: 0 }]);
+    const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+    const returningMock = vi.fn().mockResolvedValue([{ id: 42 }]);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+
+    const contentWhereMock = vi.fn().mockRejectedValue(new Error("D1 update failed"));
+    const contentSetMock = vi.fn().mockReturnValue({ where: contentWhereMock });
+    mocks.dbUpdate.mockReturnValue({ set: contentSetMock });
+
+    const deleteWhereMock = vi.fn().mockRejectedValue(new Error("D1 delete failed"));
+    mocks.dbDelete.mockReturnValue({ where: deleteWhereMock });
+
+    mocks.getDrizzle.mockResolvedValue({
+      select: selectMock,
+      insert: mocks.dbInsert,
+      update: mocks.dbUpdate,
+      delete: mocks.dbDelete,
+    });
+
+    const result = await createBanner(
+      makeCreateBannerFormData({ content_html: "<p>Promo</p>" })
+    );
+
+    expect(result.success).toBe(false);
+    // L'admin doit être averti qu'une ligne orpheline subsiste (id connu).
+    expect(result.error).toContain("42");
+  });
 });
 
 // ─── updateBanner ───────────────────────────────────────────────────────────

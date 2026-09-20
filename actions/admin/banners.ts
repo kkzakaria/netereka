@@ -138,10 +138,30 @@ export async function createBanner(formData: FormData): Promise<ActionResult> {
     // qui n'existe qu'après l'INSERT. D'où ce second passage : il n'y a pas de
     // façon d'assainir correctement avant de connaître l'id.
     if (data.content_html) {
-      await db
-        .update(banners)
-        .set({ content_html: sanitizeDescriptionHtml(data.content_html, `banner-${inserted.id}`) })
-        .where(eq(banners.id, inserted.id));
+      try {
+        await db
+          .update(banners)
+          .set({ content_html: sanitizeDescriptionHtml(data.content_html, `banner-${inserted.id}`) })
+          .where(eq(banners.id, inserted.id));
+      } catch (updateError) {
+        // La ligne existe déjà mais sans son contenu assaini : la laisser en
+        // l'état exposerait une bannière fantôme et, en cas de nouvel essai,
+        // un doublon. On la supprime pour repartir propre.
+        console.error("[admin/banners] createBanner: échec de l'assainissement, rollback:", updateError);
+        try {
+          await db.delete(banners).where(eq(banners.id, inserted.id));
+        } catch (deleteError) {
+          console.error(
+            `[admin/banners] createBanner: échec du rollback, bannière orpheline id=${inserted.id}:`,
+            deleteError
+          );
+          return {
+            success: false,
+            error: `Échec de la création de la bannière et du nettoyage automatique (id=${inserted.id}). Contactez un administrateur.`,
+          };
+        }
+        return { success: false, error: "Échec de la création de la bannière. Veuillez réessayer." };
+      }
     }
 
     revalidatePath("/banners");
