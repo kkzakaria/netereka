@@ -142,6 +142,16 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
               <CardTitle>Informations</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {contentHtml.trim() && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                  Cette bannière a un contenu libre (ci-dessous) : c&apos;est lui qui
+                  s&apos;affiche sur la vitrine, pas les champs de cette carte.{" "}
+                  <strong className="font-medium text-foreground">Le titre reste utilisé</strong>{" "}
+                  comme texte alternatif de l&apos;image et libellé d&apos;accessibilité de la
+                  bannière — ne le videz pas. Le sous-titre et le texte du bouton, eux, ne
+                  s&apos;affichent plus : modifiez-les directement dans le contenu libre.
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="title">Titre</Label>
                 <Input
@@ -154,7 +164,14 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="subtitle">Sous-titre</Label>
+                <Label htmlFor="subtitle">
+                  Sous-titre
+                  {contentHtml.trim() && (
+                    <span className="ml-2 font-normal text-muted-foreground">
+                      (ne s&apos;affiche plus — voir le contenu libre)
+                    </span>
+                  )}
+                </Label>
                 <Textarea
                   id="subtitle"
                   name="subtitle"
@@ -176,7 +193,14 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="cta_text">Texte du bouton</Label>
+                  <Label htmlFor="cta_text">
+                    Texte du bouton
+                    {contentHtml.trim() && (
+                      <span className="ml-2 font-normal text-muted-foreground">
+                        (ne s&apos;affiche plus)
+                      </span>
+                    )}
+                  </Label>
                   <Input
                     id="cta_text"
                     name="cta_text"
@@ -195,9 +219,23 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
               <CardTitle>Apparence</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {contentHtml.trim() && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                  Badge et prix ne s&apos;affichent plus tant que le contenu libre
+                  ci-dessous est renseigné — modifiez-les directement dedans. Le
+                  dégradé, lui, reste utilisé comme fond de la bannière.
+                </div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="badge_text">Texte du badge</Label>
+                  <Label htmlFor="badge_text">
+                    Texte du badge
+                    {contentHtml.trim() && (
+                      <span className="ml-2 font-normal text-muted-foreground">
+                        (inactif)
+                      </span>
+                    )}
+                  </Label>
                   <Input
                     id="badge_text"
                     name="badge_text"
@@ -241,7 +279,14 @@ export function BannerForm({ banner, savedGradients: initialGradients = [] }: Ba
               />
 
               <div className="space-y-2">
-                <Label htmlFor="price">Prix (FCFA)</Label>
+                <Label htmlFor="price">
+                  Prix (FCFA)
+                  {contentHtml.trim() && (
+                    <span className="ml-2 font-normal text-muted-foreground">
+                      (inactif — modifiable dans le contenu libre)
+                    </span>
+                  )}
+                </Label>
                 <Input
                   id="price"
                   name="price"
