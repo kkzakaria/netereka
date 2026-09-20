@@ -16,7 +16,7 @@ Ce lot lève cette limite, ajoute la production d'images, et donne à l'administ
 
 2. **L'administration gagne une surface conversationnelle, bâtie sur TanStack AI.** L'administrateur échange avec le modèle et valide depuis la même page. **Ce n'est pas un retour de l'IA embarquée retirée au lot A** — voir § 1, qui est le cœur de ce document.
 
-3. **Le MCP peut publier, jamais dépublier.** Une mise en ligne ratée est visible et se corrige ; un retrait passe inaperçu jusqu'à ce qu'un client cherche un produit disparu.
+3. **Le MCP peut proposer une publication, jamais une dépublication.** Comme toute modification atteignant un client, une publication passe par une révision que l'administrateur applique (§ 2.3). La dépublication, elle, n'est pas exposée du tout : une mise en ligne ratée est visible et se corrige ; un retrait passe inaperçu jusqu'à ce qu'un client cherche un produit disparu.
 
 4. **La génération d'images est bornée par un quota et un budget mensuel.** `grok-imagine-image-2.0` est facturé à l'image. Le dépassement renvoie un **échec typé**, jamais un résultat vide : ce lot hérite d'une session où quatre défauts sur douze étaient des pertes silencieuses.
 
@@ -66,25 +66,29 @@ Une révision est une proposition de modification, non appliquée.
 | --- | --- |
 | modifier une fiche **publiée** | révision |
 | modifier un **brouillon** | écriture directe (comportement du lot A, inchangé) |
-| publier | révision — voir § 2.3 |
+| publier | révision de type `publish` — § 2.3 |
 | dépublier | **interdit au MCP** |
 | créer un brouillon | écriture directe |
 
-### 2.3 Une contradiction à trancher
+### 2.3 La publication passe par une révision — et pourquoi
 
-Les décisions 1 et 3 se contredisent si on les applique littéralement.
+**Décidé.** `publish_product` ne publie pas : il dépose une révision de type `publish`, que l'administrateur applique.
 
-Si une modification d'une fiche publiée demande une validation, mais qu'une publication n'en demande pas, alors le contournement est trivial : créer un brouillon, y écrire n'importe quoi, le publier. La barrière ne protège plus rien.
+Sans cette règle, la barrière du § 2.1 ne protégerait rien. Le contournement serait trivial — créer un brouillon, y écrire n'importe quoi, le publier — et le contenu atteindrait la vitrine sans qu'aucun humain l'ait lu, exactement ce que la validation existe pour empêcher.
 
-**Ma lecture, à renverser si elle ne correspond pas à l'intention :** `publish_product` dépose lui aussi une révision, de type `publish`. L'administrateur qui l'applique voit la fiche entière avant sa mise en ligne — ce qui est précisément la relecture qu'il voudrait. Le MCP garde donc le pouvoir de *proposer* une publication, et la frontière « rien n'atteint un client sans un clic humain » reste vraie sans exception.
+La frontière tient donc **sans exception** : rien n'atteint un client sans un clic humain. Une règle à trou ne se défend pas six mois plus tard, et c'est toujours le trou qu'on emprunte quand on est pressé.
 
-Le coût de ce choix : dicter une fiche de bout en bout demande un clic à la fin. Le bénéfice : la règle n'a pas de trou, et une règle à trou ne se défend pas six mois plus tard.
+L'administrateur qui applique une révision `publish` voit la fiche entière avant sa mise en ligne, ce qui est précisément la relecture qu'il voudrait à ce moment. Le coût réel se réduit donc à un clic au bout d'une dictée.
+
+**Implication pour l'écran de validation (§ 2.4) :** une révision `publish` ne se compare pas à un état antérieur — il n'y en a pas. L'écran montre la fiche complète telle qu'elle paraîtra, pas un côte-à-côte.
 
 ### 2.4 L'écran de validation
 
 Une révision se lit, pas se devine. L'écran montre, côte à côte, **le rendu actuel et le rendu proposé**, dans le conteneur de portée correct, avec le vocabulaire `nk-` chargé.
 
 Un diff textuel de HTML est illisible et le lot A l'a prouvé à ses dépens : trois défauts sur douze portaient sur de la mise en forme qu'aucune lecture de code n'aurait attrapée. C'est le rendu qu'il faut comparer, pas la source.
+
+Une révision `publish` fait exception au côte-à-côte : il n'y a pas d'état antérieur, l'écran montre la fiche complète telle qu'elle paraîtra.
 
 Les avertissements de `checkDesignConformance` s'affichent à côté du rendu proposé, sans bloquer l'application — cohérent avec le lot A, où le contrôle avertit sans jamais refuser.
 
@@ -106,7 +110,7 @@ Les neuf outils du lot A restent, avec leur périmètre élargi. On n'ajoute pas
 | `set_product_variants` | idem |
 | `delete_product_draft` | reste borné aux brouillons |
 | `search_products`, `list_categories` | inchangés |
-| **`publish_product`** | nouveau — dépose une révision de type `publish` |
+| **`publish_product`** | nouveau — dépose une révision `publish`, ne publie pas lui-même |
 | **`get_banner`, `update_banner`, `create_banner`** | nouveaux — bannières, révision systématique (toutes sont publiées) |
 | **`search_product_images`** | nouveau — § 4.1 |
 | **`generate_product_image`** | nouveau — § 4.2 |
@@ -203,6 +207,5 @@ Chaque étape est livrable et vérifiable seule. La première apporte déjà une
 
 ## 9. Questions ouvertes
 
-- **La contradiction du § 2.3** est tranchée par ma lecture, pas par une décision explicite. À confirmer ou renverser avant l'implémentation.
 - **Le plafond mensuel d'images** n'a pas de valeur. Elle dépend du budget xAI réel, que je n'ai pas.
 - **La surface conversationnelle peut être abandonnée** si l'usage depuis Claude Desktop suffit. Le reste du lot tient sans elle.
