@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({ deleteFromR2: vi.fn(), fetchAndUploadImage: vi
 
 vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => d1.current!.binding }));
 vi.mock("@/lib/storage/images", () => ({ deleteFromR2: mocks.deleteFromR2, uploadToR2: vi.fn() }));
-vi.mock("@/lib/ai/image-fetch", () => ({ fetchAndUploadImage: mocks.fetchAndUploadImage }));
+vi.mock("@/lib/storage/fetch-image", () => ({ fetchAndUploadImage: mocks.fetchAndUploadImage }));
 
 import { addImagesFromUrls, removeImage, setColorVariants, type DraftAudit } from "@/lib/db/product-drafts";
 

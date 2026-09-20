@@ -18,17 +18,6 @@ describe("createDraftSchema", () => {
     expect(createDraftSchema.safeParse({ name: "a", category_id: "c", short_description: "b".repeat(121) }).success).toBe(false);
   });
 
-  it("valide la story avec les règles de product-story", () => {
-    const base = { name: "a", category_id: "c" };
-    expect(createDraftSchema.safeParse({ ...base, story: { highlights: [{ icon: "camera", label: "x" }] } }).success).toBe(false);
-    expect(createDraftSchema.safeParse({
-      ...base,
-      story: { tagline: "  t  ", highlights: [
-        { icon: "camera", label: "a" }, { icon: "battery", label: "b" }, { icon: "display", label: "c" },
-      ] },
-    }).data?.story?.tagline).toBe("t");
-  });
-
   it("refuse une couleur hex invalide et plus de 12 couleurs", () => {
     const base = { name: "a", category_id: "c" };
     expect(createDraftSchema.safeParse({ ...base, attributes: { colors: [{ name: "Noir", hex: "black" }] } }).success).toBe(false);
@@ -41,6 +30,32 @@ describe("createDraftSchema", () => {
     expect(createDraftSchema.safeParse({ ...base, pricing: { base_price: -1 } }).success).toBe(false);
     expect(createDraftSchema.safeParse({ ...base, pricing: { base_price: 10.5 } }).success).toBe(false);
     expect(createDraftSchema.safeParse({ ...base, pricing: { base_price: 15000, compare_price: null } }).success).toBe(true);
+  });
+});
+
+describe("contrat de contenu", () => {
+  it("rejette un champ story, qui n'existe plus", () => {
+    const parsed = createDraftSchema.safeParse({
+      name: "X", category_id: "c1",
+      story: { tagline: "Accroche" },
+    });
+    // Le schéma est strict sur ce qu'il connaît : story n'est simplement plus lu.
+    if (parsed.success) expect("story" in parsed.data).toBe(false);
+  });
+
+  it("accepte faq_html", () => {
+    const parsed = createDraftSchema.safeParse({
+      name: "X", category_id: "c1",
+      faq_html: "<div class='nk-faq'><details><summary>Q</summary><p>R</p></details></div>",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("borne faq_html à la taille d'entrée du sanitizer", () => {
+    const parsed = createDraftSchema.safeParse({
+      name: "X", category_id: "c1", faq_html: "a".repeat(512_001),
+    });
+    expect(parsed.success).toBe(false);
   });
 });
 

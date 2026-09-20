@@ -17,7 +17,6 @@ import {
   MessageMultiple02Icon,
   ChartLineData02Icon,
   WhatsappIcon,
-  AiBrain01Icon,
 } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
@@ -62,7 +61,6 @@ const navSections: NavSection[] = [
     label: "Paramètres",
     items: [
       { href: "/whatsapp/settings", label: "Config WhatsApp", icon: WhatsappIcon, minRole: "admin" },
-      { href: "/ai-settings", label: "Config AI", icon: AiBrain01Icon, minRole: "admin" },
       { href: "/users", label: "Utilisateurs", icon: UserSettings01Icon, minRole: "admin" },
       { href: "/audit-log", label: "Journal d'audit", icon: Audit01Icon, minRole: "admin" },
     ],

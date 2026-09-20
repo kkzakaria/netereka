@@ -1,18 +1,18 @@
 /**
  * Brave Image Search wrapper.
  *
- * Used as a custom Anthropic tool — when Claude calls `image_search` during
- * product research, the loop in `researchProduct` invokes this and returns
- * the results back as a tool_result block. The model then filters the
- * candidates (rejecting banner ads, listicles, watermarked promo shots,
- * multi-product comparisons, etc.) before emitting `image_candidates` in
- * submit_product.
+ * Anchors an MCP tool's product research in reality: the client (the model)
+ * calls this to find candidate image URLs, then judges their relevance
+ * itself — there is no server-side vision filtering pass here, the MCP
+ * client's own vision does that triage.
  *
  * Free tier: 2000 queries/month, 1 query/sec. We do not enforce client-side
  * rate-limiting — Brave returns 429 which we surface verbatim.
  *
  * Docs: https://api.search.brave.com/app/documentation/image-search/get-started
  */
+
+import { getEnv } from "@/lib/cloudflare/context";
 
 const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/images/search";
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -61,12 +61,16 @@ interface BraveItem {
  * `properties.url` and skip items missing it — feeding HTML page URLs into
  * `image_candidates` reintroduces the `bad_content_type` failure mode the
  * upstream pipeline was hardened against.
+ *
+ * Reads its own key from the `BRAVE_API_KEY` secret so a caller (the future
+ * MCP tool) has nothing to pass in.
  */
 export async function searchImages(
   input: ImageSearchInput,
-  apiKey: string | null,
   opts: { timeoutMs?: number } = {},
 ): Promise<ImageSearchResult> {
+  const env = await getEnv();
+  const apiKey = env.BRAVE_API_KEY ?? null;
   if (!apiKey) return { ok: false, reason: "no_api_key" };
 
   // Validate before any work — Anthropic only best-effort enforces input_schema,

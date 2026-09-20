@@ -5,8 +5,7 @@ import { checkKVRateLimit } from "@/lib/rate-limit/kv-window-limit";
 // Fixed-window behaviour: a bucket is `{ count, resetAt }` in KV, `resetAt`
 // is set once on the first accepted call of a window and never touched by
 // later accepted calls. This pins that contract down — see the doc comment
-// in lib/rate-limit/kv-window-limit.ts and lib/ai/rate-limit.ts for the
-// same trade-off documented independently.
+// in lib/rate-limit/kv-window-limit.ts for the fuller rationale.
 
 const NOW = 1_000_000_000_000; // fixed epoch for deterministic resetAt
 const WINDOW_SECONDS = 3600;

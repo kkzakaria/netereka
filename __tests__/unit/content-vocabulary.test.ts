@@ -9,13 +9,28 @@ const CLASSES = [
   "nk-grid", "nk-split",
   "nk-lead", "nk-card", "nk-media", "nk-specs", "nk-quote", "nk-cta",
   "nk-banner", "nk-highlight-icon",
-  "nk-faq",
+  "nk-faq", "nk-prose",
 ];
 
 describe("vocabulaire de contenu libre", () => {
   it("définit chaque classe du vocabulaire", () => {
     for (const c of CLASSES) {
       expect(css, `classe ${c} absente de globals.css`).toContain(`.${c}`);
+    }
+  });
+
+  it("couvre h1 à h6 dans le plancher typographique .nk-prose", () => {
+    // h1 a été omis à l'origine : le preflight de Tailwind pose
+    // `font-size: inherit; font-weight: inherit` sur h1..h6, et un <h1> sans
+    // règle de plancher retombe donc au texte courant (cas réel : la fiche
+    // "garmin-fenix-8-pro-amoled-sapphire-titane-51-mm", dont le <h1> nu
+    // n'affichait plus aucun titre). Itérer les six balises plutôt que de
+    // n'en lister que quelques-unes est le seul moyen que ce test empêche la
+    // prochaine balise oubliée de passer inaperçue.
+    for (const tag of ["h1", "h2", "h3", "h4", "h5", "h6"]) {
+      expect(css, `:where(.nk-prose) ${tag} absent du plancher`).toMatch(
+        new RegExp(`:where\\(\\.nk-prose\\)\\s*${tag}\\b`)
+      );
     }
   });
 
@@ -73,4 +88,39 @@ describe("vocabulaire de contenu libre", () => {
     expect(layer).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(layer).not.toMatch(/\brgba?\(/);
   });
+
+  // ── Verrouille trois rounds de correction déjà en place, jamais couverts
+  //    par un test rouge avant celui-ci (item 7 du 2e lot de revue). Chacun
+  //    corrige un cas où le plancher `:where(.nk-prose) …` aurait imposé une
+  //    margin non voulue sur un élément qui doit rester silencieux — voir le
+  //    commentaire sur `.nk-grid > li` dans globals.css pour le piège complet.
+  it("déclare une margin explicite sur .nk-grid > li, .nk-lead et .nk-card > p", () => {
+    for (const selector of [".nk-grid > li", ".nk-lead", ".nk-card > p"]) {
+      const body = ruleBody(css, selector);
+      expect(body, `règle ${selector} absente`).not.toBeNull();
+      expect(body, `${selector} ne déclare pas de margin`).toMatch(/\bmargin(-\w+)?\s*:/);
+    }
+  });
+
+  it("déclare une margin sur .nk-faq details > *:not(summary) et pose .nk-card > .nk-highlight-icon + p", () => {
+    const faqBody = ruleBody(css, ".nk-faq details > *:not(summary)");
+    expect(faqBody, ".nk-faq details > *:not(summary) absente").not.toBeNull();
+    expect(faqBody).toMatch(/\bmargin(-\w+)?\s*:/);
+
+    expect(css).toContain(".nk-card > .nk-highlight-icon + p");
+  });
 });
+
+/** Extrait le corps `{ … }` de la première règle dont le sélecteur (trim,
+ *  espaces normalisés) correspond exactement à `selector`. Retourne `null`
+ *  si la règle n'existe pas. Volontairement simple (pas de parseur CSS) :
+ *  ce fichier ne contient pas de sélecteur ambigu au regard de cette
+ *  recherche littérale. */
+function ruleBody(source: string, selector: string): string | null {
+  const normalized = source.replace(/\s+/g, " ");
+  const needle = `${selector} {`.replace(/\s+/g, " ");
+  const start = normalized.indexOf(needle);
+  if (start === -1) return null;
+  const end = normalized.indexOf("}", start);
+  return end === -1 ? null : normalized.slice(start + needle.length, end);
+}

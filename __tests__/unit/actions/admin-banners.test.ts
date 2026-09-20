@@ -41,6 +41,7 @@ vi.mock("@/lib/cloudflare/context", () => ({
 
 import {
   createBanner,
+  updateBanner,
   uploadBannerImage,
   setBannerImageUrl,
   createBannerGradient,
@@ -101,12 +102,18 @@ describe("createBanner", () => {
     const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
     mocks.dbInsert.mockReturnValue({ values: valuesMock });
 
+    // createBanner écrit content_html dans un second temps, quand l'id existe.
+    const contentWhereMock = vi.fn().mockResolvedValue(undefined);
+    const contentSetMock = vi.fn().mockReturnValue({ where: contentWhereMock });
+    mocks.dbUpdate.mockReturnValue({ set: contentSetMock });
+
     mocks.getDrizzle.mockResolvedValue({
       select: selectMock,
       insert: mocks.dbInsert,
+      update: mocks.dbUpdate,
     });
 
-    return { selectMock, fromMock, valuesMock, returningMock };
+    return { selectMock, fromMock, valuesMock, returningMock, contentSetMock };
   }
 
   function makeCreateBannerFormData(overrides: Record<string, string> = {}): FormData {
@@ -218,6 +225,136 @@ describe("createBanner", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Échec");
+  });
+
+  // ── Contenu libre ────────────────────────────────────────────────────────
+
+  it("assainit content_html avec la portée de la bannière", async () => {
+    const { contentSetMock } = makeCreateBannerMock(3);
+    const result = await createBanner(
+      makeCreateBannerFormData({
+        content_html: "<style>.t{color:var(--primary)}</style><p class=\"t\">Promo</p>",
+      }),
+    );
+    expect(result.success).toBe(true);
+    const written = contentSetMock.mock.calls[0][0] as { content_html: string };
+    // Le scoping est inscrit dans le HTML stocké, avec l'id obtenu à l'INSERT.
+    expect(written.content_html).toContain(".desc-banner-42 .t");
+    expect(written.content_html).toContain("Promo");
+  });
+
+  it("retire le script d'un content_html hostile", async () => {
+    const { contentSetMock } = makeCreateBannerMock(0);
+    await createBanner(
+      makeCreateBannerFormData({ content_html: "<p>ok</p><script>alert(1)</script>" }),
+    );
+    const written = contentSetMock.mock.calls[0][0] as { content_html: string };
+    expect(written.content_html).not.toContain("alert(1)");
+    expect(written.content_html).toContain("<p>ok</p>");
+  });
+
+  it("n'écrit rien de plus quand content_html est absent", async () => {
+    const { contentSetMock } = makeCreateBannerMock(0);
+    const result = await createBanner(makeCreateBannerFormData());
+    expect(result.success).toBe(true);
+    expect(contentSetMock).not.toHaveBeenCalled();
+  });
+
+  // ── Atomicité : rollback si l'assainissement échoue ─────────────────────
+
+  it("supprime la ligne insérée si l'écriture du content_html assaini échoue", async () => {
+    const fromMock = vi.fn().mockResolvedValue([{ maxOrder: 0 }]);
+    const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+    const returningMock = vi.fn().mockResolvedValue([{ id: 42 }]);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+
+    const contentWhereMock = vi.fn().mockRejectedValue(new Error("D1 update failed"));
+    const contentSetMock = vi.fn().mockReturnValue({ where: contentWhereMock });
+    mocks.dbUpdate.mockReturnValue({ set: contentSetMock });
+
+    const deleteWhereMock = vi.fn().mockResolvedValue(undefined);
+    mocks.dbDelete.mockReturnValue({ where: deleteWhereMock });
+
+    mocks.getDrizzle.mockResolvedValue({
+      select: selectMock,
+      insert: mocks.dbInsert,
+      update: mocks.dbUpdate,
+      delete: mocks.dbDelete,
+    });
+
+    const result = await createBanner(
+      makeCreateBannerFormData({ content_html: "<p>Promo</p>" })
+    );
+
+    // Retry doit repartir propre : pas de doublon en base.
+    expect(result.success).toBe(false);
+    expect(mocks.dbDelete).toHaveBeenCalled();
+    expect(deleteWhereMock).toHaveBeenCalled();
+  });
+
+  it("signale une bannière orpheline si le rollback échoue aussi (au lieu de le taire)", async () => {
+    const fromMock = vi.fn().mockResolvedValue([{ maxOrder: 0 }]);
+    const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+    const returningMock = vi.fn().mockResolvedValue([{ id: 42 }]);
+    const valuesMock = vi.fn().mockReturnValue({ returning: returningMock });
+    mocks.dbInsert.mockReturnValue({ values: valuesMock });
+
+    const contentWhereMock = vi.fn().mockRejectedValue(new Error("D1 update failed"));
+    const contentSetMock = vi.fn().mockReturnValue({ where: contentWhereMock });
+    mocks.dbUpdate.mockReturnValue({ set: contentSetMock });
+
+    const deleteWhereMock = vi.fn().mockRejectedValue(new Error("D1 delete failed"));
+    mocks.dbDelete.mockReturnValue({ where: deleteWhereMock });
+
+    mocks.getDrizzle.mockResolvedValue({
+      select: selectMock,
+      insert: mocks.dbInsert,
+      update: mocks.dbUpdate,
+      delete: mocks.dbDelete,
+    });
+
+    const result = await createBanner(
+      makeCreateBannerFormData({ content_html: "<p>Promo</p>" })
+    );
+
+    expect(result.success).toBe(false);
+    // L'admin doit être averti qu'une ligne orpheline subsiste (id connu).
+    expect(result.error).toContain("42");
+  });
+});
+
+// ─── updateBanner ───────────────────────────────────────────────────────────
+
+describe("updateBanner", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSession.mockResolvedValue(mockAdminSession);
+  });
+
+  it("assainit content_html avec la portée de la bannière", async () => {
+    const { setMock } = makeDrizzleMock({ id: 7 });
+    const fd = new FormData();
+    fd.append("title", "Promo");
+    fd.append("link_url", "/c/promos");
+    fd.append("content_html", "<style>.t{color:var(--primary)}</style><p class=\"t\">Promo</p>");
+    const result = await updateBanner(7, fd);
+    expect(result.success).toBe(true);
+    const written = setMock.mock.calls[0][0] as { content_html: string | null };
+    expect(written.content_html).toContain(".desc-banner-7 .t");
+  });
+
+  it("efface content_html quand le champ est vidé", async () => {
+    // null plutôt que "" : le hero teste la présence du contenu, et une chaîne
+    // vide lui ferait afficher une carte vide au lieu de son repli.
+    const { setMock } = makeDrizzleMock({ id: 7 });
+    const fd = new FormData();
+    fd.append("title", "Promo");
+    fd.append("link_url", "/c/promos");
+    fd.append("content_html", "");
+    await updateBanner(7, fd);
+    const written = setMock.mock.calls[0][0] as { content_html: string | null };
+    expect(written.content_html).toBeNull();
   });
 });
 

@@ -12,9 +12,8 @@
  *
  * The window is genuinely fixed, not sliding: storage is `{ count, resetAt }`
  * and `resetAt` is captured once, on the first accepted call of each window,
- * then left untouched by every later call in that same window. This mirrors
- * `lib/ai/rate-limit.ts`'s documented trade-off exactly (see that file for
- * the fuller rationale) — an earlier version of this function re-`put` the
+ * then left untouched by every later call in that same window. This is a
+ * deliberate trade-off: an earlier version of this function re-`put` the
  * entry with a fresh `expirationTtl: windowSeconds` on every accepted call,
  * which slides the expiry forward each time and means a caller whose calls
  * are spaced closer together than the window never actually resets: five
@@ -49,8 +48,8 @@ export async function checkKVRateLimit(
   // No bucket yet, or the previous window already closed: start a fresh
   // fixed window. Also the safe fallback for a pre-migration value written
   // by the old plain-counter format (a bare numeric string fails to parse
-  // as a Bucket) — same "repart à zéro" tolerance lib/ai/rate-limit.ts
-  // already applies to malformed KV values.
+  // as a Bucket) — same "repart à zéro" tolerance applied to malformed KV
+  // values.
   if (!bucket || bucket.resetAt <= now) {
     const fresh: Bucket = { count: 1, resetAt: now + windowSeconds * 1000 };
     // Floored at 60 for the same reason as the accepted-call write below: KV

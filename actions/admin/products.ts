@@ -11,39 +11,20 @@ import { products } from "@/lib/db/schema";
 import { slugify, type ActionResult } from "@/lib/utils";
 import { deleteFromR2 } from "@/lib/storage/images";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
-import {
-  taglineSchema,
-  highlightsSchema,
-  featureBlocksSchema,
-  faqSchema,
-} from "@/lib/validations/product-story";
 
 const DB_CONSTRAINT_SKU = "UNIQUE constraint failed: products.sku";
 const DB_CONSTRAINT_SLUG = "UNIQUE constraint failed: products.slug";
 
 const idSchema = z.string().min(1, "ID requis");
 
-// Sentinel string used to force Zod validation failure for non-parseable JSON inputs.
-const INVALID_JSON_SENTINEL = "__invalid__";
-
-/** FormData-safe JSON preprocessor: null/empty → null, valid JSON string → parsed, otherwise sentinel. */
-function parseNullableJsonString(value: unknown): unknown {
-  if (value == null || (typeof value === "string" && value.trim() === "")) return null;
-  if (typeof value !== "string") return INVALID_JSON_SENTINEL;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return INVALID_JSON_SENTINEL;
-  }
-}
-
 const productSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
   category_id: z.string().min(1, "La catégorie est requise"),
   brand: z.string().optional().default(""),
-  description: z.string().optional().default(""),
+  description: z.string().max(512_000).optional().default(""),
   description_type: z.enum(["richtext", "html"]).optional().default("richtext"),
   short_description: z.string().optional().default(""),
+  faq_html: z.string().max(512_000).optional().default(""),
   base_price: z.coerce.number().int().min(0, "Le prix doit être positif"),
   compare_price: z.coerce.number().int().min(0).optional(),
   stock_quantity: z.coerce.number().int().min(0).default(0),
@@ -53,80 +34,7 @@ const productSchema = z.object({
   meta_description: z.string().max(160).optional().default(""),
   is_active: z.coerce.number().int().min(0).max(1).default(1),
   is_featured: z.coerce.number().int().min(0).max(1).default(0),
-  tagline: z.preprocess(
-    (v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v),
-    taglineSchema,
-  ),
-  highlights: z.preprocess(parseNullableJsonString, highlightsSchema),
-  feature_blocks: z.preprocess(parseNullableJsonString, featureBlocksSchema),
-  faq: z.preprocess(parseNullableJsonString, faqSchema),
 });
-
-/** @deprecated Never called from the UI — product creation now goes through createDraftProduct() + updateProduct(). Scheduled for removal once the draft flow is confirmed stable in production. */
-export async function createProduct(formData: FormData): Promise<ActionResult> {
-  console.warn("[admin/products] createProduct is deprecated and not called from the UI. Use createDraftProduct + updateProduct.");
-  await requireAdmin();
-
-  const raw = Object.fromEntries(formData);
-  if (!raw.slug || (raw.slug as string).trim() === "") {
-    raw.slug = slugify(raw.name as string);
-  }
-
-  const parsed = productSchema.safeParse(raw);
-  if (!parsed.success) {
-    const flat = parsed.error.flatten();
-    const msg = parsed.error.issues.map((e: { message: string }) => e.message).join(", ");
-    return { success: false, error: msg, fieldErrors: flat.fieldErrors };
-  }
-
-  const data = parsed.data;
-  const id = nanoid();
-  // slug and sku are not in productSchema (server-managed) — read them directly from raw
-  const slug = (raw.slug as string | undefined) ?? "";
-  const sku = (raw.sku as string | undefined) ?? "";
-
-  // Ensure unique slug — return error like categories for consistency
-  const existing = await queryFirst<{ id: string }>(
-    "SELECT id FROM products WHERE slug = ?",
-    [slug]
-  );
-  if (existing) {
-    return { success: false, error: `Un produit avec le slug "${slug}" existe déjà` };
-  }
-
-  try {
-    await execute(
-      `INSERT INTO products (id, category_id, name, slug, description, short_description, base_price, compare_price, sku, brand, is_active, is_featured, stock_quantity, low_stock_threshold, weight_grams, meta_title, meta_description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-      [
-        id,
-        data.category_id,
-        data.name,
-        slug,
-        data.description || null,
-        data.short_description || null,
-        data.base_price,
-        data.compare_price ?? null,
-        sku || null,
-        data.brand || null,
-        data.is_active,
-        data.is_featured,
-        data.stock_quantity,
-        data.low_stock_threshold,
-        data.weight_grams ?? null,
-        data.meta_title || null,
-        data.meta_description || null,
-      ]
-    );
-  } catch (error) {
-    console.error("[admin/products] createProduct error:", error);
-    return { success: false, error: "Erreur lors de la création du produit" };
-  }
-
-  revalidatePath("/products");
-  revalidatePath("/dashboard");
-  return { success: true, id };
-}
 
 export async function updateProduct(
   id: string,
@@ -191,6 +99,7 @@ export async function updateProduct(
   const finalDescription = data.description_type === "html" && data.description
     ? sanitizeDescriptionHtml(data.description, id)
     : data.description || null;
+  const finalFaqHtml = data.faq_html ? sanitizeDescriptionHtml(data.faq_html, id) : null;
 
   const db = await getDrizzle();
   const buildValues = (sku: string) => ({
@@ -200,6 +109,7 @@ export async function updateProduct(
     description: finalDescription,
     description_type: data.description_type,
     short_description: data.short_description || null,
+    faq_html: finalFaqHtml,
     base_price: data.base_price,
     compare_price: data.compare_price ?? null,
     sku,
@@ -211,10 +121,6 @@ export async function updateProduct(
     weight_grams: data.weight_grams ?? null,
     meta_title: data.meta_title || null,
     meta_description: data.meta_description || null,
-    tagline: data.tagline ?? null,
-    highlights: data.highlights == null ? null : JSON.stringify(data.highlights),
-    feature_blocks: data.feature_blocks == null ? null : JSON.stringify(data.feature_blocks),
-    faq: data.faq == null ? null : JSON.stringify(data.faq),
     is_draft: 0,
     updated_at: sql`datetime('now')`,
   });
@@ -558,8 +464,9 @@ export async function saveDraftStep(
     const parsed = z
       .object({
         short_description: z.string().optional().default(""),
-        description: z.string().optional().default(""),
+        description: z.string().max(512_000).optional().default(""),
         description_type: z.enum(["richtext", "html"]).optional().default("richtext"),
+        faq_html: z.string().max(512_000).optional().default(""),
         meta_title: z
           .string()
           .max(60, "Le titre SEO ne peut pas dépasser 60 caractères")
@@ -583,6 +490,9 @@ export async function saveDraftStep(
     // Sanitize HTML description before storing draft
     if (parsed.data.description_type === "html" && parsed.data.description) {
       parsed.data.description = sanitizeDescriptionHtml(parsed.data.description, id);
+    }
+    if (parsed.data.faq_html) {
+      parsed.data.faq_html = sanitizeDescriptionHtml(parsed.data.faq_html, id);
     }
 
     return applyDraftUpdate(id, parsed.data, product.slug);
@@ -626,6 +536,7 @@ async function applyDraftUpdate(
     "weight_grams",
     "short_description",
     "description",
+    "faq_html",
     "meta_title",
     "meta_description",
   ]);
@@ -643,6 +554,7 @@ async function applyDraftUpdate(
     "short_description",
     "description",
     "description_type",
+    "faq_html",
     "meta_title",
     "meta_description",
     "is_active",

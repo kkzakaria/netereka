@@ -9,7 +9,6 @@ import { ProductFilters } from "@/components/admin/product-filters";
 import { getAdminProducts, getAdminProductCount } from "@/lib/db/admin/products";
 import { getAllCategories } from "@/lib/db/admin/categories";
 import { cleanupDraftProducts } from "@/actions/admin/products";
-import { isAiFeatureEnabled } from "@/lib/ai/client";
 import { ProductsPageClient, ProductsPageActions } from "./products-page-client";
 
 interface Props {
@@ -25,8 +24,6 @@ const PAGE_SIZE = 20;
 
 export default async function ProductsPage({ searchParams }: Props) {
   await requireAdmin();
-
-  const aiEnabled = await isAiFeatureEnabled();
 
   // Remove draft products abandoned for 24+ hours after response is sent
   after(() =>
@@ -82,7 +79,7 @@ export default async function ProductsPage({ searchParams }: Props) {
             categories={categoryOptions}
             className="flex-1"
           />
-          <ProductsPageActions aiEnabled={aiEnabled} />
+          <ProductsPageActions />
         </div>
       </AdminPageHeader>
 
@@ -91,7 +88,6 @@ export default async function ProductsPage({ searchParams }: Props) {
         products={productData}
         categories={categoryOptions}
         totalCount={totalCount}
-        aiEnabled={aiEnabled}
       />
 
       {/* Active filter chips (mobile) */}

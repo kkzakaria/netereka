@@ -288,4 +288,56 @@ describe("saveDraftStep", () => {
     // brand is not in step 1 schema, so it should not appear in the SQL
     expect(sql).not.toContain("brand");
   });
+
+  // ── FAQ en contenu libre ──────────────────────────────────────────────────
+
+  it("étape 5 : assainit faq_html avec la portée du produit", async () => {
+    await saveDraftStep(
+      "prod-1",
+      makeFormData({
+        _step: "5",
+        faq_html:
+          "<style>.q{color:var(--primary)}</style><details><summary>Q</summary><p>R</p></details>",
+      }),
+    );
+    const [sql, params] = mocks.execute.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("faq_html");
+    const written = params.find(
+      (v): v is string => typeof v === "string" && v.includes("<details>"),
+    );
+    expect(written).toBeDefined();
+    // Le scoping est inscrit dans le HTML stocké, pas appliqué au rendu.
+    expect(written).toContain(".desc-prod-1 .q");
+    expect(written).toContain("<summary>Q</summary>");
+  });
+
+  it("étape 5 : retire le script d'une FAQ hostile", async () => {
+    await saveDraftStep(
+      "prod-1",
+      makeFormData({ _step: "5", faq_html: "<p>ok</p><script>alert(1)</script>" }),
+    );
+    const [, params] = mocks.execute.mock.calls[0] as [string, unknown[]];
+    expect(JSON.stringify(params)).not.toContain("alert(1)");
+  });
+
+  it("étape 5 : écrit null pour une FAQ vide", async () => {
+    await saveDraftStep(
+      "prod-1",
+      makeFormData({ _step: "5", faq_html: "", meta_title: "Titre" }),
+    );
+    const [sql, params] = mocks.execute.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("faq_html");
+    expect(params).toContain(null);
+  });
+
+  it("étape 5 : n'écrit plus aucune colonne story", async () => {
+    await saveDraftStep(
+      "prod-1",
+      makeFormData({ _step: "5", meta_title: "Titre", tagline: "Ancienne accroche" }),
+    );
+    const sql: string = mocks.execute.mock.calls[0][0];
+    for (const col of ["tagline", "highlights", "feature_blocks", "faq ="]) {
+      expect(sql).not.toContain(col);
+    }
+  });
 });

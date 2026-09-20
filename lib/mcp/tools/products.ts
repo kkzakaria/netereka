@@ -41,7 +41,15 @@ function auditFor(ctx: McpContext, tool: string): DraftAudit {
 }
 
 const DESCRIPTION_RULES =
-  "Champs : name (requis), category_id (requis, voir list_categories), brand, short_description (≤120), description_html (HTML, assaini côté serveur), story {tagline, highlights[3-6] {icon,label}, feature_blocks[2-4] {title,body}, faq[≤5] {question,answer}}, seo {meta_title ≤60, meta_description ≤160}, attributes {colors[{name,hex}], dimensions {length_mm,height_mm,width_mm,weight_g}, specs[{name,value}]}, pricing {base_price, compare_price, sku, stock_quantity, low_stock_threshold, weight_grams} (prix en XOF entiers).";
+  "Champs : name (requis), category_id (requis, voir list_categories), brand, short_description (≤120), " +
+  "description_html (HTML libre, assaini côté serveur — c'est le contenu de l'onglet Description de la fiche), " +
+  "faq_html (HTML libre de l'onglet FAQ : une suite de <details><summary>Question</summary><p>Réponse</p></details> " +
+  "dans un <div class=\"nk-faq\">), " +
+  "seo {meta_title ≤60, meta_description ≤160}, " +
+  "attributes {colors[{name,hex}], dimensions {length_mm,height_mm,width_mm,weight_g}, specs[{name,value}]}, " +
+  "pricing {base_price, compare_price, sku, stock_quantity, low_stock_threshold, weight_grams} (prix en XOF entiers). " +
+  "Mise en page : emploie les classes de la charte — nk-section, nk-container, nk-grid, nk-card, nk-media, nk-specs, " +
+  "nk-lead, nk-quote, nk-cta, nk-faq — plutôt que des styles en dur ; elles suivent le thème clair et sombre.";
 
 export const productTools: ToolDefinition[] = [
   defineTool({

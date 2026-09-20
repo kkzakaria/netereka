@@ -26,15 +26,26 @@ import { sanitizeDescriptionHtml } from "./sanitize-html";
  * `{`-prefixed content is exactly the set that branch should claim, and content
  * that both starts with `{` and fails to parse stays a reported anomaly rather
  * than being quietly rendered as prose.
+ *
+ * `productId`, when given, is forwarded to `sanitizeDescriptionHtml` as the
+ * scope id for the `"html"` branch — the same `desc-<productId>` prefix used
+ * at write time (actions/admin/products.ts, lib/content/conversion-plan.ts).
+ * Without it, this read-time re-sanitization (defense-in-depth) could not
+ * repair a `<style>` block that somehow reached the column unscoped: the
+ * other two free-HTML surfaces (product-details.tsx's FAQ tab,
+ * lib/db/storefront/banners.ts) already re-scope on read for exactly this
+ * reason. Passing it is idempotent on every stored row today — the scoping
+ * pass recognizes a selector already carrying the prefix and leaves it
+ * unchanged — so this is a pure hardening, not a behavior change.
  */
-export function descriptionToHtml(raw: string, type?: string): string {
+export function descriptionToHtml(raw: string, type?: string, productId?: string): string {
   if (!raw) return "";
   const trimmed = raw.trim();
   if (!trimmed) return "";
 
   // Explicit type routing — double-sanitize at read time for defense-in-depth
   if (type === "html") {
-    return sanitizeDescriptionHtml(trimmed);
+    return sanitizeDescriptionHtml(trimmed, productId);
   }
 
   if (trimmed.startsWith("{")) {

@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/input-group";
 import { ColorPicker } from "@/components/admin/color-picker";
 import { ImageUpload } from "@/components/admin/image-upload";
+import { ConformanceNotices } from "@/components/admin/conformance-notices";
 import { getImageUrl } from "@/lib/utils/images";
 import type { ProductDetail } from "@/lib/db/types";
 import {
@@ -35,14 +37,18 @@ import {
   type CategoryOption,
 } from "./category-cascading-select";
 import { SectionNav, type SectionDef } from "./section-nav";
-import { ProductStorySection } from "./product-story-section";
+
+const HtmlEditor = dynamic(
+  () => import("@/components/admin/html-editor").then((m) => m.HtmlEditor),
+);
 
 
 const SECTIONS: SectionDef[] = [
   { id: "section-general", label: "Informations" },
   { id: "section-category", label: "Catégorie" },
   { id: "section-specs", label: "Caractéristiques" },
-  { id: "section-story", label: "Story" },
+  { id: "section-description", label: "Description" },
+  { id: "section-faq", label: "FAQ" },
   { id: "section-pricing", label: "Tarification" },
   { id: "section-images", label: "Images" },
   { id: "section-seo", label: "SEO" },
@@ -126,6 +132,19 @@ export function ProductFormSections({
   const router = useRouter();
   const isActiveRef = useRef<HTMLInputElement>(null);
   const isFeaturedRef = useRef<HTMLInputElement>(null);
+  const [faqHtml, setFaqHtml] = useState(product.faq_html ?? "");
+  // Un produit dont la description a été rédigée dans l'ancien éditeur riche
+  // (JSON Lexical, description_type "richtext") ne peut pas être ouvert dans
+  // l'éditeur HTML brut ci-dessous sans afficher ce JSON comme s'il
+  // s'agissait de HTML — voir le rapport de revue pour le détail. Un produit
+  // "richtext" mais SANS contenu (brouillon neuf) n'a rien à perdre : il
+  // rejoint le cas normal et récupère l'éditeur HTML tout de suite.
+  const isLegacyRichText =
+    product.description_type !== "html" &&
+    !!(product.description && product.description.trim());
+  const [descriptionHtml, setDescriptionHtml] = useState(
+    isLegacyRichText ? "" : product.description ?? "",
+  );
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -203,9 +222,6 @@ export function ProductFormSections({
                   defaultValue={product.short_description ?? ""}
                 />
               </div>
-              {/* Preserve existing description on save (legacy content renders in Story free-content block) */}
-              <input type="hidden" name="description" value={product.description ?? ""} />
-              <input type="hidden" name="description_type" value={product.description_type ?? "richtext"} />
             </CardContent>
           </Card>
 
@@ -232,17 +248,54 @@ export function ProductFormSections({
             </CardContent>
           </Card>
 
-          {/* Section: Story */}
-          <Card id="section-story">
+          {/* Section: Description */}
+          <Card id="section-description">
+            <CardHeader>
+              <CardTitle>Description</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLegacyRichText ? (
+                <>
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                    Cette description a été rédigée avec l&apos;ancien éditeur riche
+                    (JSON) et continue de s&apos;afficher normalement sur la fiche.
+                    L&apos;éditeur HTML ci-dessous ne peut pas l&apos;ouvrir sans
+                    afficher ce JSON comme du texte brut — elle n&apos;est donc pas
+                    modifiable depuis cette interface pour le moment. Les outils
+                    MCP n&apos;y ont pas non plus accès : ils n&apos;écrivent que
+                    des brouillons, et ce produit est déjà publié.
+                  </div>
+                  <input type="hidden" name="description" value={product.description ?? ""} />
+                  <input
+                    type="hidden"
+                    name="description_type"
+                    value={product.description_type ?? "richtext"}
+                  />
+                </>
+              ) : (
+                <>
+                  <p className="mb-3 text-sm text-muted-foreground">
+                    Affichée dans l&apos;onglet Description de la fiche. Emploie le
+                    vocabulaire <code>nk-</code> de la charte (<code>nk-section</code>,{" "}
+                    <code>nk-container</code>…).
+                  </p>
+                  <HtmlEditor
+                    name="description"
+                    defaultValue={product.description ?? ""}
+                    onContentChange={setDescriptionHtml}
+                  />
+                  <ConformanceNotices html={descriptionHtml} />
+                  <input type="hidden" name="description_type" value="html" />
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Section: FAQ */}
+          <Card id="section-faq">
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <CardTitle>Story produit</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Blocs éditoriaux rendus en pleine largeur sur la fiche produit.
-                    Tous les blocs sont optionnels.
-                  </p>
-                </div>
+                <CardTitle>FAQ</CardTitle>
                 {!isNew && product.slug && (
                   <Button variant="outline" size="touch" asChild className="shrink-0">
                     <a href={`/p/${product.slug}`} target="_blank" rel="noopener noreferrer">
@@ -253,13 +306,17 @@ export function ProductFormSections({
               </div>
             </CardHeader>
             <CardContent>
-              <ProductStorySection
-                productId={product.id}
-                tagline={product.tagline}
-                highlights={product.highlights}
-                featureBlocks={product.feature_blocks}
-                faq={product.faq}
+              <p className="mb-3 text-sm text-muted-foreground">
+                Affichée dans son propre onglet sur la fiche. Emploie{" "}
+                <code>&lt;details&gt;</code> et <code>&lt;summary&gt;</code> dans un{" "}
+                <code>&lt;div class=&quot;nk-faq&quot;&gt;</code> pour l&apos;accordéon.
+              </p>
+              <HtmlEditor
+                name="faq_html"
+                defaultValue={product.faq_html ?? ""}
+                onContentChange={setFaqHtml}
               />
+              <ConformanceNotices html={faqHtml} />
             </CardContent>
           </Card>
 
