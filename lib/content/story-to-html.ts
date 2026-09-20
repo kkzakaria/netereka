@@ -105,7 +105,20 @@ export function storyToHtml(input: StoryInput): StoryConversion {
     input.feature_blocks.forEach((b, i) => parts.push(featureBlockSection(b, i)));
   }
   if (input.description_html && input.description_html.trim()) {
-    parts.push(input.description_html.trim());
+    // Enveloppé dans une nk-section/nk-container plutôt qu'ajouté tel quel :
+    // sans ça, ce contenu — souvent plusieurs paragraphes de prose déjà
+    // rédigée — se retrouve enfant direct de .nk-prose, en pleine largeur
+    // (jusqu'à ~1248px, le wrapper max-w-7xl de la page produit), au lieu de
+    // la mesure de lecture confortable que nk-container impose. C'est
+    // exactement le défaut mesuré sur 751 des 766 descriptions déjà
+    // converties en production — corrigé pour CELLES-LÀ par la règle CSS
+    // `:where(.nk-prose) > p, …` (app/globals.css), qui ne peut pas être
+    // rejouée sur ces lignes déjà écrites en base. Ce script-ci ne
+    // re-convertit jamais un produit déjà traité (planProduct l'exclut), donc
+    // ce correctif ne s'applique qu'aux conversions futures.
+    parts.push(
+      `<section class="nk-section"><div class="nk-container">${input.description_html.trim()}</div></section>`,
+    );
   }
 
   return { html: parts.join(""), unresolvedIcons };

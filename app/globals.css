@@ -252,6 +252,15 @@
     font-size: 1.125rem;
     line-height: 1.7;
     margin: 0;
+    /* Mesure de lecture déclarée ici, pas seulement héritée de la règle des
+       enfants nus de .nk-prose plus bas : cette classe peut aussi être posée
+       hors d'une .nk-container (imbriquée ailleurs, ou par un futur auteur),
+       et sa propre margin: 0 ci-dessus ne dit rien sur sa largeur. Sans cette
+       ligne, .nk-lead resterait correcte aujourd'hui (toujours vue dans une
+       .nk-container) mais retomberait dans le même silence que la description
+       ajoutée en tête de ce fichier (§ item 1) le jour où elle ne l'est plus. */
+    max-width: 48rem;
+    margin-inline: auto;
   }
 
   /* Carte : un bloc de contenu détouré.
@@ -351,6 +360,13 @@
     color: var(--foreground);
     font-size: 1.125rem;
     padding-left: 1.25rem;
+    /* Comme .nk-lead ci-dessus : ni .nk-quote ni le plancher
+       :where(.nk-prose) blockquote ne déclaraient de largeur avant cette
+       ligne. Explicite plutôt que de dépendre de la règle des enfants nus de
+       .nk-prose plus bas — celle-ci ne couvre que le cas où .nk-quote est un
+       enfant DIRECT de .nk-prose, pas un usage imbriqué. */
+    max-width: 48rem;
+    margin-inline: auto;
   }
 
   /* Interligne du mode `html`, posé sur .nk-prose lui-même (pas dans
@@ -447,6 +463,38 @@
   :where(.nk-prose) blockquote {
     border-left: 3px solid var(--primary);
     padding-left: 1.25rem;
+  }
+
+  /* Mesure de lecture pour les enfants NUS de .nk-prose (deuxième lot de
+     revue, item 1). La conversion (storyToHtml) place la description
+     déjà stockée telle quelle en fin de document, sans l'envelopper d'une
+     nk-section/nk-container — 751 descriptions converties sur 766 en
+     production. Sans cette règle, leur prose court sur toute la largeur de
+     .nk-prose (jusqu'à ~1248px, le wrapper max-w-7xl de la page produit),
+     soit 150-200 caractères par ligne.
+     Volontairement RESTREINT au sélecteur `>` (enfant direct) : un `nk-grid`,
+     `nk-split` ou `nk-container` imbriqué plus profondément — donc une mise
+     en page composée par l'auteur — doit rester pleine largeur, c'est
+     l'objet même de la tâche 12. `nk-section`, `nk-grid`, `nk-split` et
+     `nk-container` sont pour cette raison délibérément ABSENTS de la liste
+     ci-dessous.
+     :where() pour ne peser que (0,0,1) — comme le plancher juste au-dessus —
+     et laisser une classe du vocabulaire (.nk-lead, .nk-quote, qui déclarent
+     maintenant leur propre max-width) continuer à faire ce qu'elle veut sur
+     le même élément. */
+  :where(.nk-prose) > p,
+  :where(.nk-prose) > ul,
+  :where(.nk-prose) > ol,
+  :where(.nk-prose) > h1,
+  :where(.nk-prose) > h2,
+  :where(.nk-prose) > h3,
+  :where(.nk-prose) > h4,
+  :where(.nk-prose) > h5,
+  :where(.nk-prose) > h6,
+  :where(.nk-prose) > blockquote,
+  :where(.nk-prose) > hr {
+    max-width: 48rem;
+    margin-inline: auto;
   }
 
   /* Bouton d'appel à l'action.

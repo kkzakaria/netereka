@@ -107,6 +107,14 @@ describe("storyToHtml", () => {
     expect(html).toContain(existing);
   });
 
+  it("enveloppe la description ajoutée dans nk-section/nk-container (item 1b)", () => {
+    const existing = "<p>Texte non enveloppé.</p>";
+    const { html } = storyToHtml({ ...EMPTY, description_html: existing });
+    expect(html).toBe(
+      `<section class="nk-section"><div class="nk-container">${existing}</div></section>`,
+    );
+  });
+
   it("produit un document conforme à la charte", () => {
     const { html } = storyToHtml({
       tagline: "Accroche",
