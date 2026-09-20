@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/utils/format";
+import { buildSrcDoc } from "@/components/admin/html-editor";
 import type { BadgeColor } from "@/lib/db/types";
 
 interface BannerPreviewProps {
@@ -42,6 +44,16 @@ export function BannerPreview({
   ctaText,
   contentHtml,
 }: BannerPreviewProps) {
+  // Le contenu peut venir d'un collage externe (réponse d'IA, page d'un
+  // fournisseur) : un gestionnaire d'évènement dans ce HTML s'exécuterait
+  // sinon dans le document admin, avec la session de l'admin. On réutilise
+  // le même patron d'iframe sandboxée que components/admin/html-editor.tsx
+  // (bouton « Aperçu ») plutôt que d'en inventer un second.
+  const srcDoc = useMemo(
+    () => (contentHtml ? buildSrcDoc(contentHtml) : ""),
+    [contentHtml]
+  );
+
   return (
     <div className="space-y-1">
       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
@@ -55,13 +67,17 @@ export function BannerPreview({
         {decorativeOrbs}
 
         {contentHtml ? (
-          // Aperçu du HTML tel que tapé, non assaini : c'est le texte de
-          // l'auteur, dans sa propre session d'administration. L'assainissement
-          // a lieu côté serveur à l'enregistrement — ne pas reproduire ce
-          // raccourci côté boutique.
-          <div
-            className="relative h-full w-full overflow-auto p-4"
-            dangerouslySetInnerHTML={{ __html: contentHtml }}
+          // Rendu dans une iframe sandboxée (sandbox="" : aucun script, pas
+          // de même-origine) plutôt qu'avec dangerouslySetInnerHTML : le HTML
+          // n'est pas encore assaini à ce stade (l'assainissement a lieu côté
+          // serveur à l'enregistrement), et un gestionnaire d'évènement dans
+          // un extrait collé depuis une source externe ne doit pas pouvoir
+          // s'exécuter dans le document admin.
+          <iframe
+            srcDoc={srcDoc}
+            sandbox=""
+            title="Aperçu du contenu de la bannière"
+            className="relative h-full w-full border-none bg-transparent"
           />
         ) : (
           <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-4">

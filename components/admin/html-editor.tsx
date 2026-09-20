@@ -26,7 +26,7 @@ const SCOPE_CLASS_RE = /\.(desc-[a-zA-Z0-9_-]+)\s/;
  * body content in a scoped div (e.g. <div class="desc-xyz">) to match how
  * the storefront renders product descriptions (see product-details.tsx).
  */
-function buildSrcDoc(content: string) {
+export function buildSrcDoc(content: string) {
   const scopeMatch = content.match(SCOPE_CLASS_RE);
   const scopeClass = scopeMatch?.[1] ?? "";
 
