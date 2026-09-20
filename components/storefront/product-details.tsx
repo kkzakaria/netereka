@@ -145,9 +145,16 @@ export function ProductDetails({
                 que celui-ci : sans risque tant que Radix démonte les
                 TabsContent inactifs (seul l'onglet actif est dans le DOM) — si
                 un jour un `forceMount` est ajouté pour du SEO, le <style>
-                scopé de l'un pourrait atteindre l'autre. */}
+                scopé de l'un pourrait atteindre l'autre.
+                `nk-prose` pose le même plancher typographique que l'onglet
+                Description (app/globals.css) — sans elle, un <ul> dans une
+                réponse FAQ perdait ses puces alors que le même balisage,
+                collé dans la Description, les gardait. `.nk-faq details
+                > *:not(summary)` remet sa margin à zéro explicitement, donc
+                ce plancher ne modifie pas l'espacement déjà réglé par
+                nk-faq. */}
             <div
-              className={`desc-${productId}`}
+              className={`nk-prose desc-${productId}`}
               dangerouslySetInnerHTML={{ __html: faqHtmlSafe }}
             />
           </TabsContent>
