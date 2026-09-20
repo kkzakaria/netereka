@@ -86,15 +86,6 @@ export function ProductDetails({
   // La couleur est déjà exposée par le sélecteur de variante : la répéter dans
   // le tableau des caractéristiques est du bruit.
   const filteredAttributes = attributes.filter((a) => a.name !== "Couleur");
-  const tabs = visibleProductTabs({
-    description,
-    faqHtml,
-    attributeCount: filteredAttributes.length,
-  });
-
-  if (!shouldRenderProductDetails(tabs, hasReviews)) {
-    return null;
-  }
 
   // Assaini à la lecture comme les bannières (lib/db/storefront/banners.ts) et
   // la description (lib/utils/description-to-html.ts) : la garantie d'écriture
@@ -102,9 +93,21 @@ export function ProductDetails({
   // contourne — les tâches 14-15 sont justement l'arrivée de ce futur
   // écrivain. Ré-assainir ici est idempotent et ne coûte rien au bundle
   // navigateur : ProductDetails est un composant serveur (pas de "use client").
-  // Hissé au-dessus du rendu de l'onglet pour que la vérification de nullité
-  // porte sur `faqHtmlSafe`, sans assertion non-null sur `faqHtml`.
+  // Calculé avant `visibleProductTabs` pour qu'une valeur non-vide qui
+  // s'assainit en chaîne vide (ex: contenu entièrement fait de balises
+  // interdites) ne produise pas un onglet FAQ sans panneau : les deux se
+  // décident désormais sur la même valeur, `faqHtmlSafe`.
   const faqHtmlSafe = faqHtml ? sanitizeDescriptionHtml(faqHtml, productId) : null;
+
+  const tabs = visibleProductTabs({
+    description,
+    faqHtml: faqHtmlSafe,
+    attributeCount: filteredAttributes.length,
+  });
+
+  if (!shouldRenderProductDetails(tabs, hasReviews)) {
+    return null;
+  }
 
   return (
     <section className="mt-10 border-t pt-8">
