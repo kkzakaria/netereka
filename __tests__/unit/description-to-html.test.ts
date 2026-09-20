@@ -188,4 +188,26 @@ describe("descriptionToHtml with description_type", () => {
     expect(result).toContain("<p>Hello</p>");
     expect(result).toContain("<p>World</p>");
   });
+
+  // ── productId scopes the read-time re-sanitization (item 2, 2e lot) ────────
+
+  it("scopes a <style> block to the product id when one is given", () => {
+    const html = "<style>h1 { color: red; }</style><p>Texte</p>";
+    const result = descriptionToHtml(html, "html", "prod-42");
+    expect(result).toContain(".desc-prod-42 h1");
+  });
+
+  it("leaves a <style> block unscoped when no product id is given (unchanged default)", () => {
+    const html = "<style>h1 { color: red; }</style><p>Texte</p>";
+    const result = descriptionToHtml(html, "html");
+    expect(result).not.toContain(".desc-");
+    expect(result).toContain("<style>h1 { color: red; }</style>");
+  });
+
+  it("does not double-scope a <style> block already prefixed for the same product id", () => {
+    const html = '<style>.desc-prod-42 h1 { color: red; }</style><p>Texte</p>';
+    const result = descriptionToHtml(html, "html", "prod-42");
+    expect(result).toContain(".desc-prod-42 h1");
+    expect(result).not.toContain(".desc-prod-42 .desc-prod-42");
+  });
 });

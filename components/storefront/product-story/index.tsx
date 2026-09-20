@@ -15,7 +15,7 @@ interface ProductStoryProps {
  */
 export function ProductStory({ description, descriptionType, productId }: ProductStoryProps) {
   if (!description) return null;
-  const html = descriptionToHtml(description, descriptionType);
+  const html = descriptionToHtml(description, descriptionType, productId);
   if (!html) return null;
   return (
     <section className="w-full">

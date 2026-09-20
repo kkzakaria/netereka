@@ -1007,10 +1007,12 @@ export function sanitizeDescriptionHtml(html: string, scopeId?: string): string 
       let css = stripDangerousCss(cssContent);
       css = css.trim();
       if (!css) return "";
-      // Scoping runs only on the admin save paths, which are the ones that
-      // pass a scopeId and persist what comes back. The storefront read path
-      // passes none, so this branch is skipped there and the stored markup is
-      // returned byte for byte.
+      // Every free-HTML surface — admin save paths AND the three storefront
+      // read paths (description via descriptionToHtml, the product FAQ tab,
+      // getActiveBanners) — now passes a scopeId, so this branch runs
+      // everywhere. It is idempotent on already-scoped selectors
+      // (isAlreadyScoped), which is what keeps a re-sanitized read byte for
+      // byte identical to what was stored.
       if (scopeId) {
         css = scopeCssSelectors(css, `.desc-${scopeId}`);
       }
