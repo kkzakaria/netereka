@@ -10,7 +10,6 @@
 ### Features
 
 * contenu libre pour les fiches produit et les bannières (phase 2) ([83a9d79](https://github.com/kkzakaria/netereka/commit/83a9d791ff848d86b964ee892a0b176636f7a589))
-* contenu libre pour les fiches produit et les bannières (phase 2) ([83a9d79](https://github.com/kkzakaria/netereka/commit/83a9d791ff848d86b964ee892a0b176636f7a589))
 * **storefront:** contenu libre pour le hero et la fiche produit (lot A, phase 1) ([#309](https://github.com/kkzakaria/netereka/issues/309)) ([13823fd](https://github.com/kkzakaria/netereka/commit/13823fd3f57594fa6671525524f44483d2e3c719))
 
 ## [1.17.0](https://github.com/kkzakaria/netereka/compare/v1.16.0...v1.17.0) (2026-09-12)
