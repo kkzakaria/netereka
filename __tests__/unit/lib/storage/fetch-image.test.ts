@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const { uploadToR2Mock } = vi.hoisted(() => ({ uploadToR2Mock: vi.fn() }));
 vi.mock("@/lib/storage/images", () => ({ uploadToR2: uploadToR2Mock }));
 
-import { fetchAndUploadImage, IMAGE_MAX_BYTES } from "@/lib/storage/fetch-image";
+import { fetchAndUploadImage, isBlockedHost, IMAGE_MAX_BYTES } from "@/lib/storage/fetch-image";
 
 function makeImageResponse(opts: {
   ok?: boolean;
@@ -168,5 +168,62 @@ describe("fetchAndUploadImage", () => {
     const r = await fetchAndUploadImage("draft-1", "https://public.test/a.png");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("timeout");
+  });
+
+  it("rejette un redirect vers une adresse IPv6 non spécifiée (SSRF via Location)", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(null, { status: 302, headers: { location: "http://[::]/evil.png" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const r = await fetchAndUploadImage("draft-1", "https://public.test/a.png");
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("ssrf");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // second hop never issued
+  });
+
+  it("upload une image dont l'hôte est une IP publique en notation décimale (8.8.8.8)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeImageResponse()));
+    uploadToR2Mock.mockResolvedValue("products/draft-1/abc.png");
+
+    const r = await fetchAndUploadImage("draft-1", "https://8.8.8.8/a.png");
+
+    expect(r.ok).toBe(true);
+  });
+});
+
+/**
+ * `isBlockedHost` est testée directement (plutôt qu'en passant systématiquement
+ * par `fetchAndUploadImage`) car `new URL(...)` normalise déjà certaines
+ * écritures IPv4 exotiques (décimal, octal, hex) en notation pointée
+ * canonique avant même d'atteindre la garde — un test de bout en bout sur ces
+ * formes-là ne distinguerait donc pas l'ancienne garde de la nouvelle. Les
+ * cinq contournements documentés (voir revue PR #312) atteignaient
+ * effectivement 127.0.0.1 sous l'ancienne garde ; celle-ci ne rejetait un nom
+ * numérique que sous sa forme canonique non rembourrée à quatre octets, et ne
+ * reconnaissait que le littéral exact `::1` en IPv6.
+ */
+describe("isBlockedHost", () => {
+  it.each([
+    ["2130706433", "127.0.0.1 en décimal 32 bits"],
+    ["0177.0.0.1", "octet zéro-rembourré lu en octal"],
+    ["127.1", "forme courte façon inet_aton"],
+    ["0x7f.0.0.1", "octet hexadécimal"],
+    ["[::]", "adresse IPv6 non spécifiée"],
+    ["[::ffff:127.0.0.1]", "IPv6 mappée IPv4 vers le loopback"],
+  ])("bloque le contournement %s (%s)", (host) => {
+    expect(isBlockedHost(host)).toBe(true);
+  });
+
+  it.each([
+    "cdn.apple.com",
+    "images.samsung.com",
+    "8.8.8.8",
+    "1.2.3.4",
+    "cdn1.example.com",
+    "[2606:4700::1111]",
+  ])("laisse passer l'hôte légitime %s", (host) => {
+    expect(isBlockedHost(host)).toBe(false);
   });
 });

@@ -37,26 +37,58 @@ export type FetchImageResult =
  * ranges, or common internal hostnames. Any DNS name resolves to whatever the
  * Cloudflare edge resolves it to — this is a best-effort guard, not absolute.
  */
-function isBlockedHost(hostname: string): boolean {
+/**
+ * Un dernier label entièrement numérique suffit à ce que `inet_aton` interprète
+ * TOUT le nom comme une adresse IPv4 : `2130706433`, `0177.0.0.1`, `127.1` et
+ * `0x7f.0.0.1` désignent tous 127.0.0.1. On n'accepte donc un tel nom que sous
+ * sa forme canonique — quatre octets décimaux non rembourrés — avant de le
+ * soumettre aux contrôles de plage ; toute autre écriture est rejetée.
+ */
+function isNumericLabel(label: string): boolean {
+  return /^(\d+|0x[0-9a-f]+)$/.test(label);
+}
+
+function isPrivateV4(a: number, b: number): boolean {
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+}
+
+/**
+ * Une adresse IPv6 publique commence par 2 ou 3. Tout ce qui débute par `::`
+ * appartient à l'espace non spécifié / bouclage / IPv4 mappée — `[::]` et
+ * `[::ffff:127.0.0.1]` atteignent la machine locale — donc on le rejette en
+ * bloc plutôt que d'énumérer les formes.
+ */
+function isBlockedV6(inner: string): boolean {
+  return (
+    inner.startsWith("::") ||
+    inner.startsWith("fc") ||
+    inner.startsWith("fd") ||
+    inner.startsWith("fe80:")
+  );
+}
+
+export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   if (h === "localhost" || h.endsWith(".localhost") || h === "metadata.google.internal") return true;
 
+  if (h.startsWith("[") && h.endsWith("]")) return isBlockedV6(h.slice(1, -1));
+
+  const labels = h.split(".");
+  if (!isNumericLabel(labels[labels.length - 1])) return false;
+
+  // Le nom sera résolu comme une IPv4 : il doit être canonique pour être évalué.
   const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])];
-    if (a === 10) return true;
-    if (a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 0) return true;
-  }
-  if (h.startsWith("[") && h.endsWith("]")) {
-    const inner = h.slice(1, -1);
-    if (inner === "::1" || inner.startsWith("fc") || inner.startsWith("fd") || inner.startsWith("fe80:")) return true;
-  }
-  return false;
+  if (!v4) return true;
+  const octets = v4.slice(1, 5);
+  if (octets.some((o) => o.length > 1 && o.startsWith("0"))) return true; // rembourrage → octal
+  if (octets.some((o) => Number(o) > 255)) return true;
+  return isPrivateV4(Number(octets[0]), Number(octets[1]));
 }
+
 
 const MAX_REDIRECTS = 3;
 
