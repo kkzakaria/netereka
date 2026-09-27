@@ -19,11 +19,11 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -46,7 +46,7 @@ jobs:
             --message "Rollback by $ACTOR: $REASON"
 
       - name: Create post-rollback investigation issue
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           VERSION_ID: ${{ github.event.inputs.version_id }}
           REASON: ${{ github.event.inputs.reason }}
