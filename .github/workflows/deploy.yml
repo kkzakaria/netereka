@@ -3,6 +3,14 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Un commit purement documentaire ne change pas l'application : le déployer
+    # créerait un canari à promouvoir pour rien, et un canari non promu devient
+    # orphelin à la fusion suivante. Aucun .md n'est une entrée de build ici —
+    # le projet n'utilise pas MDX.
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".release-please-manifest.json"
 
 concurrency:
   group: deploy
@@ -43,6 +51,12 @@ jobs:
   deploy:
     name: Deploy to Cloudflare (canary 10%)
     needs: ci
+    # release-please ne touche que CHANGELOG.md, package.json, package-lock.json
+    # et le manifeste : aucun code applicatif. On ne peut pas l'écarter par
+    # `paths-ignore`, car une montée de dépendance touche exactement les deux
+    # mêmes fichiers de paquet et doit, elle, se déployer. Le sujet du commit est
+    # donc le seul discriminant. La CI tourne quand même, elle valide le commit.
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
