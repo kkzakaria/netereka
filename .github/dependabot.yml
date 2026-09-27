@@ -80,8 +80,14 @@ updates:
     ignore:
       # Majors handled by hand: each of these needs a real regression pass
       # (auth flows incl. MCP OAuth, DB access, rendering).
+      # better-auth : mineurs inclus. Le 1.6 -> 1.7, pourtant mineur, sort le
+      # plugin MCP du coeur vers @better-auth/mcp, deplace les points OAuth de
+      # /mcp/* vers /oauth2/* et change le regime par defaut de l'enregistrement
+      # dynamique des clients. Migration suivie dans l'issue #323.
       - dependency-name: "better-auth"
-        update-types: ["version-update:semver-major"]
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
       - dependency-name: "drizzle-orm"
         update-types: ["version-update:semver-major"]
       - dependency-name: "drizzle-kit"
