@@ -1,9 +1,12 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/lib/utils/format";
+import { getImageUrl } from "@/lib/utils/images";
 import { descriptionToHtml } from "@/lib/utils/description-to-html";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { checkDesignConformance } from "@/lib/content/check-design-conformance";
 import { ProductStory } from "@/components/storefront/product-story";
+import { freeContentLayout } from "@/components/storefront/product-story/story-free-content";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   scopeFor,
@@ -12,7 +15,7 @@ import {
   type RevisionKind,
   type RevisionTarget,
 } from "@/lib/db/revisions";
-import type { Product, Banner } from "@/lib/db/types";
+import type { Banner, ProductDetail, ProductImage } from "@/lib/db/types";
 
 /**
  * Décide si une révision se compare côte à côte à un état antérieur, ou se
@@ -32,24 +35,76 @@ export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" {
 }
 
 /**
- * Classe de portée posée sur le conteneur du HTML libre, identique des deux
- * côtés de la comparaison puisque les deux rendent la MÊME cible. `scopeFor`
- * (lib/db/revisions.ts) est la fonction que les trois écrivains utilisent déjà
- * au dépôt pour préfixer le CSS scopé stocké dans le HTML ; une reconstruire
- * ici serait la quatrième orthographe que ce projet a déjà payée une fois.
+ * Classe de portée posée sur le conteneur du HTML libre, sous laquelle la
+ * cible sera RÉELLEMENT rendue en production. `scopeFor` (lib/db/revisions.ts)
+ * est la fonction que les trois écrivains utilisent déjà au dépôt pour
+ * préfixer le CSS scopé stocké dans le HTML ; la reconstruire ici serait la
+ * quatrième orthographe que ce projet a déjà payée une fois.
  *
- * Conséquence à connaître : les deux colonnes sont montées EN MÊME TEMPS (pas
- * un accordéon d'onglets démonté), et portent donc la même classe. Si la
- * proposition change le <style> scopé qu'elle transporte, ses règles
- * s'appliquent aussi à la colonne de gauche (et réciproquement) — le même
- * risque que documente déjà le commentaire sur l'onglet FAQ de
- * components/storefront/product-details.tsx pour deux blocs partageant une
- * portée. Inévitable ici : le HTML stocké a ses sélecteurs déjà préfixés par
- * cette classe exacte au moment de l'assainissement (sanitizePayload) — une
- * classe différente casserait le CSS de l'auteur au lieu de le isoler.
+ * Utilisée telle quelle pour le panneau « Proposé » et pour la vue seule
+ * d'une révision `publish` — les deux montrent un rendu qui sera un jour
+ * affiché sous cette portée exacte. Le panneau « Actuel », lui, passe par
+ * `scopeCurrentPanel` ci-dessous : voir son commentaire pour pourquoi il ne
+ * peut pas réutiliser cette même classe telle quelle.
  */
 function scopeClassFor(target: RevisionTarget, targetId: string): string {
   return `desc-${scopeFor(target, targetId)}`;
+}
+
+/** Caractères qui prolongent un identifiant CSS — même ensemble que
+ *  `continuesIdentifier` dans lib/utils/sanitize-html.ts, pour la même raison :
+ *  `.desc-p1x` commence par les caractères de `.desc-p1` sans l'être. */
+const IDENTIFIER_CONTINUATION_CLASS = "A-Za-z0-9_-";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Donne au panneau « Actuel » sa propre portée, distincte de celle du
+ * panneau « Proposé », pour un HTML déjà assaini (donc déjà scopé une
+ * première fois sous `scope`).
+ *
+ * Les deux panneaux comparent la MÊME cible et sont montés EN MÊME TEMPS —
+ * contrairement aux onglets Description/FAQ de
+ * components/storefront/product-details.tsx, où Radix ne monte que l'onglet
+ * actif. Si les deux portaient la même classe, un `<style>` scopé dans la
+ * proposition s'appliquerait AUSSI à la colonne « Actuel » : sept fiches en
+ * ligne portent un `<style>` aujourd'hui (voir le commentaire de
+ * `scopeCssSelectors`, lib/utils/sanitize-html.ts), et sur ces sept-là,
+ * l'écran afficherait deux panneaux stylés à l'identique par la proposition
+ * — l'administrateur en conclurait qu'il n'y a aucun changement visuel, et
+ * appliquerait une révision qu'il n'a en réalité jamais vue. Une relecture
+ * qui n'échoue pas mais induit en erreur est pire qu'une relecture qui ne
+ * couvre pas ce cas.
+ *
+ * Les deux réécritures — le préfixe `.desc-<scope>` dans le `<style>`, et la
+ * classe posée sur le conteneur au rendu — sont renvoyées ENSEMBLE par cette
+ * unique fonction, pour qu'elles ne puissent pas dériver l'une de l'autre :
+ * mettre à jour la classe sans le `<style>` (ou l'inverse) romprait
+ * l'appariement sélecteur ↔ conteneur, et le panneau « Actuel » s'afficherait
+ * nu — le mensonge inverse. Le panneau « Proposé » n'appelle jamais cette
+ * fonction : il garde `scopeClassFor` telle quelle, sa portée réelle de
+ * production.
+ *
+ * Un HTML sans `<style>` ressort inchangé à l'octet près — rien à isoler.
+ */
+export function scopeCurrentPanel(html: string, scope: string): { html: string; scopeClass: string } {
+  const scopeClass = `desc-${scope}-actuel`;
+  if (!html || !html.includes("<style")) {
+    return { html, scopeClass };
+  }
+
+  const prefix = `.desc-${escapeRegExp(scope)}`;
+  const prefixPattern = new RegExp(`${prefix}(?![${IDENTIFIER_CONTINUATION_CLASS}])`, "g");
+
+  const rewritten = html.replace(/<style([^<>]*)>([\s\S]*?)(<\/style\s*>|$)/gi, (match, attrs: string, css: string, close: string) => {
+    if (!css.includes(`.desc-${scope}`)) return match;
+    const rewrittenCss = css.replace(prefixPattern, `.desc-${scope}-actuel`);
+    return `<style${attrs}>${rewrittenCss}${close}`;
+  });
+
+  return { html: rewritten, scopeClass };
 }
 
 function productDescriptionHtml(description: string | null, descriptionType: string | undefined, productId: string): string {
@@ -73,12 +128,14 @@ function EmptyNotice({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Rendu de la description d'un produit, dans l'application : `ProductStory`
- * est le même composant que la fiche publique — pas une réimplémentation —
- * donc `nk-prose`, la mise en page selon `description_type` et la classe de
- * portée sont exactement celles que verrait un visiteur.
+ * Rendu de la description d'un produit tel qu'il sera réellement affiché :
+ * `ProductStory` est le même composant que la fiche publique — pas une
+ * réimplémentation — donc `nk-prose`, la mise en page selon
+ * `description_type` et la classe de portée sont exactement celles que
+ * verrait un visiteur. Réservé au panneau « Proposé » et à la vue seule
+ * (`publish`) : c'est sous CETTE portée que la cible sera un jour rendue.
  */
-function DescriptionBlock({
+function DescriptionBlockProposed({
   description,
   descriptionType,
   productId,
@@ -96,26 +153,122 @@ function DescriptionBlock({
   );
 }
 
-/** Rendu de la FAQ d'un produit, même vocabulaire que l'onglet FAQ de
- *  components/storefront/product-details.tsx (`nk-prose desc-<productId>`). */
-function FaqBlock({ faqHtml, productId }: { faqHtml: string | null; productId: string }) {
-  const html = productFaqHtml(faqHtml, productId);
-  if (!html) return <EmptyNotice>Aucune FAQ.</EmptyNotice>;
+/**
+ * Rendu de la description pour le panneau « Actuel » : ne peut pas réutiliser
+ * `ProductStory` (elle calcule elle-même `desc-<productId>`, non
+ * substituable) — reproduit donc sa mise en page (`freeContentLayout`,
+ * story-free-content.tsx) mais sous la portée réécrite de
+ * `scopeCurrentPanel`, pour ne jamais recevoir le `<style>` de la
+ * proposition.
+ */
+function DescriptionBlockCurrent({
+  description,
+  descriptionType,
+  productId,
+}: {
+  description: string | null;
+  descriptionType: string | undefined;
+  productId: string;
+}) {
+  const rawHtml = productDescriptionHtml(description, descriptionType, productId);
+  if (!rawHtml) return <EmptyNotice>Aucune description.</EmptyNotice>;
+  const { html, scopeClass } = scopeCurrentPanel(rawHtml, scopeFor("product", productId));
+  const { outerClass, innerClass } = freeContentLayout(descriptionType);
+  // Seul le mode "html" pose une classe de portée (story-free-content.tsx) :
+  // richtext/plain/legacy n'embarquent jamais de <style> propre.
+  const containerClass = descriptionType === "html" ? scopeClass : undefined;
   return (
     <div className="rounded-lg border p-4">
-      <div className={cn("nk-prose", scopeClassFor("product", productId))} dangerouslySetInnerHTML={{ __html: html }} />
+      <div className={outerClass || undefined}>
+        <div className={cn(innerClass, containerClass) || undefined} dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
+    </div>
+  );
+}
+
+/** Rendu de la FAQ d'un produit, même vocabulaire que l'onglet FAQ de
+ *  components/storefront/product-details.tsx (`nk-prose desc-<productId>`).
+ *  `variant="current"` réécrit la portée (`scopeCurrentPanel`) pour ne jamais
+ *  recevoir le `<style>` de la proposition — voir son commentaire. */
+function FaqBlock({
+  faqHtml,
+  productId,
+  variant,
+}: {
+  faqHtml: string | null;
+  productId: string;
+  variant: "current" | "proposed";
+}) {
+  const rawHtml = productFaqHtml(faqHtml, productId);
+  if (!rawHtml) return <EmptyNotice>Aucune FAQ.</EmptyNotice>;
+  const { html, scopeClass } =
+    variant === "current"
+      ? scopeCurrentPanel(rawHtml, scopeFor("product", productId))
+      : { html: rawHtml, scopeClass: scopeClassFor("product", productId) };
+  return (
+    <div className="rounded-lg border p-4">
+      <div className={cn("nk-prose", scopeClass)} dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }
 
 /** Rendu du contenu libre d'une bannière, même vocabulaire que
- *  components/storefront/hero-banner.tsx (`desc-banner-<id>`). */
-function BannerContentBlock({ contentHtml, bannerId }: { contentHtml: string | null; bannerId: string }) {
-  const html = bannerContentHtml(contentHtml, bannerId);
-  if (!html) return <EmptyNotice>Aucun contenu.</EmptyNotice>;
+ *  components/storefront/hero-banner.tsx (`desc-banner-<id>`).
+ *  `variant="current"` réécrit la portée — voir `scopeCurrentPanel`. */
+function BannerContentBlock({
+  contentHtml,
+  bannerId,
+  variant,
+}: {
+  contentHtml: string | null;
+  bannerId: string;
+  variant: "current" | "proposed";
+}) {
+  const rawHtml = bannerContentHtml(contentHtml, bannerId);
+  if (!rawHtml) return <EmptyNotice>Aucun contenu.</EmptyNotice>;
+  const { html, scopeClass } =
+    variant === "current"
+      ? scopeCurrentPanel(rawHtml, scopeFor("banner", bannerId))
+      : { html: rawHtml, scopeClass: scopeClassFor("banner", bannerId) };
   return (
     <div className="rounded-lg border p-4">
-      <div className={scopeClassFor("banner", bannerId)} dangerouslySetInnerHTML={{ __html: html }} />
+      <div className={scopeClass} dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
+  );
+}
+
+/**
+ * Vignettes des images déjà attachées au produit — pas la galerie complète
+ * (hors périmètre, cf. le commentaire de `RevisionDiff`), juste de quoi voir
+ * d'un coup d'œil qu'il y en a, et lesquelles. Sur une boutique en paiement à
+ * la livraison, l'image EST ce que le client croit acheter : un
+ * administrateur qui applique une publication sans les voir peut mettre en
+ * ligne une fiche sans aucun visuel et ne s'en apercevoir qu'au premier colis
+ * refusé.
+ */
+function ImagesPreview({ images }: { images: ProductImage[] }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Images ({images.length})
+      </p>
+      {images.length === 0 ? (
+        <EmptyNotice>Aucune image — le produit sera publié sans visuel.</EmptyNotice>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {images.map((img) => (
+            <div key={img.id} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border">
+              <Image
+                src={getImageUrl(img.url)}
+                alt={img.alt || "Image du produit"}
+                fill
+                sizes="64px"
+                className="object-cover"
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -248,7 +401,7 @@ export interface RevisionDiffProps {
   kind: RevisionKind;
   targetId: string;
   /** État actuel de la cible en base (produit ou bannière). */
-  current: Product | Banner;
+  current: ProductDetail | Banner;
   /** Colonnes proposées par la révision — déjà assainies au dépôt. */
   payload: Record<string, unknown>;
 }
@@ -262,9 +415,12 @@ export interface RevisionDiffProps {
  * ce fichier.
  *
  * Se limite volontairement aux champs qui comptent pour une relecture : le
- * HTML libre (description, FAQ, contenu de bannière) et les champs texte que
- * la révision touche. La parité visuelle complète avec la fiche boutique
- * (galerie, variantes, avis) est hors périmètre de cette tâche.
+ * HTML libre (description, FAQ, contenu de bannière), les champs texte que la
+ * révision touche, et — pour la vue seule d'une révision `publish` — les
+ * vignettes des images déjà attachées au produit (une boutique en paiement à
+ * la livraison ne peut pas se permettre qu'une mise en ligne sans visuel
+ * passe inaperçue). La parité visuelle complète avec la fiche boutique
+ * (galerie, carrousel, variantes, avis) reste hors périmètre de cette tâche.
  */
 export function RevisionDiff({ target, kind, targetId, current, payload }: RevisionDiffProps) {
   const layout = revisionLayout(kind);
@@ -282,7 +438,7 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
               <CardTitle>{proposedBanner.title}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <BannerContentBlock contentHtml={proposedBanner.content_html} bannerId={targetId} />
+              <BannerContentBlock contentHtml={proposedBanner.content_html} bannerId={targetId} variant="proposed" />
               <ConformanceSection
                 fields={[{ label: "Contenu", html: bannerContentHtml(proposedBanner.content_html, targetId) }]}
               />
@@ -301,7 +457,7 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
               <CardTitle>Actuel</CardTitle>
             </CardHeader>
             <CardContent>
-              <BannerContentBlock contentHtml={currentBanner.content_html} bannerId={targetId} />
+              <BannerContentBlock contentHtml={currentBanner.content_html} bannerId={targetId} variant="current" />
             </CardContent>
           </Card>
           <Card>
@@ -309,7 +465,7 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
               <CardTitle>Proposé</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <BannerContentBlock contentHtml={proposedBanner.content_html} bannerId={targetId} />
+              <BannerContentBlock contentHtml={proposedBanner.content_html} bannerId={targetId} variant="proposed" />
               <ConformanceSection
                 fields={[{ label: "Contenu", html: bannerContentHtml(proposedBanner.content_html, targetId) }]}
               />
@@ -320,8 +476,8 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
     );
   }
 
-  const currentProduct = current as Product;
-  const proposedProduct: Product = { ...currentProduct, ...(payload as Partial<Product>) };
+  const currentProduct = current as ProductDetail;
+  const proposedProduct: ProductDetail = { ...currentProduct, ...(payload as Partial<ProductDetail>) };
 
   if (layout === "single") {
     return (
@@ -335,12 +491,13 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
             </p>
           </CardHeader>
           <CardContent className="space-y-6">
-            <DescriptionBlock
+            <ImagesPreview images={currentProduct.images} />
+            <DescriptionBlockProposed
               description={proposedProduct.description}
               descriptionType={proposedProduct.description_type}
               productId={targetId}
             />
-            <FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} />
+            <FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} variant="proposed" />
             <ConformanceSection
               fields={[
                 {
@@ -365,12 +522,12 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
             <CardTitle>Actuel</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <DescriptionBlock
+            <DescriptionBlockCurrent
               description={currentProduct.description}
               descriptionType={currentProduct.description_type}
               productId={targetId}
             />
-            <FaqBlock faqHtml={currentProduct.faq_html} productId={targetId} />
+            <FaqBlock faqHtml={currentProduct.faq_html} productId={targetId} variant="current" />
           </CardContent>
         </Card>
         <Card>
@@ -378,12 +535,12 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
             <CardTitle>Proposé</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <DescriptionBlock
+            <DescriptionBlockProposed
               description={proposedProduct.description}
               descriptionType={proposedProduct.description_type}
               productId={targetId}
             />
-            <FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} />
+            <FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} variant="proposed" />
             <ConformanceSection
               fields={[
                 {
