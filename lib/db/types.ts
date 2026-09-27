@@ -352,7 +352,13 @@ export type AuditAction =
   | "user.unbanned"
   | "product.draft_created"
   | "product.draft_updated"
-  | "product.draft_deleted";
+  | "product.draft_deleted"
+  | "revision.created.update"
+  | "revision.created.publish"
+  | "revision.applied"
+  | "revision.rejected"
+  | "revision.apply_conflict"
+  | "revision.reconcile_failed";
 
 export interface AuditLog {
   id: string;

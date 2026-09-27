@@ -569,3 +569,42 @@ export const whatsappMessages = sqliteTable("whatsapp_messages", {
   index("idx_wa_messages_created").on(table.created_at),
   index("idx_wa_messages_wa_id").on(table.wa_message_id),
 ]);
+
+// =============================================================================
+// Révisions de contenu
+// =============================================================================
+
+/**
+ * Une proposition de modification déposée par un client IA, non appliquée.
+ * Le MCP n'écrit jamais directement sur une ligne publiée : il dépose ici, et
+ * l'administrateur applique. `payload` est DÉJÀ assaini au dépôt, avec la
+ * portée de la ligne cible — voir lib/db/revisions.ts.
+ */
+export const contentRevisions = sqliteTable("content_revisions", {
+  id: text("id").primaryKey(),
+  target_type: text("target_type").notNull(),      // "product" | "banner"
+  target_id: text("target_id").notNull(),
+  kind: text("kind").notNull().default("update"),  // "update" | "publish"
+  payload: text("payload").notNull(),              // JSON des colonnes proposées
+  origin: text("origin").notNull(),                // "mcp" | "admin_chat"
+  actor_id: text("actor_id").notNull(),
+  actor_name: text("actor_name").notNull(),
+  summary: text("summary"),                        // une phrase, écrite par le modèle
+  status: text("status").notNull().default("pending"),
+  // updated_at de la cible au dépôt. Sert à refuser l'application si la cible
+  // a changé depuis (voir § 2.5 du spec). Limite connue : datetime('now') a
+  // une granularité à la seconde en SQLite — deux écritures dans la même
+  // seconde produisent le même updated_at, donc une cible modifiée moins
+  // d'une seconde après le dépôt passerait ce contrôle à tort. Acceptable
+  // pour un rythme humain (administrateur) ; pas pour des appels rapprochés
+  // d'un client IA. Non corrigé ici : le format du timestamp est partagé par
+  // tous les chemins d'écriture existants.
+  base_version: text("base_version"),
+  created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
+  resolved_at: text("resolved_at"),
+  resolved_by: text("resolved_by"),
+}, (table) => [
+  index("idx_revisions_target").on(table.target_type, table.target_id),
+  index("idx_revisions_status").on(table.status),
+  index("idx_revisions_created").on(table.created_at),
+]);
