@@ -8,6 +8,7 @@ import { checkDesignConformance } from "@/lib/content/check-design-conformance";
 import { ProductStory } from "@/components/storefront/product-story";
 import { freeContentLayout } from "@/components/storefront/product-story/story-free-content";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   scopeFor,
   PRODUCT_HTML_COLUMNS,
@@ -95,12 +96,25 @@ export function scopeCurrentPanel(html: string, scope: string): { html: string; 
     return { html, scopeClass };
   }
 
-  const prefix = `.desc-${escapeRegExp(scope)}`;
-  const prefixPattern = new RegExp(`${prefix}(?![${IDENTIFIER_CONTINUATION_CLASS}])`, "g");
+  const rawPrefix = `.desc-${scope}`;
+  const newPrefix = `${rawPrefix}-actuel`;
+  // `escapeRegExp` doit couvrir TOUT `rawPrefix`, `.` compris : `.` est un
+  // métacaractère regex (« n'importe quel caractère ») et un `.` de scope non
+  // échappé matcherait aussi bien un point littéral qu'un caractère
+  // quelconque. `.mydesc-p1` (un point, puis "mydesc-p1") deviendrait alors
+  // `.m.desc-p1-actuel` — un sélecteur qui ne correspond plus à rien, donc un
+  // panneau stylé par rien : le mensonge inverse que cette fonction existe
+  // pour empêcher.
+  const prefixPattern = new RegExp(`${escapeRegExp(rawPrefix)}(?![${IDENTIFIER_CONTINUATION_CLASS}])`, "g");
 
   const rewritten = html.replace(/<style([^<>]*)>([\s\S]*?)(<\/style\s*>|$)/gi, (match, attrs: string, css: string, close: string) => {
-    if (!css.includes(`.desc-${scope}`)) return match;
-    const rewrittenCss = css.replace(prefixPattern, `.desc-${scope}-actuel`);
+    if (!css.includes(rawPrefix)) return match;
+    // Remplaçant en fonction, pas en chaîne : une chaîne de remplacement
+    // interprète `$&`, `` $` ``, `$'`, `$1`... comme des motifs spéciaux, et
+    // `scope` (dérivé d'un id de cible) pourrait un jour en contenir un sans
+    // qu'on l'ait prévu. Une fonction renvoie sa valeur de retour telle
+    // quelle, sans repasser par cette interprétation.
+    const rewrittenCss = css.replace(prefixPattern, () => newPrefix);
     return `<style${attrs}>${rewrittenCss}${close}`;
   });
 
@@ -270,6 +284,51 @@ function ImagesPreview({ images }: { images: ProductImage[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Bascule Description/FAQ d'un produit en onglets, jamais en piles empilées.
+ *
+ * Sur la fiche publique, `product-details.tsx` ne monte JAMAIS les deux à la
+ * fois — Radix démonte l'onglet inactif — et c'est précisément ce qui rend
+ * sûr que les deux partagent la même classe de portée (`desc-<productId>` au
+ * dépôt). Empiler les deux blocs l'un sous l'autre dans une même carte, comme
+ * ce composant le faisait, viole cette précondition : un `<style>` scopé
+ * dans la description s'appliquerait alors AUSSI à la FAQ (et réciproquement)
+ * dès qu'une fiche aurait les deux à la fois. Aucune fiche en ligne n'a
+ * aujourd'hui de FAQ non vide parmi celles qui portent un `<style>` — mais la
+ * généralisation du MCP (phase 2) est précisément ce qui va écrire des FAQ
+ * sur ces fiches-là.
+ *
+ * Réutiliser le même mécanisme que la production (des onglets, pas une
+ * nouvelle convention de nommage) évite d'inventer une n-ième portée
+ * synthétique : le panneau « Proposé » garde ainsi sa portée réelle de
+ * production sans exception, et le panneau « Actuel » réutilise tel quel le
+ * seul suffixe `-actuel` déjà en place (`scopeCurrentPanel`) — un onglet
+ * FAQ démonté ne peut pas être stylé par le `<style>` de l'onglet
+ * Description monté, même si les deux portent la même classe.
+ */
+function ProductContentTabs({
+  descriptionSlot,
+  faqSlot,
+}: {
+  descriptionSlot: React.ReactNode;
+  faqSlot: React.ReactNode;
+}) {
+  return (
+    <Tabs defaultValue="description">
+      <TabsList variant="line" className="mb-4 min-h-11">
+        <TabsTrigger value="description" className="px-3 text-sm">
+          Description
+        </TabsTrigger>
+        <TabsTrigger value="faq" className="px-3 text-sm">
+          FAQ
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="description">{descriptionSlot}</TabsContent>
+      <TabsContent value="faq">{faqSlot}</TabsContent>
+    </Tabs>
   );
 }
 
@@ -492,12 +551,16 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
           </CardHeader>
           <CardContent className="space-y-6">
             <ImagesPreview images={currentProduct.images} />
-            <DescriptionBlockProposed
-              description={proposedProduct.description}
-              descriptionType={proposedProduct.description_type}
-              productId={targetId}
+            <ProductContentTabs
+              descriptionSlot={
+                <DescriptionBlockProposed
+                  description={proposedProduct.description}
+                  descriptionType={proposedProduct.description_type}
+                  productId={targetId}
+                />
+              }
+              faqSlot={<FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} variant="proposed" />}
             />
-            <FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} variant="proposed" />
             <ConformanceSection
               fields={[
                 {
@@ -522,12 +585,16 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
             <CardTitle>Actuel</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <DescriptionBlockCurrent
-              description={currentProduct.description}
-              descriptionType={currentProduct.description_type}
-              productId={targetId}
+            <ProductContentTabs
+              descriptionSlot={
+                <DescriptionBlockCurrent
+                  description={currentProduct.description}
+                  descriptionType={currentProduct.description_type}
+                  productId={targetId}
+                />
+              }
+              faqSlot={<FaqBlock faqHtml={currentProduct.faq_html} productId={targetId} variant="current" />}
             />
-            <FaqBlock faqHtml={currentProduct.faq_html} productId={targetId} variant="current" />
           </CardContent>
         </Card>
         <Card>
@@ -535,12 +602,16 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
             <CardTitle>Proposé</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <DescriptionBlockProposed
-              description={proposedProduct.description}
-              descriptionType={proposedProduct.description_type}
-              productId={targetId}
+            <ProductContentTabs
+              descriptionSlot={
+                <DescriptionBlockProposed
+                  description={proposedProduct.description}
+                  descriptionType={proposedProduct.description_type}
+                  productId={targetId}
+                />
+              }
+              faqSlot={<FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} variant="proposed" />}
             />
-            <FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} variant="proposed" />
             <ConformanceSection
               fields={[
                 {

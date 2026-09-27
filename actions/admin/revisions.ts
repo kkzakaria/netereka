@@ -27,17 +27,25 @@ async function revalidateTarget(targetType: RevisionTarget, targetId: string): P
   }
 }
 
-export async function applyRevisionAction(revisionId: string): Promise<ActionResult> {
+/** § 2.5 du spec : « la ligne cible porte une version [...] et l'écran le
+ *  dit ». `supersededCount` porte ce nombre jusqu'à `RevisionActions`, pour
+ *  que remplacer discrètement N autres propositions sur la même fiche laisse
+ *  une trace visible ailleurs que dans le journal d'audit. */
+export interface ApplyRevisionResult extends ActionResult {
+  supersededCount?: number;
+}
+
+export async function applyRevisionAction(revisionId: string): Promise<ApplyRevisionResult> {
   const session = await requireAdmin();
 
   try {
-    await applyRevision(revisionId, { id: session.user.id, name: session.user.name });
+    const { superseded } = await applyRevision(revisionId, { id: session.user.id, name: session.user.name });
     // Lue après l'application : la révision existe toujours (son statut
     // passe à "applied", elle n'est jamais supprimée), ce qui donne la cible
     // à revalider sans changer la signature d'applyRevision.
     const rev = await getRevision(revisionId);
     if (rev) await revalidateTarget(rev.target_type, rev.target_id);
-    return { success: true };
+    return { success: true, supersededCount: superseded };
   } catch (error) {
     if (error instanceof RevisionError) {
       return { success: false, error: error.message };

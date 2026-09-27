@@ -41,7 +41,18 @@ export function createD1Mock() {
     bound.mockReset();
     run.mockReset().mockResolvedValue({ success: true, meta: { changes: 1 }, results: [] });
     raw.mockReset().mockResolvedValue([]);
-    batch.mockReset().mockResolvedValue([]);
+    // One successful D1Result per statement by default (`meta.changes: 1`),
+    // sized to whatever the caller's batch actually contains — production
+    // code that inspects `results[i].meta.changes` (lib/db/revisions.ts'
+    // applyRevision, notably) sees an ordinary "every statement wrote a row"
+    // outcome unless a test opts into a different one with
+    // `batch.mockResolvedValueOnce([...])`. `[]` (the previous default) made
+    // every such inspection read `undefined`, which callers correctly treat
+    // as "0 changes" (fail-closed) — realistic for "batch() was never
+    // called", not for "batch() succeeded", so it silently broke every test
+    // whose code path starts checking that result.
+    batch.mockReset().mockImplementation(async (stmts: BoundStatement[]) =>
+      stmts.map(() => ({ success: true, meta: { changes: 1 }, results: [] })));
   }
   reset();
 

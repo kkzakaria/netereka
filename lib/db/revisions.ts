@@ -1,9 +1,10 @@
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { nanoid } from "nanoid";
 import { getDrizzle, type DrizzleDB } from "@/lib/db/drizzle";
 import { auditLog, banners, contentRevisions, products } from "@/lib/db/schema";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
+import type { AuditAction } from "@/lib/db/types";
 
 /**
  * Dépôt, lecture et application des révisions (`content_revisions`) pour le
@@ -54,6 +55,97 @@ export const BANNER_HTML_COLUMNS = ["content_html"] as const;
  *  bannière : `banner-<id>`, parce que le hero rend dans `desc-banner-<id>`. */
 export function scopeFor(target: RevisionTarget, id: string): string {
   return target === "banner" ? `banner-${id}` : id;
+}
+
+/**
+ * Colonnes qu'une révision a le droit de proposer, par cible — une liste
+ * BLANCHE, pas une liste noire : une colonne future sur `products` ou
+ * `banners` n'est écrivable par une révision qu'après avoir été ajoutée ici
+ * explicitement. L'inverse (tout sauf quelques colonnes interdites) laisse
+ * passer, par défaut, toute colonne simplement oubliée de la liste noire.
+ *
+ * Exclut délibérément, pour `products` :
+ * - `id`, `slug` — les réécrire détacherait instantanément tout CSS scopé
+ *   déjà stocké sous l'ancien identifiant (`.desc-<ancien-id>`), la même
+ *   classe de défaut que `scopeFor` existe pour éviter ailleurs.
+ * - `is_draft` — § 2.3 du spec : « la dépublication n'est pas exposée du
+ *   tout », parce qu'un retrait passe inaperçu alors qu'une mise en ligne
+ *   ratée se voit. `applyRevision` reste seul à le poser, et seulement pour
+ *   `kind: "publish"`.
+ * - `created_at`, `updated_at` — `updated_at` est géré par `applyRevision`
+ *   lui-même : c'est l'horodatage de l'écriture ET la clé du contrôle de
+ *   version (`base_version`), une révision ne doit donc jamais pouvoir le
+ *   dicter.
+ *
+ * Rien n'atteint ce contrôle aujourd'hui (aucun outil ne dépose encore de
+ * révision), mais `createRevision` est l'interface que les cinq outils
+ * généralisés de la phase 2 vont tous consommer : la garantie doit tenir au
+ * dépôt, pas dépendre de ce que chaque appelant pense à vérifier lui-même —
+ * même principe que `sanitizePayload` ci-dessus.
+ */
+const PRODUCT_WRITABLE_COLUMNS = new Set([
+  "category_id",
+  "name",
+  "description",
+  "description_type",
+  "short_description",
+  "base_price",
+  "compare_price",
+  "sku",
+  "brand",
+  "is_active",
+  "is_featured",
+  "stock_quantity",
+  "low_stock_threshold",
+  "weight_grams",
+  "meta_title",
+  "meta_description",
+  "tagline",
+  "highlights",
+  "feature_blocks",
+  "faq",
+  "faq_html",
+]);
+
+/** Pas d'`id`/`created_at`/`updated_at` — mêmes raisons que pour les
+ *  produits. Les bannières n'ont ni `slug` ni `is_draft`. */
+const BANNER_WRITABLE_COLUMNS = new Set([
+  "title",
+  "subtitle",
+  "badge_text",
+  "badge_color",
+  "image_url",
+  "link_url",
+  "cta_text",
+  "price",
+  "bg_gradient_from",
+  "bg_gradient_to",
+  "content_html",
+  "display_order",
+  "is_active",
+  "starts_at",
+  "ends_at",
+]);
+
+function writableColumnsFor(target: RevisionTarget): Set<string> {
+  return target === "banner" ? BANNER_WRITABLE_COLUMNS : PRODUCT_WRITABLE_COLUMNS;
+}
+
+/**
+ * Refuse, AU DÉPÔT, un payload qui contiendrait une colonne hors liste
+ * blanche — jamais à l'application, pour la même raison que
+ * `sanitizePayload` assainit au dépôt plutôt qu'à la lecture : la garantie
+ * ne doit pas dépendre du moment ni de l'appelant.
+ */
+function assertWritablePayload(target: RevisionTarget, payload: Record<string, unknown>): void {
+  const allowed = writableColumnsFor(target);
+  const rejected = Object.keys(payload).filter((key) => !allowed.has(key));
+  if (rejected.length > 0) {
+    throw new RevisionError(
+      "validation_error",
+      `Colonne(s) non autorisée(s) dans une révision : ${rejected.join(", ")}.`,
+    );
+  }
 }
 
 /**
@@ -120,6 +212,11 @@ export async function createRevision(input: {
   actor: RevisionActor;
   summary?: string | null;
 }): Promise<{ revisionId: string; status: "pending" }> {
+  // Avant toute lecture : un payload hors liste blanche est un défaut de
+  // l'appelant, pas de la cible — pas besoin d'un aller-retour base pour le
+  // détecter.
+  assertWritablePayload(input.target, input.payload);
+
   const db = await getDrizzle();
 
   // La cible doit exister, et on capture sa version pour le contrôle à
@@ -131,6 +228,12 @@ export async function createRevision(input: {
 
   const id = nanoid();
   const payload = sanitizePayload(input.target, input.targetId, input.payload);
+
+  // Typé explicitement : un troisième `RevisionKind` qui compilerait ici sans
+  // que `AuditAction` le liste produirait une ligne d'audit sans libellé
+  // (AUDIT_ACTION_LABELS, lib/constants/audit.ts) sans qu'aucun test ne le
+  // signale — cette annotation fait échouer la COMPILATION à la place.
+  const action: AuditAction = `revision.created.${input.kind}`;
 
   await db.batch([
     db.insert(contentRevisions).values({
@@ -149,7 +252,7 @@ export async function createRevision(input: {
       id: nanoid(),
       actor_id: input.actor.id,
       actor_name: input.actor.name,
-      action: `revision.created.${input.kind}`,
+      action,
       target_type: input.target,
       target_id: input.targetId,
       details: JSON.stringify({ via: input.origin, revisionId: id }),
@@ -219,6 +322,79 @@ export async function getRevision(id: string): Promise<RevisionRecord | null> {
   return row ? toRevisionRecord(row) : null;
 }
 
+/** Message de conflit, une seule fois : affiché tel quel par l'écran de
+ *  validation (pas de texte générique) — voir actions/admin/revisions.ts. */
+const TARGET_CHANGED_MESSAGE =
+  "La fiche a changé depuis le dépôt de cette révision. Demandez une " +
+  "proposition fraîche plutôt que d'appliquer celle-ci.";
+
+const APPLIED_ACTION: AuditAction = "revision.applied";
+const REJECTED_ACTION: AuditAction = "revision.rejected";
+const APPLY_CONFLICT_ACTION: AuditAction = "revision.apply_conflict";
+
+/**
+ * Répare un batch d'application dont l'écriture sur la cible n'a, en
+ * réalité, rien changé (voir l'appelant, `applyRevision`, pour le
+ * diagnostic). D1 ne sait pas annuler un batch déjà validé — une UPDATE à 0
+ * ligne n'est pas une erreur pour SQLite, donc le reste du batch a committé
+ * quand même — cette fonction répare donc APRÈS coup, dans un second batch :
+ *
+ * - remet `rev.id` en `pending` s'il a été marqué `applied` à tort (ne
+ *   touche rien s'il est déjà `superseded` par une révision concurrente
+ *   gagnante — ce cas-là n'a pas besoin de réparation, il est correct) ;
+ * - remet en `pending` les révisions voisines que CE batch avait lui-même
+ *   marquées `superseded` (`supersededCandidateIds`, capturé avant ce
+ *   batch) — jamais une ligne superseded par un autre batch, gagnant
+ *   celui-là ;
+ * - journalise la correction : l'audit "applied" du batch raté reste en
+ *   base (append-only, jamais supprimé), donc cette ligne existe pour que
+ *   quiconque relit le journal comprenne que cette application n'a en fait
+ *   jamais eu lieu.
+ */
+async function reconcileFailedApply(
+  db: DrizzleDB,
+  rev: RevisionRecord,
+  actor: RevisionActor,
+  supersededCandidateIds: string[],
+): Promise<void> {
+  const stmts: Statement[] = [
+    db
+      .update(contentRevisions)
+      .set({ status: "pending", resolved_at: null, resolved_by: null })
+      .where(and(eq(contentRevisions.id, rev.id), eq(contentRevisions.status, "applied"))),
+  ];
+
+  if (supersededCandidateIds.length > 0) {
+    stmts.push(
+      db
+        .update(contentRevisions)
+        .set({ status: "pending", resolved_at: null, resolved_by: null })
+        .where(and(
+          inArray(contentRevisions.id, supersededCandidateIds),
+          eq(contentRevisions.status, "superseded"),
+        )),
+    );
+  }
+
+  stmts.push(
+    db.insert(auditLog).values({
+      id: nanoid(),
+      actor_id: actor.id,
+      actor_name: actor.name,
+      action: APPLY_CONFLICT_ACTION,
+      target_type: rev.target_type,
+      target_id: rev.target_id,
+      details: JSON.stringify({
+        via: "admin",
+        revisionId: rev.id,
+        reason: "target_changed_since_deposit",
+      }),
+    }),
+  );
+
+  await db.batch(stmts as Batch);
+}
+
 /**
  * Écrit `payload` sur la ligne cible (produit ou bannière) et clôt la
  * révision, en un seul `db.batch()` : c'est l'écriture qui atteint le client
@@ -229,6 +405,18 @@ export async function getRevision(id: string): Promise<RevisionRecord | null> {
  * fiche a changé depuis le dépôt — la proposition repose peut-être sur un
  * état qui n'existe plus — et on refuse plutôt que d'écraser ce changement
  * sans que personne ne l'ait vu.
+ *
+ * Ce contrôle, lu ci-dessus, n'est PAS à lui seul suffisant : entre cette
+ * lecture et le batch plus bas, une autre écriture sur la même cible peut
+ * s'intercaler — une autre révision appliquée en même temps sur la même
+ * fiche, ou une édition directe du produit. Sans le répéter dans le WHERE de
+ * l'écriture elle-même, la fenêtre entre lecture et écriture permettrait à
+ * deux applications concurrentes de toutes les deux "réussir", la seconde
+ * écrasant la première sans qu'aucun signal ne le dise. `current` (non-null
+ * ici) est donc reporté tel quel comme prédicat de l'UPDATE de la cible, et
+ * la ligne de révision elle-même n'est marquée `applied` que si elle est
+ * encore `pending` au moment du batch — pas seulement au moment de cette
+ * lecture.
  *
  * Toute autre révision `pending` de la MÊME cible passe à `superseded` :
  * deux propositions concurrentes sur la même fiche ne doivent pas pouvoir
@@ -251,18 +439,16 @@ export async function applyRevision(
     throw new RevisionError("not_found", "La cible a disparu depuis le dépôt.");
   }
   if (current !== rev.base_version) {
-    throw new RevisionError(
-      "conflict",
-      "La fiche a changé depuis le dépôt de cette révision. Demandez une " +
-      "proposition fraîche plutôt que d'appliquer celle-ci.",
-    );
+    throw new RevisionError("conflict", TARGET_CHANGED_MESSAGE);
   }
 
   // Comptées avant le batch pour le retour à l'appelant. La même condition de
   // filtrage (cible + pending) est répétée dans l'UPDATE du batch ci-dessous,
   // donc l'écriture réelle reste correcte même si une nouvelle révision est
   // déposée sur cette cible entre ce SELECT et le batch — seul le nombre
-  // rapporté pourrait alors sous-compter d'une unité.
+  // rapporté pourrait alors sous-compter d'une unité. Réutilisée aussi par
+  // `reconcileFailedApply` si l'écriture rate : ce sont exactement les
+  // révisions que CE batch s'apprête à marquer `superseded`.
   const others = await db
     .select({ id: contentRevisions.id })
     .from(contentRevisions)
@@ -273,29 +459,39 @@ export async function applyRevision(
       ne(contentRevisions.id, rev.id),
     ))
     .all();
+  const otherIds = others.map((o) => o.id);
 
   const targetSet: Record<string, unknown> = { ...rev.payload, updated_at: sql`datetime('now')` };
   if (rev.kind === "publish" && rev.target_type === "product") {
     targetSet.is_draft = 0;
   }
 
+  // `current` (non-null, vérifié ci-dessus) est la valeur que le
+  // pré-contrôle vient de comparer à `base_version` : la reporter ici rend
+  // l'écriture atomique avec ce contrôle — voir le commentaire au-dessus de
+  // la fonction.
   const targetStatement =
     rev.target_type === "banner"
       ? db
           .update(banners)
           .set(targetSet as Partial<typeof banners.$inferInsert>)
-          .where(eq(banners.id, Number(rev.target_id)))
+          .where(and(eq(banners.id, Number(rev.target_id)), eq(banners.updated_at, current)))
       : db
           .update(products)
           .set(targetSet as Partial<typeof products.$inferInsert>)
-          .where(eq(products.id, rev.target_id));
+          .where(and(eq(products.id, rev.target_id), eq(products.updated_at, current)));
 
   const stmts: Batch = [
     targetStatement,
+    // `eq(status, "pending")` : ne marque `applied` que si rien n'a déjà
+    // résolu cette révision entre la lecture ci-dessus et ce batch — sinon
+    // une révision qu'une AUTRE application concurrente vient de passer
+    // `superseded` (voir l'UPDATE ci-dessous, d'un batch gagnant) resterait
+    // "applied" alors que ce batch-ci n'a en réalité rien écrit.
     db
       .update(contentRevisions)
       .set({ status: "applied", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
-      .where(eq(contentRevisions.id, rev.id)),
+      .where(and(eq(contentRevisions.id, rev.id), eq(contentRevisions.status, "pending"))),
     // Portée sur target_type + target_id : une révision pending d'une autre
     // cible ne matche jamais cette clause et n'est donc jamais touchée.
     db
@@ -311,14 +507,30 @@ export async function applyRevision(
       id: nanoid(),
       actor_id: actor.id,
       actor_name: actor.name,
-      action: "revision.applied",
+      action: APPLIED_ACTION,
       target_type: rev.target_type,
       target_id: rev.target_id,
       details: JSON.stringify({ via: "admin", revisionId: rev.id, kind: rev.kind }),
     }),
   ];
 
-  await db.batch(stmts);
+  const results = await db.batch(stmts);
+  const targetResult = results[0] as D1Result;
+
+  if ((targetResult?.meta?.changes ?? 0) === 0) {
+    // Le prédicat de `targetStatement` n'a matché aucune ligne : la cible a
+    // changé entre le pré-contrôle ci-dessus et ce batch (une autre
+    // application concurrente sur la même cible est passée entre les deux).
+    // Le batch a malgré tout committé — voir `reconcileFailedApply` — donc
+    // cette ligne de révision, et éventuellement ses voisines, peuvent
+    // affirmer un statut que l'écriture réelle ne soutient pas. On répare,
+    // puis on renvoie le même message qu'un conflit détecté au pré-contrôle :
+    // le résultat pour l'appelant est identique dans les deux cas, rien n'a
+    // été écrit sur la cible.
+    await reconcileFailedApply(db, rev, actor, otherIds);
+    throw new RevisionError("conflict", TARGET_CHANGED_MESSAGE);
+  }
+
   return { applied: true, superseded: others.length };
 }
 
@@ -343,7 +555,7 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
       id: nanoid(),
       actor_id: actor.id,
       actor_name: actor.name,
-      action: "revision.rejected",
+      action: REJECTED_ACTION,
       target_type: rev.target_type,
       target_id: rev.target_id,
       details: JSON.stringify({ via: "admin", revisionId: rev.id }),

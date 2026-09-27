@@ -46,4 +46,30 @@ describe("scopeCurrentPanel", () => {
     const { html } = scopeCurrentPanel("", SCOPE);
     expect(html).toBe("");
   });
+
+  // Revue de phase, point 5 : le "." de tête de ".desc-<scope>" doit être
+  // échappé dans la regex, pas seulement le reste du préfixe — un "."
+  // regex non échappé matche n'importe quel caractère. Non échappé, cette
+  // entrée aurait produit ".m.desc-p1-actuel" (le "y" de "mydesc" absorbé
+  // comme "n'importe quel caractère" par le "." de tête) : un sélecteur qui
+  // ne correspond plus à rien, donc un panneau stylé par rien — le mensonge
+  // inverse que cette fonction existe pour empêcher.
+  it("n'échappe pas seulement le scope mais tout le préfixe, point compris", () => {
+    // La vraie occurrence de ".desc-p1" est nécessaire pour dépasser le
+    // filtre rapide (`css.includes(rawPrefix)`) qui court-circuite toute la
+    // fonction quand le préfixe littéral n'apparaît nulle part — sans elle,
+    // ce test passerait même avec le bug, puisque la regex ne tournerait
+    // jamais. ".mydesc-p1", elle, ne doit JAMAIS être touchée.
+    const html = "<style>.desc-p1 h1 { color: red; } .mydesc-p1 h2 { color: blue; }</style>";
+
+    const { html: rewritten } = scopeCurrentPanel(html, SCOPE);
+
+    expect(rewritten).toContain(".desc-p1-actuel h1");
+    // Un "." non échappé matche n'importe quel caractère : le "y" de
+    // "mydesc-p1" se ferait alors happer par ce "." de tête, et
+    // ".mydesc-p1" ressortirait réécrit en ".m.desc-p1-actuel" — un
+    // sélecteur qui ne correspond plus à rien.
+    expect(rewritten).toContain(".mydesc-p1 h2");
+    expect(rewritten).not.toContain(".m.desc-p1-actuel");
+  });
 });

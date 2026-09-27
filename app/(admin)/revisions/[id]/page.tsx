@@ -5,7 +5,7 @@ import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { requireAdmin } from "@/lib/auth/guards";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
-import { getRevision } from "@/lib/db/revisions";
+import { getRevision, listPendingRevisions } from "@/lib/db/revisions";
 import { getAdminProductById } from "@/lib/db/admin/products";
 import { getBannerById } from "@/lib/db/admin/banners";
 import { RevisionDiff } from "@/components/admin/revision-diff";
@@ -61,6 +61,12 @@ export default async function RevisionDetailPage({ params }: Props) {
   // retirée) : la révision existe encore mais n'a plus rien à comparer.
   if (!current) notFound();
 
+  // § 2.5 du spec : appliquer cette révision passera les autres révisions
+  // `pending` de la même cible en `superseded` — « et l'écran le dit ». Ce
+  // compte est affiché AVANT le clic (RevisionActions), pas seulement après.
+  const siblingPending = await listPendingRevisions(revision.target_type, revision.target_id);
+  const otherPendingCount = siblingPending.filter((r) => r.id !== revision.id).length;
+
   return (
     <div>
       <AdminPageHeader>
@@ -97,7 +103,7 @@ export default async function RevisionDetailPage({ params }: Props) {
         payload={revision.payload}
       />
 
-      <RevisionActions revisionId={revision.id} />
+      <RevisionActions revisionId={revision.id} otherPendingCount={otherPendingCount} />
     </div>
   );
 }

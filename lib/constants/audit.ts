@@ -12,6 +12,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "revision.created.publish": "Révision déposée (publication)",
   "revision.applied": "Révision appliquée",
   "revision.rejected": "Révision rejetée",
+  "revision.apply_conflict": "Application de révision annulée (conflit)",
 };
 
 export const AUDIT_ACTION_OPTIONS: { value: string; label: string }[] = [

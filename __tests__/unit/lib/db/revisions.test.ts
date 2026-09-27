@@ -209,6 +209,84 @@ describe("createRevision", () => {
     expect(strings.some((s) => s.includes(".desc-banner-42 .a"))).toBe(true);
     expect(strings.some((s) => s.includes(".desc-42 .a"))).toBe(false);
   });
+
+  // ─── Liste blanche de colonnes (§ WRITABLE_COLUMNS) ───
+  //
+  // `is_draft` dans un payload `update` dépublierait une fiche en silence —
+  // exactement ce que le spec (§ 2.3) interdit d'exposer. `id`/`slug`
+  // détacheraient le CSS scopé déjà stocké. Aucun de ces cas n'écrit rien :
+  // le rejet arrive avant la lecture de la cible.
+
+  it("rejette is_draft dans le payload d'une révision produit", async () => {
+    await expect(
+      createRevision({
+        target: "product",
+        targetId: "p1",
+        kind: "update",
+        payload: { is_draft: 1 },
+        origin: "mcp",
+        actor: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+    expect(d1.current!.raw).not.toHaveBeenCalled();
+  });
+
+  it("rejette id et slug dans le payload d'une révision produit", async () => {
+    await expect(
+      createRevision({
+        target: "product",
+        targetId: "p1",
+        kind: "update",
+        payload: { id: "p2", slug: "autre-slug" },
+        origin: "mcp",
+        actor: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejette created_at et updated_at dans le payload d'une révision", async () => {
+    await expect(
+      createRevision({
+        target: "product",
+        targetId: "p1",
+        kind: "update",
+        payload: { updated_at: "2020-01-01 00:00:00" },
+        origin: "mcp",
+        actor: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+  });
+
+  it("rejette id dans le payload d'une révision bannière", async () => {
+    await expect(
+      createRevision({
+        target: "banner",
+        targetId: "42",
+        kind: "update",
+        payload: { id: 99 },
+        origin: "mcp",
+        actor: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("accepte un payload composé uniquement de colonnes en liste blanche", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      /from "products"/i.test(stmt.sql) ? [["2026-01-01T00:00:00.000Z"]] : []);
+    await expect(
+      createRevision({
+        target: "product",
+        targetId: "p1",
+        kind: "update",
+        payload: { name: "Nouveau nom", base_price: 12000 },
+        origin: "mcp",
+        actor: ACTOR,
+      }),
+    ).resolves.toMatchObject({ status: "pending" });
+  });
 });
 
 describe("applyRevision", () => {
@@ -262,10 +340,21 @@ describe("applyRevision", () => {
     expect(targetUpdate.sql).toMatch(/"updated_at" = datetime\('now'\)/);
     expect(targetUpdate.params).toEqual(expect.arrayContaining(["Nouveau nom", "p1"]));
     expect(targetUpdate.sql).not.toMatch(/"is_draft"/); // kind update : is_draft non touché
+    // Prédicat 1 (bloquant course, revue de phase) : l'UPDATE de la cible ne
+    // s'applique que si `updated_at` vaut encore la version lue au
+    // pré-contrôle — sans lui, une écriture concurrente entre le
+    // pré-contrôle et ce batch écraserait silencieusement la cible.
+    expect(targetUpdate.sql).toMatch(/"updated_at" = \?/);
+    expect(targetUpdate.params).toEqual(expect.arrayContaining(["2026-01-01 00:00:00"]));
 
     const appliedUpdate = stmts.find((s) => s.params.includes("applied"))!;
     expect(appliedUpdate).toBeDefined();
     expect(appliedUpdate.params).toEqual(expect.arrayContaining(["applied", ADMIN.id, "rev-1"]));
+    // Prédicat 2 : ne marque cette révision "applied" que si elle est encore
+    // "pending" au moment du batch — sinon une révision qu'une autre
+    // application concurrente a déjà tranchée (superseded, ou rejetée entre
+    // temps) resterait "applied" en plus de son statut réel.
+    expect(appliedUpdate.params).toEqual(expect.arrayContaining(["pending"]));
 
     const supersedeUpdate = stmts.find((s) => s.params.includes("superseded"))!;
     expect(supersedeUpdate).toBeDefined();
@@ -273,6 +362,72 @@ describe("applyRevision", () => {
 
     const auditInsert = stmts.find(isAuditInsert)!;
     expect(auditInsert.params).toEqual(expect.arrayContaining([ADMIN.id, ADMIN.name, "revision.applied", "product", "p1"]));
+  });
+
+  // Bloquant de la revue de phase : sans les deux prédicats ci-dessus, une
+  // écriture concurrente entre le pré-contrôle et ce batch (une autre
+  // révision appliquée en même temps sur la même cible, ou une édition
+  // directe du produit) laisse le batch committer quand même — une UPDATE à
+  // 0 ligne n'est pas une erreur pour SQLite — et la révision reste marquée
+  // "applied" alors que rien n'a atteint la cible. Simule exactement ce cas :
+  // l'UPDATE de la cible "réussit" avec 0 ligne affectée.
+  it("réconcilie sans mentir quand la cible a changé entre le pré-contrôle et le batch (course)", async () => {
+    mockApplyReads({
+      rev: revisionRow({ payload: JSON.stringify({ name: "Nouveau nom" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+      others: [],
+    });
+    d1.current!.batch.mockResolvedValueOnce([
+      { success: true, meta: { changes: 0 }, results: [] }, // cible : rien écrit
+      { success: true, meta: { changes: 1 }, results: [] }, // révision marquée "applied" à tort
+      { success: true, meta: { changes: 0 }, results: [] }, // supersede : aucune voisine ici
+      { success: true, meta: { changes: 1 }, results: [] }, // audit "applied" (committé quand même)
+    ]);
+
+    const promise = applyRevision("rev-1", ADMIN);
+    await expect(promise).rejects.toMatchObject({ code: "conflict" });
+    await expect(promise).rejects.toThrow(/proposition fraîche/);
+
+    // Un second batch de réconciliation a dû suivre le premier.
+    expect(d1.current!.batch).toHaveBeenCalledTimes(2);
+    const reconcileStmts = d1.current!.batchStatements(1);
+
+    const revisionReset = reconcileStmts.find(
+      (s) => /^update "content_revisions"/i.test(s.sql) && s.params.includes("pending"),
+    )!;
+    expect(revisionReset).toBeDefined();
+    expect(revisionReset.params).toEqual(expect.arrayContaining(["pending", "rev-1", "applied"]));
+
+    const conflictAudit = reconcileStmts.find(isAuditInsert)!;
+    expect(conflictAudit).toBeDefined();
+    expect(conflictAudit.params).toEqual(expect.arrayContaining(["revision.apply_conflict"]));
+  });
+
+  // Même scénario, mais avec une révision voisine que le premier batch a
+  // superseded à tort (puisque l'écriture qui aurait dû la remplacer n'a en
+  // réalité pas eu lieu) : elle aussi doit revenir "pending", pas rester
+  // superseded par une application qui n'a rien écrit.
+  it("remet aussi les révisions voisines en pending si le batch raté les avait superseded à tort", async () => {
+    mockApplyReads({
+      rev: revisionRow({ payload: JSON.stringify({ name: "Nouveau nom" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+      others: ["rev-2"],
+    });
+    d1.current!.batch.mockResolvedValueOnce([
+      { success: true, meta: { changes: 0 }, results: [] },
+      { success: true, meta: { changes: 1 }, results: [] },
+      { success: true, meta: { changes: 1 }, results: [] }, // rev-2 superseded à tort
+      { success: true, meta: { changes: 1 }, results: [] },
+    ]);
+
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "conflict" });
+
+    const reconcileStmts = d1.current!.batchStatements(1);
+    const neighborReset = reconcileStmts.find(
+      (s) => /^update "content_revisions"/i.test(s.sql) && s.params.includes("rev-2"),
+    )!;
+    expect(neighborReset).toBeDefined();
+    expect(neighborReset.params).toEqual(expect.arrayContaining(["pending", "rev-2", "superseded"]));
   });
 
   it("kind publish met is_draft = 0 sur le produit cible", async () => {
