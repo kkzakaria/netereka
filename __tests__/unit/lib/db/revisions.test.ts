@@ -598,14 +598,44 @@ describe("rejectRevision", () => {
     expect(result).toEqual({ rejected: true });
 
     const stmts = d1.current!.batchStatements();
-    expect(stmts).toHaveLength(2);
+    // Une seule instruction dans le batch : l'UPDATE, seul — voir le
+    // docstring de rejectRevision (l'audit n'est écrit qu'APRÈS confirmation
+    // de son meta.changes, jamais dans le même batch qu'une écriture dont on
+    // ne connaît pas encore l'issue).
+    expect(stmts).toHaveLength(1);
     expect(stmts.some((s) => /"products"/i.test(s.sql))).toBe(false);
     expect(stmts.some((s) => /"banners"/i.test(s.sql))).toBe(false);
 
     const revisionUpdate = stmts.find((s) => /^update "content_revisions"/i.test(s.sql))!;
     expect(revisionUpdate.params).toEqual(expect.arrayContaining(["rejected", ADMIN.id, "rev-1"]));
+    // Prédicat symétrique de celui d'applyRevision (revue de phase, fix
+    // round 4) : ne marque "rejected" que si la révision est encore
+    // "pending" au moment de l'écriture.
+    expect(revisionUpdate.params).toEqual(expect.arrayContaining(["pending"]));
 
-    const auditInsert = stmts.find(isAuditInsert)!;
+    // L'audit est un insert isolé, hors du batch — voir ci-dessus.
+    const auditInsert = d1.current!.boundMatching(/insert into "audit_log"/i)[0];
+    expect(auditInsert).toBeDefined();
     expect(auditInsert.params).toEqual(expect.arrayContaining([ADMIN.id, ADMIN.name, "revision.rejected", "product", "p1"]));
+  });
+
+  // Bloquant de la revue de phase (fix round 4), jumeau exact de celui fermé
+  // sur applyRevision : deux résolutions concurrentes sur la même révision
+  // (une application qui gagne, un rejet qui perd) ne doivent pas pouvoir
+  // toutes les deux "réussir" — sinon la fiche est en ligne (l'application)
+  // ET le journal affirme un rejet, deux histoires contradictoires.
+  it("lève conflict si une autre résolution gagne la course pendant le rejet, et n'écrit pas l'audit", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => (isGetRevisionSelect(stmt.sql) ? [revisionRow()] : []));
+    // Le pré-contrôle lit "pending" (mock ci-dessus), mais l'écriture
+    // elle-même ne matche plus rien : une application concurrente a gagné
+    // entre les deux.
+    d1.current!.batch.mockResolvedValueOnce([{ success: true, meta: { changes: 0 }, results: [] }]);
+
+    await expect(rejectRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "conflict" });
+
+    // Rien n'a été journalisé : contrairement à applyRevision, il n'y a rien
+    // à réconcilier ici puisque l'audit n'est écrit qu'après confirmation.
+    const auditInsert = d1.current!.boundMatching(/insert into "audit_log"/i)[0];
+    expect(auditInsert).toBeUndefined();
   });
 });

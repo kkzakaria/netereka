@@ -38,14 +38,9 @@ export interface ApplyRevisionResult extends ActionResult {
 export async function applyRevisionAction(revisionId: string): Promise<ApplyRevisionResult> {
   const session = await requireAdmin();
 
+  let superseded: number;
   try {
-    const { superseded } = await applyRevision(revisionId, { id: session.user.id, name: session.user.name });
-    // Lue après l'application : la révision existe toujours (son statut
-    // passe à "applied", elle n'est jamais supprimée), ce qui donne la cible
-    // à revalider sans changer la signature d'applyRevision.
-    const rev = await getRevision(revisionId);
-    if (rev) await revalidateTarget(rev.target_type, rev.target_id);
-    return { success: true, supersededCount: superseded };
+    ({ superseded } = await applyRevision(revisionId, { id: session.user.id, name: session.user.name }));
   } catch (error) {
     if (error instanceof RevisionError) {
       return { success: false, error: error.message };
@@ -53,6 +48,29 @@ export async function applyRevisionAction(revisionId: string): Promise<ApplyRevi
     console.error("[admin/revisions] applyRevisionAction error:", error);
     return { success: false, error: "Erreur lors de l'application de la révision." };
   }
+
+  // L'application a déjà réussi (le bloc ci-dessus ne serait pas atteint
+  // sinon) : la revalidation est un meilleur effort, hors de cette portée
+  // d'erreur exprès. Un échec ici ne doit JAMAIS retourner un échec à
+  // l'appelant — sinon l'administrateur voit une erreur, réessaie, et le
+  // second essai échoue en conflit (la révision est déjà `applied`) : il
+  // conclut que quelque chose est cassé, alors que son contenu est en ligne
+  // depuis le premier clic. `getRevision` est lue ici (pas dans le bloc
+  // au-dessus) pour la même raison : elle donne la cible à revalider, mais
+  // son échec ne doit pas non plus se faire passer pour un échec
+  // d'application.
+  try {
+    const rev = await getRevision(revisionId);
+    if (rev) await revalidateTarget(rev.target_type, rev.target_id);
+  } catch (error) {
+    console.error(
+      "[admin/revisions] revalidation après application réussie : échec best-effort",
+      { revisionId },
+      error,
+    );
+  }
+
+  return { success: true, supersededCount: superseded };
 }
 
 export async function rejectRevisionAction(revisionId: string): Promise<ActionResult> {

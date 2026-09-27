@@ -614,9 +614,33 @@ export async function applyRevision(
   return { applied: true, superseded: others.length };
 }
 
+/** Message de conflit du jumeau de `applyRevision` : une autre résolution
+ *  (le plus souvent une application concurrente) a gagné la course pendant
+ *  que ce rejet était en vol. */
+const REJECT_RACE_MESSAGE =
+  "Cette révision a été résolue par quelqu'un d'autre (probablement " +
+  "appliquée) pendant que vous la rejetiez. Rechargez la page pour voir " +
+  "son état actuel.";
+
 /**
  * Rejette une révision `pending` sans jamais écrire sur la cible : seule la
  * ligne de révision et l'audit changent.
+ *
+ * Jumeau exact d'`applyRevision`, avec le même défaut qui y a été fermé sur
+ * deux tours de revue avant qu'on ne pense à le chercher ici : le contrôle
+ * `rev.status !== "pending"` ci-dessus n'est pas atomique avec l'écriture
+ * tant qu'il n'est pas répété dans son WHERE. Sans lui, une application et
+ * un rejet concurrents sur la MÊME révision pouvaient tous les deux
+ * "réussir" — la fiche en ligne (l'application l'y a mise) et le journal
+ * d'audit (qui affirme un rejet) racontant alors deux histoires
+ * contradictoires, celle qu'on relit dans six mois pour comprendre.
+ *
+ * Contrairement à `applyRevision`, aucune réconciliation n'est nécessaire
+ * ici en cas de course perdue : l'UPDATE (avec son prédicat `status =
+ * "pending"`) est exécuté SEUL, son `meta.changes` inspecté, et la ligne
+ * d'audit n'est écrite qu'APRÈS cette confirmation — jamais dans le même
+ * batch qu'une écriture dont on ne connaît pas encore l'issue. Il n'y a
+ * donc rien à corriger après coup, seulement à refuser.
  */
 export async function rejectRevision(revisionId: string, actor: RevisionActor): Promise<{ rejected: true }> {
   const db = await getDrizzle();
@@ -626,21 +650,27 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
     throw new RevisionError("conflict", `Révision déjà ${rev.status}.`);
   }
 
-  await db.batch([
+  const results = await db.batch([
     db
       .update(contentRevisions)
       .set({ status: "rejected", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
-      .where(eq(contentRevisions.id, rev.id)),
-    db.insert(auditLog).values({
-      id: nanoid(),
-      actor_id: actor.id,
-      actor_name: actor.name,
-      action: REJECTED_ACTION,
-      target_type: rev.target_type,
-      target_id: rev.target_id,
-      details: JSON.stringify({ via: "admin", revisionId: rev.id }),
-    }),
+      .where(and(eq(contentRevisions.id, rev.id), eq(contentRevisions.status, "pending"))),
   ] satisfies Batch);
+  const updateResult = results[0] as D1Result;
+
+  if ((updateResult?.meta?.changes ?? 0) === 0) {
+    throw new RevisionError("conflict", REJECT_RACE_MESSAGE);
+  }
+
+  await db.insert(auditLog).values({
+    id: nanoid(),
+    actor_id: actor.id,
+    actor_name: actor.name,
+    action: REJECTED_ACTION,
+    target_type: rev.target_type,
+    target_id: rev.target_id,
+    details: JSON.stringify({ via: "admin", revisionId: rev.id }),
+  });
 
   return { rejected: true };
 }
