@@ -42,8 +42,13 @@ type Batch = [Statement, ...Statement[]];
  * applique — une surface assainie d'un côté et pas de l'autre est le défaut
  * qui a coûté trois revues au lot A.
  */
-const PRODUCT_HTML_COLUMNS = ["description", "faq_html"] as const;
-const BANNER_HTML_COLUMNS = ["content_html"] as const;
+// Exportées : l'écran de validation (components/admin/revision-diff.tsx) en a
+// besoin pour distinguer, dans un payload, les colonnes de HTML libre (rendues
+// côte à côte, avec la classe de portée) des colonnes simples (affichées en
+// texte). Une seconde liste maintenue à la main dans le composant serait la
+// même dérive qu'une seconde façon d'écrire `scopeFor`.
+export const PRODUCT_HTML_COLUMNS = ["description", "faq_html"] as const;
+export const BANNER_HTML_COLUMNS = ["content_html"] as const;
 
 /** La portée d'assainissement d'une cible. Un produit : son id nu. Une
  *  bannière : `banner-<id>`, parce que le hero rend dans `desc-banner-<id>`. */
