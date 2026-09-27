@@ -20,12 +20,12 @@ jobs:
       # makes checkout fetch every ref up front, and check-migration-safety.mjs
       # only ever runs `git diff` against refs already on disk. Nothing in this
       # job fetches or pushes after checkout, so the token has no reader left.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0  # needed for migration-safety diff base (origin/<base>...HEAD)
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
