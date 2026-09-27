@@ -8,6 +8,10 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "product.draft_created": "Brouillon produit créé",
   "product.draft_updated": "Brouillon produit modifié",
   "product.draft_deleted": "Brouillon produit supprimé",
+  "revision.created.update": "Révision déposée (mise à jour)",
+  "revision.created.publish": "Révision déposée (publication)",
+  "revision.applied": "Révision appliquée",
+  "revision.rejected": "Révision rejetée",
 };
 
 export const AUDIT_ACTION_OPTIONS: { value: string; label: string }[] = [

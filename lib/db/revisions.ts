@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { nanoid } from "nanoid";
 import { getDrizzle, type DrizzleDB } from "@/lib/db/drizzle";
@@ -6,12 +6,10 @@ import { auditLog, banners, contentRevisions, products } from "@/lib/db/schema";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 
 /**
- * Dépôt et lecture des révisions (`content_revisions`) pour le MCP et la
- * surface conversationnelle. Suit les conventions de `lib/db/product-drafts.ts` :
- * Drizzle, erreurs typées, audit dans le même `db.batch()` que la mutation.
- *
- * L'application d'une révision (passage à `applied`) est hors périmètre de ce
- * fichier — voir le lot B, tâche 3.
+ * Dépôt, lecture et application des révisions (`content_revisions`) pour le
+ * MCP et la surface conversationnelle. Suit les conventions de
+ * `lib/db/product-drafts.ts` : Drizzle, erreurs typées, audit dans le même
+ * `db.batch()` que la mutation.
  */
 
 export type RevisionTarget = "product" | "banner";
@@ -214,4 +212,138 @@ export async function getRevision(id: string): Promise<RevisionRecord | null> {
   const db = await getDrizzle();
   const row = await db.select().from(contentRevisions).where(eq(contentRevisions.id, id)).limit(1).get();
   return row ? toRevisionRecord(row) : null;
+}
+
+/**
+ * Écrit `payload` sur la ligne cible (produit ou bannière) et clôt la
+ * révision, en un seul `db.batch()` : c'est l'écriture qui atteint le client
+ * final, donc tout ou rien.
+ *
+ * Le contrôle de version compare `base_version` (capturé au dépôt, voir
+ * `createRevision`) à l'`updated_at` actuel de la cible. S'ils diffèrent, la
+ * fiche a changé depuis le dépôt — la proposition repose peut-être sur un
+ * état qui n'existe plus — et on refuse plutôt que d'écraser ce changement
+ * sans que personne ne l'ait vu.
+ *
+ * Toute autre révision `pending` de la MÊME cible passe à `superseded` :
+ * deux propositions concurrentes sur la même fiche ne doivent pas pouvoir
+ * s'appliquer l'une après l'autre à l'insu de qui a validé la première. Une
+ * révision `pending` d'une autre cible n'est jamais touchée.
+ */
+export async function applyRevision(
+  revisionId: string,
+  actor: RevisionActor,
+): Promise<{ applied: true; superseded: number }> {
+  const db = await getDrizzle();
+  const rev = await getRevision(revisionId);
+  if (!rev) throw new RevisionError("not_found", "Révision introuvable.");
+  if (rev.status !== "pending") {
+    throw new RevisionError("conflict", `Révision déjà ${rev.status}.`);
+  }
+
+  const current = await readTargetVersion(db, rev.target_type, rev.target_id);
+  if (current === null) {
+    throw new RevisionError("not_found", "La cible a disparu depuis le dépôt.");
+  }
+  if (current !== rev.base_version) {
+    throw new RevisionError(
+      "conflict",
+      "La fiche a changé depuis le dépôt de cette révision. Demandez une " +
+      "proposition fraîche plutôt que d'appliquer celle-ci.",
+    );
+  }
+
+  // Comptées avant le batch pour le retour à l'appelant. La même condition de
+  // filtrage (cible + pending) est répétée dans l'UPDATE du batch ci-dessous,
+  // donc l'écriture réelle reste correcte même si une nouvelle révision est
+  // déposée sur cette cible entre ce SELECT et le batch — seul le nombre
+  // rapporté pourrait alors sous-compter d'une unité.
+  const others = await db
+    .select({ id: contentRevisions.id })
+    .from(contentRevisions)
+    .where(and(
+      eq(contentRevisions.target_type, rev.target_type),
+      eq(contentRevisions.target_id, rev.target_id),
+      eq(contentRevisions.status, "pending"),
+      ne(contentRevisions.id, rev.id),
+    ))
+    .all();
+
+  const targetSet: Record<string, unknown> = { ...rev.payload, updated_at: sql`datetime('now')` };
+  if (rev.kind === "publish" && rev.target_type === "product") {
+    targetSet.is_draft = 0;
+  }
+
+  const targetStatement =
+    rev.target_type === "banner"
+      ? db
+          .update(banners)
+          .set(targetSet as Partial<typeof banners.$inferInsert>)
+          .where(eq(banners.id, Number(rev.target_id)))
+      : db
+          .update(products)
+          .set(targetSet as Partial<typeof products.$inferInsert>)
+          .where(eq(products.id, rev.target_id));
+
+  const stmts: Batch = [
+    targetStatement,
+    db
+      .update(contentRevisions)
+      .set({ status: "applied", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
+      .where(eq(contentRevisions.id, rev.id)),
+    // Portée sur target_type + target_id : une révision pending d'une autre
+    // cible ne matche jamais cette clause et n'est donc jamais touchée.
+    db
+      .update(contentRevisions)
+      .set({ status: "superseded", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
+      .where(and(
+        eq(contentRevisions.target_type, rev.target_type),
+        eq(contentRevisions.target_id, rev.target_id),
+        eq(contentRevisions.status, "pending"),
+        ne(contentRevisions.id, rev.id),
+      )),
+    db.insert(auditLog).values({
+      id: nanoid(),
+      actor_id: actor.id,
+      actor_name: actor.name,
+      action: "revision.applied",
+      target_type: rev.target_type,
+      target_id: rev.target_id,
+      details: JSON.stringify({ via: "admin", revisionId: rev.id, kind: rev.kind }),
+    }),
+  ];
+
+  await db.batch(stmts);
+  return { applied: true, superseded: others.length };
+}
+
+/**
+ * Rejette une révision `pending` sans jamais écrire sur la cible : seule la
+ * ligne de révision et l'audit changent.
+ */
+export async function rejectRevision(revisionId: string, actor: RevisionActor): Promise<{ rejected: true }> {
+  const db = await getDrizzle();
+  const rev = await getRevision(revisionId);
+  if (!rev) throw new RevisionError("not_found", "Révision introuvable.");
+  if (rev.status !== "pending") {
+    throw new RevisionError("conflict", `Révision déjà ${rev.status}.`);
+  }
+
+  await db.batch([
+    db
+      .update(contentRevisions)
+      .set({ status: "rejected", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
+      .where(eq(contentRevisions.id, rev.id)),
+    db.insert(auditLog).values({
+      id: nanoid(),
+      actor_id: actor.id,
+      actor_name: actor.name,
+      action: "revision.rejected",
+      target_type: rev.target_type,
+      target_id: rev.target_id,
+      details: JSON.stringify({ via: "admin", revisionId: rev.id }),
+    }),
+  ] satisfies Batch);
+
+  return { rejected: true };
 }
