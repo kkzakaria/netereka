@@ -331,6 +331,7 @@ const TARGET_CHANGED_MESSAGE =
 const APPLIED_ACTION: AuditAction = "revision.applied";
 const REJECTED_ACTION: AuditAction = "revision.rejected";
 const APPLY_CONFLICT_ACTION: AuditAction = "revision.apply_conflict";
+const RECONCILE_FAILED_ACTION: AuditAction = "revision.reconcile_failed";
 
 /**
  * Répare un batch d'application dont l'écriture sur la cible n'a, en
@@ -342,20 +343,44 @@ const APPLY_CONFLICT_ACTION: AuditAction = "revision.apply_conflict";
  * - remet `rev.id` en `pending` s'il a été marqué `applied` à tort (ne
  *   touche rien s'il est déjà `superseded` par une révision concurrente
  *   gagnante — ce cas-là n'a pas besoin de réparation, il est correct) ;
- * - remet en `pending` les révisions voisines que CE batch avait lui-même
- *   marquées `superseded` (`supersededCandidateIds`, capturé avant ce
- *   batch) — jamais une ligne superseded par un autre batch, gagnant
- *   celui-là ;
+ * - remet en `pending` les révisions voisines, mais SEULEMENT si `CE` batch
+ *   raté les a lui-même périmées — voir `supersededByThisBatch` ci-dessous ;
  * - journalise la correction : l'audit "applied" du batch raté reste en
  *   base (append-only, jamais supprimé), donc cette ligne existe pour que
  *   quiconque relit le journal comprenne que cette application n'a en fait
  *   jamais eu lieu.
+ *
+ * `supersededCandidateIds` seul ne suffit PAS à décider qui ressusciter : il
+ * est lu AVANT le batch, donc il contient toutes les sœurs pending à ce
+ * moment-là — y compris celle qui va réellement gagner la course, et celles
+ * que CE gagnant périmera légitimement. Un contrôle naïf (`status =
+ * "superseded"` sur ces ids) ressusciterait alors une sœur que le vrai
+ * gagnant venait de résoudre correctement.
+ *
+ * `resolved_by = acteur courant` seul ne suffit pas non plus : le même
+ * administrateur peut lancer deux applications concurrentes, et les deux
+ * lignes porteraient alors son id sans que ça dise laquelle a réellement
+ * gagné.
+ *
+ * `supersededByThisBatch` est le remède exact, pas une heuristique : c'est
+ * `meta.changes` de l'instruction de péremption du batch RATÉ lui-même
+ * (index 2 du batch d'`applyRevision`, commenté à cet index précis parce
+ * qu'un tableau positionnel se décale silencieusement le jour où quelqu'un
+ * insère une instruction au milieu) — le nombre EXACT de lignes que CE
+ * batch a lui-même périmées. À 0 (le cas de la course à trois ci-dessus : le
+ * gagnant avait déjà tout résolu, donc le filtre `status = "pending"` de
+ * notre propre instruction ne matchait plus rien), on ne ressuscite
+ * personne. À N > 0, on sait que CE batch a bien périmé N sœurs, et
+ * `resolved_by = acteur` cible précisément celles qu'IL a marquées (et pas
+ * une sœur périmée par un autre batch, gagnant celui-là, même si le même
+ * administrateur l'a lancé).
  */
 async function reconcileFailedApply(
   db: DrizzleDB,
   rev: RevisionRecord,
   actor: RevisionActor,
   supersededCandidateIds: string[],
+  supersededByThisBatch: number,
 ): Promise<void> {
   const stmts: Statement[] = [
     db
@@ -364,7 +389,7 @@ async function reconcileFailedApply(
       .where(and(eq(contentRevisions.id, rev.id), eq(contentRevisions.status, "applied"))),
   ];
 
-  if (supersededCandidateIds.length > 0) {
+  if (supersededByThisBatch > 0 && supersededCandidateIds.length > 0) {
     stmts.push(
       db
         .update(contentRevisions)
@@ -372,6 +397,7 @@ async function reconcileFailedApply(
         .where(and(
           inArray(contentRevisions.id, supersededCandidateIds),
           eq(contentRevisions.status, "superseded"),
+          eq(contentRevisions.resolved_by, actor.id),
         )),
     );
   }
@@ -442,6 +468,15 @@ export async function applyRevision(
     throw new RevisionError("conflict", TARGET_CHANGED_MESSAGE);
   }
 
+  // Re-vérifié ici, pas seulement au dépôt (`createRevision`) : la garantie
+  // ne doit pas dépendre de l'ordre dans lequel les chemins d'écriture ont
+  // été livrés. La phase 2 (cinq outils généralisés) commence juste après
+  // cette PR ; si un futur chemin dépose un jour une ligne
+  // `content_revisions` sans passer par `createRevision`, cette ligne reste
+  // la seule qui écrit réellement sur la cible et doit donc rester, elle
+  // aussi, sourde à `is_draft`/`id`/`slug`.
+  assertWritablePayload(rev.target_type, rev.payload);
+
   // Comptées avant le batch pour le retour à l'appelant. La même condition de
   // filtrage (cible + pending) est répétée dans l'UPDATE du batch ci-dessous,
   // donc l'écriture réelle reste correcte même si une nouvelle révision est
@@ -481,6 +516,12 @@ export async function applyRevision(
           .set(targetSet as Partial<typeof products.$inferInsert>)
           .where(and(eq(products.id, rev.target_id), eq(products.updated_at, current)));
 
+  // Indices fixes du batch positionnel ci-dessous — commentés parce qu'un
+  // tableau positionnel se décale silencieusement le jour où quelqu'un
+  // insère une instruction au milieu sans mettre à jour ces constantes.
+  const TARGET_STATEMENT_INDEX = 0;
+  const SUPERSEDE_STATEMENT_INDEX = 2;
+
   const stmts: Batch = [
     targetStatement,
     // `eq(status, "pending")` : ne marque `applied` que si rien n'a déjà
@@ -493,7 +534,11 @@ export async function applyRevision(
       .set({ status: "applied", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
       .where(and(eq(contentRevisions.id, rev.id), eq(contentRevisions.status, "pending"))),
     // Portée sur target_type + target_id : une révision pending d'une autre
-    // cible ne matche jamais cette clause et n'est donc jamais touchée.
+    // cible ne matche jamais cette clause et n'est donc jamais touchée. Son
+    // `meta.changes` (index `SUPERSEDE_STATEMENT_INDEX`) dit EXACTEMENT
+    // combien de sœurs CE batch a lui-même périmées — voir
+    // `reconcileFailedApply`, qui s'en sert pour décider qui ressusciter si
+    // ce batch échoue en réalité.
     db
       .update(contentRevisions)
       .set({ status: "superseded", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
@@ -515,7 +560,7 @@ export async function applyRevision(
   ];
 
   const results = await db.batch(stmts);
-  const targetResult = results[0] as D1Result;
+  const targetResult = results[TARGET_STATEMENT_INDEX] as D1Result;
 
   if ((targetResult?.meta?.changes ?? 0) === 0) {
     // Le prédicat de `targetStatement` n'a matché aucune ligne : la cible a
@@ -523,11 +568,46 @@ export async function applyRevision(
     // application concurrente sur la même cible est passée entre les deux).
     // Le batch a malgré tout committé — voir `reconcileFailedApply` — donc
     // cette ligne de révision, et éventuellement ses voisines, peuvent
-    // affirmer un statut que l'écriture réelle ne soutient pas. On répare,
-    // puis on renvoie le même message qu'un conflit détecté au pré-contrôle :
-    // le résultat pour l'appelant est identique dans les deux cas, rien n'a
-    // été écrit sur la cible.
-    await reconcileFailedApply(db, rev, actor, otherIds);
+    // affirmer un statut que l'écriture réelle ne soutient pas.
+    const supersedeResult = results[SUPERSEDE_STATEMENT_INDEX] as D1Result;
+    const supersededByThisBatch = supersedeResult?.meta?.changes ?? 0;
+
+    try {
+      await reconcileFailedApply(db, rev, actor, otherIds, supersededByThisBatch);
+    } catch (reconcileError) {
+      // La réconciliation elle-même a échoué (D1 injoignable, par exemple) :
+      // la ligne reste dans l'état faux laissé par le batch raté. Pas de
+      // reprise automatique ici — une boucle de réconciliation qui échoue en
+      // boucle serait pire que le problème — mais au minimum une trace
+      // distincte pour qu'on retrouve cette ligne plus tard. Best-effort :
+      // si cet insert échoue aussi, on ne masque pas l'erreur d'origine.
+      console.error(
+        "[revisions] reconcileFailedApply a échoué — la ligne reste dans un état incorrect",
+        { revisionId: rev.id },
+        reconcileError,
+      );
+      try {
+        await db.insert(auditLog).values({
+          id: nanoid(),
+          actor_id: actor.id,
+          actor_name: actor.name,
+          action: RECONCILE_FAILED_ACTION,
+          target_type: rev.target_type,
+          target_id: rev.target_id,
+          details: JSON.stringify({ via: "admin", revisionId: rev.id, reason: "reconcile_failed" }),
+        });
+      } catch (auditError) {
+        console.error(
+          "[revisions] l'audit revision.reconcile_failed a aussi échoué",
+          { revisionId: rev.id },
+          auditError,
+        );
+      }
+    }
+
+    // Le résultat pour l'appelant est le même dans les deux cas (réconcilié
+    // ou non) : rien n'a été écrit sur la cible, et le message invite à
+    // redemander une proposition fraîche plutôt qu'à réessayer celle-ci.
     throw new RevisionError("conflict", TARGET_CHANGED_MESSAGE);
   }
 

@@ -430,6 +430,102 @@ describe("applyRevision", () => {
     expect(neighborReset.params).toEqual(expect.arrayContaining(["pending", "rev-2", "superseded"]));
   });
 
+  // Revue de phase (fix round 3) : course à TROIS révisions sur la même
+  // cible. `otherIds` est lu AVANT le batch de rev-1 et contient donc les
+  // deux sœurs encore "pending" à ce moment — y compris celle qui va
+  // réellement gagner la course. Un contrôle qui se contente de
+  // `status = "superseded"` sur ces ids ressusciterait alors une sœur que le
+  // vrai gagnant venait de résoudre correctement. Le remède exact :
+  // `meta.changes` de la PROPRE instruction de péremption du batch raté
+  // (index 2) dit combien de sœurs CE batch a lui-même périmées — ici zéro,
+  // puisque le gagnant avait déjà tout résolu avant que rev-1 n'exécute la
+  // sienne.
+  it("ne ressuscite aucune voisine déjà résolue par un autre batch gagnant (course à trois)", async () => {
+    mockApplyReads({
+      rev: revisionRow({ payload: JSON.stringify({ name: "Nouveau nom" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+      // Lues avant le batch de rev-1 : encore "pending" à cet instant, mais
+      // un concurrent (le vrai gagnant) va résoudre les deux avant que le
+      // batch de rev-1 ne s'exécute.
+      others: ["rev-2", "rev-3"],
+    });
+    d1.current!.batch.mockResolvedValueOnce([
+      { success: true, meta: { changes: 0 }, results: [] }, // cible : le gagnant est passé avant
+      { success: true, meta: { changes: 0 }, results: [] }, // rev-1 elle-même : déjà superseded par le gagnant
+      { success: true, meta: { changes: 0 }, results: [] }, // NOTRE péremption : rien à périmer, déjà fait
+      { success: true, meta: { changes: 1 }, results: [] }, // audit "applied" (committé quand même)
+    ]);
+
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "conflict" });
+
+    const reconcileStmts = d1.current!.batchStatements(1);
+    // Aucune instruction ne doit toucher rev-2 ni rev-3 : notre propre
+    // péremption n'a personne périmé (meta.changes = 0 à son index), donc
+    // rien à leur sujet à réconcilier — elles restent superseded par le
+    // vrai gagnant, à raison.
+    const touchesNeighbors = reconcileStmts.some(
+      (s) => s.params.includes("rev-2") || s.params.includes("rev-3"),
+    );
+    expect(touchesNeighbors).toBe(false);
+    // Seules deux instructions : le reset (no-op ici, rev-1 n'est déjà plus
+    // "applied") de rev-1, et l'audit de conflit.
+    expect(reconcileStmts).toHaveLength(2);
+  });
+
+  // Point non bloquant de la revue de phase : si la réconciliation ELLE-MÊME
+  // échoue (D1 injoignable), l'erreur d'origine (conflict) doit quand même
+  // atteindre l'appelant — pas de reprise automatique — et une trace
+  // distincte (`revision.reconcile_failed`) doit exister pour retrouver la
+  // ligne plus tard.
+  it("journalise l'échec de la réconciliation elle-même sans le masquer, si le second batch échoue", async () => {
+    mockApplyReads({
+      rev: revisionRow({ payload: JSON.stringify({ name: "Nouveau nom" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+      others: [],
+    });
+    d1.current!.batch.mockResolvedValueOnce([
+      { success: true, meta: { changes: 0 }, results: [] },
+      { success: true, meta: { changes: 1 }, results: [] },
+      { success: true, meta: { changes: 0 }, results: [] },
+      { success: true, meta: { changes: 1 }, results: [] },
+    ]);
+    // La réconciliation (second batch) échoue à son tour.
+    d1.current!.batch.mockRejectedValueOnce(new Error("D1 injoignable"));
+
+    // Une seule invocation : `mockResolvedValueOnce`/`mockRejectedValueOnce`
+    // ne sont consommés qu'une fois chacun, donc un second appel à
+    // `applyRevision` retomberait sur le mock par défaut (succès) et ne
+    // reproduirait pas ce scénario. La promesse peut en revanche être
+    // attendue plusieurs fois.
+    const promise = applyRevision("rev-1", ADMIN);
+    await expect(promise).rejects.toMatchObject({ code: "conflict" });
+    await expect(promise).rejects.toThrow(/proposition fraîche/);
+
+    // Deux tentatives de batch : le batch principal, puis la réconciliation
+    // ratée. Le fallback d'audit n'est pas un batch — c'est un insert isolé
+    // (voir `run`, câblé au succès par défaut dans createD1Mock) — donc il
+    // n'ajoute pas de troisième appel à `batch`.
+    expect(d1.current!.batch).toHaveBeenCalledTimes(2);
+    const fallbackAudit = d1.current!.boundMatching(/insert into "audit_log"/i).find(
+      (s) => s.params.includes("revision.reconcile_failed"),
+    );
+    expect(fallbackAudit).toBeDefined();
+  });
+
+  // Bloquant 2 de la revue de phase précédente (liste blanche), re-vérifié
+  // ici : `createRevision` la contrôle au dépôt, mais rien ne garantit
+  // qu'une ligne `content_revisions` a toujours été déposée par elle — la
+  // garantie ne doit pas dépendre de l'ordre dans lequel les chemins
+  // d'écriture ont été livrés.
+  it("re-vérifie la liste blanche à l'application, pas seulement au dépôt", async () => {
+    mockApplyReads({
+      rev: revisionRow({ payload: JSON.stringify({ is_draft: 1 }) }),
+      targetVersion: "2026-01-01 00:00:00",
+    });
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
   it("kind publish met is_draft = 0 sur le produit cible", async () => {
     mockApplyReads({
       rev: revisionRow({ kind: "publish", payload: JSON.stringify({ name: "Nouveau nom" }) }),

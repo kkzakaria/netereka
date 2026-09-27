@@ -357,7 +357,8 @@ export type AuditAction =
   | "revision.created.publish"
   | "revision.applied"
   | "revision.rejected"
-  | "revision.apply_conflict";
+  | "revision.apply_conflict"
+  | "revision.reconcile_failed";
 
 export interface AuditLog {
   id: string;
