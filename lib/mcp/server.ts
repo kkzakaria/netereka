@@ -1,4 +1,5 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
 import type { McpContext } from "@/lib/mcp/context";
 import { categoryTools } from "@/lib/mcp/tools/categories";
 import { productTools } from "@/lib/mcp/tools/products";
@@ -18,7 +19,10 @@ export function createMcpServer(ctx: McpContext): McpServer {
   for (const tool of ALL_TOOLS) {
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: tool.inputSchema },
+      // Le SDK v2 veut un schéma objet ; les outils déclarent une forme brute
+      // (voir lib/mcp/tools/types.ts). L'adaptation se fait ici, une seule fois,
+      // plutôt que dans les douze définitions.
+      { description: tool.description, inputSchema: z.object(tool.inputSchema) },
       async (input) => tool.handler(ctx, input),
     );
   }

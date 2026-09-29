@@ -1,13 +1,14 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { captcha, emailOTP, admin, mcp } from "better-auth/plugins";
-import { createAuthMiddleware } from "better-auth/api";
+import { captcha, emailOTP, admin, jwt } from "better-auth/plugins";
+import { mcp } from "@better-auth/mcp";
+import { cimd } from "@better-auth/cimd";
 import { createAccessControl } from "better-auth/plugins/access";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 import { sendEmail } from "@/lib/notifications/email";
 import { otpEmail } from "@/lib/notifications/templates";
-import { forceConsentQuery } from "@/lib/auth/mcp-consent-hook";
+import { fetchClientMetadataResource } from "@/lib/auth/cimd-fetch";
 
 // Statement universe for the better-auth admin plugin's ACL: every action
 // any role declared below may be granted. Scoped to what a role in this app
@@ -91,6 +92,11 @@ export const CAPTCHA_ENDPOINTS = [
   "/email-otp/request-password-reset",
   "/send-verification-email",
 ] as const;
+
+/** URL canonique de la ressource MCP protégée (aussi utilisée par app/api/mcp/route.ts). */
+export function mcpResourceUrl(siteUrl: string): string {
+  return `${siteUrl.replace(/\/+$/, "")}/api/mcp`;
+}
 
 // Extracted from initAuth() so the options literal can be asserted in unit
 // tests without instantiating a Cloudflare runtime (getCloudflareContext()
@@ -200,16 +206,6 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         maxAge: 5 * 60,
       },
     },
-    hooks: {
-      before: createAuthMiddleware(async (ctx) => {
-        // See lib/auth/mcp-consent-hook.ts — every /mcp/authorize must show
-        // the consent page. Returning { context } merges into the endpoint
-        // context (better-auth/dist/api/dispatch.mjs, defuReplaceArrays).
-        const query = forceConsentQuery(ctx.path, ctx.query as Record<string, unknown> | undefined);
-        if (!query) return;
-        return { context: { query } };
-      }),
-    },
     plugins: [
       admin({
         defaultRole: "customer",
@@ -250,29 +246,45 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         sendVerificationOnSignUp: true,
         overrideDefaultEmailVerification: true,
       }),
+      // Requis par le fournisseur OAuth (mcp() en est un) : signe les jetons
+      // d'accès JWT que requireMcpAuth vérifie contre /api/auth/jwks.
+      jwt(),
+      // Ne pas ajouter oauthProvider() : mcp() EST le fournisseur OAuth.
+      // Aucune option d'enregistrement dynamique (allowDynamicClientRegistration,
+      // allowUnauthenticatedClientRegistration) : les clients s'identifient par
+      // un CIMD, voir cimd() ci-dessous.
       mcp({
         loginPage: "/admin/login",
-        // Advertised in the protected-resource metadata; MCP clients bind
-        // their token request to it.
-        resource: `${cfEnv.SITE_URL}/api/mcp`,
-        oidcConfig: {
-          // OIDCOptions.loginPage is required by the type, but the plugin
-          // unconditionally overwrites it with the outer options.loginPage
-          // above (better-auth/dist/plugins/mcp/index.mjs: `{ ...defaults,
-          // ...options.oidcConfig, loginPage: options.loginPage, ... }` —
-          // the spread runs first, so this value is never read). Kept
-          // identical to the outer one purely so the two literals don't
-          // drift apart; it has no effect on runtime behaviour.
-          loginPage: "/admin/login",
-          consentPage: "/admin/mcp/consent",
-          requirePKCE: true,
+        consentPage: "/admin/mcp/consent",
+        // Identifiant canonique de la ressource protégée : les jetons y sont
+        // liés (claim aud). Doit être HTTPS, sauf boucle locale en développement.
+        resource: mcpResourceUrl(cfEnv.SITE_URL),
+        // Flux piloté par un administrateur : pas de client_credentials (un jeton
+        // sans utilisateur serait de toute façon refusé par buildMcpContext).
+        grantTypes: ["authorization_code", "refresh_token"],
+        // oauthAccessToken et oauthConsent existent déjà (schéma 1.6) : on
+        // écrit ailleurs plutôt que de les recréer, ce qui exigerait un DROP
+        // TABLE. Voir lib/db/schema.ts.
+        schema: {
+          oauthAccessToken: { modelName: "oauthProviderAccessToken" },
+          oauthConsent: { modelName: "oauthProviderConsent" },
         },
+      }),
+      cimd({
+        fetchClientMetadataResource,
+        metadataProfile: "mcp-2026-07-28",
       }),
     ],
     trustedOrigins: [
       "https://appleid.apple.com",
     ],
   } satisfies BetterAuthOptions;
+}
+
+/** Ressource MCP protégée du déploiement courant (dérivée de SITE_URL). */
+export async function getMcpResource(): Promise<string> {
+  const { env } = await getCloudflareContext();
+  return mcpResourceUrl((env as CloudflareEnv).SITE_URL);
 }
 
 export async function initAuth() {

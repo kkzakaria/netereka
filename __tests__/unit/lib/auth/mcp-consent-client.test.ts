@@ -19,90 +19,70 @@ vi.mock("@/lib/cloudflare/context", () => ({
   }),
 }));
 
-import { findOAuthClientName, findConsentRequest } from "@/lib/auth/mcp-consent-client";
-
-/** Routes the mocked D1 driver by table name so a test can queue rows for the
- * `verification` select and, separately, for the `oauthApplication` select
- * that `findConsentRequest` issues afterwards to resolve the client name. */
-function mockRowsFor(verificationRows: unknown[], clientRows: unknown[]) {
-  mocks.raw.mockImplementation(async (stmt: { sql: string }) => {
-    if (/from "verification"/i.test(stmt.sql)) return verificationRows;
-    if (/from "oauthApplication"/i.test(stmt.sql)) return clientRows;
-    throw new Error(`unexpected query: ${stmt.sql}`);
-  });
-}
-
-function verificationValue(overrides: Partial<Record<string, unknown>> = {}) {
-  return JSON.stringify({
-    clientId: "client-1",
-    redirectURI: "http://localhost:9999/callback",
-    scope: ["mcp:products:draft"],
-    userId: "user-1",
-    authTime: 0,
-    requireConsent: true,
-    state: null,
-    codeChallenge: "challenge",
-    codeChallengeMethod: "S256",
-    ...overrides,
-  });
-}
+import { findOAuthClientName, parseConsentRequest } from "@/lib/auth/mcp-consent-client";
 
 describe("findOAuthClientName", () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it("retourne le nom du client enregistré", async () => {
+  it("retourne le nom déclaré par le client, lu dans oauthClient", async () => {
     mocks.raw.mockResolvedValue([["Claude Desktop"]]);
-    await expect(findOAuthClientName("client-1")).resolves.toBe("Claude Desktop");
+    await expect(findOAuthClientName("https://claude.ai/oauth/client.json")).resolves.toBe("Claude Desktop");
     const stmt = mocks.bound.mock.calls[0][0] as { sql: string; params: unknown[] };
-    expect(stmt.sql).toMatch(/from "oauthApplication"/i);
-    expect(stmt.params).toEqual(["client-1"]);
+    expect(stmt.sql).toMatch(/from "oauthClient"/i);
+    expect(stmt.params).toEqual(["https://claude.ai/oauth/client.json"]);
   });
 
   it("retourne null pour un client inconnu", async () => {
     mocks.raw.mockResolvedValue([]);
     await expect(findOAuthClientName("nope")).resolves.toBeNull();
   });
+
+  it("retourne null quand le client n'a pas de nom", async () => {
+    mocks.raw.mockResolvedValue([[null]]);
+    await expect(findOAuthClientName("c")).resolves.toBeNull();
+  });
 });
 
-describe("findConsentRequest", () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+describe("parseConsentRequest", () => {
+  const base =
+    "client_id=https%3A%2F%2Fclient.example%2Fcimd.json&redirect_uri=http%3A%2F%2Flocalhost%3A9999%2Fcb" +
+    "&scope=openid+offline_access&exp=1&sig=abc";
 
-  it("résout la demande de consentement à partir du code", async () => {
-    const future = new Date(Date.now() + 60_000).toISOString();
-    mockRowsFor([[verificationValue(), future]], [["Claude Desktop"]]);
-
-    await expect(findConsentRequest("code-1")).resolves.toEqual({
-      clientId: "client-1",
-      clientName: "Claude Desktop",
+  it("extrait client, hôtes et portées de la requête signée", () => {
+    expect(parseConsentRequest(new URLSearchParams(base))).toEqual({
+      clientId: "https://client.example/cimd.json",
+      clientHost: "client.example",
       redirectHost: "localhost:9999",
-      scopes: ["mcp:products:draft"],
+      scopes: ["openid", "offline_access"],
     });
   });
 
-  it("retourne null quand le code a expiré", async () => {
-    const past = new Date(Date.now() - 60_000).toISOString();
-    mockRowsFor([[verificationValue(), past]], [["Claude Desktop"]]);
-
-    await expect(findConsentRequest("code-1")).resolves.toBeNull();
+  it("n'a pas d'hôte client quand le client_id n'est pas une URL", () => {
+    const p = new URLSearchParams(base);
+    p.set("client_id", "c1");
+    expect(parseConsentRequest(p)?.clientHost).toBeNull();
   });
 
-  it("retourne null quand requireConsent est faux", async () => {
-    const future = new Date(Date.now() + 60_000).toISOString();
-    mockRowsFor([[verificationValue({ requireConsent: false }), future]], [["Claude Desktop"]]);
-
-    await expect(findConsentRequest("code-1")).resolves.toBeNull();
+  it("retourne null sans signature (lien fabriqué à la main)", () => {
+    const p = new URLSearchParams(base);
+    p.delete("sig");
+    expect(parseConsentRequest(p)).toBeNull();
   });
 
-  it("retourne null quand le code est introuvable", async () => {
-    mockRowsFor([], [["Claude Desktop"]]);
-
-    await expect(findConsentRequest("missing")).resolves.toBeNull();
+  it("retourne null quand client_id ou redirect_uri manquent", () => {
+    expect(parseConsentRequest(new URLSearchParams("redirect_uri=http://x&sig=s"))).toBeNull();
+    expect(parseConsentRequest(new URLSearchParams("client_id=c&sig=s"))).toBeNull();
   });
 
-  it("retourne null quand la valeur stockée est du JSON invalide", async () => {
-    const future = new Date(Date.now() + 60_000).toISOString();
-    mockRowsFor([["not-json", future]], [["Claude Desktop"]]);
+  it("retourne null quand redirect_uri n'est pas une URL", () => {
+    const p = new URLSearchParams(base);
+    p.set("redirect_uri", "pas une url");
+    expect(parseConsentRequest(p)).toBeNull();
+  });
 
-    await expect(findConsentRequest("code-1")).resolves.toBeNull();
+  it("accepte une portée absente", () => {
+    const p = new URLSearchParams(base);
+    p.delete("scope");
+    expect(parseConsentRequest(p)?.scopes).toEqual([]);
   });
 });

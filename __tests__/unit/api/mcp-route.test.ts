@@ -1,16 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { SignJWT, exportJWK, generateKeyPair } from "jose";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
-const mocks = vi.hoisted(() => ({
-  getMcpSession: vi.fn(),
-  buildMcpContext: vi.fn(),
+const { BASE, RESOURCE, mocks } = vi.hoisted(() => ({
+  BASE: "https://netereka.ci/api/auth",
+  RESOURCE: "https://netereka.ci/api/mcp",
+  mocks: { buildMcpContext: vi.fn() },
 }));
 
-// withMcpAuth (real, from better-auth) calls auth.api.getMcpSession and needs auth.options.
+// requireMcpAuth (réel, @better-auth/mcp) lit auth.$context pour l'émetteur et
+// l'URL du JWKS ; le stockage anti-rejeu DPoP n'est touché que par les jetons DPoP.
 vi.mock("@/lib/auth", () => ({
   initAuth: vi.fn().mockResolvedValue({
-    options: { baseURL: "https://netereka.ci", basePath: "/api/auth" },
-    api: { getMcpSession: mocks.getMcpSession },
+    options: {},
+    $context: Promise.resolve({ baseURL: BASE, internalAdapter: {} }),
   }),
+  getMcpResource: vi.fn().mockResolvedValue(RESOURCE),
 }));
 vi.mock("@/lib/mcp/context", async () => {
   const actual = await vi.importActual<typeof import("@/lib/mcp/context")>("@/lib/mcp/context");
@@ -19,71 +24,132 @@ vi.mock("@/lib/mcp/context", async () => {
 vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => { throw new Error("no DB"); } }));
 
 import { McpAuthError } from "@/lib/mcp/context";
-import { POST, GET, DELETE } from "@/app/api/mcp/route";
+import * as route from "@/app/api/mcp/route";
 
-function rpc(body: unknown, token = "tok") {
-  return new Request("https://netereka.ci/api/mcp", {
+let privateKey: CryptoKey;
+const realFetch = globalThis.fetch;
+
+beforeAll(async () => {
+  const pair = await generateKeyPair("EdDSA", { extractable: true });
+  privateKey = pair.privateKey as CryptoKey;
+  const jwk = { ...(await exportJWK(pair.publicKey)), kid: "k1", alg: "EdDSA" };
+  // Le JWKS est servi par notre propre fetch factice : aucun réseau.
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url === `${BASE}/jwks`) return Response.json({ keys: [jwk] });
+    return realFetch(input, init);
+  });
+});
+
+async function token(claims: { aud?: string; iss?: string; sub?: string; exp?: string } = {}) {
+  return new SignJWT({ azp: "c1", client_id: "c1", scope: "openid" })
+    .setProtectedHeader({ alg: "EdDSA", kid: "k1", typ: "at+jwt" })
+    .setIssuer(claims.iss ?? BASE)
+    .setAudience(claims.aud ?? RESOURCE)
+    .setSubject(claims.sub ?? "u1")
+    .setIssuedAt()
+    .setExpirationTime(claims.exp ?? "5m")
+    .sign(privateKey);
+}
+
+function rpc(body: unknown, bearer?: string) {
+  return new Request(RESOURCE, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
-      authorization: `Bearer ${token}`,
+      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
     },
     body: JSON.stringify(body),
   });
 }
 
-const INIT = {
-  jsonrpc: "2.0", id: 1, method: "initialize",
-  params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
-};
 const LIST = { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getMcpSession.mockResolvedValue({ userId: "u1", clientId: "c1", scopes: "openid" });
   mocks.buildMcpContext.mockResolvedValue({ user: { id: "u1", name: "Admin", role: "admin" }, clientId: "c1" });
 });
 
-describe("POST /api/mcp", () => {
-  it("répond 401 avec WWW-Authenticate sans jeton valide", async () => {
-    mocks.getMcpSession.mockResolvedValue(null);
-    const res = await POST(rpc(LIST));
+describe("POST /api/mcp — authentification", () => {
+  it("répond 401 avec WWW-Authenticate pointant la métadonnée de la ressource, sans jeton", async () => {
+    const res = await route.POST(rpc(LIST));
     expect(res.status).toBe(401);
-    expect(res.headers.get("www-authenticate")).toMatch(/resource_metadata=/);
+    expect(res.headers.get("www-authenticate")).toContain(
+      'resource_metadata="https://netereka.ci/.well-known/oauth-protected-resource/api/mcp"',
+    );
     expect(mocks.buildMcpContext).not.toHaveBeenCalled();
+  });
+
+  it("répond 401 pour un jeton lié à une autre ressource (audience)", async () => {
+    const res = await route.POST(rpc(LIST, await token({ aud: "https://autre.example/mcp" })));
+    expect(res.status).toBe(401);
+    expect(mocks.buildMcpContext).not.toHaveBeenCalled();
+  });
+
+  it("répond 401 pour un jeton d'un autre émetteur", async () => {
+    const res = await route.POST(rpc(LIST, await token({ iss: "https://evil.example/api/auth" })));
+    expect(res.status).toBe(401);
+  });
+
+  it("répond 401 pour un jeton expiré", async () => {
+    const res = await route.POST(rpc(LIST, await token({ exp: "-1m" })));
+    expect(res.status).toBe(401);
+  });
+
+  it("répond 401 pour un jeton mal formé", async () => {
+    const res = await route.POST(rpc(LIST, "pas-un-jwt"));
+    expect(res.status).toBe(401);
+  });
+
+  it("transmet sub et azp du jeton à buildMcpContext", async () => {
+    await route.POST(rpc(LIST, await token({ sub: "user-42" })));
+    expect(mocks.buildMcpContext).toHaveBeenCalledWith({ userId: "user-42", clientId: "c1" });
   });
 
   it("répond 403 JSON-RPC quand le porteur du jeton n'est pas admin", async () => {
     mocks.buildMcpContext.mockRejectedValue(new McpAuthError("Accès réservé aux administrateurs"));
-    const res = await POST(rpc(LIST));
+    const res = await route.POST(rpc(LIST, await token()));
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toBe("Accès réservé aux administrateurs");
   });
+});
 
-  it("sert tools/list à un admin", async () => {
-    const res = await POST(rpc(LIST));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { result: { tools: { name: string }[] } };
-    const names = body.result.tools.map((t: { name: string }) => t.name);
-    expect(names).toContain("create_product_draft");
-    expect(names).toContain("list_categories");
-    expect(names).toHaveLength(12);
+describe("POST /api/mcp — protocole 2026-07-28 uniquement", () => {
+  it("rejette le protocole 2025 (initialize) avec la liste des versions prises en charge", async () => {
+    const init = {
+      jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+    };
+    const res = await route.POST(rpc(init, await token()));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { data: { supported: string[] } } };
+    expect(body.error.data.supported).toEqual(["2026-07-28"]);
   });
 
-  it("accepte initialize sans identifiant de session (stateless)", async () => {
-    const res = await POST(rpc(INIT));
-    expect(res.status).toBe(200);
-    expect(res.headers.get("mcp-session-id")).toBeNull();
-    const body = (await res.json()) as { result: { serverInfo: { name: string } } };
-    expect(body.result.serverInfo.name).toBe("netereka-admin");
+  it("sert les douze outils à un vrai client MCP moderne, jeton signé à l'appui", async () => {
+    const bearer = await token();
+    const client = new Client({ name: "test", version: "0" }, { versionNegotiation: { mode: "auto" } });
+    const transport = new StreamableHTTPClientTransport(new URL(RESOURCE), {
+      requestInit: { headers: { authorization: `Bearer ${bearer}` } },
+      fetch: async (input, init) => route.POST(new Request(input as string | URL, init)),
+    });
+    await client.connect(transport);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools).toHaveLength(12);
+      expect(tools.map((t) => t.name)).toContain("create_product_draft");
+      expect(client.getServerVersion()?.name).toBe("netereka-admin");
+    } finally {
+      await client.close();
+    }
   });
 });
 
-describe("GET/DELETE /api/mcp", () => {
-  it("répondent 405", async () => {
-    expect((await GET()).status).toBe(405);
-    expect((await DELETE()).status).toBe(405);
+describe("/api/mcp — méthodes", () => {
+  it("n'exporte que POST : GET et DELETE reviennent à Next (405)", () => {
+    expect(Object.keys(route).filter((k) => ["GET", "DELETE", "PUT", "PATCH", "HEAD", "OPTIONS"].includes(k))).toEqual([]);
+    expect(typeof route.POST).toBe("function");
   });
 });
