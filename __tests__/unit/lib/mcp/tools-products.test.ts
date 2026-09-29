@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createDraft: vi.fn(), updateDraft: vi.fn(), getProduct: vi.fn(), getProductDraftState: vi.fn(),
   searchProducts: vi.fn(), deleteDraft: vi.fn(),
   addImagesFromUrls: vi.fn(), removeImage: vi.fn(), setColorVariants: vi.fn(), findProductImage: vi.fn(),
+  countProductImages: vi.fn(),
 }));
 const revisionMocks = vi.hoisted(() => ({ createRevision: vi.fn() }));
 const storageMocks = vi.hoisted(() => ({ fetchAndUploadImage: vi.fn(), deleteFromR2: vi.fn() }));
@@ -40,6 +41,9 @@ const auditFor = (tool: string) => ({ actor: { id: "admin-1", name: "Admin" }, d
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Défaut sûr : une fiche sans image ne dépasse jamais le plafond. Les tests
+  // du refus au dépôt (limit_exceeded) écrasent explicitement cette valeur.
+  mocks.countProductImages.mockResolvedValue(0);
 });
 
 describe("writePath", () => {
@@ -237,6 +241,25 @@ describe("productTools", () => {
       // Ne touche jamais le produit ni ses images directement : c'est la
       // révision, pas cet outil, qui portera l'écriture — voir /revisions.
       expect(mocks.addImagesFromUrls).not.toHaveBeenCalled();
+    });
+
+    // B2 (revue de phase) : sur une fiche publiée, sans ce refus précoce, le
+    // dépôt téléverserait vers R2 puis créerait une révision que
+    // `applyRevision` ne pourrait jamais appliquer entièrement — voir la
+    // garde symétrique côté application (lib/db/revisions.ts).
+    it("refuse limit_exceeded au dépôt si le total dépasserait le plafond, sans téléverser ni déposer de révision", async () => {
+      mocks.getProductDraftState.mockResolvedValue({ is_draft: false });
+      mocks.countProductImages.mockResolvedValue(11);
+
+      const r = await tool("add_product_images").handler(ctx, {
+        id: "p1",
+        images: [{ url: "https://x/a.jpg" }, { url: "https://x/b.jpg" }],
+      });
+
+      expect(r.isError).toBe(true);
+      expect(parse(r).code).toBe("limit_exceeded");
+      expect(storageMocks.fetchAndUploadImage).not.toHaveBeenCalled();
+      expect(revisionMocks.createRevision).not.toHaveBeenCalled();
     });
 
     it("nettoie l'objet R2 déjà téléversé si le dépôt de la révision échoue ensuite (pas d'orphelin)", async () => {

@@ -17,6 +17,7 @@ import {
   sanitizePayload,
   scopeFor,
   resolveVariantPrice,
+  REVISION_KIND_LABELS,
   RevisionError,
   applyRevision,
   rejectRevision,
@@ -63,16 +64,28 @@ function revisionRow(overrides: Record<string, unknown> = {}): unknown[] {
 const isGetRevisionSelect = (sql: string) => /^select "id", "target_type"/.test(sql);
 const isProductVersionSelect = (sql: string) => /^select "updated_at" from "products"/.test(sql);
 const isBannerVersionSelect = (sql: string) => /^select "updated_at" from "banners"/.test(sql);
-const isOthersSelect = (sql: string) => /^select "id" from "content_revisions"/.test(sql);
+// `id`, `kind`, `payload` (B3, revue de phase) : le nettoyage R2 des
+// révisions add_images sœurs superseded a besoin de leur nature et de leur
+// payload, pas seulement de leur id — voir `applyRevision`.
+const isOthersSelect = (sql: string) => /^select "id", "kind", "payload" from "content_revisions"/.test(sql);
+
+/** Une révision voisine (« sœur ») pending sur la même cible, telle que renvoyée
+ *  par le SELECT `others` d'applyRevision — un simple id suffit à la plupart
+ *  des tests (kind/payload par défaut, sans effet), un objet complet à ceux
+ *  qui vérifient le nettoyage R2 d'une sœur add_images superseded. */
+type OtherRevision = string | { id: string; kind?: string; payload?: string };
 
 /** Câble les trois lectures d'applyRevision : la révision, la version de la cible, les autres pending. */
-function mockApplyReads(opts: { rev: unknown[] | null; targetVersion: string | null; others?: string[] }) {
+function mockApplyReads(opts: { rev: unknown[] | null; targetVersion: string | null; others?: OtherRevision[] }) {
   d1.current!.raw.mockImplementation(async (stmt) => {
     if (isGetRevisionSelect(stmt.sql)) return opts.rev ? [opts.rev] : [];
     if (isProductVersionSelect(stmt.sql) || isBannerVersionSelect(stmt.sql)) {
       return opts.targetVersion === null ? [] : [[opts.targetVersion]];
     }
-    if (isOthersSelect(stmt.sql)) return (opts.others ?? []).map((id) => [id]);
+    if (isOthersSelect(stmt.sql)) {
+      return (opts.others ?? []).map((o) =>
+        typeof o === "string" ? [o, "update", "{}"] : [o.id, o.kind ?? "update", o.payload ?? "{}"]);
+    }
     return [];
   });
 }
@@ -103,6 +116,24 @@ describe("resolveVariantPrice", () => {
 
   it("retombe sur le prix de base quand la variante n'a pas de prix propre, même si uniform_price est faux", () => {
     expect(resolveVariantPrice(null, false, 20000)).toBe(20000);
+  });
+});
+
+// Item 5 (revue de phase) : la liste (/revisions) avait sa propre copie de
+// ces libellés, jamais mise à jour pour les trois natures de la
+// généralisation des outils — son badge affichait le nom technique brut
+// (`add_images`). Une seule constante, importée par la liste ET le détail,
+// ferme la classe de bug (une future RevisionKind sans libellé fait échouer
+// la compilation, voir le commentaire de REVISION_KIND_LABELS).
+describe("REVISION_KIND_LABELS", () => {
+  it("porte un libellé pour chacune des cinq natures de révision", () => {
+    expect(REVISION_KIND_LABELS).toEqual({
+      update: "Modification",
+      publish: "Publication",
+      add_images: "Ajout d'images",
+      remove_image: "Suppression d'image",
+      set_variants: "Variantes",
+    });
   });
 });
 
@@ -374,6 +405,38 @@ describe("createRevision", () => {
   it("rejette set_variants sans tableau variants", async () => {
     await expect(
       createRevision({ target: "product", targetId: "p1", kind: "set_variants", payload: { uniform_price: true }, origin: "mcp", actor: ACTOR }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+  });
+
+  // Item 6 (revue de phase) : le schéma Zod du MCP (`setVariantsSchema`)
+  // défaute `uniform_price` à `true`, donc ce cas n'est pas atteignable par
+  // les outils MCP aujourd'hui — mais la phase 3 (chat admin) dépose par le
+  // même `createRevision`, sans passer par ce schéma. Sans ce contrôle,
+  // l'aperçu (`parseSetVariantsPayload`, absent → lu comme `true`) et
+  // l'application (`resolveVariantPrice`, absent → lu comme falsy)
+  // montreraient deux prix différents pour la même révision.
+  it("rejette set_variants sans uniform_price (booléen requis, pas seulement optionnel)", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      /from "products"/i.test(stmt.sql) ? [["2026-01-01T00:00:00.000Z"]] : []);
+    await expect(
+      createRevision({
+        target: "product", targetId: "p1", kind: "set_variants",
+        payload: { variants: [{ color_name: "Noir", color_hex: "#000000", stock: 5, price: null }] },
+        origin: "mcp", actor: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejette set_variants avec uniform_price non booléen (ex. une chaîne)", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      /from "products"/i.test(stmt.sql) ? [["2026-01-01T00:00:00.000Z"]] : []);
+    await expect(
+      createRevision({
+        target: "product", targetId: "p1", kind: "set_variants",
+        payload: { variants: [], uniform_price: "true" as unknown as boolean },
+        origin: "mcp", actor: ACTOR,
+      }),
     ).rejects.toMatchObject({ code: "validation_error" });
   });
 });
@@ -693,6 +756,38 @@ describe("applyRevision", () => {
     const imageInsert = stmts.find((s) => /^insert into "product_images"/i.test(s.sql));
     expect(imageInsert).toBeDefined();
     expect(imageInsert!.params).toEqual(expect.arrayContaining(["products/p1/a.jpg", "Photo"]));
+    // Preuve de discrimination B1 : l'INSERT enfant lui-même porte la clause
+    // de version de la cible (products.updated_at = version lue au
+    // pré-contrôle), pas seulement le SELECT products.id qui le nourrit déjà —
+    // ce test rougit si `eq(products.updated_at, current)` est retiré de
+    // `insertRevisionImageStatement`.
+    expect(imageInsert!.sql).toMatch(/"products"\."updated_at" = \?/);
+    expect(imageInsert!.params).toContain("2026-01-01 00:00:00");
+  });
+
+  // B2 (revue de phase) : sans ce refus, D1 committerait quand même le batch
+  // (une INSERT que la garde par ligne bloque ne compte pas comme une
+  // erreur), la révision serait marquée "applied" alors qu'une partie des
+  // images proposées n'a jamais atteint la fiche — "appliqué" ne doit jamais
+  // vouloir dire "appliqué en partie".
+  it("refuse d'appliquer une révision add_images qui dépasserait le plafond, sans rien écrire", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (isGetRevisionSelect(stmt.sql)) {
+        return [revisionRow({
+          kind: "add_images",
+          payload: JSON.stringify({
+            images: [{ key: "products/p1/a.jpg", alt: null }, { key: "products/p1/b.jpg", alt: null }],
+          }),
+        })];
+      }
+      if (isProductVersionSelect(stmt.sql)) return [["2026-01-01 00:00:00"]];
+      if (isOthersSelect(stmt.sql)) return [];
+      if (/from "product_images"/i.test(stmt.sql)) return [[11]]; // 11 déjà présentes ; 11 + 2 = 13 > 12
+      return [];
+    });
+
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "conflict" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
   });
 
   it("applique une révision remove_image : supprime la ligne product_images et efface l'objet R2 après le commit", async () => {
@@ -712,7 +807,12 @@ describe("applyRevision", () => {
     const stmts = d1.current!.batchStatements();
     const imageDelete = stmts.find((s) => /^delete from "product_images"/i.test(s.sql));
     expect(imageDelete).toBeDefined();
-    expect(imageDelete!.params).toEqual(["img-1"]);
+    // "img-1" (l'image ciblée) PUIS les deux liants de `productVersionGuard`
+    // (id du produit, version lue au pré-contrôle) — preuve de discrimination
+    // B1 : ce test rougit si la clause EXISTS de la garde de version est
+    // retirée de la suppression.
+    expect(imageDelete!.params).toEqual(["img-1", "p1", "2026-01-01 00:00:00"]);
+    expect(imageDelete!.sql).toMatch(/exists \(select 1 from "products"/);
     // Effacé APRÈS le commit du batch (voir le corps d'applyRevision) : le
     // fichier ne disparaît de R2 que si la ligne a réellement disparu de D1.
     expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/old.jpg");
@@ -747,11 +847,161 @@ describe("applyRevision", () => {
     const variantInsert = stmts.find((s) => /^insert into "product_variants"/i.test(s.sql));
     expect(variantInsert).toBeDefined();
     expect(variantInsert!.params).toEqual(expect.arrayContaining(["Noir", 100000, 5]));
+    // Preuve de discrimination B1 : l'insertion de variante porte, elle
+    // aussi, la clause de version — ce test rougit si
+    // `insertRevisionVariantStatement` perd `eq(products.updated_at, current)`.
+    expect(variantInsert!.sql).toMatch(/"products"\."updated_at" = \?/);
+    expect(variantInsert!.params).toContain("2026-01-01 00:00:00");
+  });
+
+  // B1 (revue de phase) : couvre les trois écritures que
+  // `buildSetVariantsStatements` peut produire en une seule application —
+  // mise à jour d'une variante existante, suppression d'une variante retirée
+  // (et détachement de ses images) — pour prouver que CHACUNE porte la garde
+  // de version, pas seulement l'insertion déjà couverte ci-dessus.
+  it("set_variants : la mise à jour, le détachement d'image et la suppression de variante portent toutes la clause de version", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (isGetRevisionSelect(stmt.sql)) {
+        return [revisionRow({
+          kind: "set_variants",
+          payload: JSON.stringify({
+            variants: [{ color_name: "Noir", color_hex: "#000000", price: null, stock: 5 }],
+            uniform_price: true,
+          }),
+        })];
+      }
+      if (isProductVersionSelect(stmt.sql)) return [["2026-01-01 00:00:00"]];
+      if (isOthersSelect(stmt.sql)) return [];
+      if (/^select "base_price", "compare_price" from "products"/i.test(stmt.sql)) return [[100000, null]];
+      // Deux variantes existantes : "Noir" (conservée → UPDATE) et "Blanc"
+      // (absente du payload → DELETE + détachement de ses images).
+      if (/^select "id", "attributes" from "product_variants"/i.test(stmt.sql)) {
+        return [
+          ["v-noir", JSON.stringify({ color: "Noir:#000000" })],
+          ["v-blanc", JSON.stringify({ color: "Blanc:#ffffff" })],
+        ];
+      }
+      return [];
+    });
+
+    await applyRevision("rev-1", ADMIN);
+
+    const stmts = d1.current!.batchStatements();
+    const variantUpdate = stmts.find((s) => /^update "product_variants"/i.test(s.sql) && s.params.includes("v-noir"))!;
+    expect(variantUpdate).toBeDefined();
+    expect(variantUpdate.sql).toMatch(/exists \(select 1 from "products"/);
+    expect(variantUpdate.params).toEqual(expect.arrayContaining(["p1", "2026-01-01 00:00:00"]));
+
+    const imageDetach = stmts.find((s) => /^update "product_images" set "variant_id"/i.test(s.sql))!;
+    expect(imageDetach).toBeDefined();
+    expect(imageDetach.sql).toMatch(/exists \(select 1 from "products"/);
+    expect(imageDetach.params).toEqual(expect.arrayContaining(["v-blanc", "p1", "2026-01-01 00:00:00"]));
+
+    const variantDelete = stmts.find((s) => /^delete from "product_variants"/i.test(s.sql))!;
+    expect(variantDelete).toBeDefined();
+    expect(variantDelete.sql).toMatch(/exists \(select 1 from "products"/);
+    expect(variantDelete.params).toEqual(["v-blanc", "p1", "2026-01-01 00:00:00"]);
+  });
+
+  // B1 (revue de phase) : le test de course pré-existant ("réconcilie sans
+  // mentir…", ci-dessus) ne couvrait que kind: "update" — exactement ce que
+  // la revue a signalé comme la raison pour laquelle quatre relectures n'ont
+  // pas vu que les trois natures enfant committaient quand même leur
+  // écriture réelle même quand `targetStatement` ne matchait plus rien. Un
+  // batch par nature, ici, pour que la réconciliation soit prouvée séparément
+  // plutôt que supposée « couverte par ressemblance » avec update.
+  it.each<[string, string]>([
+    ["add_images", JSON.stringify({ images: [{ key: "products/p1/a.jpg", alt: null }] })],
+    ["remove_image", JSON.stringify({ image_id: "img-1" })],
+    [
+      "set_variants",
+      JSON.stringify({
+        variants: [{ color_name: "Noir", color_hex: "#000000", price: null, stock: 5 }],
+        uniform_price: true,
+      }),
+    ],
+  ])("réconcilie sans mentir pour une révision %s quand la cible a changé entre le pré-contrôle et le batch (course)", async (kind, payload) => {
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (isGetRevisionSelect(stmt.sql)) return [revisionRow({ kind, payload })];
+      if (isProductVersionSelect(stmt.sql)) return [["2026-01-01 00:00:00"]];
+      if (isOthersSelect(stmt.sql)) return [];
+      if (/^select "base_price", "compare_price" from "products"/i.test(stmt.sql)) return [[100000, null]];
+      if (/from "product_variants"/i.test(stmt.sql)) return [];
+      if (/from "product_images"/i.test(stmt.sql)) return [["img-1", "products/p1/old.jpg", 0]];
+      return [];
+    });
+    d1.current!.batch.mockResolvedValueOnce([
+      { success: true, meta: { changes: 0 }, results: [] }, // cible : rien écrit (course)
+      { success: true, meta: { changes: 1 }, results: [] }, // révision marquée "applied" à tort
+      { success: true, meta: { changes: 0 }, results: [] }, // supersede : aucune voisine ici
+      { success: true, meta: { changes: 1 }, results: [] }, // audit "applied" (committé quand même)
+      { success: true, meta: { changes: 1 }, results: [] }, // écriture(s) enfant : committée(s) quand même par D1
+    ]);
+
+    const promise = applyRevision("rev-1", ADMIN);
+    await expect(promise).rejects.toMatchObject({ code: "conflict" });
+    await expect(promise).rejects.toThrow(/proposition fraîche/);
+
+    // Un second batch de réconciliation a dû suivre le premier, exactement
+    // comme pour kind: "update" — la réconciliation elle-même est agnostique
+    // de la nature, mais rien ne le PROUVAIT pour ces trois-là avant ce test.
+    expect(d1.current!.batch).toHaveBeenCalledTimes(2);
+    const reconcileStmts = d1.current!.batchStatements(1);
+    const revisionReset = reconcileStmts.find(
+      (s) => /^update "content_revisions"/i.test(s.sql) && s.params.includes("pending"),
+    )!;
+    expect(revisionReset).toBeDefined();
+    expect(revisionReset.params).toEqual(expect.arrayContaining(["pending", "rev-1", "applied"]));
+  });
+
+  // B3 (revue de phase) : `applyRevision` supersede déjà les révisions sœurs
+  // pending de la même cible, mais `rejectRevision` refuse tout ce qui n'est
+  // plus "pending" — une sœur `add_images` superseded ne peut donc plus jamais
+  // être rejetée, et ses objets R2 (déjà téléversés au dépôt) restaient
+  // orphelins pour toujours sans ce nettoyage-ci.
+  it("efface les objets R2 des révisions add_images sœurs remplacées (superseded), pas seulement au rejet", async () => {
+    mockApplyReads({
+      rev: revisionRow({ payload: JSON.stringify({ name: "Nouveau nom" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+      others: [
+        {
+          id: "rev-2",
+          kind: "add_images",
+          payload: JSON.stringify({ images: [{ key: "products/p1/old-a.jpg" }, { key: "products/p1/old-b.jpg" }] }),
+        },
+        { id: "rev-3", kind: "update", payload: JSON.stringify({ name: "Autre nom" }) },
+      ],
+    });
+
+    const result = await applyRevision("rev-1", ADMIN);
+    expect(result.superseded).toBe(2);
+
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/old-a.jpg");
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/old-b.jpg");
+    // La sœur "update" n'a rien téléversé : aucun appel supplémentaire au-delà
+    // des deux clés de la sœur add_images.
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledTimes(2);
   });
 
   it("re-vérifie la forme du payload à l'application pour les natures add_images/remove_image/set_variants", async () => {
     mockApplyReads({
       rev: revisionRow({ kind: "add_images", payload: JSON.stringify({}) }),
+      targetVersion: "2026-01-01 00:00:00",
+    });
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  // Item 6, re-vérifié à l'application comme le reste de la forme du payload
+  // (même principe que la liste blanche ci-dessus) : une ligne
+  // `content_revisions` déposée sans passer par `createRevision` ne doit pas
+  // pouvoir contourner ce contrôle non plus.
+  it("re-vérifie uniform_price (booléen requis) à l'application pour set_variants", async () => {
+    mockApplyReads({
+      rev: revisionRow({
+        kind: "set_variants",
+        payload: JSON.stringify({ variants: [{ color_name: "Noir", color_hex: "#000000", stock: 5, price: null }] }),
+      }),
       targetVersion: "2026-01-01 00:00:00",
     });
     await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "validation_error" });

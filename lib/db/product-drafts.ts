@@ -557,6 +557,26 @@ async function cleanupR2(keys: string[], context: string): Promise<void> {
   });
 }
 
+/**
+ * Nombre d'images déjà attachées à un produit, brouillon OU publié (aucun
+ * filtre `is_draft` — c'est un COMPTAGE, pas une mutation). Exportée pour
+ * `lib/mcp/tools/products.ts` : le chemin révision d'`add_product_images`
+ * (fiche publiée) n'a, sans cette fonction, AUCUN contrôle de plafond avant
+ * de télécharger — contrairement au chemin brouillon ci-dessous, qui refuse
+ * avant tout téléchargement. Même défaut de principe que `sanitizePayload`
+ * (lib/db/revisions.ts) existe pour éviter : la garantie ne doit pas dépendre
+ * de l'appelant qui pense à la reproduire.
+ */
+export async function countProductImages(productId: string): Promise<number> {
+  const db = await getDrizzle();
+  const row = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(productImages)
+    .where(eq(productImages.product_id, productId))
+    .get();
+  return row?.count ?? 0;
+}
+
 export async function addImagesFromUrls(
   id: string,
   images: AddImagesInput["images"],
@@ -567,12 +587,7 @@ export async function addImagesFromUrls(
 
   // Early refusal so an obviously over-limit call fails before any download.
   // Not authoritative: the WHERE guard of insertImageStatement is.
-  const counted = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(productImages)
-    .where(eq(productImages.product_id, id))
-    .get();
-  const existingCount = counted?.count ?? 0;
+  const existingCount = await countProductImages(id);
   if (existingCount + images.length > MAX_IMAGES_PER_PRODUCT) {
     throw new DraftError(
       "limit_exceeded",
@@ -702,6 +717,33 @@ function colorKey(name: string, hex: string): string {
   return `${name}:${hex}`;
 }
 
+/**
+ * Résout le prix effectif d'une variante couleur proposée : son prix propre,
+ * sauf si `uniformPrice` est vrai ou qu'elle n'en porte pas, auquel cas c'est
+ * le prix de base du produit.
+ *
+ * Définie ICI (plutôt que dans lib/db/revisions.ts, qui la consommait seule
+ * jusqu'ici) pour que `setColorVariants` ci-dessous cesse de la dupliquer :
+ * `lib/db/revisions.ts` importe déjà des symboles de ce fichier (sens
+ * établi), alors que l'inverse fermerait un cycle. Le ticket qui a demandé ce
+ * déplacement notait que la raison consignée pour la duplication (« is_draft
+ * diffère ») était fausse — is_draft vit dans le SELECT et l'UPDATE autour de
+ * cette formule, jamais dans la formule elle-même, qui est identique
+ * caractère pour caractère aux deux endroits.
+ *
+ * Exportée et re-exportée par `lib/db/revisions.ts` : consommée par
+ * `buildSetVariantsStatements` (l'application réelle d'une révision) ET par
+ * l'aperçu affiché sur /revisions (`diffVariants`,
+ * components/admin/revision-diff.tsx) — une seule fonction, importée par les
+ * trois appelants, garantit qu'aucun ne peut plus diverger des deux autres.
+ * Sur une boutique en paiement à la livraison, une divergence signifierait un
+ * prix approuvé par l'administrateur différent de celui facturé au client,
+ * découvert à la porte.
+ */
+export function resolveVariantPrice(entryPrice: number | null | undefined, uniformPrice: boolean, basePrice: number): number {
+  return uniformPrice || entryPrice == null ? basePrice : entryPrice;
+}
+
 /** Port of actions/admin/products.ts saveColorVariants, Drizzle + draft-only. */
 export async function setColorVariants(
   id: string,
@@ -743,7 +785,7 @@ export async function setColorVariants(
   input.variants.forEach((entry, index) => {
     const key = colorKey(entry.color_name, entry.color_hex);
     seen.add(key);
-    const price = input.uniform_price || entry.price == null ? product.base_price : entry.price;
+    const price = resolveVariantPrice(entry.price, input.uniform_price, product.base_price);
     const comparePrice = input.uniform_price ? product.compare_price : null;
     const attrs = JSON.stringify({ color: key });
     total += entry.stock;

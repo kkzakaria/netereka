@@ -1,7 +1,9 @@
 import {
   type DraftAudit,
   DraftError,
+  MAX_IMAGES_PER_PRODUCT,
   addImagesFromUrls,
+  countProductImages,
   createDraft,
   deleteDraft,
   findProductImage,
@@ -230,11 +232,12 @@ export const productTools: ToolDefinition[] = [
     description:
       "Télécharge 1 à 8 images depuis des URL http(s) (≤5 Mo chacune, 12 max par produit) vers le stockage de la " +
       "boutique et les attache au produit. Sur un brouillon : attachées directement, la première devient l'image " +
-      "principale. Sur une fiche publiée : les images sont téléversées immédiatement (le résultat les porte comme " +
-      "sur un brouillon), puis une révision est déposée pour les attacher — l'administrateur doit l'appliquer depuis " +
-      "/revisions avant qu'elles n'apparaissent en boutique (revision.id et revision.status dans la réponse). " +
-      "Succès partiel possible dans les deux cas : vérifier results[].ok (reason limit_exceeded si le quota a été " +
-      "atteint entre-temps).",
+      "principale. Sur une fiche publiée : si le total (images déjà présentes + celles-ci) dépasserait 12, refusé " +
+      "avant tout téléchargement (limit_exceeded) — retirez des images ou déposez-en moins. Sinon, les images sont " +
+      "téléversées immédiatement (le résultat les porte comme sur un brouillon), puis une révision est déposée pour " +
+      "les attacher — l'administrateur doit l'appliquer depuis /revisions avant qu'elles n'apparaissent en " +
+      "boutique (revision.id et revision.status dans la réponse). Succès partiel possible sur un brouillon : " +
+      "vérifier results[].ok (reason limit_exceeded si le quota a été atteint entre-temps).",
     inputSchema: { id: idSchema, ...addImagesSchema.shape },
     handler: async (ctx, input) => {
       try {
@@ -242,6 +245,22 @@ export const productTools: ToolDefinition[] = [
 
         if (writePath(is_draft) === "direct") {
           return ok({ applied: "direct", ...(await addImagesFromUrls(input.id, input.images, auditFor(ctx, "add_product_images"))) });
+        }
+
+        // Refus AVANT tout téléchargement, comme le chemin brouillon
+        // (`addImagesFromUrls`, lib/db/product-drafts.ts) : sans ce contrôle,
+        // le dépôt téléverserait vers R2, créerait une révision vouée à ne
+        // jamais s'appliquer entièrement (voir la garde symétrique dans
+        // `applyRevision`, lib/db/revisions.ts), et l'admin ne le découvrirait
+        // qu'à l'application. Mesuré en production : 182 fiches publiées sur
+        // 996 portent déjà ≥5 images, et cet outil en accepte jusqu'à 8 par
+        // appel — 5 + 8 = 13 > 12 est atteignable aujourd'hui.
+        const existingCount = await countProductImages(input.id);
+        if (existingCount + input.images.length > MAX_IMAGES_PER_PRODUCT) {
+          return fail(
+            "limit_exceeded",
+            `Au plus ${MAX_IMAGES_PER_PRODUCT} images par produit (${existingCount} déjà présentes).`,
+          );
         }
 
         // Fiche publiée : téléversement immédiat vers R2 — voir le

@@ -5,8 +5,15 @@ import { getDrizzle, type DrizzleDB } from "@/lib/db/drizzle";
 import { auditLog, banners, contentRevisions, productImages, productVariants, products } from "@/lib/db/schema";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { deleteFromR2 } from "@/lib/storage/images";
-import { MAX_IMAGES_PER_PRODUCT, r2KeyFromImageUrl } from "@/lib/db/product-drafts";
+import { MAX_IMAGES_PER_PRODUCT, r2KeyFromImageUrl, resolveVariantPrice } from "@/lib/db/product-drafts";
 import type { AuditAction } from "@/lib/db/types";
+
+// Ré-exportée telle quelle : `components/admin/revision-diff.tsx` et les
+// tests de ce fichier l'importent depuis `@/lib/db/revisions` — définie
+// maintenant dans lib/db/product-drafts.ts (voir son commentaire) pour que
+// `setColorVariants` cesse de la dupliquer, sans faire de ce fichier-ci un
+// second point d'écriture de la formule.
+export { resolveVariantPrice };
 
 /**
  * Dépôt, lecture et application des révisions (`content_revisions`) pour le
@@ -28,6 +35,24 @@ export type RevisionTarget = "product" | "banner";
 export type RevisionKind = "update" | "publish" | "add_images" | "remove_image" | "set_variants";
 export type RevisionOrigin = "mcp" | "admin_chat";
 export type RevisionStatus = "pending" | "applied" | "rejected" | "superseded";
+
+/**
+ * Libellé humain d'une `RevisionKind`, partagé par la liste (/revisions) et
+ * le détail (/revisions/[id]) — deux listes maintenues à la main avaient
+ * divergé (revue de phase, item 5) : la liste n'avait jamais reçu les trois
+ * natures de la généralisation des outils, donc son badge affichait le nom
+ * technique brut (`add_images`) au lieu d'un libellé. `Record<RevisionKind,
+ * string>` (pas `Record<string, string>`) fait échouer la COMPILATION si une
+ * future `RevisionKind` est ajoutée sans son libellé ici — un seul endroit où
+ * se tromper, comme `PRODUCT_HTML_COLUMNS` ci-dessus.
+ */
+export const REVISION_KIND_LABELS: Record<RevisionKind, string> = {
+  update: "Modification",
+  publish: "Publication",
+  add_images: "Ajout d'images",
+  remove_image: "Suppression d'image",
+  set_variants: "Variantes",
+};
 
 export class RevisionError extends Error {
   constructor(
@@ -206,7 +231,39 @@ function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload:
     if (!Array.isArray(variants)) {
       throw new RevisionError("validation_error", "Le payload set_variants doit porter un tableau variants.");
     }
+    // Exigé explicitement plutôt que laissé absent : l'aperçu de l'écran de
+    // validation (`parseSetVariantsPayload`, components/admin/revision-diff.tsx)
+    // lit une valeur absente comme `true` (`uniform_price !== false`), tandis
+    // qu'`resolveVariantPrice` ci-dessous la lit comme falsy (`uniformPrice ||
+    // …`) — un payload sans `uniform_price` ferait donc voir à l'administrateur
+    // le prix de base pendant que l'application écrirait le prix propre de
+    // chaque variante. Le schéma Zod du MCP (`setVariantsSchema`) le
+    // défaut déjà à `true`, donc ce cas n'est pas atteignable par les outils
+    // MCP aujourd'hui — mais la phase 3 (chat admin) dépose par le même
+    // `createRevision`, sans passer par ce schéma : la garantie doit donc
+    // tenir ici, pas seulement chez un appelant qui pense à la respecter.
+    if (typeof (payload as { uniform_price?: unknown }).uniform_price !== "boolean") {
+      throw new RevisionError("validation_error", "Le payload set_variants doit porter uniform_price (booléen).");
+    }
   }
+}
+
+/**
+ * Clause EXISTS qui borne une écriture enfant (`product_images`,
+ * `product_variants`) à la version de la cible que `applyRevision` vient de
+ * vérifier (`current`). D1 committe un batch entier même quand une de ses
+ * instructions ne touche 0 ligne (voir le commentaire au-dessus
+ * d'`applyRevision`) : `targetStatement` porte déjà ce contrôle sur
+ * `products`, mais une révision `add_images`/`remove_image`/`set_variants`
+ * n'écrit AUCUNE colonne de `products` — sa seule écriture réelle vise une
+ * table fille. Sans cette clause sur CHAQUE écriture fille, elle committerait
+ * quand même sur la fiche live alors que `targetStatement`, lui, n'a rien
+ * changé : c'est exactement le défaut relevé en revue de phase — un
+ * commentaire (« rien n'a été écrit sur la cible ») affirmait une garantie
+ * que le code de la phase 2 avait rendue fausse pour ces trois natures.
+ */
+function productVersionGuard(productId: string, current: string) {
+  return sql`exists (select 1 from ${products} where ${products.id} = ${productId} and ${products.updated_at} = ${current})`;
 }
 
 /**
@@ -216,10 +273,16 @@ function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload:
  * un brouillon écrit directement et ne passe jamais par ici. Même calcul SQL
  * de `sort_order`/`is_primary` et même garde du plafond d'images, pour que
  * les deux chemins ne divergent jamais sur la même règle.
+ *
+ * `current` (version lue par `applyRevision`) rejoint `products.id` dans le
+ * WHERE de la ligne déjà sélectionnée `from(products)` — pas une clause
+ * EXISTS séparée, celle-ci l'a déjà pour source : une seule colonne de plus
+ * suffit à fermer B1 pour cette écriture précise.
  */
 function insertRevisionImageStatement(
   db: DrizzleDB,
   productId: string,
+  current: string,
   row: { id: string; key: string; alt: string | null },
 ): Statement {
   const ofProduct = sql`${productImages.product_id} = ${productId}`;
@@ -238,6 +301,7 @@ function insertRevisionImageStatement(
       .from(products)
       .where(and(
         eq(products.id, productId),
+        eq(products.updated_at, current),
         sql`(select count(*) from ${productImages} where ${ofProduct}) < ${MAX_IMAGES_PER_PRODUCT}`,
       )),
   );
@@ -250,10 +314,16 @@ function insertRevisionImageStatement(
  * qu'APRÈS le commit du batch — voir l'appelant, `applyRevision` — jamais
  * avant, pour ne jamais laisser une ligne supprimée pointer vers un fichier
  * qui, lui, a survécu à un batch qui aurait échoué.
+ *
+ * `current` porte `productVersionGuard` sur LES DEUX écritures (suppression
+ * ET promotion de la nouvelle image principale) : sans la seconde, une
+ * course laisserait une image arbitraire d'une fiche live devenir principale
+ * alors que la suppression elle-même, protégée, n'aurait rien fait.
  */
 async function buildRemoveImageStatements(
   db: DrizzleDB,
   productId: string,
+  current: string,
   imageId: string,
 ): Promise<{ stmts: Statement[]; removedUrl: string }> {
   const img = await db
@@ -264,7 +334,8 @@ async function buildRemoveImageStatements(
     .get();
   if (!img) throw new RevisionError("not_found", "Image introuvable sur ce produit.");
 
-  const stmts: Statement[] = [db.delete(productImages).where(eq(productImages.id, imageId))];
+  const guard = productVersionGuard(productId, current);
+  const stmts: Statement[] = [db.delete(productImages).where(and(eq(productImages.id, imageId), guard))];
   if (img.is_primary === 1) {
     const next = await db
       .select({ id: productImages.id })
@@ -273,29 +344,44 @@ async function buildRemoveImageStatements(
       .orderBy(asc(productImages.sort_order))
       .limit(1)
       .get();
-    if (next) stmts.push(db.update(productImages).set({ is_primary: 1 }).where(eq(productImages.id, next.id)));
+    if (next) {
+      stmts.push(db.update(productImages).set({ is_primary: 1 }).where(and(eq(productImages.id, next.id), guard)));
+    }
   }
   return { stmts, removedUrl: img.url };
 }
 
 /**
- * Résout le prix effectif d'une variante couleur proposée par un
- * `set_variants` : son prix propre, sauf si `uniformPrice` est vrai ou
- * qu'elle n'en porte pas, auquel cas c'est le prix de base du produit.
- *
- * Fonction pure et exportée, appelée par les DEUX endroits qui doivent
- * produire exactement le même prix pour la même entrée : `buildSetVariantsStatements`
- * ci-dessous (ce que l'application écrira réellement) et l'aperçu affiché sur
- * /revisions (`diffVariants`, components/admin/revision-diff.tsx). Un
- * commentaire disant « même formule qu'à l'application » ne suffit pas à
- * empêcher les deux de diverger un jour — ce dépôt en a déjà payé le prix
- * ailleurs ; une seule fonction importée par les deux le garantit
- * structurellement. Même remède que `freeContentLayout`
- * (components/storefront/product-story/story-free-content.tsx), importé tel
- * quel par le panneau « Actuel » de cet écran plutôt que réécrit.
+ * Jumeau, pour une variante, d'`insertRevisionImageStatement` ci-dessus :
+ * `insert().select()` plutôt qu'un simple `.values()`, pour porter la même
+ * clause `products.updated_at = current` dans son propre WHERE — un
+ * `.values()` brut n'a pas de WHERE, donc pas de moyen de refuser l'insertion
+ * quand la version de la cible a changé.
  */
-export function resolveVariantPrice(entryPrice: number | null, uniformPrice: boolean, basePrice: number): number {
-  return uniformPrice || entryPrice == null ? basePrice : entryPrice;
+function insertRevisionVariantStatement(
+  db: DrizzleDB,
+  productId: string,
+  current: string,
+  row: { id: string; name: string; price: number; comparePrice: number | null; stock: number; attributes: string; sortOrder: number },
+): Statement {
+  return db.insert(productVariants).select(
+    db
+      .select({
+        id: sql<string>`${row.id}`.as("id"),
+        product_id: sql<string>`${productId}`.as("product_id"),
+        name: sql<string>`${row.name}`.as("name"),
+        sku: sql<string | null>`null`.as("sku"),
+        price: sql<number>`${row.price}`.as("price"),
+        compare_price: sql<number | null>`${row.comparePrice}`.as("compare_price"),
+        stock_quantity: sql<number>`${row.stock}`.as("stock_quantity"),
+        attributes: sql<string>`${row.attributes}`.as("attributes"),
+        is_active: sql<number>`1`.as("is_active"),
+        sort_order: sql<number>`${row.sortOrder}`.as("sort_order"),
+        created_at: sql<string>`datetime('now')`.as("created_at"),
+      })
+      .from(products)
+      .where(and(eq(products.id, productId), eq(products.updated_at, current))),
+  );
 }
 
 /**
@@ -310,16 +396,23 @@ export function resolveVariantPrice(entryPrice: number | null, uniformPrice: boo
  * Toute écriture concurrente sur CE produit entre le dépôt et maintenant
  * aurait de toute façon fait passer cette révision en `superseded` avant
  * qu'elle n'atteigne ce code — voir le commentaire sur le supersede dans
- * `applyRevision`.
+ * `applyRevision`. `current` (la version lue par `applyRevision`) porte
+ * `productVersionGuard` sur CHAQUE écriture ci-dessous — insertion, mise à
+ * jour ET suppression de variante, détachement d'image — pour la même raison
+ * que sur `buildRemoveImageStatements` : sans elle, une course laisserait
+ * l'ensemble des variantes se faire remplacer sur la fiche live pendant que
+ * `targetStatement` (et donc `stock_quantity`, porté dessus) n'aurait rien
+ * écrit — un stock faux sur une boutique en paiement à la livraison.
  *
- * Duplication assumée avec `setColorVariants` (deux `is_draft` différents
- * empêchent un simple paramètre booléen sans réécrire les deux appelants) :
- * toute évolution de la formule de prix doit être reportée dans les deux
- * fonctions — un rappel explicite plutôt qu'une dérive silencieuse.
+ * Duplication assumée avec `setColorVariants` pour la formule de prix
+ * seulement (`resolveVariantPrice`, importée de lib/db/product-drafts.ts, est
+ * elle strictement partagée) : `is_draft` reste géré séparément par chaque
+ * appelant, dans le SELECT et l'UPDATE qui l'entourent.
  */
 async function buildSetVariantsStatements(
   db: DrizzleDB,
   productId: string,
+  current: string,
   input: {
     variants: { color_name: string; color_hex: string; price: number | null; stock: number }[];
     uniform_price: boolean;
@@ -350,6 +443,7 @@ async function buildSetVariantsStatements(
     }
   }
 
+  const guard = productVersionGuard(productId, current);
   const stmts: Statement[] = [];
   const seen = new Set<string>();
   let total = 0;
@@ -367,14 +461,12 @@ async function buildSetVariantsStatements(
       stmts.push(
         db.update(productVariants)
           .set({ name: entry.color_name, price, compare_price: comparePrice, stock_quantity: entry.stock, attributes: attrs })
-          .where(eq(productVariants.id, existingId)),
+          .where(and(eq(productVariants.id, existingId), guard)),
       );
     } else {
       stmts.push(
-        db.insert(productVariants).values({
-          id: nanoid(), product_id: productId, name: entry.color_name, price, compare_price: comparePrice,
-          stock_quantity: entry.stock, attributes: attrs, is_active: 1, sort_order: index,
-          created_at: sql`datetime('now')`,
+        insertRevisionVariantStatement(db, productId, current, {
+          id: nanoid(), name: entry.color_name, price, comparePrice, stock: entry.stock, attributes: attrs, sortOrder: index,
         }),
       );
     }
@@ -382,8 +474,8 @@ async function buildSetVariantsStatements(
 
   for (const [key, variantId] of existingByColor) {
     if (seen.has(key)) continue;
-    stmts.push(db.update(productImages).set({ variant_id: null }).where(eq(productImages.variant_id, variantId)));
-    stmts.push(db.delete(productVariants).where(eq(productVariants.id, variantId)));
+    stmts.push(db.update(productImages).set({ variant_id: null }).where(and(eq(productImages.variant_id, variantId), guard)));
+    stmts.push(db.delete(productVariants).where(and(eq(productVariants.id, variantId), guard)));
   }
 
   return { stmts, stock_quantity: total };
@@ -725,8 +817,14 @@ export async function applyRevision(
   // rapporté pourrait alors sous-compter d'une unité. Réutilisée aussi par
   // `reconcileFailedApply` si l'écriture rate : ce sont exactement les
   // révisions que CE batch s'apprête à marquer `superseded`.
+  //
+  // `kind` et `payload` sont lus en plus de `id` (pas seulement pour compter) :
+  // une révision `add_images` superseded par CE batch ne pourra plus jamais
+  // être ni appliquée ni rejetée — `rejectRevision` refuse tout ce qui n'est
+  // plus "pending" — donc ses objets R2, déjà téléversés au dépôt, resteraient
+  // orphelins pour toujours sans le nettoyage post-commit plus bas.
   const others = await db
-    .select({ id: contentRevisions.id })
+    .select({ id: contentRevisions.id, kind: contentRevisions.kind, payload: contentRevisions.payload })
     .from(contentRevisions)
     .where(and(
       eq(contentRevisions.target_type, rev.target_type),
@@ -761,11 +859,38 @@ export async function applyRevision(
     // de téléchargement — c'est précisément ce qui évite qu'Appliquer
     // échoue sur un réseau, longtemps après que l'administrateur a cliqué.
     const { images } = rev.payload as { images: { key: string; alt: string | null }[] };
+
+    // Refuse TOUT l'apply si le total dépasserait le plafond — jamais une
+    // application partielle. `insertRevisionImageStatement` porte déjà une
+    // garde par ligne (`count(*) < MAX_IMAGES_PER_PRODUCT`), mais elle est
+    // silencieuse : une INSERT qu'elle bloque ne compte pas comme une erreur
+    // pour D1, le reste du batch committe quand même, et la révision serait
+    // marquée "applied" alors qu'une partie des images proposées n'a jamais
+    // atteint la fiche — les objets R2 correspondants resteraient orphelins
+    // sans qu'aucun signal ne le dise. Le dépôt (lib/mcp/tools/products.ts)
+    // refuse déjà ce cas avant tout téléversement ; ce contrôle-ci est le
+    // filet de sécurité côté application, pour le cas où le compte a bougé
+    // depuis (ex. des images ajoutées par une révision appliquée entre-temps).
+    const countRow = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(productImages)
+      .where(eq(productImages.product_id, rev.target_id))
+      .get();
+    const existingImageCount = countRow?.count ?? 0;
+    if (existingImageCount + images.length > MAX_IMAGES_PER_PRODUCT) {
+      throw new RevisionError(
+        "conflict",
+        `Cette révision propose ${images.length} image(s), le produit en compte déjà ` +
+        `${existingImageCount} : le plafond de ${MAX_IMAGES_PER_PRODUCT} images serait dépassé. Rejetez-la et ` +
+        "redéposez-en une avec moins d'images.",
+      );
+    }
+
     extraStatements = images.map((img) =>
-      insertRevisionImageStatement(db, rev.target_id, { id: nanoid(), key: img.key, alt: img.alt }));
+      insertRevisionImageStatement(db, rev.target_id, current, { id: nanoid(), key: img.key, alt: img.alt }));
   } else if (rev.kind === "remove_image") {
     const { image_id } = rev.payload as { image_id: string };
-    const removal = await buildRemoveImageStatements(db, rev.target_id, image_id);
+    const removal = await buildRemoveImageStatements(db, rev.target_id, current, image_id);
     extraStatements = removal.stmts;
     // Le fichier R2 n'est supprimé qu'APRÈS le commit du batch (voir plus
     // bas) : tant que la ligne `product_images` existe encore, un échec
@@ -776,7 +901,7 @@ export async function applyRevision(
         console.warn("[revisions] orphan R2 object after remove_image apply", removal.removedUrl, e);
       });
   } else if (rev.kind === "set_variants") {
-    const variants = await buildSetVariantsStatements(db, rev.target_id, rev.payload as {
+    const variants = await buildSetVariantsStatements(db, rev.target_id, current, rev.payload as {
       variants: { color_name: string; color_hex: string; price: number | null; stock: number }[];
       uniform_price: boolean;
     });
@@ -893,8 +1018,21 @@ export async function applyRevision(
     }
 
     // Le résultat pour l'appelant est le même dans les deux cas (réconcilié
-    // ou non) : rien n'a été écrit sur la cible, et le message invite à
-    // redemander une proposition fraîche plutôt qu'à réessayer celle-ci.
+    // ou non) : rien n'a été écrit sur la cible ni sur aucune de ses tables
+    // filles, et le message invite à redemander une proposition fraîche
+    // plutôt qu'à réessayer celle-ci. C'était vrai par construction en phase 1
+    // (`targetStatement` était la SEULE écriture du batch), mais la phase 2 —
+    // qui a ajouté `add_images`/`remove_image`/`set_variants`, écrivant une
+    // table fille (`product_images`, `product_variants`) plutôt qu'une colonne
+    // de `products` — l'avait rendu faux sans que ce commentaire ne change :
+    // `insertRevisionImageStatement`, `buildRemoveImageStatements` et
+    // `buildSetVariantsStatements` committaient quand même leur écriture
+    // fille, alors que `targetResult.meta.changes === 0` ci-dessus prouve que
+    // `targetStatement`, lui, n'avait rien changé. C'est de nouveau vrai
+    // maintenant que chacune de ces écritures filles porte, elle aussi,
+    // `productVersionGuard(rev.target_id, current)` — pas parce que ce
+    // commentaire l'affirme, mais parce que le WHERE de chaque écriture le
+    // garantit.
     throw new RevisionError("conflict", TARGET_CHANGED_MESSAGE);
   }
 
@@ -904,6 +1042,41 @@ export async function applyRevision(
   // échec ici est journalisé, jamais renvoyé à l'appelant : l'application a
   // déjà réussi.
   if (afterCommit) await afterCommit();
+
+  // Nettoyage R2 des révisions `add_images` sœurs que CE batch vient de
+  // remplacer (superseded) : `rejectRevision` libère déjà les objets R2 d'une
+  // révision `add_images` REJETÉE (voir plus bas), mais une révision
+  // `superseded` ne peut plus jamais être ni appliquée ni rejetée —
+  // `rejectRevision` refuse tout ce qui n'est pas "pending" — donc sans ce
+  // nettoyage ICI, ses objets R2 resteraient orphelins dans R2 pour toujours.
+  // Deux révisions `add_images` pending sur le même produit n'est pas
+  // exotique : l'écran /revisions le signale explicitement à l'administrateur.
+  // `others` a été lu AVANT le batch (voir plus haut) : même approximation
+  // assumée que pour `superseded: others.length` ci-dessous — une révision
+  // sœur résolue par ailleurs entre cette lecture et le batch ferait au pire
+  // un second appel `deleteFromR2` sur une clé déjà effacée (best-effort,
+  // sans conséquence). Hors transaction, comme tout le nettoyage R2 de ce
+  // fichier : un échec ici est journalisé, jamais renvoyé à l'appelant —
+  // l'application a déjà réussi.
+  const supersededImageKeys = others
+    .filter((o) => o.kind === "add_images")
+    .flatMap((o) => {
+      try {
+        const payload = JSON.parse(o.payload) as { images?: { key: string }[] };
+        return (payload.images ?? []).map((img) => img.key);
+      } catch (e) {
+        console.error("[revisions] payload add_images d'une révision sœur illisible au nettoyage R2", o.id, e);
+        return [];
+      }
+    });
+  if (supersededImageKeys.length > 0) {
+    const cleanup = await Promise.allSettled(supersededImageKeys.map((key) => deleteFromR2(key)));
+    cleanup.forEach((c, i) => {
+      if (c.status === "rejected") {
+        console.warn("[revisions] orphan R2 object after supersede", supersededImageKeys[i], c.reason);
+      }
+    });
+  }
 
   return { applied: true, superseded: others.length };
 }
