@@ -846,7 +846,12 @@ export async function applyRevision(
   // réelle vient d'`extraStatements`, vers une table enfant du produit.
   const targetSet: Record<string, unknown> = { updated_at: sql`datetime('now')` };
   let extraStatements: Statement[] = [];
-  let afterCommit: (() => Promise<void>) | null = null;
+  // Reçoit les résultats positionnels du batch entier : un nettoyage R2
+  // post-commit doit pouvoir s'ancrer sur le `meta.changes` de SA PROPRE
+  // écriture enfant (ex. le DELETE de `remove_image`), jamais sur celui de
+  // `targetStatement` — voir le commentaire au-dessus de la construction de
+  // `stmts` plus bas pour la raison exacte.
+  let afterCommit: ((results: unknown[]) => Promise<void>) | null = null;
 
   if (rev.kind === "update") {
     Object.assign(targetSet, rev.payload);
@@ -886,8 +891,45 @@ export async function applyRevision(
       );
     }
 
-    extraStatements = images.map((img) =>
-      insertRevisionImageStatement(db, rev.target_id, current, { id: nanoid(), key: img.key, alt: img.alt }));
+    // Ids générés ICI (pas dans le `.map` qui construit les statements) pour
+    // pouvoir relire, après le commit, lesquels ont réellement atterri — voir
+    // `afterCommit` plus bas.
+    const imageRows = images.map((img) => ({ id: nanoid(), key: img.key, alt: img.alt }));
+    extraStatements = imageRows.map((row) => insertRevisionImageStatement(db, rev.target_id, current, row));
+
+    // Filet de sécurité complémentaire au refus ci-dessus, pas un doublon :
+    // `existingImageCount` est une LECTURE d'avant le batch, pas une garantie
+    // transactionnelle. `actions/admin/images.ts` (chemin d'upload direct de
+    // l'admin classique, hors révisions) insère dans `product_images` sur une
+    // fiche publiée SANS jamais toucher `products.updated_at` — notre garde
+    // de version est donc aveugle à ce chemin-là. Un tel téléversement
+    // atterrissant entre la lecture ci-dessus et l'exécution du batch laisse
+    // la garde par ligne de `insertRevisionImageStatement` (qui recalcule
+    // `count(*)` en direct, à l'exécution) écarter une partie de NOS images
+    // en silence, alors que le reste de l'apply réussit. Même remède que le
+    // chemin brouillon (`addImagesFromUrls`, lib/db/product-drafts.ts) : relire
+    // ce qui a réellement atterri, nettoyer R2 pour le reste.
+    afterCommit = async () => {
+      const landed = await db
+        .select({ id: productImages.id })
+        .from(productImages)
+        .where(inArray(productImages.id, imageRows.map((r) => r.id)))
+        .all();
+      const landedIds = new Set(landed.map((r) => r.id));
+      const skipped = imageRows.filter((r) => !landedIds.has(r.id));
+      if (skipped.length === 0) return;
+      console.warn(
+        "[revisions] add_images : plafond atteint entre le pré-contrôle et l'application (course avec un " +
+        "chemin hors révision) — nettoyage des objets R2 écartés",
+        { revisionId: rev.id, productId: rev.target_id, skippedKeys: skipped.map((s) => s.key) },
+      );
+      const cleanup = await Promise.allSettled(skipped.map((s) => deleteFromR2(s.key)));
+      cleanup.forEach((c, i) => {
+        if (c.status === "rejected") {
+          console.warn("[revisions] orphan R2 object after add_images apply (plafond dépassé)", skipped[i].key, c.reason);
+        }
+      });
+    };
   } else if (rev.kind === "remove_image") {
     const { image_id } = rev.payload as { image_id: string };
     const removal = await buildRemoveImageStatements(db, rev.target_id, current, image_id);
@@ -896,10 +938,23 @@ export async function applyRevision(
     // bas) : tant que la ligne `product_images` existe encore, un échec
     // avant ce point laisse une image cohérente en base et en stockage,
     // plutôt qu'une ligne supprimée pointant vers un objet qui a survécu.
-    afterCommit = () =>
-      deleteFromR2(r2KeyFromImageUrl(removal.removedUrl)).catch((e) => {
+    //
+    // Ancré sur le `meta.changes` du DELETE FILS lui-même (`results[0]` —
+    // `extraStatements` est toujours placé en tête du batch, voir la
+    // construction de `stmts` plus bas, et `removal.stmts[0]` est toujours ce
+    // DELETE, voir `buildRemoveImageStatements`), PAS sur celui de
+    // `targetStatement` : ce sont deux écritures distinctes sur deux tables
+    // distinctes, et seule celle-ci dit si la ligne a réellement disparu. Les
+    // confondre est précisément ce qui a laissé une ligne supprimée pointer
+    // vers un fichier détruit (ou l'inverse) tant que le DELETE, mal ordonné,
+    // ne matchait plus rien alors que `targetStatement`, lui, réussissait.
+    afterCommit = async (results) => {
+      const deleteResult = results[0] as D1Result;
+      if ((deleteResult?.meta?.changes ?? 0) === 0) return;
+      await deleteFromR2(r2KeyFromImageUrl(removal.removedUrl)).catch((e) => {
         console.warn("[revisions] orphan R2 object after remove_image apply", removal.removedUrl, e);
       });
+    };
   } else if (rev.kind === "set_variants") {
     const variants = await buildSetVariantsStatements(db, rev.target_id, current, rev.payload as {
       variants: { color_name: string; color_hex: string; price: number | null; stock: number }[];
@@ -924,14 +979,7 @@ export async function applyRevision(
           .set(targetSet as Partial<typeof products.$inferInsert>)
           .where(and(eq(products.id, rev.target_id), eq(products.updated_at, current)));
 
-  // Indices fixes du batch positionnel ci-dessous — commentés parce qu'un
-  // tableau positionnel se décale silencieusement le jour où quelqu'un
-  // insère une instruction au milieu sans mettre à jour ces constantes.
-  const TARGET_STATEMENT_INDEX = 0;
-  const SUPERSEDE_STATEMENT_INDEX = 2;
-
-  const stmts: Batch = [
-    targetStatement,
+  const markAppliedStatement =
     // `eq(status, "pending")` : ne marque `applied` que si rien n'a déjà
     // résolu cette révision entre la lecture ci-dessus et ce batch — sinon
     // une révision qu'une AUTRE application concurrente vient de passer
@@ -940,7 +988,9 @@ export async function applyRevision(
     db
       .update(contentRevisions)
       .set({ status: "applied", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
-      .where(and(eq(contentRevisions.id, rev.id), eq(contentRevisions.status, "pending"))),
+      .where(and(eq(contentRevisions.id, rev.id), eq(contentRevisions.status, "pending")));
+
+  const supersedeStatement =
     // Portée sur target_type + target_id : une révision pending d'une autre
     // cible ne matche jamais cette clause et n'est donc jamais touchée. Son
     // `meta.changes` (index `SUPERSEDE_STATEMENT_INDEX`) dit EXACTEMENT
@@ -955,21 +1005,56 @@ export async function applyRevision(
         eq(contentRevisions.target_id, rev.target_id),
         eq(contentRevisions.status, "pending"),
         ne(contentRevisions.id, rev.id),
-      )),
-    db.insert(auditLog).values({
-      id: nanoid(),
-      actor_id: actor.id,
-      actor_name: actor.name,
-      action: APPLIED_ACTION,
-      target_type: rev.target_type,
-      target_id: rev.target_id,
-      details: JSON.stringify({ via: "admin", revisionId: rev.id, kind: rev.kind }),
-    }),
-    // Ajoutées en fin de tableau : les index fixes ci-dessus (0 et 2) restent
-    // corrects quel que soit le nombre d'écritures enfant qu'une révision
-    // `add_images`/`remove_image`/`set_variants` y ajoute.
+      ));
+
+  const auditStatement = db.insert(auditLog).values({
+    id: nanoid(),
+    actor_id: actor.id,
+    actor_name: actor.name,
+    action: APPLIED_ACTION,
+    target_type: rev.target_type,
+    target_id: rev.target_id,
+    details: JSON.stringify({ via: "admin", revisionId: rev.id, kind: rev.kind }),
+  });
+
+  // `extraStatements` DOIT s'exécuter AVANT `targetStatement`, pas après.
+  // Un batch D1 est une transaction SQL séquentielle : chaque instruction
+  // voit les effets des précédentes. `targetStatement` avance
+  // `products.updated_at` à `datetime('now')` ; si elle s'exécutait en
+  // premier (ordre d'origine de la phase 2), la garde de version de CHAQUE
+  // écriture enfant (`productVersionGuard`, comparée à `current` — la valeur
+  // D'AVANT le bump) ne matcherait alors plus jamais rien, quelle que soit la
+  // cible. Reproduit contre un vrai SQLite (voir le test
+  // « [SQLITE RÉEL] » ci-dessous) : sur le chemin normal, SANS AUCUNE course,
+  // `add_images` rapportait un succès sans insérer la moindre image (R2
+  // orphelin pour toujours, le rejet refusant une révision déjà `applied`),
+  // `remove_image` effaçait l'objet R2 sans jamais supprimer la ligne
+  // (image cassée en ligne), et `set_variants` écrivait `stock_quantity` sur
+  // `products` sans qu'aucune variante ne bouge (stock désynchronisé de ses
+  // propres variantes — le mode de défaillance que B1 décrivait à l'origine,
+  // rendu déterministe par l'inversion). C'était donc une RÉGRESSION du
+  // premier correctif de B1, pas un reste : avant lui, le chemin normal
+  // fonctionnait et seule une vraie course était fausse.
+  //
+  // Placer les enfants en tête ne casse rien de leur propre lecture de
+  // `current` (ils ne touchent jamais `products` eux-mêmes) ni de celle de
+  // `targetStatement`, qui lit encore la valeur non modifiée puisqu'aucune
+  // des instructions qui le précèdent désormais n'écrit sur `products`.
+  //
+  // Indices dérivés de `extraStatements.length` (pas des constantes fixes,
+  // pour rester corrects quel que soit le nombre d'écritures enfant) —
+  // commentés parce qu'un tableau positionnel se décale silencieusement le
+  // jour où quelqu'un insère une instruction au milieu sans les recalculer.
+  const TARGET_STATEMENT_INDEX = extraStatements.length;
+  const SUPERSEDE_STATEMENT_INDEX = extraStatements.length + 2;
+
+  const stmts = [
     ...extraStatements,
-  ];
+    targetStatement,
+    markAppliedStatement,
+    supersedeStatement,
+    auditStatement,
+  ] as unknown as Batch;
 
   const results = await db.batch(stmts);
   const targetResult = results[TARGET_STATEMENT_INDEX] as D1Result;
@@ -1036,12 +1121,13 @@ export async function applyRevision(
     throw new RevisionError("conflict", TARGET_CHANGED_MESSAGE);
   }
 
-  // Le batch a réellement écrit la cible : `remove_image` peut maintenant
-  // effacer le fichier R2 devenu orphelin en toute sécurité (voir plus haut).
-  // Best-effort et hors transaction — R2 n'est jamais atomique avec D1 — un
-  // échec ici est journalisé, jamais renvoyé à l'appelant : l'application a
-  // déjà réussi.
-  if (afterCommit) await afterCommit();
+  // Le batch a réellement écrit la cible : `remove_image`/`add_images`
+  // peuvent maintenant vérifier leur propre écriture enfant en toute
+  // sécurité (voir plus haut, `results` porte le résultat positionnel de
+  // CHAQUE instruction, pas seulement celui de la cible). Best-effort et hors
+  // transaction — R2 n'est jamais atomique avec D1 — un échec ici est
+  // journalisé, jamais renvoyé à l'appelant : l'application a déjà réussi.
+  if (afterCommit) await afterCommit(results);
 
   // Nettoyage R2 des révisions `add_images` sœurs que CE batch vient de
   // remplacer (superseded) : `rejectRevision` libère déjà les objets R2 d'une

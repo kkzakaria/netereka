@@ -86,6 +86,17 @@ function mockApplyReads(opts: { rev: unknown[] | null; targetVersion: string | n
       return (opts.others ?? []).map((o) =>
         typeof o === "string" ? [o, "update", "{}"] : [o.id, o.kind ?? "update", o.payload ?? "{}"]);
     }
+    // Pré-contrôle de plafond d'`add_images` (B2, avant le batch) : par
+    // défaut, aucune image déjà présente — les tests qui veulent un compte
+    // différent câblent leur propre `raw.mockImplementation`.
+    if (/^select count\(\*\) from "product_images"/i.test(stmt.sql)) return [[0]];
+    // Relecture post-commit d'`add_images` (B2, après le batch) : par défaut,
+    // chaque id interrogé est renvoyé comme atterri (aucune n'a été écartée
+    // par la garde de plafond) — sinon ce mock, qui ne simule aucun état réel,
+    // ferait croire à un dépassement et nettoierait R2 en silence sur CHAQUE
+    // application add_images réussie de ce fichier, pas seulement celle qui
+    // veut réellement tester ce cas.
+    if (/"product_images"\."id" in/i.test(stmt.sql)) return stmt.params.map((p) => [p]);
     return [];
   });
 }
@@ -790,6 +801,48 @@ describe("applyRevision", () => {
     expect(d1.current!.batch).not.toHaveBeenCalled();
   });
 
+  // Round 2 de la revue de phase (« le reste de B2 ») : le pré-contrôle
+  // ci-dessus est une LECTURE d'avant le batch, pas une garantie
+  // transactionnelle. `actions/admin/images.ts` (chemin d'upload direct de
+  // l'admin classique) insère dans `product_images` sur une fiche publiée
+  // SANS jamais toucher `products.updated_at` — notre garde de version ne le
+  // voit donc jamais passer. Simule ce cas : le pré-contrôle voit 0 image
+  // (donc ne refuse rien), mais au moment du batch, une seule des deux images
+  // proposées a pu passer la garde par ligne (le plafond a été atteint
+  // entre-temps par ce chemin hors révision) — l'autre doit être détectée à
+  // la relecture post-commit et son objet R2 nettoyé, exactement comme le
+  // chemin brouillon (`addImagesFromUrls`, lib/db/product-drafts.ts) le fait
+  // déjà.
+  it("nettoie R2 de l'image add_images écartée entre le pré-contrôle et l'application (course avec un chemin hors révision)", async () => {
+    let queriedIds: string[] = [];
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (isGetRevisionSelect(stmt.sql)) {
+        return [revisionRow({
+          kind: "add_images",
+          payload: JSON.stringify({
+            images: [{ key: "products/p1/a.jpg", alt: null }, { key: "products/p1/b.jpg", alt: null }],
+          }),
+        })];
+      }
+      if (isProductVersionSelect(stmt.sql)) return [["2026-01-01 00:00:00"]];
+      if (isOthersSelect(stmt.sql)) return [];
+      if (/^select count\(\*\) from "product_images"/i.test(stmt.sql)) return [[0]];
+      if (/"product_images"\."id" in/i.test(stmt.sql)) {
+        queriedIds = stmt.params as string[];
+        // Seule la PREMIÈRE image (celle de "a.jpg") a atterri.
+        return [[queriedIds[0]]];
+      }
+      return [];
+    });
+
+    const result = await applyRevision("rev-1", ADMIN);
+    expect(result).toEqual({ applied: true, superseded: 0 });
+
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/b.jpg");
+    expect(storageMocks.deleteFromR2).not.toHaveBeenCalledWith("products/p1/a.jpg");
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledTimes(1);
+  });
+
   it("applique une révision remove_image : supprime la ligne product_images et efface l'objet R2 après le commit", async () => {
     d1.current!.raw.mockImplementation(async (stmt) => {
       if (isGetRevisionSelect(stmt.sql)) {
@@ -816,6 +869,37 @@ describe("applyRevision", () => {
     // Effacé APRÈS le commit du batch (voir le corps d'applyRevision) : le
     // fichier ne disparaît de R2 que si la ligne a réellement disparu de D1.
     expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/old.jpg");
+  });
+
+  // Round 2 de la revue de phase : `afterCommit` de `remove_image` doit
+  // s'ancrer sur le `meta.changes` du DELETE FILS lui-même (`results[0]` —
+  // `extraStatements` est toujours en tête du batch), jamais sur celui de
+  // `targetStatement`. Simule ici le cas où la cible a bien été touchée mais
+  // où le DELETE, lui, n'a rien supprimé (ligne déjà absente, ou — avant ce
+  // correctif — un ordre de batch qui aurait fait échouer sa garde de
+  // version) : sans l'ancrage correct, `afterCommit` effacerait quand même le
+  // fichier R2 d'une ligne qui n'a en réalité jamais disparu de D1.
+  it("n'efface PAS l'objet R2 d'une révision remove_image si le DELETE fils n'a rien supprimé, même si la cible a changé", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (isGetRevisionSelect(stmt.sql)) {
+        return [revisionRow({ kind: "remove_image", payload: JSON.stringify({ image_id: "img-1" }) })];
+      }
+      if (isProductVersionSelect(stmt.sql)) return [["2026-01-01 00:00:00"]];
+      if (isOthersSelect(stmt.sql)) return [];
+      if (/from "product_images"/i.test(stmt.sql)) return [["img-1", "products/p1/old.jpg", 0]];
+      return [];
+    });
+    d1.current!.batch.mockResolvedValueOnce([
+      { success: true, meta: { changes: 0 }, results: [] }, // DELETE fils (index 0, en tête du batch) : rien supprimé
+      { success: true, meta: { changes: 1 }, results: [] }, // cible : changée quand même
+      { success: true, meta: { changes: 1 }, results: [] }, // révision marquée applied
+      { success: true, meta: { changes: 0 }, results: [] }, // supersede
+      { success: true, meta: { changes: 1 }, results: [] }, // audit
+    ]);
+
+    const result = await applyRevision("rev-1", ADMIN);
+    expect(result).toEqual({ applied: true, superseded: 0 });
+    expect(storageMocks.deleteFromR2).not.toHaveBeenCalled();
   });
 
   it("applique une révision set_variants : insère la variante et écrit stock_quantity sur products", async () => {
@@ -927,15 +1011,28 @@ describe("applyRevision", () => {
       if (isOthersSelect(stmt.sql)) return [];
       if (/^select "base_price", "compare_price" from "products"/i.test(stmt.sql)) return [[100000, null]];
       if (/from "product_variants"/i.test(stmt.sql)) return [];
+      // Précis, et vérifié AVANT le motif générique `product_images`
+      // ci-dessous : c'est le pré-contrôle de plafond d'`add_images` (B2), pas
+      // la lecture de l'image à supprimer de `remove_image` — les deux
+      // interrogent `product_images` mais pas avec la même forme de colonnes,
+      // et les confondre ferait lire "img-1" comme un compte.
+      if (/^select count\(\*\) from "product_images"/i.test(stmt.sql)) return [[0]];
       if (/from "product_images"/i.test(stmt.sql)) return [["img-1", "products/p1/old.jpg", 0]];
       return [];
     });
+    // Ordre du batch (fixé par le correctif ci-dessus) : les écritures
+    // enfant D'ABORD, puis la cible, puis la révision/le supersede/l'audit —
+    // voir le commentaire au-dessus de la construction de `stmts` dans
+    // `applyRevision`. Une vraie course (un autre batch gagnant entre le
+    // pré-contrôle et celui-ci) fait échouer TOUTES les gardes de version à
+    // l'identique, enfant compris : elles comparent toutes `current` à la
+    // MÊME valeur figée au début de cette transaction.
     d1.current!.batch.mockResolvedValueOnce([
+      { success: true, meta: { changes: 0 }, results: [] }, // écriture enfant : rien écrit non plus (même course, même garde)
       { success: true, meta: { changes: 0 }, results: [] }, // cible : rien écrit (course)
       { success: true, meta: { changes: 1 }, results: [] }, // révision marquée "applied" à tort
       { success: true, meta: { changes: 0 }, results: [] }, // supersede : aucune voisine ici
       { success: true, meta: { changes: 1 }, results: [] }, // audit "applied" (committé quand même)
-      { success: true, meta: { changes: 1 }, results: [] }, // écriture(s) enfant : committée(s) quand même par D1
     ]);
 
     const promise = applyRevision("rev-1", ADMIN);
