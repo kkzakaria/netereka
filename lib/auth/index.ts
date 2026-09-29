@@ -9,6 +9,7 @@ import { D1Dialect } from "kysely-d1";
 import { sendEmail } from "@/lib/notifications/email";
 import { otpEmail } from "@/lib/notifications/templates";
 import { fetchClientMetadataResource } from "@/lib/auth/cimd-fetch";
+import { isCimdUrlAllowed, revokeConsentOnRedirectChange } from "@/lib/auth/cimd-policy";
 
 // Statement universe for the better-auth admin plugin's ACL: every action
 // any role declared below may be granted. Scoped to what a role in this app
@@ -273,6 +274,11 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
       cimd({
         fetchClientMetadataResource,
         metadataProfile: "mcp-2026-07-28",
+        // Filtre d'URL avant toute requête sortante (oracle SSRF, récursion sur
+        // notre origine) et révocation du consentement si les redirect_uris
+        // d'un client changent. Voir lib/auth/cimd-policy.ts.
+        isMetadataDocumentUrlAllowed: (clientIdUrl) => isCimdUrlAllowed(clientIdUrl, cfEnv.SITE_URL),
+        onClientRefreshed: revokeConsentOnRedirectChange,
       }),
     ],
     trustedOrigins: [

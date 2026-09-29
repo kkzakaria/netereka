@@ -147,6 +147,19 @@ describe("POST /api/mcp — protocole 2026-07-28 uniquement", () => {
   });
 });
 
+describe("POST /api/mcp — défaillance de l'auth", () => {
+  it("répond en JSON-RPC 500 (pas en 500 Next opaque) quand initAuth échoue", async () => {
+    const { initAuth } = await import("@/lib/auth");
+    vi.mocked(initAuth).mockRejectedValueOnce(new Error("SCHEMA_MISMATCH"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await route.POST(rpc(LIST, await token()));
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { jsonrpc: string; error: { code: number } };
+    expect(body.jsonrpc).toBe("2.0");
+    expect(body.error.code).toBe(-32603);
+  });
+});
+
 describe("/api/mcp — méthodes", () => {
   it("n'exporte que POST : GET et DELETE reviennent à Next (405)", () => {
     expect(Object.keys(route).filter((k) => ["GET", "DELETE", "PUT", "PATCH", "HEAD", "OPTIONS"].includes(k))).toEqual([]);

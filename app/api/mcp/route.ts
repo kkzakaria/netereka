@@ -24,7 +24,17 @@ function jsonRpcError(status: number, code: number, message: string): Response {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const auth = await initAuth();
+  // initAuth() peut lever (ex. SCHEMA_MISMATCH de better-auth 1.7 pendant un
+  // canary) : on répond en JSON-RPC lisible plutôt qu'en 500 Next opaque.
+  let auth;
+  let resource;
+  try {
+    auth = await initAuth();
+    resource = await getMcpResource();
+  } catch (err) {
+    console.error("[mcp] auth init failed", err);
+    return jsonRpcError(500, -32603, "Service d'authentification indisponible");
+  }
   const handler = requireMcpAuth(
     auth,
     async (req, claims) => {
@@ -42,7 +52,7 @@ export async function POST(request: Request): Promise<Response> {
       }
       return createMcpHandler(() => createMcpServer(ctx), { legacy: "reject" }).fetch(req);
     },
-    { resource: await getMcpResource() },
+    { resource },
   );
   return handler(request);
 }

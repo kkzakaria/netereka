@@ -35,6 +35,18 @@ describe("fetchClientMetadataResource", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("accepte redirect: \"error\" (ce que demande la bibliothèque) mais force manual", async () => {
+    await fetchClientMetadataResource("https://client.example/cimd.json", { redirect: "error" });
+    expect((fetchMock.mock.calls[0] as [URL, RequestInit])[1].redirect).toBe("manual");
+  });
+
+  it("échoue bruyamment si la bibliothèque passe à redirect: \"follow\"", async () => {
+    await expect(
+      fetchClientMetadataResource("https://client.example/cimd.json", { redirect: "follow" }),
+    ).rejects.toThrow(/redirect/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("refuse une méthode autre que GET", async () => {
     await expect(
       fetchClientMetadataResource("https://client.example/cimd.json", { method: "POST" }),
