@@ -245,6 +245,22 @@ function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload:
     if (typeof (payload as { uniform_price?: unknown }).uniform_price !== "boolean") {
       throw new RevisionError("validation_error", "Le payload set_variants doit porter uniform_price (booléen).");
     }
+      // Même raisonnement, appliqué au contenu du tableau : `setVariantsSchema`
+      // contraint déjà chaque entrée côté MCP, mais `buildSetVariantsStatements`
+      // et l'aperçu consommeraient sans broncher une couleur vide, un stock
+      // négatif ou un prix fractionnaire déposés par un autre appelant. Les
+      // bornes reprennent celles du schéma Zod, volontairement — deux jeux de
+      // règles qui divergeraient seraient pires qu'un seul.
+      variants.forEach((v, i) => {
+        const e = v as { color_name?: unknown; color_hex?: unknown; stock?: unknown; price?: unknown };
+        const refuse = (quoi: string): never => {
+          throw new RevisionError("validation_error", `Variante ${i + 1} : ${quoi}.`);
+        };
+        if (typeof e.color_name !== "string" || e.color_name.trim() === "") refuse("nom de couleur manquant");
+        if (typeof e.color_hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(e.color_hex)) refuse("couleur hex invalide (format #rrggbb)");
+        if (!Number.isInteger(e.stock) || (e.stock as number) < 0) refuse("stock invalide (entier positif ou nul attendu)");
+        if (e.price != null && (!Number.isInteger(e.price) || (e.price as number) < 0)) refuse("prix invalide (entier positif ou nul, ou null)");
+      });
   }
 }
 

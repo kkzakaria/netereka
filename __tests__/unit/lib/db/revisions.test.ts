@@ -397,6 +397,29 @@ describe("createRevision", () => {
     expect(d1.current!.batch).not.toHaveBeenCalled();
   });
 
+  it("rejette une entrée de variante hors bornes, même si le tableau est bien formé", async () => {
+    // Le schéma Zod du MCP contraint déjà chaque entrée, mais `createRevision`
+    // est l'interface que les phases suivantes consomment sans passer par lui.
+    // Rougit si la boucle de validation des entrées est retirée.
+    const cas: [string, unknown][] = [
+      ["nom de couleur vide", { color_name: "  ", color_hex: "#112233", stock: 1, price: null }],
+      ["hex invalide", { color_name: "Noir", color_hex: "noir", stock: 1, price: null }],
+      ["stock négatif", { color_name: "Noir", color_hex: "#112233", stock: -1, price: null }],
+      ["prix fractionnaire", { color_name: "Noir", color_hex: "#112233", stock: 1, price: 9.5 }],
+    ];
+    for (const [libelle, entree] of cas) {
+      d1.current!.raw.mockResolvedValue([["2026-01-01 00:00:00"]]);
+      await expect(
+        createRevision({
+          target: "product", targetId: "p1", kind: "set_variants",
+          payload: { variants: [entree], uniform_price: true },
+          origin: "mcp", actor: ACTOR,
+        }),
+        `cas non rejeté : ${libelle}`,
+      ).rejects.toThrow(RevisionError);
+    }
+  });
+
   it("rejette add_images/remove_image/set_variants sur une bannière", async () => {
     await expect(
       createRevision({
