@@ -12,7 +12,15 @@ vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => d1.current!.bind
 // atteindre un vrai bucket dans ce fichier de test.
 vi.mock("@/lib/storage/images", () => ({ deleteFromR2: storageMocks.deleteFromR2, uploadToR2: vi.fn() }));
 
-import { createRevision, sanitizePayload, scopeFor, RevisionError, applyRevision, rejectRevision } from "@/lib/db/revisions";
+import {
+  createRevision,
+  sanitizePayload,
+  scopeFor,
+  resolveVariantPrice,
+  RevisionError,
+  applyRevision,
+  rejectRevision,
+} from "@/lib/db/revisions";
 
 beforeEach(() => {
   d1.current = createD1Mock();
@@ -76,6 +84,25 @@ describe("scopeFor", () => {
 
   it("une bannière se scope sur banner-<id>", () => {
     expect(scopeFor("banner", "42")).toBe("banner-42");
+  });
+});
+
+// Appelée par `buildSetVariantsStatements` (ci-dessous, à l'application) ET
+// par l'aperçu affiché sur /revisions (`diffVariants`,
+// components/admin/revision-diff.tsx) — une seule fonction, testée ici une
+// fois pour ses trois branches, garantit que les deux ne peuvent pas
+// produire un prix différent pour la même entrée.
+describe("resolveVariantPrice", () => {
+  it("garde le prix propre de la variante quand uniform_price est faux et qu'un prix est fourni", () => {
+    expect(resolveVariantPrice(9000, false, 12000)).toBe(9000);
+  });
+
+  it("impose le prix de base quand uniform_price est vrai, même si un prix propre est fourni", () => {
+    expect(resolveVariantPrice(5000, true, 15000)).toBe(15000);
+  });
+
+  it("retombe sur le prix de base quand la variante n'a pas de prix propre, même si uniform_price est faux", () => {
+    expect(resolveVariantPrice(null, false, 20000)).toBe(20000);
   });
 });
 

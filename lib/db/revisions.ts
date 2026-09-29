@@ -279,6 +279,26 @@ async function buildRemoveImageStatements(
 }
 
 /**
+ * Résout le prix effectif d'une variante couleur proposée par un
+ * `set_variants` : son prix propre, sauf si `uniformPrice` est vrai ou
+ * qu'elle n'en porte pas, auquel cas c'est le prix de base du produit.
+ *
+ * Fonction pure et exportée, appelée par les DEUX endroits qui doivent
+ * produire exactement le même prix pour la même entrée : `buildSetVariantsStatements`
+ * ci-dessous (ce que l'application écrira réellement) et l'aperçu affiché sur
+ * /revisions (`diffVariants`, components/admin/revision-diff.tsx). Un
+ * commentaire disant « même formule qu'à l'application » ne suffit pas à
+ * empêcher les deux de diverger un jour — ce dépôt en a déjà payé le prix
+ * ailleurs ; une seule fonction importée par les deux le garantit
+ * structurellement. Même remède que `freeContentLayout`
+ * (components/storefront/product-story/story-free-content.tsx), importé tel
+ * quel par le panneau « Actuel » de cet écran plutôt que réécrit.
+ */
+export function resolveVariantPrice(entryPrice: number | null, uniformPrice: boolean, basePrice: number): number {
+  return uniformPrice || entryPrice == null ? basePrice : entryPrice;
+}
+
+/**
  * Port de `setColorVariants` (lib/db/product-drafts.ts) pour l'application
  * d'une révision `set_variants` sur un produit PUBLIÉ (sans `is_draft = 1`) :
  * même diffing par clé couleur (`nom:hex`), même détachement des images qui
@@ -337,7 +357,7 @@ async function buildSetVariantsStatements(
   input.variants.forEach((entry, index) => {
     const key = `${entry.color_name}:${entry.color_hex}`;
     seen.add(key);
-    const price = input.uniform_price || entry.price == null ? product.base_price : entry.price;
+    const price = resolveVariantPrice(entry.price, input.uniform_price, product.base_price);
     const comparePrice = input.uniform_price ? product.compare_price : null;
     const attrs = JSON.stringify({ color: key });
     total += entry.stock;

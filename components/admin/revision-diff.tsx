@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   scopeFor,
+  resolveVariantPrice,
   PRODUCT_HTML_COLUMNS,
   BANNER_HTML_COLUMNS,
   type RevisionKind,
@@ -530,11 +531,17 @@ export interface VariantDiffRow {
  * par ligne — `set_variants` REMPLACE tout l'ensemble (jamais un patch), donc
  * la seule relecture qui vaille est visuelle : qui apparaît, qui disparaît,
  * qui change de prix. Extrait de `SetVariantsDiff` pour être testé
- * isolément : c'est ici, et seulement ici, que la formule de prix
- * (`uniform_price` / prix propre / prix de base) est recalculée pour
- * l'aperçu — un décalage avec `buildSetVariantsStatements` (lib/db/revisions.ts,
- * qui applique la même formule) montrerait à l'administrateur un prix que la
- * révision, une fois appliquée, ne produirait pas.
+ * isolément.
+ *
+ * Le prix proposé appelle `resolveVariantPrice` (lib/db/revisions.ts) — la
+ * MÊME fonction que `buildSetVariantsStatements` appelle à l'application —
+ * plutôt que de rejouer la formule ici : un commentaire disant « même
+ * formule qu'à l'application » ne garantit rien si le code, lui, en porte
+ * deux copies qui peuvent diverger séparément. Sur une boutique en paiement
+ * à la livraison, une divergence signifierait un prix approuvé par
+ * l'administrateur différent de celui facturé au client, découvert à la
+ * porte — la seule protection réelle est qu'il n'existe qu'un seul endroit
+ * où se tromper.
  *
  * Le même diffing par clé couleur (`nom:hex`) que `buildSetVariantsStatements`
  * — une variante actuelle aux attributs malformés ou multi-clés est ignorée,
@@ -568,7 +575,7 @@ export function diffVariants(
     const key = `${entry.color_name}:${entry.color_hex}`;
     seen.add(key);
     const existing = currentByKey.get(key);
-    const resolvedPrice = options.uniformPrice || entry.price == null ? options.basePrice : entry.price;
+    const resolvedPrice = resolveVariantPrice(entry.price, options.uniformPrice, options.basePrice);
     rows.push({
       key,
       colorName: entry.color_name,
