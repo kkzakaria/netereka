@@ -162,7 +162,12 @@ function escapeLike(q: string): string {
   return q.replace(/[\\%_]/g, (m) => `\\${m}`);
 }
 
-function r2KeyFromImageUrl(url: string): string {
+/** Exportée : lib/db/revisions.ts en a besoin pour nettoyer R2 au rejet
+ *  d'une révision `add_images`, et pour retrouver la clé R2 d'une image à
+ *  supprimer par une révision `remove_image` appliquée sur une fiche
+ *  publiée — même convention de stockage (`productImages.url` porte la clé
+ *  R2 nue, `getImageUrl` la préfixe de `/images/` pour l'affichage). */
+export function r2KeyFromImageUrl(url: string): string {
   return url.replace(/^\/images\//, "");
 }
 
@@ -627,6 +632,28 @@ export async function addImagesFromUrls(
     console.error("[product-drafts] image import failures", { id }, results.filter((x) => !x.ok));
   }
   return { results, primary_image_id: primaryId };
+}
+
+/**
+ * Une image d'un produit, brouillon OU publié, ou `null` si elle n'existe pas
+ * sur CE produit. Lecture seule, sans filtre `is_draft` — contrairement à
+ * `removeImage` ci-dessous. Sert à valider `image_id` au dépôt d'une révision
+ * `remove_image` (lib/mcp/tools/products.ts) sur une fiche publiée : refuser
+ * ici, avant `createRevision`, évite de déposer une révision qui échouerait
+ * de toute façon à l'application faute de cible.
+ */
+export async function findProductImage(
+  productId: string,
+  imageId: string,
+): Promise<{ id: string; url: string; is_primary: boolean } | null> {
+  const db = await getDrizzle();
+  const row = await db
+    .select({ id: productImages.id, url: productImages.url, is_primary: productImages.is_primary })
+    .from(productImages)
+    .where(and(eq(productImages.id, imageId), eq(productImages.product_id, productId)))
+    .limit(1)
+    .get();
+  return row ? { id: row.id, url: row.url, is_primary: row.is_primary === 1 } : null;
 }
 
 export async function removeImage(id: string, imageId: string, audit: DraftAudit): Promise<void> {

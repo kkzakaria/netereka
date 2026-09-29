@@ -4,6 +4,7 @@ import {
   addImagesFromUrls,
   createDraft,
   deleteDraft,
+  findProductImage,
   getProduct,
   getProductDraftState,
   productColumnsForRevision,
@@ -13,6 +14,8 @@ import {
   updateDraft,
 } from "@/lib/db/product-drafts";
 import { RevisionError, createRevision } from "@/lib/db/revisions";
+import { fetchAndUploadImage, type FetchImageResult } from "@/lib/storage/fetch-image";
+import { deleteFromR2 } from "@/lib/storage/images";
 import type { McpContext } from "@/lib/mcp/context";
 import { ok, fail, type ToolResult } from "@/lib/mcp/result";
 import {
@@ -35,6 +38,21 @@ import { defineTool, type ToolDefinition } from "./types";
  * deposited as a revision in lib/db/revisions.ts, for an administrator to
  * apply from /revisions). Publishing itself stays a revision too — no tool
  * here can flip is_draft on its own.
+ *
+ * Images are the one place this routing does more than pick a path.
+ * `add_product_images` on a published product uploads to R2 *at deposit*
+ * (`fetchAndUploadImage`, same helper as the draft path) and the revision
+ * payload carries the resulting R2 key — never the source URL. Deferring the
+ * download to application time would let Appliquer fail on a dead link or a
+ * timeout long after the model handed back a "pending" answer, for a change
+ * an administrator had already approved. The corollary: a *rejected*
+ * `add_images` revision leaves an R2 object nothing will ever reference —
+ * `rejectRevision` (lib/db/revisions.ts) deletes it as part of rejecting.
+ * `remove_product_image` deposits no such object (it proposes deleting an
+ * existing one, at application time), so it has nothing to clean up on
+ * reject. `delete_product_draft` is the one write in this file that is NOT
+ * routed by `writePath`: it stays bound to drafts on purpose (§ plan tâche
+ * 7) — deleting a live product is not a content edit a revision should carry.
  */
 
 /** Où va une écriture, selon l'état de la cible. Un brouillon s'écrit
@@ -210,11 +228,72 @@ export const productTools: ToolDefinition[] = [
   defineTool({
     name: "add_product_images",
     description:
-      "Télécharge 1 à 8 images depuis des URL http(s) (≤5 Mo chacune, 12 max par produit) vers le stockage de la boutique et les attache au brouillon. Succès partiel possible : vérifier results[].ok (reason limit_exceeded si le quota a été atteint entre-temps). La première image du produit devient l'image principale.",
+      "Télécharge 1 à 8 images depuis des URL http(s) (≤5 Mo chacune, 12 max par produit) vers le stockage de la " +
+      "boutique et les attache au produit. Sur un brouillon : attachées directement, la première devient l'image " +
+      "principale. Sur une fiche publiée : les images sont téléversées immédiatement (le résultat les porte comme " +
+      "sur un brouillon), puis une révision est déposée pour les attacher — l'administrateur doit l'appliquer depuis " +
+      "/revisions avant qu'elles n'apparaissent en boutique (revision.id et revision.status dans la réponse). " +
+      "Succès partiel possible dans les deux cas : vérifier results[].ok (reason limit_exceeded si le quota a été " +
+      "atteint entre-temps).",
     inputSchema: { id: idSchema, ...addImagesSchema.shape },
     handler: async (ctx, input) => {
       try {
-        return ok(await addImagesFromUrls(input.id, input.images, auditFor(ctx, "add_product_images")));
+        const { is_draft } = await getProductDraftState(input.id);
+
+        if (writePath(is_draft) === "direct") {
+          return ok({ applied: "direct", ...(await addImagesFromUrls(input.id, input.images, auditFor(ctx, "add_product_images"))) });
+        }
+
+        // Fiche publiée : téléversement immédiat vers R2 — voir le
+        // commentaire de haut de fichier. La révision ne porte jamais l'URL
+        // source, seulement la clé déjà en place.
+        type ImageInput = (typeof input.images)[number];
+        type FetchSuccess = Extract<FetchImageResult, { ok: true }>;
+        type Entry = { img: ImageInput } & (
+          | { r: FetchSuccess; ok: true }
+          | { r: Exclude<FetchImageResult, { ok: true }>; ok: false }
+        );
+        const fetched: Entry[] = await Promise.all(
+          input.images.map(async (img): Promise<Entry> => {
+            const r = await fetchAndUploadImage(input.id, img.url);
+            return r.ok ? { img, r, ok: true } : { img, r, ok: false };
+          }),
+        );
+        const succeeded = fetched.filter((f): f is Extract<Entry, { ok: true }> => f.ok);
+        const results = fetched.map(({ img, r, ok: succeededOne }) =>
+          succeededOne
+            ? { url: img.url, ok: true as const }
+            : { url: img.url, ok: false as const, reason: (r as Exclude<FetchImageResult, { ok: true }>).reason });
+
+        if (succeeded.length === 0) {
+          return ok({ applied: "revision", results, revision: null, message: "Aucune image n'a pu être téléchargée." });
+        }
+
+        try {
+          const payload = { images: succeeded.map(({ img, r }) => ({ key: r.key, alt: img.alt ?? null })) };
+          const { revisionId, status } = await createRevision({
+            target: "product",
+            targetId: input.id,
+            kind: "add_images",
+            payload,
+            origin: "mcp",
+            actor: { id: ctx.user.id, name: ctx.user.name },
+          });
+          return ok({
+            applied: "revision",
+            results,
+            revision: { id: revisionId, status },
+            message:
+              `Fiche publiée : ${succeeded.length} image(s) déposée(s) en révision (${revisionId}), en attente de ` +
+              `validation par un administrateur sur /revisions/${revisionId}.`,
+          });
+        } catch (err) {
+          // La révision n'a pas pu être déposée : sans ce nettoyage, les
+          // objets déjà envoyés dans R2 ci-dessus resteraient orphelins —
+          // aucune ligne product_images ne les référencera jamais.
+          await Promise.allSettled(succeeded.map(({ r }) => deleteFromR2(r.key)));
+          throw err;
+        }
       } catch (err) {
         return toolError("add_product_images", err);
       }
@@ -223,12 +302,38 @@ export const productTools: ToolDefinition[] = [
 
   defineTool({
     name: "remove_product_image",
-    description: "Retire une image d'un brouillon (ligne et fichier). Si elle était principale, la suivante le devient.",
+    description:
+      "Retire une image d'un produit. Sur un brouillon : suppression directe (ligne et fichier), la suivante " +
+      "devient principale si besoin. Sur une fiche publiée : dépose une révision que l'administrateur doit " +
+      "appliquer depuis /revisions — le fichier n'est effacé qu'à l'application, pas au dépôt.",
     inputSchema: { id: idSchema, image_id: idSchema },
     handler: async (ctx, input) => {
       try {
-        await removeImage(input.id, input.image_id, auditFor(ctx, "remove_product_image"));
-        return ok({ removed: true });
+        const { is_draft } = await getProductDraftState(input.id);
+
+        if (writePath(is_draft) === "direct") {
+          await removeImage(input.id, input.image_id, auditFor(ctx, "remove_product_image"));
+          return ok({ applied: "direct", removed: true });
+        }
+
+        const img = await findProductImage(input.id, input.image_id);
+        if (!img) return fail("not_found", "Image introuvable sur ce produit.");
+
+        const { revisionId, status } = await createRevision({
+          target: "product",
+          targetId: input.id,
+          kind: "remove_image",
+          payload: { image_id: input.image_id },
+          origin: "mcp",
+          actor: { id: ctx.user.id, name: ctx.user.name },
+        });
+        return ok({
+          applied: "revision",
+          revision: { id: revisionId, status },
+          message:
+            `Fiche publiée : la suppression de l'image a été déposée en révision (${revisionId}), en attente de ` +
+            `validation par un administrateur sur /revisions/${revisionId}.`,
+        });
       } catch (err) {
         return toolError("remove_product_image", err);
       }
@@ -238,15 +343,73 @@ export const productTools: ToolDefinition[] = [
   defineTool({
     name: "set_product_variants",
     description:
-      "Définit les variantes couleur d'un brouillon (remplace l'ensemble). price absent ou uniform_price=true → prix de base du produit. Les variantes retirées sont supprimées. Le stock du produit devient la somme des stocks. Déclarer les mêmes couleurs dans attributes.colors.",
+      "Définit les variantes couleur d'un produit (remplace l'ensemble). Sur un brouillon : écrit directement. Sur " +
+      "une fiche publiée : dépose une révision que l'administrateur doit appliquer depuis /revisions. price absent " +
+      "ou uniform_price=true → prix de base du produit. Les variantes retirées sont supprimées. Le stock du produit " +
+      "devient la somme des stocks. Déclarer les mêmes couleurs dans attributes.colors.",
     inputSchema: { id: idSchema, ...setVariantsSchema.shape },
     handler: async (ctx, input) => {
       try {
         const { id, ...rest } = input;
-        const result = await setColorVariants(id, rest, auditFor(ctx, "set_product_variants"));
-        return ok(result);
+        const { is_draft } = await getProductDraftState(id);
+
+        if (writePath(is_draft) === "direct") {
+          const result = await setColorVariants(id, rest, auditFor(ctx, "set_product_variants"));
+          return ok({ applied: "direct", ...result });
+        }
+
+        const { revisionId, status } = await createRevision({
+          target: "product",
+          targetId: id,
+          kind: "set_variants",
+          payload: { variants: rest.variants, uniform_price: rest.uniform_price },
+          origin: "mcp",
+          actor: { id: ctx.user.id, name: ctx.user.name },
+        });
+        return ok({
+          applied: "revision",
+          revision: { id: revisionId, status },
+          message:
+            `Fiche publiée : les variantes proposées ont été déposées en révision (${revisionId}), en attente de ` +
+            `validation par un administrateur sur /revisions/${revisionId}.`,
+        });
       } catch (err) {
         return toolError("set_product_variants", err);
+      }
+    },
+  }),
+
+  defineTool({
+    name: "publish_product",
+    description:
+      "Propose la publication d'un brouillon : dépose une révision de type publish (payload vide — seul is_draft " +
+      "change, pas le contenu) que l'administrateur doit appliquer depuis /revisions pour que la fiche devienne " +
+      "visible en boutique. Refuse avec conflict si la fiche est déjà publiée. Aucun outil de dépublication " +
+      "n'existe : un retrait du catalogue reste une décision humaine directe, hors MCP.",
+    inputSchema: { id: idSchema },
+    handler: async (ctx, input) => {
+      try {
+        const { is_draft } = await getProductDraftState(input.id);
+        if (!is_draft) {
+          return fail("conflict", "Cette fiche est déjà publiée.");
+        }
+        const { revisionId, status } = await createRevision({
+          target: "product",
+          targetId: input.id,
+          kind: "publish",
+          payload: {},
+          origin: "mcp",
+          actor: { id: ctx.user.id, name: ctx.user.name },
+        });
+        return ok({
+          applied: "revision",
+          revision: { id: revisionId, status },
+          message:
+            `Publication déposée en révision (${revisionId}), en attente de validation par un administrateur sur ` +
+            `/revisions/${revisionId}.`,
+        });
+      } catch (err) {
+        return toolError("publish_product", err);
       }
     },
   }),

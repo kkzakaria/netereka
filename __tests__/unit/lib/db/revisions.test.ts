@@ -4,13 +4,19 @@ import { createD1Mock, type BoundStatement } from "../../../helpers/d1-mock";
 const d1 = vi.hoisted(() => {
   return { current: null as null | ReturnType<typeof import("../../../helpers/d1-mock").createD1Mock> };
 });
+const storageMocks = vi.hoisted(() => ({ deleteFromR2: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => d1.current!.binding }));
+// `deleteFromR2` mocké : le nettoyage R2 (rejet d'une révision `add_images`,
+// suppression appliquée d'une révision `remove_image`) ne doit jamais
+// atteindre un vrai bucket dans ce fichier de test.
+vi.mock("@/lib/storage/images", () => ({ deleteFromR2: storageMocks.deleteFromR2, uploadToR2: vi.fn() }));
 
 import { createRevision, sanitizePayload, scopeFor, RevisionError, applyRevision, rejectRevision } from "@/lib/db/revisions";
 
 beforeEach(() => {
   d1.current = createD1Mock();
+  storageMocks.deleteFromR2.mockClear();
 });
 
 const isRevisionInsert = (s: BoundStatement) => /insert into "content_revisions"/i.test(s.sql);
@@ -286,6 +292,62 @@ describe("createRevision", () => {
         actor: ACTOR,
       }),
     ).resolves.toMatchObject({ status: "pending" });
+  });
+
+  // ─── Forme du payload des natures add_images / remove_image / set_variants ───
+
+  it("dépose une révision add_images avec la clé R2 telle quelle dans le payload", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      /from "products"/i.test(stmt.sql) ? [["2026-01-01T00:00:00.000Z"]] : []);
+
+    const r = await createRevision({
+      target: "product",
+      targetId: "p1",
+      kind: "add_images",
+      payload: { images: [{ key: "products/p1/a.jpg", alt: null }] },
+      origin: "mcp",
+      actor: ACTOR,
+    });
+
+    expect(r.status).toBe("pending");
+    const revisionInsert = d1.current!.batchStatements().find(isRevisionInsert)!;
+    const strings = revisionInsert.params.filter((p): p is string => typeof p === "string");
+    expect(strings.some((s) => s.includes("products/p1/a.jpg"))).toBe(true);
+  });
+
+  it("rejette add_images sans tableau images, ou avec une image sans clé", async () => {
+    await expect(
+      createRevision({ target: "product", targetId: "p1", kind: "add_images", payload: {}, origin: "mcp", actor: ACTOR }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    await expect(
+      createRevision({
+        target: "product", targetId: "p1", kind: "add_images",
+        payload: { images: [{ alt: "sans clé" }] }, origin: "mcp", actor: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejette add_images/remove_image/set_variants sur une bannière", async () => {
+    await expect(
+      createRevision({
+        target: "banner", targetId: "42", kind: "add_images",
+        payload: { images: [{ key: "x", alt: null }] }, origin: "mcp", actor: ACTOR,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejette remove_image sans image_id", async () => {
+    await expect(
+      createRevision({ target: "product", targetId: "p1", kind: "remove_image", payload: {}, origin: "mcp", actor: ACTOR }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+  });
+
+  it("rejette set_variants sans tableau variants", async () => {
+    await expect(
+      createRevision({ target: "product", targetId: "p1", kind: "set_variants", payload: { uniform_price: true }, origin: "mcp", actor: ACTOR }),
+    ).rejects.toMatchObject({ code: "validation_error" });
   });
 });
 
@@ -573,6 +635,101 @@ describe("applyRevision", () => {
     // ("product", "p1") — aucune autre cible ne peut donc jamais matcher.
     expect(supersedeUpdate.params).toEqual(["superseded", ADMIN.id, "product", "p1", "pending", "rev-1"]);
   });
+
+  // ─── Généralisation des outils (dispatch tâche 7) : add_images, remove_image, set_variants ───
+  //
+  // Ces trois natures n'ont aucune colonne `products` à écrire : leur
+  // écriture réelle vise une table enfant (product_images, product_variants),
+  // jamais colonne par colonne sur la cible elle-même — seule `updated_at`
+  // (l'ancre de concurrence) y change.
+
+  it("applique une révision add_images : insère les lignes product_images, ne touche à aucune colonne produit hors updated_at", async () => {
+    mockApplyReads({
+      rev: revisionRow({
+        kind: "add_images",
+        payload: JSON.stringify({ images: [{ key: "products/p1/a.jpg", alt: "Photo" }] }),
+      }),
+      targetVersion: "2026-01-01 00:00:00",
+      others: [],
+    });
+
+    const result = await applyRevision("rev-1", ADMIN);
+    expect(result).toEqual({ applied: true, superseded: 0 });
+
+    const stmts = d1.current!.batchStatements();
+    const targetUpdate = stmts.find((s) => /^update "products"/i.test(s.sql))!;
+    expect(targetUpdate).toBeDefined();
+    // Seule l'ancre de concurrence change sur products — aucune colonne de
+    // contenu n'est écrite par une révision add_images.
+    expect(targetUpdate.sql).toBe('update "products" set "updated_at" = datetime(\'now\') where ("products"."id" = ? and "products"."updated_at" = ?)');
+
+    const imageInsert = stmts.find((s) => /^insert into "product_images"/i.test(s.sql));
+    expect(imageInsert).toBeDefined();
+    expect(imageInsert!.params).toEqual(expect.arrayContaining(["products/p1/a.jpg", "Photo"]));
+  });
+
+  it("applique une révision remove_image : supprime la ligne product_images et efface l'objet R2 après le commit", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (isGetRevisionSelect(stmt.sql)) {
+        return [revisionRow({ kind: "remove_image", payload: JSON.stringify({ image_id: "img-1" }) })];
+      }
+      if (isProductVersionSelect(stmt.sql)) return [["2026-01-01 00:00:00"]];
+      if (isOthersSelect(stmt.sql)) return [];
+      if (/from "product_images"/i.test(stmt.sql)) return [["img-1", "products/p1/old.jpg", 0]];
+      return [];
+    });
+
+    const result = await applyRevision("rev-1", ADMIN);
+    expect(result).toEqual({ applied: true, superseded: 0 });
+
+    const stmts = d1.current!.batchStatements();
+    const imageDelete = stmts.find((s) => /^delete from "product_images"/i.test(s.sql));
+    expect(imageDelete).toBeDefined();
+    expect(imageDelete!.params).toEqual(["img-1"]);
+    // Effacé APRÈS le commit du batch (voir le corps d'applyRevision) : le
+    // fichier ne disparaît de R2 que si la ligne a réellement disparu de D1.
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/old.jpg");
+  });
+
+  it("applique une révision set_variants : insère la variante et écrit stock_quantity sur products", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (isGetRevisionSelect(stmt.sql)) {
+        return [revisionRow({
+          kind: "set_variants",
+          payload: JSON.stringify({
+            variants: [{ color_name: "Noir", color_hex: "#000000", price: null, stock: 5 }],
+            uniform_price: true,
+          }),
+        })];
+      }
+      if (isProductVersionSelect(stmt.sql)) return [["2026-01-01 00:00:00"]];
+      if (isOthersSelect(stmt.sql)) return [];
+      if (/^select "base_price", "compare_price" from "products"/i.test(stmt.sql)) return [[100000, null]];
+      if (/from "product_variants"/i.test(stmt.sql)) return [];
+      return [];
+    });
+
+    const result = await applyRevision("rev-1", ADMIN);
+    expect(result).toEqual({ applied: true, superseded: 0 });
+
+    const stmts = d1.current!.batchStatements();
+    const targetUpdate = stmts.find((s) => /^update "products"/i.test(s.sql))!;
+    expect(targetUpdate.sql).toMatch(/"stock_quantity" = \?/);
+    expect(targetUpdate.params).toEqual(expect.arrayContaining([5]));
+
+    const variantInsert = stmts.find((s) => /^insert into "product_variants"/i.test(s.sql));
+    expect(variantInsert).toBeDefined();
+    expect(variantInsert!.params).toEqual(expect.arrayContaining(["Noir", 100000, 5]));
+  });
+
+  it("re-vérifie la forme du payload à l'application pour les natures add_images/remove_image/set_variants", async () => {
+    mockApplyReads({
+      rev: revisionRow({ kind: "add_images", payload: JSON.stringify({}) }),
+      targetVersion: "2026-01-01 00:00:00",
+    });
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
 });
 
 describe("rejectRevision", () => {
@@ -637,5 +794,34 @@ describe("rejectRevision", () => {
     // à réconcilier ici puisque l'audit n'est écrit qu'après confirmation.
     const auditInsert = d1.current!.boundMatching(/insert into "audit_log"/i)[0];
     expect(auditInsert).toBeUndefined();
+  });
+
+  // ─── Cycle de vie R2 d'une révision add_images rejetée (dispatch tâche 7) ───
+  //
+  // Une révision `add_images` a déjà téléversé ses objets au dépôt
+  // (lib/mcp/tools/products.ts) — jamais écrits en base tant qu'elle n'est
+  // pas appliquée. La rejeter sans les effacer les rend orphelins dans R2
+  // pour toujours : aucune ligne product_images ne les référencera jamais.
+
+  it("efface les objets R2 d'une révision add_images rejetée", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) =>
+      (isGetRevisionSelect(stmt.sql)
+        ? [revisionRow({
+            kind: "add_images",
+            payload: JSON.stringify({ images: [{ key: "products/p1/a.jpg", alt: null }, { key: "products/p1/b.jpg", alt: "Photo" }] }),
+          })]
+        : []));
+
+    const result = await rejectRevision("rev-1", ADMIN);
+    expect(result).toEqual({ rejected: true });
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/a.jpg");
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/b.jpg");
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledTimes(2);
+  });
+
+  it("ne touche pas R2 en rejetant une révision update (rien n'a été téléversé au dépôt)", async () => {
+    d1.current!.raw.mockImplementation(async (stmt) => (isGetRevisionSelect(stmt.sql) ? [revisionRow()] : []));
+    await rejectRevision("rev-1", ADMIN);
+    expect(storageMocks.deleteFromR2).not.toHaveBeenCalled();
   });
 });

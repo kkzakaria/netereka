@@ -1,9 +1,11 @@
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { nanoid } from "nanoid";
 import { getDrizzle, type DrizzleDB } from "@/lib/db/drizzle";
-import { auditLog, banners, contentRevisions, products } from "@/lib/db/schema";
+import { auditLog, banners, contentRevisions, productImages, productVariants, products } from "@/lib/db/schema";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
+import { deleteFromR2 } from "@/lib/storage/images";
+import { MAX_IMAGES_PER_PRODUCT, r2KeyFromImageUrl } from "@/lib/db/product-drafts";
 import type { AuditAction } from "@/lib/db/types";
 
 /**
@@ -14,7 +16,16 @@ import type { AuditAction } from "@/lib/db/types";
  */
 
 export type RevisionTarget = "product" | "banner";
-export type RevisionKind = "update" | "publish";
+/**
+ * `update`/`publish` : phase 1, colonnes de `products`/`banners` (voir
+ * `PRODUCT_WRITABLE_COLUMNS`/`BANNER_WRITABLE_COLUMNS` ci-dessous).
+ * `add_images`/`remove_image`/`set_variants` : phase 2 — même modèle de
+ * révision, mais la cible d'écriture est une table enfant du produit
+ * (`product_images`, `product_variants`), jamais une colonne de `products`
+ * elle-même. Uniquement pour `target: "product"` : une bannière n'a ni
+ * images ni variantes.
+ */
+export type RevisionKind = "update" | "publish" | "add_images" | "remove_image" | "set_variants";
 export type RevisionOrigin = "mcp" | "admin_chat";
 export type RevisionStatus = "pending" | "applied" | "rejected" | "superseded";
 
@@ -149,6 +160,216 @@ function assertWritablePayload(target: RevisionTarget, payload: Record<string, u
 }
 
 /**
+ * Valide la FORME du payload selon la nature de la révision — au dépôt
+ * (`createRevision`) et re-vérifié à l'application (`applyRevision`), même
+ * principe qu'`assertWritablePayload` : la garantie ne doit dépendre ni du
+ * moment ni de l'appelant.
+ *
+ * `update`/`publish` gardent le contrôle historique par liste blanche de
+ * colonnes de `products`/`banners`. Les trois natures ajoutées par la
+ * généralisation des outils (`add_images`, `remove_image`, `set_variants`)
+ * n'écrivent AUCUNE colonne de `products` : leur payload porte la forme
+ * qu'attend le bâtisseur de statements correspondant (voir plus bas), pas
+ * une colonne, donc `assertWritablePayload` ne leur convient pas — et elles
+ * ne s'appliquent qu'à un produit, jamais à une bannière.
+ */
+function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload: Record<string, unknown>): void {
+  if (kind === "update" || kind === "publish") {
+    assertWritablePayload(target, payload);
+    return;
+  }
+  if (target !== "product") {
+    throw new RevisionError("validation_error", `Une révision "${kind}" ne s'applique qu'à un produit.`);
+  }
+  if (kind === "add_images") {
+    const images = (payload as { images?: unknown }).images;
+    if (!Array.isArray(images) || images.length === 0) {
+      throw new RevisionError("validation_error", "Le payload add_images doit porter un tableau images non vide.");
+    }
+    for (const img of images) {
+      const key = (img as { key?: unknown } | null)?.key;
+      if (typeof key !== "string" || key.length === 0) {
+        throw new RevisionError("validation_error", "Chaque image doit porter une clé R2 (key) non vide.");
+      }
+    }
+    return;
+  }
+  if (kind === "remove_image") {
+    const imageId = (payload as { image_id?: unknown }).image_id;
+    if (typeof imageId !== "string" || imageId.length === 0) {
+      throw new RevisionError("validation_error", "Le payload remove_image doit porter image_id.");
+    }
+    return;
+  }
+  if (kind === "set_variants") {
+    const variants = (payload as { variants?: unknown }).variants;
+    if (!Array.isArray(variants)) {
+      throw new RevisionError("validation_error", "Le payload set_variants doit porter un tableau variants.");
+    }
+  }
+}
+
+/**
+ * Jumeau de `insertImageStatement` (lib/db/product-drafts.ts), sans le
+ * filtre `is_draft = 1` : la cible d'une révision `add_images` est par
+ * construction un produit PUBLIÉ (`writePath`, lib/mcp/tools/products.ts) —
+ * un brouillon écrit directement et ne passe jamais par ici. Même calcul SQL
+ * de `sort_order`/`is_primary` et même garde du plafond d'images, pour que
+ * les deux chemins ne divergent jamais sur la même règle.
+ */
+function insertRevisionImageStatement(
+  db: DrizzleDB,
+  productId: string,
+  row: { id: string; key: string; alt: string | null },
+): Statement {
+  const ofProduct = sql`${productImages.product_id} = ${productId}`;
+  return db.insert(productImages).select(
+    db
+      .select({
+        id: sql<string>`${row.id}`.as("id"),
+        product_id: sql<string>`${productId}`.as("product_id"),
+        variant_id: sql<null>`null`.as("variant_id"),
+        url: sql<string>`${row.key}`.as("url"),
+        alt: sql<string | null>`${row.alt}`.as("alt"),
+        sort_order: sql<number>`coalesce((select max(${productImages.sort_order}) + 1 from ${productImages} where ${ofProduct}), 0)`.as("sort_order"),
+        is_primary: sql<number>`case when exists (select 1 from ${productImages} where ${ofProduct} and ${productImages.is_primary} = 1) then 0 else 1 end`.as("is_primary"),
+        created_at: sql<string>`datetime('now')`.as("created_at"),
+      })
+      .from(products)
+      .where(and(
+        eq(products.id, productId),
+        sql`(select count(*) from ${productImages} where ${ofProduct}) < ${MAX_IMAGES_PER_PRODUCT}`,
+      )),
+  );
+}
+
+/**
+ * Jumeau de `removeImage` (lib/db/product-drafts.ts), sans le filtre
+ * `is_draft = 1`. Renvoie aussi l'URL (= clé R2 nue, voir
+ * `r2KeyFromImageUrl`) de l'image supprimée : le fichier R2 n'est effacé
+ * qu'APRÈS le commit du batch — voir l'appelant, `applyRevision` — jamais
+ * avant, pour ne jamais laisser une ligne supprimée pointer vers un fichier
+ * qui, lui, a survécu à un batch qui aurait échoué.
+ */
+async function buildRemoveImageStatements(
+  db: DrizzleDB,
+  productId: string,
+  imageId: string,
+): Promise<{ stmts: Statement[]; removedUrl: string }> {
+  const img = await db
+    .select({ id: productImages.id, url: productImages.url, is_primary: productImages.is_primary })
+    .from(productImages)
+    .where(and(eq(productImages.id, imageId), eq(productImages.product_id, productId)))
+    .limit(1)
+    .get();
+  if (!img) throw new RevisionError("not_found", "Image introuvable sur ce produit.");
+
+  const stmts: Statement[] = [db.delete(productImages).where(eq(productImages.id, imageId))];
+  if (img.is_primary === 1) {
+    const next = await db
+      .select({ id: productImages.id })
+      .from(productImages)
+      .where(and(eq(productImages.product_id, productId), ne(productImages.id, imageId)))
+      .orderBy(asc(productImages.sort_order))
+      .limit(1)
+      .get();
+    if (next) stmts.push(db.update(productImages).set({ is_primary: 1 }).where(eq(productImages.id, next.id)));
+  }
+  return { stmts, removedUrl: img.url };
+}
+
+/**
+ * Port de `setColorVariants` (lib/db/product-drafts.ts) pour l'application
+ * d'une révision `set_variants` sur un produit PUBLIÉ (sans `is_draft = 1`) :
+ * même diffing par clé couleur (`nom:hex`), même détachement des images qui
+ * pointaient sur une variante retirée, même formule de prix.
+ *
+ * Le prix par défaut d'une variante (`uniform_price`, ou variante sans prix
+ * propre) est lu sur le produit ICI, à l'application — pas figé au dépôt : la
+ * révision propose des variantes, pas un prix qu'elle n'a jamais porté.
+ * Toute écriture concurrente sur CE produit entre le dépôt et maintenant
+ * aurait de toute façon fait passer cette révision en `superseded` avant
+ * qu'elle n'atteigne ce code — voir le commentaire sur le supersede dans
+ * `applyRevision`.
+ *
+ * Duplication assumée avec `setColorVariants` (deux `is_draft` différents
+ * empêchent un simple paramètre booléen sans réécrire les deux appelants) :
+ * toute évolution de la formule de prix doit être reportée dans les deux
+ * fonctions — un rappel explicite plutôt qu'une dérive silencieuse.
+ */
+async function buildSetVariantsStatements(
+  db: DrizzleDB,
+  productId: string,
+  input: {
+    variants: { color_name: string; color_hex: string; price: number | null; stock: number }[];
+    uniform_price: boolean;
+  },
+): Promise<{ stmts: Statement[]; stock_quantity: number }> {
+  const product = await db
+    .select({ base_price: products.base_price, compare_price: products.compare_price })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1)
+    .get();
+  if (!product) throw new RevisionError("not_found", "Produit introuvable.");
+
+  const existing = await db
+    .select({ id: productVariants.id, attributes: productVariants.attributes })
+    .from(productVariants)
+    .where(eq(productVariants.product_id, productId))
+    .all();
+
+  const existingByColor = new Map<string, string>();
+  for (const v of existing) {
+    try {
+      const attrs = JSON.parse(v.attributes) as Record<string, unknown>;
+      const keys = Object.keys(attrs);
+      if (keys.length === 1 && keys[0] === "color" && typeof attrs.color === "string") existingByColor.set(attrs.color, v.id);
+    } catch (e) {
+      console.error("[revisions] malformed variant attributes", v.id, e);
+    }
+  }
+
+  const stmts: Statement[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+
+  input.variants.forEach((entry, index) => {
+    const key = `${entry.color_name}:${entry.color_hex}`;
+    seen.add(key);
+    const price = input.uniform_price || entry.price == null ? product.base_price : entry.price;
+    const comparePrice = input.uniform_price ? product.compare_price : null;
+    const attrs = JSON.stringify({ color: key });
+    total += entry.stock;
+
+    const existingId = existingByColor.get(key);
+    if (existingId) {
+      stmts.push(
+        db.update(productVariants)
+          .set({ name: entry.color_name, price, compare_price: comparePrice, stock_quantity: entry.stock, attributes: attrs })
+          .where(eq(productVariants.id, existingId)),
+      );
+    } else {
+      stmts.push(
+        db.insert(productVariants).values({
+          id: nanoid(), product_id: productId, name: entry.color_name, price, compare_price: comparePrice,
+          stock_quantity: entry.stock, attributes: attrs, is_active: 1, sort_order: index,
+          created_at: sql`datetime('now')`,
+        }),
+      );
+    }
+  });
+
+  for (const [key, variantId] of existingByColor) {
+    if (seen.has(key)) continue;
+    stmts.push(db.update(productImages).set({ variant_id: null }).where(eq(productImages.variant_id, variantId)));
+    stmts.push(db.delete(productVariants).where(eq(productVariants.id, variantId)));
+  }
+
+  return { stmts, stock_quantity: total };
+}
+
+/**
  * Assainit les colonnes HTML d'un payload avant stockage. Une révision ne doit
  * JAMAIS contenir du HTML non assaini : sinon la garantie dépendrait du moment
  * de l'application, et une révision déposée aujourd'hui, appliquée dans un mois
@@ -212,10 +433,10 @@ export async function createRevision(input: {
   actor: RevisionActor;
   summary?: string | null;
 }): Promise<{ revisionId: string; status: "pending" }> {
-  // Avant toute lecture : un payload hors liste blanche est un défaut de
+  // Avant toute lecture : un payload de forme invalide est un défaut de
   // l'appelant, pas de la cible — pas besoin d'un aller-retour base pour le
   // détecter.
-  assertWritablePayload(input.target, input.payload);
+  assertValidPayload(input.target, input.kind, input.payload);
 
   const db = await getDrizzle();
 
@@ -475,7 +696,7 @@ export async function applyRevision(
   // `content_revisions` sans passer par `createRevision`, cette ligne reste
   // la seule qui écrit réellement sur la cible et doit donc rester, elle
   // aussi, sourde à `is_draft`/`id`/`slug`.
-  assertWritablePayload(rev.target_type, rev.payload);
+  assertValidPayload(rev.target_type, rev.kind, rev.payload);
 
   // Comptées avant le batch pour le retour à l'appelant. La même condition de
   // filtrage (cible + pending) est répétée dans l'UPDATE du batch ci-dessous,
@@ -496,9 +717,51 @@ export async function applyRevision(
     .all();
   const otherIds = others.map((o) => o.id);
 
-  const targetSet: Record<string, unknown> = { ...rev.payload, updated_at: sql`datetime('now')` };
-  if (rev.kind === "publish" && rev.target_type === "product") {
-    targetSet.is_draft = 0;
+  // Enrichissement selon la nature de la révision. `update` écrit ses
+  // colonnes directement sur la cible (comportement de la phase 1) ;
+  // `publish` ne porte plus de colonnes — voir `publish_product`,
+  // lib/mcp/tools/products.ts, qui dépose systématiquement un payload vide —
+  // seul `is_draft` change, jamais le contenu. Les trois natures de la
+  // généralisation des outils (`add_images`, `remove_image`,
+  // `set_variants`) n'ont aucune colonne `products` à écrire : la cible
+  // n'obtient que l'ancre de concurrence (`updated_at`), et l'écriture
+  // réelle vient d'`extraStatements`, vers une table enfant du produit.
+  const targetSet: Record<string, unknown> = { updated_at: sql`datetime('now')` };
+  let extraStatements: Statement[] = [];
+  let afterCommit: (() => Promise<void>) | null = null;
+
+  if (rev.kind === "update") {
+    Object.assign(targetSet, rev.payload);
+  } else if (rev.kind === "publish") {
+    if (rev.target_type === "product") targetSet.is_draft = 0;
+  } else if (rev.kind === "add_images") {
+    // La clé R2 est déjà en place depuis le dépôt (voir le commentaire de
+    // haut de fichier de lib/mcp/tools/products.ts sur le cycle de vie R2) :
+    // l'application ne fait qu'insérer les lignes `product_images`, jamais
+    // de téléchargement — c'est précisément ce qui évite qu'Appliquer
+    // échoue sur un réseau, longtemps après que l'administrateur a cliqué.
+    const { images } = rev.payload as { images: { key: string; alt: string | null }[] };
+    extraStatements = images.map((img) =>
+      insertRevisionImageStatement(db, rev.target_id, { id: nanoid(), key: img.key, alt: img.alt }));
+  } else if (rev.kind === "remove_image") {
+    const { image_id } = rev.payload as { image_id: string };
+    const removal = await buildRemoveImageStatements(db, rev.target_id, image_id);
+    extraStatements = removal.stmts;
+    // Le fichier R2 n'est supprimé qu'APRÈS le commit du batch (voir plus
+    // bas) : tant que la ligne `product_images` existe encore, un échec
+    // avant ce point laisse une image cohérente en base et en stockage,
+    // plutôt qu'une ligne supprimée pointant vers un objet qui a survécu.
+    afterCommit = () =>
+      deleteFromR2(r2KeyFromImageUrl(removal.removedUrl)).catch((e) => {
+        console.warn("[revisions] orphan R2 object after remove_image apply", removal.removedUrl, e);
+      });
+  } else if (rev.kind === "set_variants") {
+    const variants = await buildSetVariantsStatements(db, rev.target_id, rev.payload as {
+      variants: { color_name: string; color_hex: string; price: number | null; stock: number }[];
+      uniform_price: boolean;
+    });
+    extraStatements = variants.stmts;
+    targetSet.stock_quantity = variants.stock_quantity;
   }
 
   // `current` (non-null, vérifié ci-dessus) est la valeur que le
@@ -557,6 +820,10 @@ export async function applyRevision(
       target_id: rev.target_id,
       details: JSON.stringify({ via: "admin", revisionId: rev.id, kind: rev.kind }),
     }),
+    // Ajoutées en fin de tableau : les index fixes ci-dessus (0 et 2) restent
+    // corrects quel que soit le nombre d'écritures enfant qu'une révision
+    // `add_images`/`remove_image`/`set_variants` y ajoute.
+    ...extraStatements,
   ];
 
   const results = await db.batch(stmts);
@@ -610,6 +877,13 @@ export async function applyRevision(
     // redemander une proposition fraîche plutôt qu'à réessayer celle-ci.
     throw new RevisionError("conflict", TARGET_CHANGED_MESSAGE);
   }
+
+  // Le batch a réellement écrit la cible : `remove_image` peut maintenant
+  // effacer le fichier R2 devenu orphelin en toute sécurité (voir plus haut).
+  // Best-effort et hors transaction — R2 n'est jamais atomique avec D1 — un
+  // échec ici est journalisé, jamais renvoyé à l'appelant : l'application a
+  // déjà réussi.
+  if (afterCommit) await afterCommit();
 
   return { applied: true, superseded: others.length };
 }
@@ -671,6 +945,24 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
     target_id: rev.target_id,
     details: JSON.stringify({ via: "admin", revisionId: rev.id }),
   });
+
+  // Cycle de vie R2 d'une révision `add_images` : ses objets ont déjà été
+  // téléversés au dépôt (lib/mcp/tools/products.ts), avant même que cette
+  // ligne existe — voir le payload, qui porte leur clé. Aucune ligne
+  // `product_images` ne les référencera jamais puisque cette révision ne
+  // sera plus jamais appliquée : les laisser sans les effacer les rend
+  // orphelins pour toujours dans R2. Best-effort, comme tout le nettoyage R2
+  // de ce fichier : un échec ici ne doit pas faire échouer un rejet déjà
+  // acté en base — seulement laisser une trace pour qu'on retrouve l'objet.
+  if (rev.kind === "add_images" && rev.target_type === "product") {
+    const images = (rev.payload as { images?: { key: string }[] }).images ?? [];
+    const cleanup = await Promise.allSettled(images.map((img) => deleteFromR2(img.key)));
+    cleanup.forEach((c, i) => {
+      if (c.status === "rejected") {
+        console.warn("[revisions] orphan R2 object after reject", images[i]?.key, c.reason);
+      }
+    });
+  }
 
   return { rejected: true };
 }

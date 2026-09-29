@@ -69,7 +69,7 @@ describe("POST /api/mcp", () => {
     const names = body.result.tools.map((t: { name: string }) => t.name);
     expect(names).toContain("create_product_draft");
     expect(names).toContain("list_categories");
-    expect(names).toHaveLength(11);
+    expect(names).toHaveLength(12);
   });
 
   it("accepte initialize sans identifiant de session (stateless)", async () => {
