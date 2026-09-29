@@ -35,11 +35,14 @@ updates:
           - "patch"
       # better-auth et ses paquets satellites (MCP, CIMD, fournisseur OAuth, core)
       # ont des peerDependencies croisées (@better-auth/mcp exige better-auth
-      # ^1.7.x) : un bump isolé échoue. Toujours ensemble, y compris en mineur.
+      # ^1.7.x) : un bump isolé échoue. Toujours ensemble, correctifs seulement :
+      # les mineurs sont ignorés plus bas (le 1.6 -> 1.7 a tout déplacé).
       better-auth:
         patterns:
           - "better-auth"
           - "@better-auth/*"
+        update-types:
+          - "patch"
       lexical:
         patterns:
           - "lexical"
@@ -87,15 +90,15 @@ updates:
     ignore:
       # Majors handled by hand: each of these needs a real regression pass
       # (auth flows incl. MCP OAuth, DB access, rendering).
-      # better-auth : le mineur 1.6 -> 1.7 (issue #323) a sorti MCP du coeur vers
-      # @better-auth/mcp et deplace les points OAuth de /mcp/* vers /oauth2/* ;
-      # la migration est faite, les mineurs 1.7.x reviennent donc (groupe
-      # "better-auth" ci-dessus). Un futur 2.0 reste manuel : chaque majeur doit
-      # repasser le flux MCP OAuth de bout en bout (consentement, jeton, appel).
+      # better-auth : correctifs seulement (groupe "better-auth" ci-dessus). Le
+      # mineur 1.6 -> 1.7 (issue #323) a sorti MCP du coeur, deplace les points
+      # OAuth de /mcp/* vers /oauth2/*, change le regime d'enregistrement des
+      # clients et exige un SDK MCP majeur : un mineur = une migration manuelle,
+      # avec le flux MCP OAuth rejoue de bout en bout (consentement, jeton, appel).
       - dependency-name: "better-auth"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "@better-auth/*"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "drizzle-orm"
         update-types: ["version-update:semver-major"]
       - dependency-name: "drizzle-kit"
