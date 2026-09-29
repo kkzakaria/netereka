@@ -11,28 +11,45 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   scopeFor,
+  resolveVariantPrice,
   PRODUCT_HTML_COLUMNS,
   BANNER_HTML_COLUMNS,
   type RevisionKind,
   type RevisionTarget,
 } from "@/lib/db/revisions";
-import type { Banner, ProductDetail, ProductImage } from "@/lib/db/types";
+import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
 
 /**
- * Décide si une révision se compare côte à côte à un état antérieur, ou se
- * montre seule.
+ * Décide comment une révision se présente : seule, côte à côte avec l'état
+ * actuel, ou via le rendu dédié aux révisions qui n'écrivent aucune colonne
+ * de `products`/`banners`.
  *
- * Une révision `publish` ne part pas d'un état visible pour le client : la
- * cible est encore un brouillon, il n'y a donc rien à comparer (§ 2.3 du
- * spec). Toute autre révision modifie une fiche déjà en ligne — son état
- * actuel existe et mérite d'être vu à côté de la proposition.
+ * - `publish` ne part pas d'un état visible pour le client : la cible est
+ *   encore un brouillon, il n'y a donc rien à comparer (§ 2.3 du spec) →
+ *   `"single"`.
+ * - `update` modifie des colonnes d'une fiche déjà en ligne : son état actuel
+ *   existe et mérite d'être vu à côté de la proposition → `"side-by-side"`,
+ *   la comparaison Description/FAQ de `ProductContentTabs`.
+ * - `add_images`/`remove_image`/`set_variants` (phase 2) n'écrivent JAMAIS de
+ *   colonne de `products` : leur payload porte une forme différente à chaque
+ *   fois (tableau d'images, id d'image, tableau de variantes — voir
+ *   `RevisionKind` dans lib/db/revisions.ts), que `ProductContentTabs` ne
+ *   sait pas représenter et que le diff de champs scalaires
+ *   (`changedScalarFields`) rendrait en `[object Object]` s'il la recevait
+ *   (c'est exactement le défaut que cette troisième valeur referme) → une
+ *   troisième valeur, `"child"`, pour un rendu dédié par nature de révision.
+ *   Ces trois natures ne s'appliquent qu'à un produit (`assertValidPayload`,
+ *   lib/db/revisions.ts) : `"child"` n'est donc jamais atteint pour une
+ *   bannière.
  *
  * Fonction pure et testée isolément : Vitest tourne en environnement `node`
  * sans jsdom dans ce dépôt, donc aucun composant de ce fichier ne peut être
  * rendu dans un test — seule cette décision, extraite du rendu, peut l'être.
  */
-export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" {
-  return kind === "publish" ? "single" : "side-by-side";
+export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | "child" {
+  if (kind === "publish") return "single";
+  if (kind === "update") return "side-by-side";
+  return "child";
 }
 
 /**
@@ -288,6 +305,381 @@ function ImagesPreview({ images }: { images: ProductImage[] }) {
 }
 
 /**
+ * Vignette d'image de révision, avec un badge textuel optionnel (« Nouvelle »,
+ * « Supprimée »). `alt`/`badge.text` sont du texte rendu par React (échappé
+ * automatiquement) — jamais du HTML injecté, contrairement au contenu libre
+ * (description/FAQ/bannière) plus haut dans ce fichier : la portée de
+ * `scopeCurrentPanel` ne concerne donc pas ce composant, il n'y a rien à isoler.
+ */
+function RevisionImageThumb({
+  src,
+  alt,
+  badge,
+}: {
+  src: string;
+  alt: string;
+  badge?: { text: string; tone: "added" | "removed" };
+}) {
+  return (
+    <div
+      className={cn(
+        "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border",
+        badge?.tone === "added" && "ring-2 ring-primary",
+        badge?.tone === "removed" && "opacity-50 ring-2 ring-destructive",
+      )}
+    >
+      <Image src={src} alt={alt} fill sizes="64px" className="object-cover" />
+      {badge && (
+        <span
+          className={cn(
+            "absolute inset-x-0 bottom-0 truncate px-1 text-center text-[10px] font-medium text-white",
+            badge.tone === "added" ? "bg-primary" : "bg-destructive",
+          )}
+        >
+          {badge.text}
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface AddImagesPayload {
+  images: { key: string; alt: string | null }[];
+}
+
+/** Revalide la FORME du payload `add_images` avant affichage — au même
+ *  niveau d'exigence que `assertValidPayload` (lib/db/revisions.ts) au dépôt,
+ *  pour ne jamais laisser un payload inattendu produire un rendu silencieux
+ *  et faux plutôt qu'un message explicite. */
+function parseAddImagesPayload(payload: Record<string, unknown>): AddImagesPayload | null {
+  const images = (payload as { images?: unknown }).images;
+  if (!Array.isArray(images)) return null;
+  const parsed: AddImagesPayload["images"] = [];
+  for (const item of images) {
+    const key = (item as { key?: unknown } | null)?.key;
+    if (typeof key !== "string" || key.length === 0) return null;
+    const alt = (item as { alt?: unknown } | null)?.alt;
+    parsed.push({ key, alt: typeof alt === "string" ? alt : null });
+  }
+  return { images: parsed };
+}
+
+/**
+ * Rendu d'une révision `add_images` : la galerie actuelle, inchangée, à côté
+ * d'elle-même augmentée des images proposées — visuellement distinguées
+ * (« Nouvelle »). Les clés R2 sont déjà en place au dépôt (§ commentaire de
+ * haut de fichier de lib/mcp/tools/products.ts) : la vignette proposée ne
+ * dépend d'aucun téléchargement différé, elle pointe la même clé que
+ * l'application écrira. Sur un paiement à la livraison l'image EST ce que le
+ * client croit acheter (cf. `ImagesPreview`) : un compte ne suffit jamais.
+ */
+function AddImagesDiff({ current, payload }: { current: ProductDetail; payload: Record<string, unknown> }) {
+  const parsed = parseAddImagesPayload(payload);
+  if (!parsed) {
+    return <EmptyNotice>Payload de révision invalide — impossible d&apos;afficher les images proposées.</EmptyNotice>;
+  }
+  const count = parsed.images.length;
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Actuel</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ImagesPreview images={current.images} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Proposé — {count === 1 ? "1 image ajoutée" : `${count} images ajoutées`}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {current.images.map((img) => (
+              <RevisionImageThumb key={img.id} src={getImageUrl(img.url)} alt={img.alt || "Image du produit"} />
+            ))}
+            {parsed.images.map((img, i) => (
+              <RevisionImageThumb
+                key={`new-${i}`}
+                src={getImageUrl(img.key)}
+                alt={img.alt || "Nouvelle image"}
+                badge={{ text: "Nouvelle", tone: "added" }}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+interface RemoveImagePayload {
+  imageId: string;
+}
+
+function parseRemoveImagePayload(payload: Record<string, unknown>): RemoveImagePayload | null {
+  const imageId = (payload as { image_id?: unknown }).image_id;
+  if (typeof imageId !== "string" || imageId.length === 0) return null;
+  return { imageId };
+}
+
+/**
+ * Images d'un produit après retrait de `imageId` — extrait de
+ * `RemoveImageDiff` pour être testé isolément : un filtre qui comparerait le
+ * mauvais champ montrerait « reste » une image qui en réalité disparaît, ou
+ * l'inverse — le mensonge exact que ce composant existe pour empêcher.
+ */
+export function imagesAfterRemoval(images: ProductImage[], imageId: string): ProductImage[] {
+  return images.filter((img) => img.id !== imageId);
+}
+
+/**
+ * Rendu d'une révision `remove_image` : la galerie actuelle avec l'image
+ * concernée signalée (« Supprimée »), à côté de la galerie telle qu'elle
+ * resterait après application — « Image 3 supprimée » n'est pas relisible,
+ * l'image l'est.
+ */
+function RemoveImageDiff({ current, payload }: { current: ProductDetail; payload: Record<string, unknown> }) {
+  const parsed = parseRemoveImagePayload(payload);
+  if (!parsed) {
+    return <EmptyNotice>Payload de révision invalide — impossible d&apos;identifier l&apos;image concernée.</EmptyNotice>;
+  }
+  const target = current.images.find((img) => img.id === parsed.imageId);
+  const remaining = imagesAfterRemoval(current.images, parsed.imageId);
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Actuel</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {current.images.map((img) => (
+              <RevisionImageThumb
+                key={img.id}
+                src={getImageUrl(img.url)}
+                alt={img.alt || "Image du produit"}
+                badge={img.id === parsed.imageId ? { text: "Supprimée", tone: "removed" } : undefined}
+              />
+            ))}
+          </div>
+          {!target && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Image introuvable — elle a peut-être déjà été retirée depuis le dépôt de cette révision.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Proposé</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ImagesPreview images={remaining} />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+interface SetVariantsPayload {
+  variants: { color_name: string; color_hex: string; price: number | null; stock: number }[];
+  uniformPrice: boolean;
+}
+
+function parseSetVariantsPayload(payload: Record<string, unknown>): SetVariantsPayload | null {
+  const variants = (payload as { variants?: unknown }).variants;
+  if (!Array.isArray(variants)) return null;
+  const parsed: SetVariantsPayload["variants"] = [];
+  for (const item of variants) {
+    const entry = item as Record<string, unknown> | null;
+    const colorName = entry?.color_name;
+    const colorHex = entry?.color_hex;
+    const stock = entry?.stock;
+    if (typeof colorName !== "string" || typeof colorHex !== "string" || typeof stock !== "number") return null;
+    const price = entry?.price;
+    parsed.push({ color_name: colorName, color_hex: colorHex, stock, price: typeof price === "number" ? price : null });
+  }
+  const uniformPrice = (payload as { uniform_price?: unknown }).uniform_price;
+  return { variants: parsed, uniformPrice: uniformPrice !== false };
+}
+
+/** Découpe la clé couleur `"<nom>:<hex>"` écrite par `buildSetVariantsStatements`
+ *  (lib/db/revisions.ts) et `setColorVariants` (lib/db/product-drafts.ts) —
+ *  toujours sous cette forme exacte pour toute variante que ce dépôt a lui-même
+ *  écrite, donc un simple `lastIndexOf(":#")` suffit (le nom peut contenir
+ *  ":", il ne peut pas contenir ":#" suivi de 6 hexadécimaux par coïncidence). */
+function parseColorKey(key: string): { name: string; hex: string } {
+  const idx = key.lastIndexOf(":#");
+  if (idx > 0) return { name: key.slice(0, idx), hex: key.slice(idx + 1) };
+  return { name: key, hex: "#000000" };
+}
+
+export interface VariantDiffRow {
+  key: string;
+  colorName: string;
+  colorHex: string;
+  status: "added" | "removed" | "kept";
+  currentPrice: number | null;
+  currentStock: number | null;
+  proposedPrice: number | null;
+  proposedStock: number | null;
+}
+
+/**
+ * Compare l'ensemble actuel de variantes couleur à l'ensemble proposé, ligne
+ * par ligne — `set_variants` REMPLACE tout l'ensemble (jamais un patch), donc
+ * la seule relecture qui vaille est visuelle : qui apparaît, qui disparaît,
+ * qui change de prix. Extrait de `SetVariantsDiff` pour être testé
+ * isolément.
+ *
+ * Le prix proposé appelle `resolveVariantPrice` (lib/db/revisions.ts) — la
+ * MÊME fonction que `buildSetVariantsStatements` appelle à l'application —
+ * plutôt que de rejouer la formule ici : un commentaire disant « même
+ * formule qu'à l'application » ne garantit rien si le code, lui, en porte
+ * deux copies qui peuvent diverger séparément. Sur une boutique en paiement
+ * à la livraison, une divergence signifierait un prix approuvé par
+ * l'administrateur différent de celui facturé au client, découvert à la
+ * porte — la seule protection réelle est qu'il n'existe qu'un seul endroit
+ * où se tromper.
+ *
+ * Le même diffing par clé couleur (`nom:hex`) que `buildSetVariantsStatements`
+ * — une variante actuelle aux attributs malformés ou multi-clés est ignorée,
+ * comme à l'application, plutôt que de fausser la comparaison.
+ */
+export function diffVariants(
+  current: Pick<ProductVariant, "price" | "stock_quantity" | "attributes">[],
+  proposed: SetVariantsPayload["variants"],
+  options: { uniformPrice: boolean; basePrice: number },
+): VariantDiffRow[] {
+  const currentByKey = new Map<string, { price: number; stock: number }>();
+  for (const v of current) {
+    try {
+      const attrs = JSON.parse(v.attributes) as Record<string, unknown>;
+      const keys = Object.keys(attrs);
+      if (keys.length === 1 && keys[0] === "color" && typeof attrs.color === "string") {
+        currentByKey.set(attrs.color, { price: v.price, stock: v.stock_quantity });
+      }
+    } catch {
+      // Attributs malformés : cette variante n'entre dans aucune comparaison
+      // par couleur, exactement comme `buildSetVariantsStatements` à
+      // l'application (lib/db/revisions.ts) — un throw ici bloquerait
+      // l'écran entier pour une ligne que l'application elle-même ignore.
+    }
+  }
+
+  const rows: VariantDiffRow[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of proposed) {
+    const key = `${entry.color_name}:${entry.color_hex}`;
+    seen.add(key);
+    const existing = currentByKey.get(key);
+    const resolvedPrice = resolveVariantPrice(entry.price, options.uniformPrice, options.basePrice);
+    rows.push({
+      key,
+      colorName: entry.color_name,
+      colorHex: entry.color_hex,
+      status: existing ? "kept" : "added",
+      currentPrice: existing?.price ?? null,
+      currentStock: existing?.stock ?? null,
+      proposedPrice: resolvedPrice,
+      proposedStock: entry.stock,
+    });
+  }
+
+  for (const [key, v] of currentByKey) {
+    if (seen.has(key)) continue;
+    const { name, hex } = parseColorKey(key);
+    rows.push({
+      key,
+      colorName: name,
+      colorHex: hex,
+      status: "removed",
+      currentPrice: v.price,
+      currentStock: v.stock,
+      proposedPrice: null,
+      proposedStock: null,
+    });
+  }
+
+  return rows;
+}
+
+const VARIANT_STATUS_LABELS: Record<VariantDiffRow["status"], string> = {
+  added: "Ajoutée",
+  removed: "Retirée",
+  kept: "Conservée",
+};
+
+/**
+ * Rendu d'une révision `set_variants` : table Actuel/Proposé, une ligne par
+ * couleur — `diffVariants` porte la logique, ce composant ne fait que la
+ * mettre en forme. `colorHex` alimente un `style` inline (`backgroundColor`),
+ * jamais un `<style>` ni du HTML injecté : aucun rapport avec la portée CSS
+ * que `scopeCurrentPanel` protège plus haut dans ce fichier.
+ */
+function SetVariantsDiff({ current, payload }: { current: ProductDetail; payload: Record<string, unknown> }) {
+  const parsed = parseSetVariantsPayload(payload);
+  if (!parsed) {
+    return <EmptyNotice>Payload de révision invalide — impossible d&apos;afficher les variantes proposées.</EmptyNotice>;
+  }
+  const rows = diffVariants(current.variants, parsed.variants, {
+    uniformPrice: parsed.uniformPrice,
+    basePrice: current.base_price,
+  });
+  if (rows.length === 0) {
+    return <EmptyNotice>Aucune variante, ni avant ni après application.</EmptyNotice>;
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Variantes — actuel et proposé</CardTitle>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <table className="w-full min-w-[480px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="py-2 pr-3">Couleur</th>
+              <th className="py-2 pr-3">Statut</th>
+              <th className="py-2 pr-3">Stock actuel</th>
+              <th className="py-2 pr-3">Stock proposé</th>
+              <th className="py-2 pr-3">Prix actuel</th>
+              <th className="py-2">Prix proposé</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b last:border-0">
+                <td className="py-2 pr-3">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="h-4 w-4 shrink-0 rounded-full border"
+                      style={{ backgroundColor: row.colorHex }}
+                      aria-hidden="true"
+                    />
+                    {row.colorName}
+                  </span>
+                </td>
+                <td className="py-2 pr-3">{VARIANT_STATUS_LABELS[row.status]}</td>
+                <td className="py-2 pr-3">{row.currentStock ?? "—"}</td>
+                <td className={cn("py-2 pr-3", row.proposedStock !== row.currentStock && "font-medium")}>
+                  {row.proposedStock ?? "—"}
+                </td>
+                <td className="py-2 pr-3">{row.currentPrice != null ? formatPrice(row.currentPrice) : "—"}</td>
+                <td className={cn("py-2", row.proposedPrice !== row.currentPrice && "font-medium")}>
+                  {row.proposedPrice != null ? formatPrice(row.proposedPrice) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
  * Bascule Description/FAQ d'un produit en onglets, jamais en piles empilées.
  *
  * Sur la fiche publique, `product-details.tsx` ne monte JAMAIS les deux à la
@@ -381,6 +773,7 @@ const PRODUCT_SCALAR_LABELS: Record<string, string> = {
   stock_quantity: "Stock",
   meta_title: "Titre SEO",
   meta_description: "Description SEO",
+  description_type: "Type de description",
 };
 
 const BANNER_SCALAR_LABELS: Record<string, string> = {
@@ -411,10 +804,20 @@ interface ScalarChange {
   after: string;
 }
 
-/** Champs simples (ni description, ni faq_html, ni content_html) proposés par
- *  la révision — un diff textuel leur convient très bien, à l'inverse du HTML
- *  libre (§ 2.4 du spec) : ce sont des valeurs, pas de la mise en forme. */
-function changedScalarFields(
+/**
+ * Champs simples (ni description, ni faq_html, ni content_html) proposés par
+ * la révision — un diff textuel leur convient très bien, à l'inverse du HTML
+ * libre (§ 2.4 du spec) : ce sont des valeurs, pas de la mise en forme.
+ *
+ * Exportée pour être testée directement : ne renvoie que les champs dont la
+ * valeur AFFICHÉE change réellement — un payload `update` peut porter une
+ * colonne inchangée (ex. `description_type: "html"` ré-envoyée avec la même
+ * valeur qu'en base par `productColumnsForRevision`, lib/db/product-drafts.ts,
+ * chaque fois que `description_html` est modifié). Sans ce filtre, l'écran
+ * affichait une ligne de bruit « html → html » — mesuré sur 773 des 996
+ * fiches publiées.
+ */
+export function changedScalarFields(
   target: RevisionTarget,
   current: Record<string, unknown>,
   payload: Record<string, unknown>,
@@ -428,7 +831,8 @@ function changedScalarFields(
       label: labels[key] ?? key,
       before: formatScalar(key, current[key]),
       after: formatScalar(key, payload[key]),
-    }));
+    }))
+    .filter((change) => change.before !== change.after);
 }
 
 function ScalarChangesCard({ changes }: { changes: ScalarChange[] }) {
@@ -469,21 +873,28 @@ export interface RevisionDiffProps {
  * Écran de comparaison d'une révision : rendu, pas source (§ 2.4 du spec).
  *
  * `publish` (aucun état antérieur côté client) montre la fiche complète en
- * une colonne ; toute autre révision montre l'actuel et le proposé côte à
- * côte. La décision est déléguée à `revisionLayout`, seule partie testée de
- * ce fichier.
+ * une colonne ; `update` montre l'actuel et le proposé côte à côte ;
+ * `add_images`/`remove_image`/`set_variants` (phase 2) montrent chacune le
+ * rendu dédié à leur table enfant (`AddImagesDiff`, `RemoveImageDiff`,
+ * `SetVariantsDiff`) — jamais la comparaison Description/FAQ, qui n'aurait
+ * rien à montrer pour ces natures-là et masquerait le vrai changement sous du
+ * contenu identique des deux côtés. La décision de disposition est déléguée à
+ * `revisionLayout`, seule partie de ce fichier testée pour discriminer les
+ * cinq natures ; à l'intérieur du cas `"child"`, ce composant choisit encore
+ * lequel des trois rendus dédiés afficher — un choix de CONTENU, pas de
+ * disposition, et qui n'a donc pas sa place dans `revisionLayout`.
  *
  * Se limite volontairement aux champs qui comptent pour une relecture : le
  * HTML libre (description, FAQ, contenu de bannière), les champs texte que la
- * révision touche, et — pour la vue seule d'une révision `publish` — les
- * vignettes des images déjà attachées au produit (une boutique en paiement à
- * la livraison ne peut pas se permettre qu'une mise en ligne sans visuel
- * passe inaperçue). La parité visuelle complète avec la fiche boutique
- * (galerie, carrousel, variantes, avis) reste hors périmètre de cette tâche.
+ * révision touche, les images (ajoutées, retirées, ou déjà attachées pour la
+ * vue seule d'une révision `publish` — une boutique en paiement à la
+ * livraison ne peut pas se permettre qu'une mise en ligne sans visuel passe
+ * inaperçue), et les variantes couleur. La parité visuelle complète avec la
+ * fiche boutique (galerie, carrousel, avis) reste hors périmètre de cette
+ * tâche.
  */
 export function RevisionDiff({ target, kind, targetId, current, payload }: RevisionDiffProps) {
   const layout = revisionLayout(kind);
-  const scalarChanges = changedScalarFields(target, current as unknown as Record<string, unknown>, payload);
 
   if (target === "banner") {
     const currentBanner = current as Banner;
@@ -507,6 +918,10 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
       );
     }
 
+    // "side-by-side" : seul autre cas pour une bannière — `assertValidPayload`
+    // (lib/db/revisions.ts) réserve `add_images`/`remove_image`/`set_variants`
+    // à `target: "product"`, donc `layout` ne vaut jamais `"child"` ici.
+    const scalarChanges = changedScalarFields(target, currentBanner as unknown as Record<string, unknown>, payload);
     return (
       <div className="space-y-6">
         {scalarChanges.length > 0 && <ScalarChangesCard changes={scalarChanges} />}
@@ -536,6 +951,20 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
   }
 
   const currentProduct = current as ProductDetail;
+
+  if (layout === "child") {
+    // `payload` ne porte ici ni colonne de `products` ni HTML libre (images ou
+    // variantes seulement) : pas de `proposedProduct` à construire, il n'y a
+    // rien à fusionner avec `currentProduct` pour ces trois natures.
+    return (
+      <div className="space-y-6">
+        {kind === "add_images" && <AddImagesDiff current={currentProduct} payload={payload} />}
+        {kind === "remove_image" && <RemoveImageDiff current={currentProduct} payload={payload} />}
+        {kind === "set_variants" && <SetVariantsDiff current={currentProduct} payload={payload} />}
+      </div>
+    );
+  }
+
   const proposedProduct: ProductDetail = { ...currentProduct, ...(payload as Partial<ProductDetail>) };
 
   if (layout === "single") {
@@ -576,6 +1005,10 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
     );
   }
 
+  // "side-by-side" : seul autre cas atteignable ici pour un produit — la
+  // branche `"child"` est retournée plus haut, avant la construction de
+  // `proposedProduct`.
+  const scalarChanges = changedScalarFields(target, currentProduct as unknown as Record<string, unknown>, payload);
   return (
     <div className="space-y-6">
       {scalarChanges.length > 0 && <ScalarChangesCard changes={scalarChanges} />}

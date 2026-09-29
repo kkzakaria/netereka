@@ -18,11 +18,23 @@ import type {
 } from "@/lib/validations/mcp-product";
 
 /**
- * Draft-only product persistence for the MCP tools (lib/mcp/tools/products.ts).
+ * Product persistence for the MCP tools (lib/mcp/tools/products.ts).
  *
- * Invariant: every UPDATE/DELETE on `products` filters on `is_draft = 1`. A
- * published product is unreachable from here by construction — that is the
- * mechanical form of the "drafts only" decision in the spec.
+ * Was draft-only end to end; lot B opens *reads* to published products too.
+ * `getProduct` (unlike `getDraft`) does not filter on `is_draft`, because a
+ * client needs to see a published fiche before it can know whether its next
+ * edit will land directly or wait on a revision — see `writePath` in
+ * lib/mcp/tools/products.ts.
+ *
+ * Invariant, still true for every MUTATION in this file (createDraft,
+ * updateDraft, deleteDraft, addImagesFromUrls, removeImage,
+ * setColorVariants): each one's UPDATE/DELETE on `products` filters on
+ * `is_draft = 1`. A published product is unreachable from a write in this
+ * file by construction — that is what makes `writePath()` true rather than
+ * aspirational: it is this guard, not the tool layer's routing decision,
+ * that a published row is never written directly here. A write aimed at a
+ * published product must go through `createRevision` (lib/db/revisions.ts)
+ * instead, which the tool layer chooses based on `getProductDraftState`.
  *
  * Invariant: every write takes a `DraftAudit` and commits its `audit_log` row
  * in the same `db.batch()` as the mutation (D1 batches are transactional), so
@@ -103,11 +115,59 @@ function buildProductColumns(input: UpdateDraftInput, productId: string): Produc
   return cols;
 }
 
+/**
+ * Même aplatissement que `buildProductColumns`, mais SANS assainir le HTML et
+ * sans identifiant de produit : une révision assainit à son dépôt
+ * (`createRevision` → `sanitizePayload`, lib/db/revisions.ts), avec la portée
+ * de l'id nu du produit. Assainir ici en amont referait un travail que
+ * `sanitizePayload` garantit déjà, à double titre : la garantie doit rester
+ * portée par une seule couche.
+ *
+ * `attributes` et `slug` sont volontairement absents du résultat : ce ne sont
+ * pas des colonnes de `products` (les attributs vivent dans
+ * `product_attributes` ; le slug est hors de PRODUCT_WRITABLE_COLUMNS,
+ * lib/db/revisions.ts, pour ne pas détacher le CSS scopé déjà stocké).
+ * L'appelant (lib/mcp/tools/products.ts) doit refuser explicitement une
+ * demande qui les fournit avant d'appeler cette fonction — sinon leur
+ * absence silencieuse du payload se lirait comme une réussite.
+ */
+export function productColumnsForRevision(input: UpdateDraftInput): Record<string, unknown> {
+  const cols: Record<string, unknown> = {};
+  if (input.name !== undefined) cols.name = input.name;
+  if (input.category_id !== undefined) cols.category_id = input.category_id;
+  if (input.brand !== undefined) cols.brand = input.brand;
+  if (input.short_description !== undefined) cols.short_description = input.short_description;
+  if (input.description_html !== undefined) {
+    cols.description = input.description_html;
+    cols.description_type = "html";
+  }
+  if (input.faq_html !== undefined) cols.faq_html = input.faq_html;
+  if (input.seo) {
+    if (input.seo.meta_title !== undefined) cols.meta_title = input.seo.meta_title;
+    if (input.seo.meta_description !== undefined) cols.meta_description = input.seo.meta_description;
+  }
+  if (input.pricing) {
+    const p = input.pricing;
+    if (p.base_price !== undefined) cols.base_price = p.base_price;
+    if (p.compare_price !== undefined) cols.compare_price = p.compare_price;
+    if (p.sku !== undefined) cols.sku = p.sku;
+    if (p.stock_quantity !== undefined) cols.stock_quantity = p.stock_quantity;
+    if (p.low_stock_threshold !== undefined) cols.low_stock_threshold = p.low_stock_threshold;
+    if (p.weight_grams !== undefined) cols.weight_grams = p.weight_grams;
+  }
+  return cols;
+}
+
 function escapeLike(q: string): string {
   return q.replace(/[\\%_]/g, (m) => `\\${m}`);
 }
 
-function r2KeyFromImageUrl(url: string): string {
+/** Exportée : lib/db/revisions.ts en a besoin pour nettoyer R2 au rejet
+ *  d'une révision `add_images`, et pour retrouver la clé R2 d'une image à
+ *  supprimer par une révision `remove_image` appliquée sur une fiche
+ *  publiée — même convention de stockage (`productImages.url` porte la clé
+ *  R2 nue, `getImageUrl` la préfixe de `/images/` pour l'affichage). */
+export function r2KeyFromImageUrl(url: string): string {
   return url.replace(/^\/images\//, "");
 }
 
@@ -137,6 +197,20 @@ async function requireDraft(db: DrizzleDB, id: string): Promise<{ id: string; sl
     .get();
   if (!row) throw new DraftError("not_found", "Brouillon introuvable (ou produit déjà publié)");
   return row;
+}
+
+/**
+ * `is_draft` du produit visé, ou `not_found` s'il n'existe pas. C'est une
+ * LECTURE — elle ne filtre donc pas sur `is_draft`, à la différence de
+ * `requireDraft` ci-dessous et de toute mutation de ce fichier. Utilisée par
+ * `writePath` (lib/mcp/tools/products.ts) pour décider, avant d'écrire, si la
+ * cible s'écrit directement ou part en révision.
+ */
+export async function getProductDraftState(id: string): Promise<{ is_draft: boolean }> {
+  const db = await getDrizzle();
+  const row = await db.select({ is_draft: products.is_draft }).from(products).where(eq(products.id, id)).limit(1).get();
+  if (!row) throw new DraftError("not_found", "Produit introuvable");
+  return { is_draft: row.is_draft === 1 };
 }
 
 async function requireCategory(db: DrizzleDB, categoryId: string): Promise<void> {
@@ -271,16 +345,12 @@ function parseJson(v: string | null): unknown {
   try { return JSON.parse(v); } catch { return null; }
 }
 
-export async function getDraft(id: string): Promise<DraftDetail> {
-  const db = await getDrizzle();
-  const p = await db
-    .select()
-    .from(products)
-    .where(and(eq(products.id, id), eq(products.is_draft, 1)))
-    .limit(1)
-    .get();
-  if (!p) throw new DraftError("not_found", "Brouillon introuvable (ou produit déjà publié)");
-
+/** Assemble le détail (attributs, images, variantes) d'une ligne `products`
+ *  déjà lue — partagé par `getDraft` (brouillon seul) et `getProduct`
+ *  (brouillon ou publié) pour qu'ils ne divergent jamais sur la forme de la
+ *  réponse. */
+async function assembleDetail(db: DrizzleDB, p: typeof products.$inferSelect): Promise<DraftDetail> {
+  const id = p.id;
   const [attrs, imgs, vars] = await Promise.all([
     db.select({ id: productAttributes.id, name: productAttributes.name, value: productAttributes.value })
       .from(productAttributes).where(eq(productAttributes.product_id, id)).all(),
@@ -317,6 +387,39 @@ export async function getDraft(id: string): Promise<DraftDetail> {
     created_at: p.created_at,
     updated_at: p.updated_at,
   };
+}
+
+export async function getDraft(id: string): Promise<DraftDetail> {
+  const db = await getDrizzle();
+  const p = await db
+    .select()
+    .from(products)
+    .where(and(eq(products.id, id), eq(products.is_draft, 1)))
+    .limit(1)
+    .get();
+  if (!p) throw new DraftError("not_found", "Brouillon introuvable (ou produit déjà publié)");
+  return assembleDetail(db, p);
+}
+
+export interface ProductDetail extends DraftDetail {
+  is_draft: boolean;
+}
+
+/**
+ * Lecture générale : un brouillon OU une fiche publiée. Consommée par
+ * l'outil `get_product` (lib/mcp/tools/products.ts) — contrairement à
+ * `getDraft`, ce n'est PAS bornée aux brouillons : c'est une LECTURE, donc
+ * l'invariant d'écriture du haut de ce fichier ne s'y applique pas. `is_draft`
+ * dans la réponse dit au client si sa prochaine écriture s'appliquera
+ * directement (brouillon) ou partira en révision (publiée) — voir
+ * `writePath` dans lib/mcp/tools/products.ts.
+ */
+export async function getProduct(id: string): Promise<ProductDetail> {
+  const db = await getDrizzle();
+  const p = await db.select().from(products).where(eq(products.id, id)).limit(1).get();
+  if (!p) throw new DraftError("not_found", "Produit introuvable");
+  const detail = await assembleDetail(db, p);
+  return { ...detail, is_draft: p.is_draft === 1 };
 }
 
 export interface ProductSearchRow {
@@ -454,6 +557,26 @@ async function cleanupR2(keys: string[], context: string): Promise<void> {
   });
 }
 
+/**
+ * Nombre d'images déjà attachées à un produit, brouillon OU publié (aucun
+ * filtre `is_draft` — c'est un COMPTAGE, pas une mutation). Exportée pour
+ * `lib/mcp/tools/products.ts` : le chemin révision d'`add_product_images`
+ * (fiche publiée) n'a, sans cette fonction, AUCUN contrôle de plafond avant
+ * de télécharger — contrairement au chemin brouillon ci-dessous, qui refuse
+ * avant tout téléchargement. Même défaut de principe que `sanitizePayload`
+ * (lib/db/revisions.ts) existe pour éviter : la garantie ne doit pas dépendre
+ * de l'appelant qui pense à la reproduire.
+ */
+export async function countProductImages(productId: string): Promise<number> {
+  const db = await getDrizzle();
+  const row = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(productImages)
+    .where(eq(productImages.product_id, productId))
+    .get();
+  return row?.count ?? 0;
+}
+
 export async function addImagesFromUrls(
   id: string,
   images: AddImagesInput["images"],
@@ -464,12 +587,7 @@ export async function addImagesFromUrls(
 
   // Early refusal so an obviously over-limit call fails before any download.
   // Not authoritative: the WHERE guard of insertImageStatement is.
-  const counted = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(productImages)
-    .where(eq(productImages.product_id, id))
-    .get();
-  const existingCount = counted?.count ?? 0;
+  const existingCount = await countProductImages(id);
   if (existingCount + images.length > MAX_IMAGES_PER_PRODUCT) {
     throw new DraftError(
       "limit_exceeded",
@@ -531,6 +649,28 @@ export async function addImagesFromUrls(
   return { results, primary_image_id: primaryId };
 }
 
+/**
+ * Une image d'un produit, brouillon OU publié, ou `null` si elle n'existe pas
+ * sur CE produit. Lecture seule, sans filtre `is_draft` — contrairement à
+ * `removeImage` ci-dessous. Sert à valider `image_id` au dépôt d'une révision
+ * `remove_image` (lib/mcp/tools/products.ts) sur une fiche publiée : refuser
+ * ici, avant `createRevision`, évite de déposer une révision qui échouerait
+ * de toute façon à l'application faute de cible.
+ */
+export async function findProductImage(
+  productId: string,
+  imageId: string,
+): Promise<{ id: string; url: string; is_primary: boolean } | null> {
+  const db = await getDrizzle();
+  const row = await db
+    .select({ id: productImages.id, url: productImages.url, is_primary: productImages.is_primary })
+    .from(productImages)
+    .where(and(eq(productImages.id, imageId), eq(productImages.product_id, productId)))
+    .limit(1)
+    .get();
+  return row ? { id: row.id, url: row.url, is_primary: row.is_primary === 1 } : null;
+}
+
 export async function removeImage(id: string, imageId: string, audit: DraftAudit): Promise<void> {
   const db = await getDrizzle();
   await requireDraft(db, id);
@@ -577,6 +717,33 @@ function colorKey(name: string, hex: string): string {
   return `${name}:${hex}`;
 }
 
+/**
+ * Résout le prix effectif d'une variante couleur proposée : son prix propre,
+ * sauf si `uniformPrice` est vrai ou qu'elle n'en porte pas, auquel cas c'est
+ * le prix de base du produit.
+ *
+ * Définie ICI (plutôt que dans lib/db/revisions.ts, qui la consommait seule
+ * jusqu'ici) pour que `setColorVariants` ci-dessous cesse de la dupliquer :
+ * `lib/db/revisions.ts` importe déjà des symboles de ce fichier (sens
+ * établi), alors que l'inverse fermerait un cycle. Le ticket qui a demandé ce
+ * déplacement notait que la raison consignée pour la duplication (« is_draft
+ * diffère ») était fausse — is_draft vit dans le SELECT et l'UPDATE autour de
+ * cette formule, jamais dans la formule elle-même, qui est identique
+ * caractère pour caractère aux deux endroits.
+ *
+ * Exportée et re-exportée par `lib/db/revisions.ts` : consommée par
+ * `buildSetVariantsStatements` (l'application réelle d'une révision) ET par
+ * l'aperçu affiché sur /revisions (`diffVariants`,
+ * components/admin/revision-diff.tsx) — une seule fonction, importée par les
+ * trois appelants, garantit qu'aucun ne peut plus diverger des deux autres.
+ * Sur une boutique en paiement à la livraison, une divergence signifierait un
+ * prix approuvé par l'administrateur différent de celui facturé au client,
+ * découvert à la porte.
+ */
+export function resolveVariantPrice(entryPrice: number | null | undefined, uniformPrice: boolean, basePrice: number): number {
+  return uniformPrice || entryPrice == null ? basePrice : entryPrice;
+}
+
 /** Port of actions/admin/products.ts saveColorVariants, Drizzle + draft-only. */
 export async function setColorVariants(
   id: string,
@@ -618,7 +785,7 @@ export async function setColorVariants(
   input.variants.forEach((entry, index) => {
     const key = colorKey(entry.color_name, entry.color_hex);
     seen.add(key);
-    const price = input.uniform_price || entry.price == null ? product.base_price : entry.price;
+    const price = resolveVariantPrice(entry.price, input.uniform_price, product.base_price);
     const comparePrice = input.uniform_price ? product.compare_price : null;
     const attrs = JSON.stringify({ color: key });
     total += entry.stock;

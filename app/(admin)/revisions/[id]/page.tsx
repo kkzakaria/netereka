@@ -5,7 +5,7 @@ import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { requireAdmin } from "@/lib/auth/guards";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Button } from "@/components/ui/button";
-import { getRevision, listPendingRevisions } from "@/lib/db/revisions";
+import { REVISION_KIND_LABELS, getRevision, listPendingRevisions } from "@/lib/db/revisions";
 import { getAdminProductById } from "@/lib/db/admin/products";
 import { getBannerById } from "@/lib/db/admin/banners";
 import { RevisionDiff } from "@/components/admin/revision-diff";
@@ -24,11 +24,6 @@ const TARGET_LABELS: Record<string, string> = {
 const ORIGIN_LABELS: Record<string, string> = {
   mcp: "MCP",
   admin_chat: "Chat admin",
-};
-
-const KIND_LABELS: Record<string, string> = {
-  update: "Modification",
-  publish: "Publication",
 };
 
 // Icône statique hissée hors du composant (rendering-hoist-jsx), comme
@@ -85,7 +80,7 @@ export default async function RevisionDetailPage({ params }: Props) {
               {TARGET_LABELS[revision.target_type] ?? revision.target_type} #{revision.target_id}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {KIND_LABELS[revision.kind] ?? revision.kind} — proposée par {revision.actor_name} (
+              {REVISION_KIND_LABELS[revision.kind] ?? revision.kind} — proposée par {revision.actor_name} (
               {ORIGIN_LABELS[revision.origin] ?? revision.origin}), {formatDateTime(revision.created_at)}
             </p>
           </div>
