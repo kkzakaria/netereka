@@ -51,6 +51,10 @@ export const session = sqliteTable("session", {
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
   userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  // Colonne du plugin admin (impersonation). better-auth 1.7 vérifie le schéma au
+  // premier appel et lève SCHEMA_MISMATCH si elle manque : sans elle, toutes les
+  // routes d'auth répondraient 500.
+  impersonatedBy: text("impersonatedBy"),
 }, (table) => [
   index("idx_session_userId").on(table.userId),
 ]);
@@ -96,6 +100,10 @@ export const rateLimit = sqliteTable("rateLimit", {
   lastRequest: integer("lastRequest").notNull(),
 });
 
+// LEGACY (better-auth 1.6, plugin mcp du cœur) : plus lu ni écrit depuis la 1.7.
+// À supprimer dans une PR contract séparée, une fois le déploiement 1.7 promu à
+// 100 % (DROP TABLE interdit pendant le canary, voir
+// scripts/check-migration-safety.mjs).
 // better-auth `mcp` plugin (OAuth 2.1 provider for MCP clients). Column names
 // mirror node_modules/better-auth/dist/plugins/oidc-provider/schema.mjs exactly:
 // better-auth reaches these tables through its own Kysely adapter, so a
@@ -146,6 +154,173 @@ export const oauthConsent = sqliteTable("oauthConsent", {
   index("idx_oauthConsent_clientId").on(table.clientId),
   index("idx_oauthConsent_userId").on(table.userId),
 ]);
+
+// better-auth 1.7 : jwt() + mcp() (fournisseur OAuth 2.1, @better-auth/oauth-provider)
+// + cimd(). Les colonnes reproduisent exactement ce que getMigrations() de
+// better-auth calcule pour ces plugins (better-auth y accède par son propre
+// adaptateur Kysely : une divergence échoue à l'exécution, pas à la compilation).
+// Dates = chaînes ISO (l'adaptateur tourne avec supportsDates: false sur sqlite),
+// booléens = 0/1, tableaux et JSON = texte JSON.
+
+// Deux tables du fournisseur portent un nom différent du modèle better-auth
+// (oauthProviderAccessToken, oauthProviderConsent, voir mcp({ schema }) dans
+// lib/auth/index.ts) : oauthAccessToken et oauthConsent existent déjà avec le
+// schéma 1.6 ci-dessus, et les recréer exigerait un DROP TABLE, interdit
+// pendant le canary (expand/contract). Migration purement additive.
+
+// Clés de signature des jetons d'accès JWT (publiées sur /api/auth/jwks).
+export const jwks = sqliteTable("jwks", {
+  id: text("id").primaryKey(),
+  publicKey: text("publicKey").notNull(),
+  privateKey: text("privateKey").notNull(),
+  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
+  expiresAt: text("expiresAt"),
+  alg: text("alg"),
+  crv: text("crv"),
+});
+
+// Un client OAuth : ici, uniquement des clients découverts par CIMD (le client_id
+// est l'URL HTTPS de son document de métadonnées). Aucun enregistrement anonyme.
+export const oauthClient = sqliteTable("oauthClient", {
+  id: text("id").primaryKey(),
+  clientId: text("clientId").unique().notNull(),
+  clientSecret: text("clientSecret"),
+  clientDiscoveryId: text("clientDiscoveryId"),
+  disabled: integer("disabled"),
+  skipConsent: integer("skipConsent"),
+  enableEndSession: integer("enableEndSession"),
+  subjectType: text("subjectType"),
+  scopes: text("scopes"),
+  clientCredentialsScopes: text("clientCredentialsScopes"),
+  userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
+  createdAt: text("createdAt"),
+  updatedAt: text("updatedAt"),
+  name: text("name"),
+  uri: text("uri"),
+  icon: text("icon"),
+  contacts: text("contacts"),
+  tos: text("tos"),
+  policy: text("policy"),
+  softwareId: text("softwareId"),
+  softwareVersion: text("softwareVersion"),
+  softwareStatement: text("softwareStatement"),
+  redirectUris: text("redirectUris").notNull(),
+  postLogoutRedirectUris: text("postLogoutRedirectUris"),
+  backchannelLogoutUri: text("backchannelLogoutUri"),
+  backchannelLogoutSessionRequired: integer("backchannelLogoutSessionRequired"),
+  tokenEndpointAuthMethod: text("tokenEndpointAuthMethod"),
+  applicationType: text("applicationType"),
+  jwks: text("jwks"),
+  jwksUri: text("jwksUri"),
+  grantTypes: text("grantTypes"),
+  responseTypes: text("responseTypes"),
+  requirePKCE: integer("requirePKCE"),
+  dpopBoundAccessTokens: integer("dpopBoundAccessTokens"),
+  referenceId: text("referenceId"),
+  metadata: text("metadata"),
+}, (table) => [
+  index("oauthClient_userId_idx").on(table.userId),
+]);
+
+export const oauthResource = sqliteTable("oauthResource", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").unique().notNull(),
+  name: text("name").notNull(),
+  accessTokenTtl: integer("accessTokenTtl"),
+  refreshTokenTtl: integer("refreshTokenTtl"),
+  signingAlgorithm: text("signingAlgorithm"),
+  signingKeyId: text("signingKeyId"),
+  allowedScopes: text("allowedScopes"),
+  customClaims: text("customClaims"),
+  dpopBoundAccessTokensRequired: integer("dpopBoundAccessTokensRequired"),
+  disabled: integer("disabled"),
+  createdAt: text("createdAt"),
+  updatedAt: text("updatedAt"),
+  policyVersion: integer("policyVersion"),
+  metadata: text("metadata"),
+});
+
+export const oauthClientResource = sqliteTable("oauthClientResource", {
+  id: text("id").primaryKey(),
+  clientId: text("clientId").notNull().references(() => oauthClient.clientId, { onDelete: "cascade" }),
+  resourceId: text("resourceId").notNull().references(() => oauthResource.identifier, { onDelete: "cascade" }),
+  metadata: text("metadata"),
+  createdAt: text("createdAt"),
+}, (table) => [
+  index("oauthClientResource_clientId_idx").on(table.clientId),
+  index("oauthClientResource_resourceId_idx").on(table.resourceId),
+  uniqueIndex("oauthClientResource_clientId_resourceId_uidx").on(table.clientId, table.resourceId),
+]);
+
+export const oauthRefreshToken = sqliteTable("oauthRefreshToken", {
+  id: text("id").primaryKey(),
+  token: text("token").unique().notNull(),
+  clientId: text("clientId").notNull().references(() => oauthClient.clientId, { onDelete: "cascade" }),
+  sessionId: text("sessionId").references(() => session.id, { onDelete: "set null" }),
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  referenceId: text("referenceId"),
+  authorizationCodeId: text("authorizationCodeId"),
+  resources: text("resources"),
+  requestedUserInfoClaims: text("requestedUserInfoClaims"),
+  expiresAt: text("expiresAt").notNull(),
+  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
+  revoked: text("revoked"),
+  rotatedAt: text("rotatedAt"),
+  rotationReplayResponse: text("rotationReplayResponse"),
+  rotationReplayExpiresAt: text("rotationReplayExpiresAt"),
+  authTime: text("authTime"),
+  confirmation: text("confirmation"),
+  scopes: text("scopes").notNull(),
+}, (table) => [
+  index("oauthRefreshToken_clientId_idx").on(table.clientId),
+  index("oauthRefreshToken_sessionId_idx").on(table.sessionId),
+  index("oauthRefreshToken_userId_idx").on(table.userId),
+  index("oauthRefreshToken_authorizationCodeId_idx").on(table.authorizationCodeId),
+]);
+
+export const oauthProviderAccessToken = sqliteTable("oauthProviderAccessToken", {
+  id: text("id").primaryKey(),
+  token: text("token").unique().notNull(),
+  clientId: text("clientId").notNull().references(() => oauthClient.clientId, { onDelete: "cascade" }),
+  sessionId: text("sessionId").references(() => session.id, { onDelete: "set null" }),
+  userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
+  referenceId: text("referenceId"),
+  authorizationCodeId: text("authorizationCodeId"),
+  resources: text("resources"),
+  requestedUserInfoClaims: text("requestedUserInfoClaims"),
+  refreshId: text("refreshId").references(() => oauthRefreshToken.id, { onDelete: "cascade" }),
+  expiresAt: text("expiresAt").notNull(),
+  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
+  revoked: text("revoked"),
+  confirmation: text("confirmation"),
+  scopes: text("scopes").notNull(),
+}, (table) => [
+  index("oauthProviderAccessToken_clientId_idx").on(table.clientId),
+  index("oauthProviderAccessToken_sessionId_idx").on(table.sessionId),
+  index("oauthProviderAccessToken_userId_idx").on(table.userId),
+  index("oauthProviderAccessToken_authorizationCodeId_idx").on(table.authorizationCodeId),
+  index("oauthProviderAccessToken_refreshId_idx").on(table.refreshId),
+]);
+
+export const oauthProviderConsent = sqliteTable("oauthProviderConsent", {
+  id: text("id").primaryKey(),
+  clientId: text("clientId").notNull().references(() => oauthClient.clientId, { onDelete: "cascade" }),
+  userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
+  referenceId: text("referenceId"),
+  resources: text("resources"),
+  requestedUserInfoClaims: text("requestedUserInfoClaims"),
+  scopes: text("scopes").notNull(),
+  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  index("oauthProviderConsent_clientId_idx").on(table.clientId),
+  index("oauthProviderConsent_userId_idx").on(table.userId),
+]);
+
+export const oauthClientAssertion = sqliteTable("oauthClientAssertion", {
+  id: text("id").primaryKey(),
+  expiresAt: text("expiresAt").notNull(),
+});
 
 // =============================================================================
 // Delivery Zones
