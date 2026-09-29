@@ -773,6 +773,7 @@ const PRODUCT_SCALAR_LABELS: Record<string, string> = {
   stock_quantity: "Stock",
   meta_title: "Titre SEO",
   meta_description: "Description SEO",
+  description_type: "Type de description",
 };
 
 const BANNER_SCALAR_LABELS: Record<string, string> = {
@@ -803,10 +804,20 @@ interface ScalarChange {
   after: string;
 }
 
-/** Champs simples (ni description, ni faq_html, ni content_html) proposés par
- *  la révision — un diff textuel leur convient très bien, à l'inverse du HTML
- *  libre (§ 2.4 du spec) : ce sont des valeurs, pas de la mise en forme. */
-function changedScalarFields(
+/**
+ * Champs simples (ni description, ni faq_html, ni content_html) proposés par
+ * la révision — un diff textuel leur convient très bien, à l'inverse du HTML
+ * libre (§ 2.4 du spec) : ce sont des valeurs, pas de la mise en forme.
+ *
+ * Exportée pour être testée directement : ne renvoie que les champs dont la
+ * valeur AFFICHÉE change réellement — un payload `update` peut porter une
+ * colonne inchangée (ex. `description_type: "html"` ré-envoyée avec la même
+ * valeur qu'en base par `productColumnsForRevision`, lib/db/product-drafts.ts,
+ * chaque fois que `description_html` est modifié). Sans ce filtre, l'écran
+ * affichait une ligne de bruit « html → html » — mesuré sur 773 des 996
+ * fiches publiées.
+ */
+export function changedScalarFields(
   target: RevisionTarget,
   current: Record<string, unknown>,
   payload: Record<string, unknown>,
@@ -820,7 +831,8 @@ function changedScalarFields(
       label: labels[key] ?? key,
       before: formatScalar(key, current[key]),
       after: formatScalar(key, payload[key]),
-    }));
+    }))
+    .filter((change) => change.before !== change.after);
 }
 
 function ScalarChangesCard({ changes }: { changes: ScalarChange[] }) {

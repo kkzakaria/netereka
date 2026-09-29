@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { listPendingRevisions } from "@/lib/db/revisions";
+import { REVISION_KIND_LABELS, listPendingRevisions } from "@/lib/db/revisions";
 import { formatDateTime } from "@/lib/utils/format";
 
 const TARGET_LABELS: Record<string, string> = {
@@ -23,11 +23,6 @@ const TARGET_LABELS: Record<string, string> = {
 const ORIGIN_LABELS: Record<string, string> = {
   mcp: "MCP",
   admin_chat: "Chat admin",
-};
-
-const KIND_LABELS: Record<string, string> = {
-  update: "Modification",
-  publish: "Publication",
 };
 
 /**
@@ -80,7 +75,7 @@ export default async function RevisionsPage() {
                       {TARGET_LABELS[rev.target_type] ?? rev.target_type} #{rev.target_id}
                     </Link>
                     <div className="mt-1">
-                      <Badge variant="outline">{KIND_LABELS[rev.kind] ?? rev.kind}</Badge>
+                      <Badge variant="outline">{REVISION_KIND_LABELS[rev.kind] ?? rev.kind}</Badge>
                     </div>
                   </TableCell>
                   <TableCell>{ORIGIN_LABELS[rev.origin] ?? rev.origin}</TableCell>
