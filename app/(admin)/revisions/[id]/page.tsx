@@ -29,6 +29,9 @@ const ORIGIN_LABELS: Record<string, string> = {
 const KIND_LABELS: Record<string, string> = {
   update: "Modification",
   publish: "Publication",
+  add_images: "Ajout d'images",
+  remove_image: "Suppression d'image",
+  set_variants: "Variantes",
 };
 
 // Icône statique hissée hors du composant (rendering-hoist-jsx), comme
