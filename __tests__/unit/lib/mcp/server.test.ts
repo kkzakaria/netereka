@@ -10,7 +10,7 @@ describe("createMcpServer", () => {
   it("enregistre tous les outils avec description et schéma", () => {
     const server = createMcpServer({ user: { id: "u", name: "n", role: "admin" }, clientId: "c" });
     expect(server).toBeDefined();
-    expect(ALL_TOOLS.length).toBe(9);
+    expect(ALL_TOOLS.length).toBe(11);
     for (const t of ALL_TOOLS) {
       expect(t.description.length).toBeGreaterThan(20);
       expect(typeof t.inputSchema).toBe("object");
@@ -29,8 +29,9 @@ describe("createMcpServer", () => {
 
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
-        "add_product_images", "create_product_draft", "delete_product_draft", "get_product_draft",
-        "list_categories", "remove_product_image", "search_products", "set_product_variants", "update_product_draft",
+        "add_product_images", "create_product_draft", "delete_product_draft", "get_product", "get_product_draft",
+        "list_categories", "remove_product_image", "search_products", "set_product_variants", "update_product",
+        "update_product_draft",
       ]);
       for (const tool of tools) {
         expect(tool.description?.length ?? 0).toBeGreaterThan(0);

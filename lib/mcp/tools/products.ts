@@ -4,12 +4,15 @@ import {
   addImagesFromUrls,
   createDraft,
   deleteDraft,
-  getDraft,
+  getProduct,
+  getProductDraftState,
+  productColumnsForRevision,
   removeImage,
   searchProducts,
   setColorVariants,
   updateDraft,
 } from "@/lib/db/product-drafts";
+import { RevisionError, createRevision } from "@/lib/db/revisions";
 import type { McpContext } from "@/lib/mcp/context";
 import { ok, fail, type ToolResult } from "@/lib/mcp/result";
 import {
@@ -19,18 +22,31 @@ import {
   searchProductsSchema,
   setVariantsSchema,
   updateDraftSchema,
+  type UpdateDraftInput,
 } from "@/lib/validations/mcp-product";
 import { defineTool, type ToolDefinition } from "./types";
 
 /**
- * Product-draft tools. Every write goes through lib/db/product-drafts.ts,
- * which refuses anything that is not `is_draft = 1` and commits the audit row
- * in the same D1 batch as the mutation. Publishing stays in the admin wizard
- * (/products/<id>/edit) — no tool here can flip is_draft/is_active.
+ * Product tools. Reads (get_product) cover the whole catalogue, drafts and
+ * published alike. Writes go through lib/db/product-drafts.ts, which still
+ * refuses anything that is not `is_draft = 1` — so a published product is
+ * never written directly from here. `writePath` decides, per write, whether
+ * the target is a draft (write lands now) or published (the write is
+ * deposited as a revision in lib/db/revisions.ts, for an administrator to
+ * apply from /revisions). Publishing itself stays a revision too — no tool
+ * here can flip is_draft on its own.
  */
+
+/** Où va une écriture, selon l'état de la cible. Un brouillon s'écrit
+ *  directement (comportement du lot A) ; une fiche publiée passe par une
+ *  révision que l'administrateur applique. */
+export function writePath(isDraft: boolean): "direct" | "revision" {
+  return isDraft ? "direct" : "revision";
+}
 
 function toolError(toolName: string, err: unknown): ToolResult {
   if (err instanceof DraftError) return fail(err.code, err.message);
+  if (err instanceof RevisionError) return fail(err.code, err.message);
   console.error(`[mcp/${toolName}]`, err);
   return fail("internal_error", "Erreur interne, réessayez ou contactez un administrateur");
 }
@@ -51,6 +67,63 @@ const DESCRIPTION_RULES =
   "Mise en page : emploie les classes de la charte — nk-section, nk-container, nk-grid, nk-card, nk-media, nk-specs, " +
   "nk-lead, nk-quote, nk-cta, nk-faq — plutôt que des styles en dur ; elles suivent le thème clair et sombre.";
 
+/**
+ * Partagé par `update_product` et son alias déprécié `update_product_draft` :
+ * même routage, même réponse. Sur un brouillon, écrit directement via
+ * `updateDraft` (comportement du lot A). Sur une fiche publiée, dépose une
+ * révision (`createRevision`) au lieu d'écrire — voir `writePath` ci-dessus.
+ *
+ * `attributes` (table `product_attributes`) et `slug` ne sont pas des
+ * colonnes de `products` : `productColumnsForRevision` les ignore
+ * silencieusement, donc on les refuse ici, avant le dépôt, plutôt que de
+ * laisser leur absence du payload se lire comme une réussite.
+ */
+async function updateProductHandler(toolName: string, ctx: McpContext, input: { id: string } & UpdateDraftInput): Promise<ToolResult> {
+  const { id, ...patch } = input;
+  try {
+    const { is_draft } = await getProductDraftState(id);
+
+    if (writePath(is_draft) === "direct") {
+      const result = await updateDraft(id, patch, auditFor(ctx, toolName));
+      return ok({ applied: "direct", ...result });
+    }
+
+    if (patch.attributes !== undefined) {
+      return fail(
+        "validation_error",
+        "Les attributs (couleurs, dimensions, caractéristiques) d'une fiche publiée ne peuvent pas être " +
+        "proposés en révision ; modifiez-les sur un brouillon.",
+      );
+    }
+    if (patch.slug !== undefined) {
+      return fail("validation_error", "Le slug d'une fiche publiée ne peut pas être proposé en révision.");
+    }
+
+    const payload = productColumnsForRevision(patch);
+    if (Object.keys(payload).length === 0) {
+      return fail("validation_error", "Aucun champ à modifier.");
+    }
+
+    const { revisionId, status } = await createRevision({
+      target: "product",
+      targetId: id,
+      kind: "update",
+      payload,
+      origin: "mcp",
+      actor: { id: ctx.user.id, name: ctx.user.name },
+    });
+    return ok({
+      applied: "revision",
+      revision: { id: revisionId, status },
+      message:
+        `Fiche publiée : la modification a été déposée en révision (${revisionId}), en attente de validation ` +
+        `par un administrateur sur /revisions/${revisionId}.`,
+    });
+  } catch (err) {
+    return toolError(toolName, err);
+  }
+}
+
 export const productTools: ToolDefinition[] = [
   defineTool({
     name: "search_products",
@@ -67,12 +140,30 @@ export const productTools: ToolDefinition[] = [
   }),
 
   defineTool({
-    name: "get_product_draft",
-    description: "Relit un brouillon complet : champs, attributs, images (URL publiques), variantes. Échoue sur un produit publié.",
+    name: "get_product",
+    description:
+      "Relit une fiche produit complète, brouillon ou publiée : champs, attributs, images (URL publiques), variantes. " +
+      "La réponse porte is_draft : true → une prochaine écriture s'applique directement ; false → elle sera déposée " +
+      "en révision et devra être validée par un administrateur depuis /revisions.",
     inputSchema: { id: idSchema },
     handler: async (_ctx, input) => {
       try {
-        return ok(await getDraft(input.id));
+        return ok(await getProduct(input.id));
+      } catch (err) {
+        return toolError("get_product", err);
+      }
+    },
+  }),
+
+  defineTool({
+    name: "get_product_draft",
+    description:
+      "Déprécié, conservé le temps d'un lot pour les clients déjà enregistrés : utiliser get_product. " +
+      "Comportement identique (brouillon ou publié, is_draft dans la réponse).",
+    inputSchema: { id: idSchema },
+    handler: async (_ctx, input) => {
+      try {
+        return ok(await getProduct(input.id));
       } catch (err) {
         return toolError("get_product_draft", err);
       }
@@ -95,19 +186,25 @@ export const productTools: ToolDefinition[] = [
   }),
 
   defineTool({
+    name: "update_product",
+    description:
+      "Met à jour une fiche produit. Sur un brouillon : écrit directement. Sur une fiche publiée : dépose une " +
+      "révision que l'administrateur doit appliquer depuis /revisions — la réponse le dit (applied: \"direct\" ou " +
+      "\"revision\", avec revision.id et revision.status dans ce second cas). attributes et slug ne sont pas pris " +
+      "en charge sur une fiche publiée (validation_error) : passez par un brouillon pour les modifier. " +
+      `Champs absents ignorés, null efface. attributes fourni remplace tous les attributs : colors, dimensions et ` +
+      `specs sont alors tous requis (relire la fiche avant pour ne rien perdre). slug optionnel (unique). ${DESCRIPTION_RULES}`,
+    inputSchema: { id: idSchema, ...updateDraftSchema.shape },
+    handler: (ctx, input) => updateProductHandler("update_product", ctx, input),
+  }),
+
+  defineTool({
     name: "update_product_draft",
     description:
-      `Met à jour un brouillon. Champs absents ignorés, null efface. attributes fourni remplace tous les attributs : colors, dimensions et specs sont alors tous requis (relire le brouillon avant pour ne rien perdre). slug optionnel (unique). ${DESCRIPTION_RULES}`,
+      "Déprécié, conservé le temps d'un lot pour les clients déjà enregistrés : utiliser update_product. " +
+      "Comportement identique (routage brouillon/publié).",
     inputSchema: { id: idSchema, ...updateDraftSchema.shape },
-    handler: async (ctx, input) => {
-      try {
-        const { id, ...patch } = input;
-        const result = await updateDraft(id, patch, auditFor(ctx, "update_product_draft"));
-        return ok(result);
-      } catch (err) {
-        return toolError("update_product_draft", err);
-      }
-    },
+    handler: (ctx, input) => updateProductHandler("update_product_draft", ctx, input),
   }),
 
   defineTool({
