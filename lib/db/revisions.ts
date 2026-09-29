@@ -697,7 +697,7 @@ const RECONCILE_FAILED_ACTION: AuditAction = "revision.reconcile_failed";
  *
  * `supersededByThisBatch` est le remède exact, pas une heuristique : c'est
  * `meta.changes` de l'instruction de péremption du batch RATÉ lui-même
- * (index 2 du batch d'`applyRevision`, commenté à cet index précis parce
+ * (l'instruction de péremption du batch d'`applyRevision`, commenté à cet index précis parce
  * qu'un tableau positionnel se décale silencieusement le jour où quelqu'un
  * insère une instruction au milieu) — le nombre EXACT de lignes que CE
  * batch a lui-même périmées. À 0 (le cas de la course à trois ci-dessus : le
@@ -910,11 +910,25 @@ export async function applyRevision(
     // chemin brouillon (`addImagesFromUrls`, lib/db/product-drafts.ts) : relire
     // ce qui a réellement atterri, nettoyer R2 pour le reste.
     afterCommit = async () => {
-      const landed = await db
-        .select({ id: productImages.id })
-        .from(productImages)
-        .where(inArray(productImages.id, imageRows.map((r) => r.id)))
-        .all();
+      // La relecture est du meilleur effort, comme le nettoyage R2 qui la suit :
+      // le batch a déjà committé, donc une panne ici ne doit PAS faire échouer
+      // une application réussie. Sans ce catch, l'administrateur verrait une
+      // erreur pour un clic qui a marché — exactement ce que le commentaire au
+      // point d'appel de `afterCommit` promet de ne jamais faire.
+      let landed: { id: string }[];
+      try {
+        landed = await db
+          .select({ id: productImages.id })
+          .from(productImages)
+          .where(inArray(productImages.id, imageRows.map((r) => r.id)))
+          .all();
+      } catch (err) {
+        console.warn(
+          "[revisions] add_images : relecture post-batch impossible, nettoyage R2 sauté",
+          { revisionId: rev.id, productId: rev.target_id, err },
+        );
+        return;
+      }
       const landedIds = new Set(landed.map((r) => r.id));
       const skipped = imageRows.filter((r) => !landedIds.has(r.id));
       if (skipped.length === 0) return;

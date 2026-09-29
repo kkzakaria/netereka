@@ -744,6 +744,29 @@ describe("applyRevision", () => {
   // jamais colonne par colonne sur la cible elle-même — seule `updated_at`
   // (l'ancre de concurrence) y change.
 
+  it("add_images : une relecture post-batch en échec ne fait PAS échouer une application réussie", async () => {
+    // Le batch a déjà committé quand `afterCommit` tourne : la révision est
+    // durablement `applied`. Si la relecture — du meilleur effort, elle ne sert
+    // qu'au nettoyage R2 — remontait son erreur, l'administrateur verrait un
+    // échec pour un clic qui a marché, et un nouvel essai lui répondrait
+    // « Révision déjà applied ». Rougit si le try/catch est retiré.
+    mockApplyReads({
+      rev: revisionRow({
+        kind: "add_images",
+        payload: JSON.stringify({ images: [{ key: "products/p1/a.jpg", alt: null }] }),
+      }),
+      targetVersion: "2026-01-01 00:00:00",
+      others: [],
+    });
+    const base = d1.current!.raw.getMockImplementation()!;
+    d1.current!.raw.mockImplementation(async (stmt) => {
+      if (/"product_images"\."id" in/i.test(stmt.sql)) throw new Error("D1 indisponible");
+      return base(stmt);
+    });
+
+    await expect(applyRevision("rev-1", ADMIN)).resolves.toEqual({ applied: true, superseded: 0 });
+  });
+
   it("applique une révision add_images : insère les lignes product_images, ne touche à aucune colonne produit hors updated_at", async () => {
     mockApplyReads({
       rev: revisionRow({
