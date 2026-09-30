@@ -360,6 +360,7 @@ export type AuditAction =
   | "revision.created.add_images"
   | "revision.created.remove_image"
   | "revision.created.set_variants"
+  | "revision.created.withdraw"
   | "revision.applied"
   | "revision.rejected"
   | "revision.apply_conflict"

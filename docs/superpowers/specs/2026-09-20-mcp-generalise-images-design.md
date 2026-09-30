@@ -72,6 +72,7 @@ Une révision est une proposition de modification, non appliquée.
 | modifier un **brouillon** | écriture directe (comportement du lot A, inchangé) |
 | publier | révision de type `publish` — § 2.3 |
 | retirer (dépublier, désactiver) | révision de type `withdraw` — § 2.6 |
+| remettre en ligne | révision de type `reactivate` — § 2.6 bis |
 | créer une ligne publiable | révision de type `create` — § 2.7 |
 | créer un brouillon | écriture directe |
 
@@ -116,19 +117,45 @@ Un retrait est une révision comme une autre. Ce qui change est l'écran.
 L'écran d'un `withdraw` montre donc **ce qui disparaît**, mesuré et non décrit :
 
 - la fiche ou la bannière telle qu'un client la voit **maintenant** ;
-- ce qui cesse d'exister pour lui : pour un produit, sa page, sa présence dans chaque catégorie et dans la recherche ; pour une bannière, sa place dans le carrousel ;
-- ce qui reste attaché : stock restant, commandes qui la référencent, statut « en vedette » — une fiche en vedette disparaît aussi du hero ;
-- **et que le retrait est réversible** : une réactivation est à une révision de distance. C'est ce qui le distingue d'une suppression, et ce qui le rend acceptable.
+- ce qui cesse d'exister pour lui : pour un produit, sa page, sa présence dans chaque page catégorie (la sienne **et celles de ses parents**, qui listent leurs descendants) et dans la recherche ; pour une bannière, sa place dans le carrousel (rang et nombre de bannières restantes, et le basculement du hero sur les produits en vedette quand c'est la dernière) ;
+- ce qui reste attaché : stock restant, commandes qui la référencent (dont celles encore en cours), listes d'envies, paniers WhatsApp, statut « en vedette » — une fiche en vedette disparaît aussi du hero ;
+- **et que le retrait est réversible** : rien n'est supprimé, et la réactivation se fait d'un clic depuis la liste des produits ou des bannières. C'est ce qui le distingue d'une suppression, et ce qui le rend acceptable.
 
-La confirmation est plus forte qu'un clic : une saisie explicite, comme le runbook de conversion l'exigeait pour son étape irréversible.
+*Correction d'implémentation (2026-09-30) :* ce paragraphe disait « une réactivation est à une révision de distance ». Il n'existe pas de révision de réactivation : `publish_product` refuse une fiche déjà publiée et aucun payload n'écrit `is_active`. La réactivation était alors une action humaine directe (`toggleProductActive`, `toggleBannerActive`). **Le type `reactivate` du § 2.6 bis, décidé ensuite, rétablit la symétrie** : un retrait demandé par le MCP peut désormais être annulé par le même chemin, sous le même clic humain. C'est cohérent avec la règle (rien d'autre que l'humain ne remet en ligne sans relecture), mais ce n'est pas ce que le paragraphe affirmait.
+
+**Les chiffres sont mesurés à l'affichage, pas stockés dans la révision** (`lib/db/withdraw-impact.ts`) : chacun vient de la table qui porte la relation — `order_items.product_id` pour les commandes (`orders` ne porte aucun id de produit), `wishlist.product_id`, `whatsapp_carts.product_id`, la chaîne `categories.parent_id`, `products.is_featured`, et pour une bannière la condition même du carrousel (`displayedBannerCondition`, partagée avec la vitrine). Un zéro s'affiche (« commandes : 0 ») ; il ne disparaît pas.
+
+**La confirmation** est la saisie du **nom** de la cible (nom du produit, titre de la bannière), pas d'un mot fixe qui se tape par réflexe. Elle est exigée par `applyRevision` lui-même (`lib/db/revisions.ts`), et non seulement par le champ de l'écran : un appelant sans champ de saisie est refusé, pas dispensé. Un retrait ne se dépose que sur une cible **actuellement en ligne** (`createRevision` refuse un brouillon et une cible déjà retirée) et avec un payload **vide** : seul `applyRevision` écrit `is_active = 0`.
+
+Une modification de dates qui sort une bannière du carrousel (`ends_at` passée, `starts_at` future) est un retrait de fait sous un autre nom : l'écran d'un `update` l'affiche en avertissement, et les libellés de tous les champs de bannière sont dérivés de la liste blanche, pour qu'une `ends_at` se lise « Fin d'affichage » et non `ends_at`.
 
 **Côté produit**, `is_draft` et `is_active` sortent tous deux de `PRODUCT_WRITABLE_COLUMNS` : aucun payload ne les modifie, seul `applyRevision` les écrit pour le type qui le déclare. La garantie tient ainsi au dépôt et non chez l'appelant.
 
-**Côté bannière, `is_active` reste écrivable pour l'instant**, et cette asymétrie est délibérée mais provisoire. Elle se justifie par une différence réelle entre les objets : une diapositive absente du carrousel se remarque au prochain chargement de la page d'accueil, alors qu'un produit retiré du catalogue ne se remarque que le jour où un client le cherche. Elle est provisoire parce que `update_banner` l'expose déjà et que la retirer sans remplaçant supprimerait une capacité existante.
+**Côté bannière, `is_active` sort lui aussi de `BANNER_WRITABLE_COLUMNS`.** Il est resté écrivable le temps que `withdraw` existe — une exception provisoire, justifiée par le fait qu'une diapositive absente se remarque au prochain chargement de l'accueil alors qu'un produit retiré ne se remarque que le jour où un client le cherche. `withdraw` existe : l'exception est refermée, `update_banner` n'expose plus `is_active`, et les deux surfaces passent par le même écran. Il ne reste aucune exception dans cette règle : activer une bannière relève de `create` (qui pose `is_active` depuis `applyRevision`), la retirer de `withdraw`, et aucun payload ne pose la colonne.
 
-`withdraw` unifie les deux : quand il existera, `is_active` sortira aussi de `BANNER_WRITABLE_COLUMNS` et les deux surfaces passeront par le même écran. Tant que ce n'est pas fait, le spec porte une exception — et une règle avec exception se corrompt, donc celle-ci a une date de péremption, pas un statut.
+### 2.6 bis Remettre en ligne : le type `reactivate`
+
+Symétrique de `withdraw`, **et volontairement plus léger**.
+
+Le § 2.4 pose que l'écran est proportionné à la conséquence, et l'asymétrie joue ici dans l'autre sens : un retrait est une absence, donc invisible, et demande qu'on montre ce qui disparaît ; une remise en ligne est une **apparition**, qui se voit au premier chargement. Elle relève donc du même traitement que `create` et `publish` — l'objet entier, en une colonne, tel qu'il paraîtra.
+
+**Pas de saisie de confirmation.** Elle existait pour le retrait parce qu'un clic distrait y coûte une absence que personne ne remarque. Une remise en ligne ratée se voit et se corrige par un `withdraw`. Exiger une saisie des deux côtés banaliserait le geste là où il compte.
+
+Ce que l'écran doit montrer, en revanche, c'est **ce qui rend une fiche impropre à la vitrine** — parce que c'est précisément ce qu'une remise en ligne risque de laisser passer :
+
+- l'absence d'image, sur une boutique en paiement à la livraison où l'image est ce que le client croit acheter ;
+- un stock à zéro ;
+- l'absence de description.
+
+Ces constats **n'empêchent pas** d'appliquer : ce sont des avertissements, pas des refus, cohérents avec le contrôle de charte du lot A qui avertit sans jamais bloquer. Le vocabulaire ne peut pas anticiper tous les cas légitimes, et une fiche sans stock peut être remise en ligne pour préparer un réassort.
+
+`applyRevision` écrit `is_active = 1` depuis la branche du type, jamais depuis un payload — comme `withdraw` écrit le zéro. Le payload d'une réactivation est vide, et cette forme est contrôlée au dépôt comme à l'application.
+
+**Ce que cela débloque.** Sept fiches sont `is_draft = 0, is_active = 0` en production, sans trace d'audit ni commande, deux d'entre elles sans image (voir le constat d'exploitation du 2026-09-30). Elles n'étaient pas réactivables par une voie relue : `publish_product` refuse une fiche déjà publiée, et aucun payload n'écrit `is_active`. `reactivate` leur donne ce chemin — et son écran montre justement ce qui manquait à celles qui n'ont pas d'image.
 
 ### 2.7 Créer : le type `create`
+
+**Rejeter une création supprime la ligne.** `create_banner` insère la ligne (inactive, vide) avant de déposer la révision, et seule l'application l'active. « Rejeter la création » doit donc vouloir dire que la bannière n'existe plus : `rejectRevision` supprime la ligne si elle est encore inactive (jamais une bannière devenue visible) et passe `superseded` les révisions sœurs en attente sur elle. Meilleur effort, journalisé : le rejet est déjà acté en base quand la suppression s'exécute.
 
 Une création n'a pas d'état antérieur — comme une publication (§ 2.3), l'écran montre l'objet entier tel qu'il paraîtra, en une colonne.
 

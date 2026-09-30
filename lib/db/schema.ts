@@ -759,7 +759,7 @@ export const contentRevisions = sqliteTable("content_revisions", {
   id: text("id").primaryKey(),
   target_type: text("target_type").notNull(),      // "product" | "banner"
   target_id: text("target_id").notNull(),
-  kind: text("kind").notNull().default("update"),  // "update" | "publish"
+  kind: text("kind").notNull().default("update"),  // RevisionKind (lib/db/revisions.ts)
   payload: text("payload").notNull(),              // JSON des colonnes proposées
   origin: text("origin").notNull(),                // "mcp" | "admin_chat"
   actor_id: text("actor_id").notNull(),

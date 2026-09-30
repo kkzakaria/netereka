@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { isWithdrawalConfirmed } from "@/lib/revisions/withdraw-confirmation";
 import { applyRevisionAction, rejectRevisionAction } from "@/actions/admin/revisions";
 
 /**
@@ -25,14 +27,22 @@ import { applyRevisionAction, rejectRevisionAction } from "@/actions/admin/revis
  * réellement été remplacé (`result.supersededCount`, renvoyé par
  * `applyRevision`) — les deux peuvent différer d'une unité si une révision
  * a été déposée ou résolue entre l'affichage de la page et le clic.
+ *
+ * `withdrawal` (§ 2.6) : pour un retrait, le bouton ne s'active qu'une fois le
+ * nom saisi. Ce champ est la moitié VISIBLE de la garantie : la saisie est
+ * aussi envoyée à l'action, et `applyRevision` la vérifie elle-même.
  */
 export function RevisionActions({
   revisionId,
   otherPendingCount = 0,
+  withdrawal,
 }: {
   revisionId: string;
   otherPendingCount?: number;
+  withdrawal?: { targetName: string };
 }) {
+  const [typed, setTyped] = useState("");
+  const confirmed = !withdrawal || isWithdrawalConfirmed(typed, withdrawal.targetName);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -41,7 +51,7 @@ export function RevisionActions({
     setError(null);
     startTransition(async () => {
       try {
-        const result = await applyRevisionAction(revisionId);
+        const result = await applyRevisionAction(revisionId, withdrawal ? typed : undefined);
         if (result.success) {
           const n = result.supersededCount ?? 0;
           toast.success(
@@ -87,6 +97,21 @@ export function RevisionActions({
             : `${otherPendingCount} autres révisions sont en attente sur cette même fiche : appliquer celle-ci les remplacera.`}
         </p>
       )}
+      {withdrawal && (
+        <div className="space-y-2">
+          <label htmlFor="withdrawal-confirmation" className="text-sm font-medium">
+            Pour confirmer le retrait, saisissez exactement : <span className="font-mono">{withdrawal.targetName}</span>
+          </label>
+          <Input
+            id="withdrawal-confirmation"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            autoComplete="off"
+            className="min-h-11"
+            disabled={isPending}
+          />
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         {error && (
           <p role="alert" className="text-sm text-destructive sm:flex-1">
@@ -108,10 +133,11 @@ export function RevisionActions({
             type="button"
             size="lg"
             className="min-h-11 flex-1 sm:flex-none"
-            disabled={isPending}
+            variant={withdrawal ? "destructive" : "default"}
+            disabled={isPending || !confirmed}
             onClick={handleApply}
           >
-            Appliquer
+            {withdrawal ? "Retirer du public" : "Appliquer"}
           </Button>
         </div>
       </div>

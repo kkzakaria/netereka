@@ -10,6 +10,8 @@ import { getAdminProductById } from "@/lib/db/admin/products";
 import { getBannerById } from "@/lib/db/admin/banners";
 import { RevisionDiff } from "@/components/admin/revision-diff";
 import { RevisionActions } from "@/components/admin/revision-actions";
+import { getWithdrawImpact } from "@/lib/db/withdraw-impact";
+import { withdrawalReading } from "@/lib/revisions/withdraw-reading";
 import { formatDateTime } from "@/lib/utils/format";
 
 interface Props {
@@ -62,6 +64,14 @@ export default async function RevisionDetailPage({ params }: Props) {
   const siblingPending = await listPendingRevisions(revision.target_type, revision.target_id);
   const otherPendingCount = siblingPending.filter((r) => r.id !== revision.id).length;
 
+  // § 2.6 : l'écran d'un retrait montre des conséquences MESURÉES, lues ici à
+  // chaque affichage — jamais stockées dans la révision, qui les périmerait.
+  const impact = revision.kind === "withdraw" ? await getWithdrawImpact(revision.target_type, revision.target_id) : null;
+  // Sans mesure, le nom attendu est vide et ne se confirme jamais : le bouton
+  // reste désactivé plutôt que de laisser appliquer sur un écran qui n'a rien montré.
+  const withdrawal =
+    revision.kind === "withdraw" ? { targetName: impact ? withdrawalReading(impact).confirmName : "" } : undefined;
+
   return (
     <div>
       <AdminPageHeader>
@@ -96,9 +106,10 @@ export default async function RevisionDetailPage({ params }: Props) {
         targetId={revision.target_id}
         current={current}
         payload={revision.payload}
+        impact={impact}
       />
 
-      <RevisionActions revisionId={revision.id} otherPendingCount={otherPendingCount} />
+      <RevisionActions revisionId={revision.id} otherPendingCount={otherPendingCount} withdrawal={withdrawal} />
     </div>
   );
 }

@@ -137,11 +137,12 @@ describe("resolveVariantPrice", () => {
 // ferme la classe de bug (une future RevisionKind sans libellé fait échouer
 // la compilation, voir le commentaire de REVISION_KIND_LABELS).
 describe("REVISION_KIND_LABELS", () => {
-  it("porte un libellé pour chacune des six natures de révision", () => {
+  it("porte un libellé pour chacune des sept natures de révision", () => {
     expect(REVISION_KIND_LABELS).toEqual({
       update: "Modification",
       publish: "Publication",
       create: "Création",
+      withdraw: "Retrait",
       add_images: "Ajout d'images",
       remove_image: "Suppression d'image",
       set_variants: "Variantes",

@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({
   getRevision: vi.fn(),
   rejectRevision: vi.fn(),
   revalidatePath: vi.fn(),
+  refreshHeroPreload: vi.fn(),
 }));
+vi.mock("@/lib/cloudflare/hero-preload", () => ({ refreshHeroPreload: mocks.refreshHeroPreload }));
 
 vi.mock("@/lib/auth/guards", () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -27,6 +29,7 @@ import { RevisionError } from "@/lib/db/revisions";
 describe("applyRevisionAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.refreshHeroPreload.mockResolvedValue(undefined);
     mocks.requireAdmin.mockResolvedValue({ user: { id: "admin-1", name: "Admin" } });
   });
 
@@ -59,6 +62,39 @@ describe("applyRevisionAction", () => {
 
     expect(result).toEqual({ success: true, supersededCount: 0 });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+  });
+
+  // Les sept actions d'administration des bannières re-sèment le préchargement
+  // LCP du hero ; l'application d'une révision de bannière est le huitième
+  // chemin d'écriture et doit le faire aussi, sinon le middleware précharge
+  // l'image d'une bannière retirée ou remplacée.
+  it("re-sème le préchargement du hero après l'application d'une révision de bannière", async () => {
+    mocks.applyRevision.mockResolvedValue({ applied: true, superseded: 0 });
+    mocks.getRevision.mockResolvedValue({ id: "rev-1", target_type: "banner", target_id: "1", kind: "withdraw" });
+    await applyRevisionAction("rev-1", "Soldes");
+    expect(mocks.refreshHeroPreload).toHaveBeenCalledTimes(1);
+  });
+
+  it("ne touche pas au hero pour une révision de produit (publish)", async () => {
+    mocks.applyRevision.mockResolvedValue({ applied: true, superseded: 0 });
+    mocks.getRevision.mockResolvedValue({ id: "rev-1", target_type: "product", target_id: "p1", kind: "publish" });
+    await applyRevisionAction("rev-1");
+    expect(mocks.refreshHeroPreload).not.toHaveBeenCalled();
+  });
+
+  it("transmet la saisie de confirmation à applyRevision (c'est lui qui la vérifie)", async () => {
+    mocks.applyRevision.mockResolvedValue({ applied: true, superseded: 0 });
+    mocks.getRevision.mockResolvedValue({ id: "rev-1", target_type: "banner", target_id: "1", kind: "withdraw" });
+    await applyRevisionAction("rev-1", "Soldes");
+    expect(mocks.applyRevision).toHaveBeenCalledWith("rev-1", { id: "admin-1", name: "Admin" }, { confirmation: "Soldes" });
+  });
+
+  it("renvoie le refus d'un retrait non confirmé tel quel", async () => {
+    mocks.applyRevision.mockRejectedValue(new RevisionError("validation_error", "Retrait non confirmé : saisissez exactement « Soldes »."));
+    const result = await applyRevisionAction("rev-1");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Retrait non confirmé");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("renvoie un échec si applyRevision lève un RevisionError, sans jamais appeler getRevision", async () => {

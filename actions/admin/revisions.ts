@@ -4,24 +4,52 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
-import { products } from "@/lib/db/schema";
-import { applyRevision, rejectRevision, getRevision, RevisionError, type RevisionTarget } from "@/lib/db/revisions";
+import { categories, products } from "@/lib/db/schema";
+import { refreshHeroPreload } from "@/lib/cloudflare/hero-preload";
+import { applyRevision, rejectRevision, getRevision, RevisionError, type RevisionKind, type RevisionTarget } from "@/lib/db/revisions";
 import type { ActionResult } from "@/lib/types/actions";
 
 /**
- * Revalide la page storefront affectée par une révision appliquée. Une
- * bannière revalide aussi `/` — le hero vit sur la page d'accueil, pas
- * uniquement sur un écran d'administration.
+ * Revalide les pages storefront affectées par une révision appliquée. Une
+ * bannière revalide `/` (le hero vit sur la page d'accueil) ET re-sème le
+ * préchargement LCP du hero (`hero:lcp:preload-url`), comme le font les sept
+ * actions d'administration des bannières : sans cela, une bannière retirée ou
+ * remplacée laisse le middleware précharger l'image de l'ancienne.
+ *
+ * Un retrait de produit touche plus que sa page : l'accueil (vedette, hero de
+ * repli) et chaque page catégorie qui le listait (la sienne et ses parents).
  */
-async function revalidateTarget(targetType: RevisionTarget, targetId: string): Promise<void> {
+async function revalidateTarget(targetType: RevisionTarget, targetId: string, kind: RevisionKind): Promise<void> {
   if (targetType === "banner") {
     revalidatePath("/");
+    await refreshHeroPreload();
     return;
   }
   try {
     const db = await getDrizzle();
-    const row = await db.select({ slug: products.slug }).from(products).where(eq(products.id, targetId)).limit(1).get();
+    const row = await db
+      .select({ slug: products.slug, category_id: products.category_id })
+      .from(products)
+      .where(eq(products.id, targetId))
+      .limit(1)
+      .get();
     if (row?.slug) revalidatePath(`/p/${row.slug}`);
+    if (kind === "withdraw") {
+      revalidatePath("/");
+      let cursor: string | null = row?.category_id ?? null;
+      // Deux niveaux au plus (MAX_CATEGORY_DEPTH) : la borne évite toute boucle.
+      for (let depth = 0; cursor && depth < 4; depth++) {
+        const cat: { slug: string; parent_id: string | null } | undefined = await db
+          .select({ slug: categories.slug, parent_id: categories.parent_id })
+          .from(categories)
+          .where(eq(categories.id, cursor))
+          .limit(1)
+          .get();
+        if (!cat) break;
+        revalidatePath(`/c/${cat.slug}`);
+        cursor = cat.parent_id;
+      }
+    }
   } catch (error) {
     console.error("[admin/revisions] revalidateTarget: lecture du slug échouée", { targetId }, error);
   }
@@ -35,12 +63,20 @@ export interface ApplyRevisionResult extends ActionResult {
   supersededCount?: number;
 }
 
-export async function applyRevisionAction(revisionId: string): Promise<ApplyRevisionResult> {
+/**
+ * `confirmation` : la saisie d'un retrait (§ 2.6). Ignorée par toute autre
+ * nature ; pour un `withdraw`, c'est `applyRevision` qui la vérifie et refuse.
+ */
+export async function applyRevisionAction(revisionId: string, confirmation?: string): Promise<ApplyRevisionResult> {
   const session = await requireAdmin();
 
   let superseded: number;
   try {
-    ({ superseded } = await applyRevision(revisionId, { id: session.user.id, name: session.user.name }));
+    ({ superseded } = await applyRevision(
+      revisionId,
+      { id: session.user.id, name: session.user.name },
+      { confirmation },
+    ));
   } catch (error) {
     if (error instanceof RevisionError) {
       return { success: false, error: error.message };
@@ -61,7 +97,7 @@ export async function applyRevisionAction(revisionId: string): Promise<ApplyRevi
   // d'application.
   try {
     const rev = await getRevision(revisionId);
-    if (rev) await revalidateTarget(rev.target_type, rev.target_id);
+    if (rev) await revalidateTarget(rev.target_type, rev.target_id, rev.kind);
   } catch (error) {
     console.error(
       "[admin/revisions] revalidation après application réussie : échec best-effort",
