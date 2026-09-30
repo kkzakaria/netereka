@@ -3,9 +3,10 @@ import type { McpContext } from "@/lib/mcp/context";
 import type { ToolResult } from "@/lib/mcp/result";
 
 /**
- * One MCP tool. `inputSchema` is a raw Zod shape (what the SDK's registerTool
- * takes); the SDK validates and rejects invalid params with JSON-RPC -32602
- * before `handler` runs.
+ * One MCP tool. `inputSchema` is a raw Zod shape. lib/mcp/server.ts wraps it
+ * in `z.object()` at registration (the v2 SDK wants an object schema); the SDK
+ * then validates and rejects invalid params with JSON-RPC -32602 before
+ * `handler` runs.
  */
 export interface ToolDefinition<Shape extends ZodRawShape = ZodRawShape> {
   name: string;

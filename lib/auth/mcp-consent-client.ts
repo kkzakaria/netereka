@@ -1,77 +1,62 @@
 import { eq } from "drizzle-orm";
 import { getDrizzle } from "@/lib/db/drizzle";
-import { oauthApplication, verification } from "@/lib/db/schema";
+import { oauthClient } from "@/lib/db/schema";
 
-/** Name a dynamically-registered MCP client gave itself. Untrusted: render escaped. */
+/**
+ * Nom qu'un client OAuth s'est donné dans son document de métadonnées (CIMD).
+ * Non fiable : à afficher échappé, jamais comme identité. L'identité du client
+ * est son `client_id`, l'URL HTTPS de son document.
+ */
 export async function findOAuthClientName(clientId: string): Promise<string | null> {
   const db = await getDrizzle();
-  // No .limit(1): clientId is unique in the schema, so the filter already
-  // returns at most one row — and drizzle-orm/d1 binds LIMIT as a query
-  // parameter, which would break the ["client-1"] params assertion below.
+  // Pas de .limit(1) : clientId est unique dans le schéma, le filtre renvoie au
+  // plus une ligne — et drizzle-orm/d1 lie LIMIT comme paramètre de requête.
   const row = await db
-    .select({ name: oauthApplication.name })
-    .from(oauthApplication)
-    .where(eq(oauthApplication.clientId, clientId))
+    .select({ name: oauthClient.name })
+    .from(oauthClient)
+    .where(eq(oauthClient.clientId, clientId))
     .get();
   return row?.name ?? null;
 }
 
 export interface ConsentRequest {
   clientId: string;
-  clientName: string | null;
+  /** Hôte du client_id quand c'est une URL (CIMD), sinon null. */
+  clientHost: string | null;
   redirectHost: string;
   scopes: string[];
 }
 
-/** Shape of `verification.value` for a consent-flow row, per
- * node_modules/better-auth/dist/plugins/mcp/authorize.mjs. Untrusted beyond
- * `clientId`/`redirectURI`/`scope`/`requireConsent`, which is all we read. */
-interface StoredConsentValue {
-  clientId: string;
-  redirectURI: string;
-  scope: string[];
-  requireConsent: boolean;
+function hostOf(value: string): string | null {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Resolves the pending consent request identified by `consent_code` (the
- * query param better-auth's oidc-provider redirects the admin with — see
- * node_modules/better-auth/dist/plugins/mcp/authorize.mjs:130-136) directly
- * from the `verification` table, rather than trusting the `client_id` in the
- * query string. Returns null when the code is missing, expired, unparsable,
- * or does not require consent — the caller must treat that as "unknown
- * request" and never fall back to displaying the query string's client_id.
+ * Lit la demande d'autorisation dans la requête OAuth signée que le fournisseur
+ * passe à la page de consentement (client_id, redirect_uri, scope, exp, sig).
+ *
+ * Ces valeurs ne sont PAS authentifiées ici : n'importe qui peut fabriquer un
+ * lien vers la page. Elles ne servent qu'à l'affichage. Le serveur revérifie la
+ * signature (HMAC avec BETTER_AUTH_SECRET) et l'expiration au moment du clic,
+ * dans POST /api/auth/oauth2/consent : un lien falsifié ne peut donc rien
+ * autoriser, il échoue au clic.
+ *
+ * Retourne null si la requête est incomplète ou si `redirect_uri` n'est pas une URL.
  */
-export async function findConsentRequest(code: string): Promise<ConsentRequest | null> {
-  const db = await getDrizzle();
-  const row = await db
-    .select({ value: verification.value, expiresAt: verification.expiresAt })
-    .from(verification)
-    .where(eq(verification.identifier, code))
-    .get();
-  if (!row) return null;
-  if (new Date(row.expiresAt).getTime() < Date.now()) return null;
-
-  let value: StoredConsentValue;
-  try {
-    value = JSON.parse(row.value) as StoredConsentValue;
-  } catch {
-    return null;
-  }
-  if (value.requireConsent !== true) return null;
-
-  let redirectHost: string;
-  try {
-    redirectHost = new URL(value.redirectURI).host;
-  } catch {
-    return null;
-  }
-
-  const clientName = await findOAuthClientName(value.clientId);
+export function parseConsentRequest(params: URLSearchParams): ConsentRequest | null {
+  const clientId = params.get("client_id");
+  const redirectUri = params.get("redirect_uri");
+  if (!clientId || !redirectUri || !params.get("sig")) return null;
+  const redirectHost = hostOf(redirectUri);
+  if (!redirectHost) return null;
   return {
-    clientId: value.clientId,
-    clientName,
+    clientId,
+    clientHost: hostOf(clientId),
     redirectHost,
-    scopes: Array.isArray(value.scope) ? value.scope : [],
+    scopes: (params.get("scope") ?? "").split(" ").filter(Boolean),
   };
 }

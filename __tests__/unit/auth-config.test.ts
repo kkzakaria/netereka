@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAuthOptions, CAPTCHA_ENDPOINTS } from "@/lib/auth/index";
+import { buildAuthOptions, CAPTCHA_ENDPOINTS, mcpResourceUrl } from "@/lib/auth/index";
 
 const env = {
   BETTER_AUTH_SECRET: "test-secret",
@@ -102,30 +102,78 @@ describe("auth configuration — captcha coverage", () => {
   });
 });
 
-describe("auth configuration — MCP OAuth provider", () => {
-  function mcpPlugin() {
-    const opts = buildAuthOptions(env);
-    return opts.plugins.find((p) => p.id === "mcp") as
-      | { id: string; options?: { loginPage?: string; resource?: string; oidcConfig?: { consentPage?: string; requirePKCE?: boolean } } }
-      | undefined;
+describe("auth configuration — MCP OAuth provider (better-auth 1.7)", () => {
+  type ProviderOptions = {
+    loginPage?: string;
+    consentPage?: string;
+    resources?: (string | { identifier: string })[];
+    clientRegistrationDefaultResources?: string[];
+    grantTypes?: string[];
+    allowDynamicClientRegistration?: boolean;
+    allowUnauthenticatedClientRegistration?: boolean;
+    skipConsent?: boolean;
+    schema?: Record<string, { modelName?: string }>;
+  };
+
+  function plugins() {
+    return buildAuthOptions(env).plugins as { id: string; options?: ProviderOptions }[];
+  }
+  function provider() {
+    return plugins().find((p) => p.id === "oauth-provider");
   }
 
-  it("registers the mcp plugin against the admin login page", () => {
-    expect(mcpPlugin()).toBeDefined();
-    expect(mcpPlugin()?.options?.loginPage).toBe("/admin/login");
+  it("compose jwt(), mcp() (le fournisseur OAuth) et cimd()", () => {
+    const ids = plugins().map((p) => p.id);
+    expect(ids).toContain("jwt");
+    expect(ids).toContain("cimd");
+    expect(ids.filter((id) => id === "oauth-provider")).toHaveLength(1);
   });
 
-  it("declares /api/mcp as the protected resource", () => {
-    expect(mcpPlugin()?.options?.resource).toBe("https://netereka.ci/api/mcp");
+  it("n'enregistre pas de second oauthProvider() à côté de mcp()", () => {
+    // mcp() EST le fournisseur ; un deuxième doublerait les points /oauth2/*.
+    expect(plugins().filter((p) => p.id === "oauth-provider")).toHaveLength(1);
+    expect(plugins().some((p) => p.id === "mcp")).toBe(false);
   });
 
-  it("routes consent through the admin consent page and requires PKCE", () => {
-    expect(mcpPlugin()?.options?.oidcConfig?.consentPage).toBe("/admin/mcp/consent");
-    expect(mcpPlugin()?.options?.oidcConfig?.requirePKCE).toBe(true);
+  it("pointe vers la page de connexion et de consentement admin", () => {
+    expect(provider()?.options?.loginPage).toBe("/admin/login");
+    expect(provider()?.options?.consentPage).toBe("/admin/mcp/consent");
   });
 
-  it("installs a before hook (the forced-consent guard)", () => {
-    const opts = buildAuthOptions(env);
-    expect(typeof opts.hooks?.before).toBe("function");
+  it("déclare /api/mcp comme ressource protégée canonique en HTTPS", () => {
+    // mcp() consomme `resource` et le republie dans `resources` (jeton lié à l'audience).
+    expect(provider()?.options?.resources).toEqual(["https://netereka.ci/api/mcp"]);
+    expect(provider()?.options?.clientRegistrationDefaultResources).toEqual(["https://netereka.ci/api/mcp"]);
+  });
+
+  it("n'active aucun enregistrement dynamique de client (CIMD uniquement)", () => {
+    const opts = provider()?.options;
+    expect(opts?.allowDynamicClientRegistration).toBeFalsy();
+    expect(opts?.allowUnauthenticatedClientRegistration).toBeFalsy();
+  });
+
+  it("ne dispense aucun client du consentement", () => {
+    expect(provider()?.options?.skipConsent).toBeUndefined();
+  });
+
+  it("limite les grants à authorization_code et refresh_token", () => {
+    expect(provider()?.options?.grantTypes).toEqual(["authorization_code", "refresh_token"]);
+  });
+
+  it("n'écrase pas les tables 1.6 : les jetons et consentements ont leur propre table", () => {
+    expect(provider()?.options?.schema?.oauthAccessToken?.modelName).toBe("oauthProviderAccessToken");
+    expect(provider()?.options?.schema?.oauthConsent?.modelName).toBe("oauthProviderConsent");
+  });
+
+  it("n'installe plus de hook before (l'ancien forceur de consentement)", () => {
+    const opts = buildAuthOptions(env) as { hooks?: unknown };
+    expect(opts.hooks).toBeUndefined();
+  });
+});
+
+describe("mcpResourceUrl", () => {
+  it("ajoute /api/mcp et ignore les barres finales de SITE_URL", () => {
+    expect(mcpResourceUrl("https://netereka.ci")).toBe("https://netereka.ci/api/mcp");
+    expect(mcpResourceUrl("https://netereka.ci/")).toBe("https://netereka.ci/api/mcp");
   });
 });

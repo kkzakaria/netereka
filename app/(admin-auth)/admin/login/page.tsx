@@ -20,7 +20,7 @@ import {
 import { PasswordInput } from "@/components/storefront/auth/password-input";
 import { authClient } from "@/lib/auth/client";
 import { verifyAdminRole } from "@/actions/admin/auth";
-import { getOAuthResumeUrl } from "@/lib/auth/oauth-resume";
+import { getOAuthQuery } from "@/lib/auth/oauth-resume";
 
 const TurnstileCaptcha = dynamic(
   () =>
@@ -49,10 +49,14 @@ const errorTextMessages: Record<string, string> = {
   "Something went wrong": "Une erreur est survenue. Veuillez réessayer.",
 };
 
+const OAUTH_EXPIRED =
+  "La demande d'autorisation a expiré. Relancez la connexion depuis votre assistant.";
+
 export default function AdminLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const resumeUrl = getOAuthResumeUrl(searchParams);
+  // Requête OAuth signée quand on arrive depuis un assistant IA (voir oauth-resume.ts).
+  const oauthQuery = getOAuthQuery(searchParams);
   const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaToken, setCaptchaToken] = useState("");
   const [serverError, setServerError] = useState("");
@@ -70,7 +74,7 @@ export default function AdminLoginPage() {
     setCaptchaKey((k) => k + 1);
   };
 
-  const onSubmit = async (data: AdminSignInValues) => {
+  const onSubmit = async (values: AdminSignInValues) => {
     setServerError("");
 
     if (!captchaToken) {
@@ -79,31 +83,29 @@ export default function AdminLoginPage() {
     }
 
     try {
-      const { error } = await authClient.signIn.email({
-        email: data.email,
-        password: data.password,
+      const { data, error } = await authClient.signIn.email({
+        email: values.email,
+        password: values.password,
         callbackURL: "/dashboard",
+        // oauth_query : le serveur vérifie la signature, poursuit le flux OAuth et
+        // répond { redirect: true, url } vers la page de consentement. Le champ
+        // n'est pas typé par le client de connexion : on l'ajoute au corps.
+        ...(oauthQuery ? { oauth_query: oauthQuery } : {}),
         fetchOptions: {
           headers: { "x-captcha-response": captchaToken },
         },
-      });
+      } as Parameters<typeof authClient.signIn.email>[0]);
 
       if (error) {
-        // OAuth resume: the mcp plugin's after-hook turns a successful sign-in
-        // into a 302 that fetch follows to an HTML page, so the client lib can
-        // report an error although the session cookie was set. Trust the
-        // server-side role check instead of the parse failure.
-        if (resumeUrl) {
-          const check = await verifyAdminRole();
-          if (check.success) {
-            window.location.assign(resumeUrl);
-            return;
-          }
-        }
         resetCaptcha();
+        const raw = error as { code?: string; error?: string; message?: string };
+        if (oauthQuery && raw.error === "invalid_signature") {
+          setServerError(OAUTH_EXPIRED);
+          return;
+        }
         setServerError(
-          errorCodeMessages[error.code ?? ""] ??
-            errorTextMessages[error.message ?? ""] ??
+          errorCodeMessages[raw.code ?? ""] ??
+            errorTextMessages[raw.message ?? ""] ??
             "Une erreur est survenue."
         );
         return;
@@ -116,9 +118,13 @@ export default function AdminLoginPage() {
         return;
       }
 
-      if (resumeUrl) {
-        // Full navigation, not router.push: the target is an API route.
-        window.location.assign(resumeUrl);
+      // Le client better-auth suit déjà { redirect: true, url } de lui-même ; on
+      // navigue ici aussi (après le contrôle de rôle) au cas où il ne l'aurait pas fait.
+      const redirectUrl = (data as { redirect?: boolean; url?: string } | null)?.url;
+      if (oauthQuery && redirectUrl) {
+        // Navigation complète, pas router.push : la cible est la page de
+        // consentement (ou le client OAuth lui-même).
+        window.location.assign(redirectUrl);
         return;
       }
 

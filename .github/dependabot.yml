@@ -33,6 +33,16 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # better-auth et ses paquets satellites (MCP, CIMD, fournisseur OAuth, core)
+      # ont des peerDependencies croisées (@better-auth/mcp exige better-auth
+      # ^1.7.x) : un bump isolé échoue. Toujours ensemble, correctifs seulement :
+      # les mineurs sont ignorés plus bas (le 1.6 -> 1.7 a tout déplacé).
+      better-auth:
+        patterns:
+          - "better-auth"
+          - "@better-auth/*"
+        update-types:
+          - "patch"
       lexical:
         patterns:
           - "lexical"
@@ -80,14 +90,15 @@ updates:
     ignore:
       # Majors handled by hand: each of these needs a real regression pass
       # (auth flows incl. MCP OAuth, DB access, rendering).
-      # better-auth : mineurs inclus. Le 1.6 -> 1.7, pourtant mineur, sort le
-      # plugin MCP du coeur vers @better-auth/mcp, deplace les points OAuth de
-      # /mcp/* vers /oauth2/* et change le regime par defaut de l'enregistrement
-      # dynamique des clients. Migration suivie dans l'issue #323.
+      # better-auth : correctifs seulement (groupe "better-auth" ci-dessus). Le
+      # mineur 1.6 -> 1.7 (issue #323) a sorti MCP du coeur, deplace les points
+      # OAuth de /mcp/* vers /oauth2/*, change le regime d'enregistrement des
+      # clients et exige un SDK MCP majeur : un mineur = une migration manuelle,
+      # avec le flux MCP OAuth rejoue de bout en bout (consentement, jeton, appel).
       - dependency-name: "better-auth"
-        update-types:
-          - "version-update:semver-major"
-          - "version-update:semver-minor"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@better-auth/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "drizzle-orm"
         update-types: ["version-update:semver-major"]
       - dependency-name: "drizzle-kit"
@@ -100,7 +111,7 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "react-dom"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@modelcontextprotocol/sdk"
+      - dependency-name: "@modelcontextprotocol/*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "zod"
         update-types: ["version-update:semver-major"]
