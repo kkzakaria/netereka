@@ -20,8 +20,9 @@ import { defineTool, type ToolDefinition } from "./types";
  * `create_banner` est le cas à part : la portée d'assainissement d'une
  * bannière est `banner-<id>` (`scopeFor`), et l'id n'existe qu'après
  * l'INSERT. Stratégie retenue : créer la ligne INACTIVE et VIDE (aucun HTML,
- * donc rien à assainir ni à afficher), puis déposer une révision qui porte
- * l'activation et le `content_html`. Le payload stocké est ainsi toujours
+ * donc rien à assainir ni à afficher), puis déposer une révision de nature
+ * `create` (§ 2.7 : l'écran montre la bannière entière, pas un diff) qui
+ * porte le `content_html` ; c'est l'application qui l'active. Le payload stocké est ainsi toujours
  * assaini avec sa portée définitive. Un `target_id` nul à la création aurait
  * obligé `sanitizePayload` à assainir sans portée, ou à différer
  * l'assainissement à l'application — exactement ce que `sanitizePayload`
@@ -83,7 +84,22 @@ export const bannerTools: ToolDefinition[] = [
     handler: async (ctx, input) => {
       try {
         const { id, ...patch } = input;
-        const dateError = checkBannerDates(patch);
+
+        // Le patch est PARTIEL : `ends_at` seul se compare à la `starts_at`
+        // déjà stockée. Valider le patch tel quel ne peut jamais refuser
+        // quand une seule des deux dates y figure — c'est précisément le cas
+        // qui retirerait une bannière en ligne du hero une fois appliqué.
+        const stored = await getBannerById(id);
+        if (!stored) return fail("not_found", "Bannière introuvable.");
+        // Seulement si le patch touche une date : un changement de titre ne doit
+        // pas être refusé pour une incohérence préexistante qu'il n'aggrave pas.
+        const touchesDates = patch.starts_at !== undefined || patch.ends_at !== undefined;
+        const dateError = touchesDates
+          ? checkBannerDates({
+              starts_at: patch.starts_at !== undefined ? patch.starts_at : stored.starts_at,
+              ends_at: patch.ends_at !== undefined ? patch.ends_at : stored.ends_at,
+            })
+          : null;
         if (dateError) return fail("validation_error", dateError);
 
         const payload: Record<string, unknown> = {};
@@ -132,14 +148,17 @@ export const bannerTools: ToolDefinition[] = [
 
         // Le HTML est assaini par `createRevision` (`sanitizePayload`), avec la
         // portée `scopeFor("banner", id)` : cet outil ne construit jamais `banner-<id>`.
-        const payload: Record<string, unknown> = { is_active: 1 };
+        // `is_active` n'y figure pas : c'est `applyRevision` qui active la ligne,
+        // pour la nature `create`. Les champs rédigés sont déjà sur la ligne
+        // (inactive) ; l'écran les relit depuis elle.
+        const payload: Record<string, unknown> = {};
         if (content_html) payload.content_html = content_html;
 
         try {
           const { revisionId, status } = await createRevision({
             target: "banner",
             targetId: String(bannerId),
-            kind: "update",
+            kind: "create",
             payload,
             origin: "mcp",
             actor: { id: ctx.user.id, name: ctx.user.name },
@@ -149,7 +168,7 @@ export const bannerTools: ToolDefinition[] = [
             ...revisionAnswer(
               revisionId,
               status,
-              `Bannière ${bannerId} créée inactive ; son activation est déposée en révision (${revisionId}), ` +
+              `Bannière ${bannerId} créée inactive ; sa création est déposée en révision (${revisionId}), ` +
               `en attente de validation par un administrateur sur /revisions/${revisionId}.`,
             ),
           });

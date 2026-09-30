@@ -27,6 +27,9 @@ import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/
  * - `publish` ne part pas d'un état visible pour le client : la cible est
  *   encore un brouillon, il n'y a donc rien à comparer (§ 2.3 du spec) →
  *   `"single"`.
+ * - `create` n'a pas non plus d'état antérieur (§ 2.7) : rendu en `update`, le
+ *   filtre d'égalité de `changedScalarFields` éliminerait précisément les
+ *   champs qu'un modèle vient d'écrire — `"single"`, l'objet entier.
  * - `update` modifie des colonnes d'une fiche déjà en ligne : son état actuel
  *   existe et mérite d'être vu à côté de la proposition → `"side-by-side"`,
  *   la comparaison Description/FAQ de `ProductContentTabs`.
@@ -47,7 +50,7 @@ import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/
  * rendu dans un test — seule cette décision, extraite du rendu, peut l'être.
  */
 export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | "child" {
-  if (kind === "publish") return "single";
+  if (kind === "publish" || kind === "create") return "single";
   if (kind === "update") return "side-by-side";
   return "child";
 }
@@ -835,6 +838,55 @@ export function changedScalarFields(
     .filter((change) => change.before !== change.after);
 }
 
+const BANNER_REVIEW_FIELDS: { key: keyof Banner; label: string }[] = [
+  { key: "title", label: "Titre" },
+  { key: "subtitle", label: "Sous-titre" },
+  { key: "link_url", label: "Lien" },
+  { key: "cta_text", label: "Texte du bouton" },
+  { key: "price", label: "Prix" },
+  { key: "badge_text", label: "Badge" },
+  { key: "badge_color", label: "Couleur du badge" },
+  { key: "bg_gradient_from", label: "Dégradé (début)" },
+  { key: "bg_gradient_to", label: "Dégradé (fin)" },
+  { key: "starts_at", label: "Début d'affichage" },
+  { key: "ends_at", label: "Fin d'affichage" },
+  { key: "display_order", label: "Ordre d'affichage" },
+];
+
+/**
+ * Tous les champs d'une bannière, VALEURS et non différences — l'écran d'une
+ * révision `create` (§ 2.7). Exportée et pure pour être testée sans rendu.
+ * Aucun filtre d'égalité : un objet neuf ne « change » rien, et c'est ce
+ * qu'un filtre aurait pris pour du bruit.
+ */
+export function bannerReviewFields(banner: Banner): { key: string; label: string; value: string }[] {
+  return BANNER_REVIEW_FIELDS.map(({ key, label }) => ({
+    key,
+    label,
+    value: formatScalar(key, banner[key]),
+  }));
+}
+
+function BannerFieldsCard({ banner }: { banner: Banner }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Champs de la bannière</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-3 sm:grid-cols-2">
+          {bannerReviewFields(banner).map((f) => (
+            <div key={f.key} className="rounded-lg border p-3">
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{f.label}</dt>
+              <dd className="mt-1 break-words text-sm font-medium">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ScalarChangesCard({ changes }: { changes: ScalarChange[] }) {
   return (
     <Card>
@@ -903,6 +955,7 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
     if (layout === "single") {
       return (
         <div className="space-y-6">
+          <BannerFieldsCard banner={proposedBanner} />
           <Card>
             <CardHeader>
               <CardTitle>{proposedBanner.title}</CardTitle>

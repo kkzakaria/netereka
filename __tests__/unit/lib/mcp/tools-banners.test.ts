@@ -6,6 +6,12 @@ const d1 = vi.hoisted(() => ({ current: null as null | ReturnType<typeof import(
 vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => d1.current!.binding }));
 vi.mock("@/lib/storage/images", () => ({ deleteFromR2: vi.fn(), uploadToR2: vi.fn() }));
 
+const mocks = vi.hoisted(() => ({ getBannerById: vi.fn() }));
+vi.mock("@/lib/db/banners", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db/banners")>()),
+  getBannerById: mocks.getBannerById,
+}));
+
 import { createRevision } from "@/lib/db/revisions";
 import { createBannerShape } from "@/lib/validations/mcp-banner";
 import { bannerTools } from "@/lib/mcp/tools/banners";
@@ -34,6 +40,8 @@ function revisionPayload(): Record<string, unknown> {
 }
 
 beforeEach(() => {
+  // Bannière 42 : sans dates, sauf test contraire.
+  mocks.getBannerById.mockReset().mockImplementation(async (id: number) => ({ id, starts_at: null, ends_at: null }));
   d1.current = createD1Mock();
   // Une bannière existe toujours (version lue) ; l'INSERT renvoie l'id 7 ;
   // SELECT max(display_order) → table non vide, dernier ordre 3.
@@ -51,6 +59,7 @@ describe("bannerTools", () => {
   });
 
   it("get_banner : not_found si la bannière n'existe pas", async () => {
+    mocks.getBannerById.mockResolvedValue(null);
     d1.current!.raw.mockImplementation(async () => []);
     const r = await tool("get_banner").handler(ctx, { id: 99 });
     expect(parse(r).code).toBe("not_found");
@@ -84,6 +93,7 @@ describe("bannerTools", () => {
   });
 
   it("update_banner sur une bannière absente : not_found, aucune révision", async () => {
+    mocks.getBannerById.mockResolvedValue(null);
     d1.current!.raw.mockImplementation(async () => []);
     const r = await tool("update_banner").handler(ctx, { id: 99, title: "X" });
     expect(parse(r).code).toBe("not_found");
@@ -103,9 +113,13 @@ describe("bannerTools", () => {
     expect(insert.params.some((p) => typeof p === "string" && p.includes("<"))).toBe(false);
 
     const stored = revisionPayload();
-    expect(stored.is_active).toBe(1);
+    // `is_active` ne voyage pas dans le payload : `applyRevision` l'écrit pour la nature `create`.
+    expect(stored).not.toHaveProperty("is_active");
     expect(stored.content_html).toContain(".desc-banner-7 .a");
     const rev = d1.current!.batchStatements().find(isRevisionInsert)!;
+    // Nature `create` (§ 2.7), pas `update` : c'est elle qui route l'écran vers l'objet entier.
+    expect(rev.params).toContain("create");
+    expect(rev.params).not.toContain("update");
     expect(rev.params).toContain("banner");
     expect(rev.params).toContain("7");
     // Aucune écriture directe ultérieure sur la ligne.
@@ -122,6 +136,46 @@ describe("bannerTools", () => {
 
   it("refuse un lien non relatif", () => {
     expect(createBannerShape.link_url.safeParse("https://evil.example").success).toBe(false);
+  });
+});
+
+// B2 : le patch est partiel, la règle doit porter sur la paire FUSIONNÉE avec
+// la ligne stockée — sinon elle ne peut jamais refuser un patch d'une seule date.
+describe("update_banner : cohérence des dates contre la ligne stockée", () => {
+  const stored = (starts_at: string | null, ends_at: string | null) =>
+    mocks.getBannerById.mockResolvedValue({ id: 42, starts_at, ends_at });
+
+  it("refuse ends_at seul antérieur à la starts_at stockée, sans déposer de révision", async () => {
+    stored("2026-06-01", null);
+    const r = await tool("update_banner").handler(ctx, { id: 42, ends_at: "2026-01-01" });
+    expect(r.isError).toBe(true);
+    expect(parse(r).code).toBe("validation_error");
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("refuse starts_at seul postérieur à la ends_at stockée", async () => {
+    stored(null, "2026-01-01");
+    const r = await tool("update_banner").handler(ctx, { id: 42, starts_at: "2026-06-01" });
+    expect(parse(r).code).toBe("validation_error");
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("accepte ends_at seul postérieur à la starts_at stockée", async () => {
+    stored("2026-01-01", null);
+    const r = await tool("update_banner").handler(ctx, { id: 42, ends_at: "2026-06-01" });
+    expect(r.isError).toBeUndefined();
+  });
+
+  it("null efface la date : plus de paire à comparer", async () => {
+    stored("2026-06-01", "2026-07-01");
+    const r = await tool("update_banner").handler(ctx, { id: 42, ends_at: null });
+    expect(r.isError).toBeUndefined();
+  });
+
+  it("un patch sans date ne se heurte pas à des dates déjà incohérentes en base", async () => {
+    stored("2026-06-01", "2026-01-01");
+    const r = await tool("update_banner").handler(ctx, { id: 42, title: "Nouveau titre" });
+    expect(r.isError).toBeUndefined();
   });
 });
 
