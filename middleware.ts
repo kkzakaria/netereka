@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { KV_HERO_PRELOAD_KEY } from "@/lib/cloudflare/hero-preload-key";
 
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
 const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
-const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
 
 export async function middleware(request: NextRequest) {
   const { hostname, pathname } = request.nextUrl;

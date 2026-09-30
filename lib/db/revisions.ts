@@ -7,6 +7,7 @@ import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { deleteFromR2 } from "@/lib/storage/images";
 import { MAX_IMAGES_PER_PRODUCT, r2KeyFromImageUrl, resolveVariantPrice } from "@/lib/db/product-drafts";
 import type { AuditAction } from "@/lib/db/types";
+import { isWithdrawalConfirmed } from "@/lib/revisions/withdraw-confirmation";
 
 // Ré-exportée telle quelle : `components/admin/revision-diff.tsx` et les
 // tests de ce fichier l'importent depuis `@/lib/db/revisions` — définie
@@ -31,8 +32,10 @@ export type RevisionTarget = "product" | "banner";
  * (`product_images`, `product_variants`), jamais une colonne de `products`
  * elle-même. Uniquement pour `target: "product"` : une bannière n'a ni
  * images ni variantes.
+ * `withdraw` (§ 2.6) : retire du public un produit ou une bannière. Son
+ * payload est vide et `applyRevision` seul écrit `is_active = 0`.
  */
-export type RevisionKind = "update" | "publish" | "create" | "add_images" | "remove_image" | "set_variants";
+export type RevisionKind = "update" | "publish" | "create" | "withdraw" | "add_images" | "remove_image" | "set_variants";
 export type RevisionOrigin = "mcp" | "admin_chat";
 export type RevisionStatus = "pending" | "applied" | "rejected" | "superseded";
 
@@ -50,6 +53,7 @@ export const REVISION_KIND_LABELS: Record<RevisionKind, string> = {
   update: "Modification",
   publish: "Publication",
   create: "Création",
+  withdraw: "Retrait",
   add_images: "Ajout d'images",
   remove_image: "Suppression d'image",
   set_variants: "Variantes",
@@ -111,8 +115,8 @@ export function scopeFor(target: RevisionTarget, id: string): string {
  *   il ouvrait un canal de dépublication complet par l'interface même que
  *   cette liste garde (la phase 5 dépose par ce `createRevision` sans passer
  *   par les schémas Zod). `applyRevision` reste seul à les poser, pour la
- *   nature qui le déclare : `publish` écrit les DEUX (§ 2.8) ; le retrait
- *   (`withdraw`, § 2.6) rouvrira `is_active` proprement, avec son écran.
+ *   nature qui le déclare : `publish` écrit les DEUX (§ 2.8) ; `withdraw`
+ *   (§ 2.6) écrit `is_active = 0` seul, avec son propre écran.
  * - `created_at`, `updated_at` — `updated_at` est géré par `applyRevision`
  *   lui-même : c'est l'horodatage de l'écriture ET la clé du contrôle de
  *   version (`base_version`), une révision ne doit donc jamais pouvoir le
@@ -152,9 +156,9 @@ const PRODUCT_WRITABLE_COLUMNS = new Set<string>(PRODUCT_WRITABLE_COLUMN_LIST);
 /** Pas d'`id`/`created_at`/`updated_at` — mêmes raisons que pour les
  *  produits. Les bannières n'ont ni `slug` ni `is_draft`.
  *
- *  `is_active` y reste pour l'instant : `update_banner` l'émet (activer ou
- *  désactiver une bannière). C'est le même canal de retrait que sur les
- *  produits, à refermer avec `withdraw` (§ 2.6) — voir le rapport de phase 3. */
+ *  Pas d'`is_active` non plus (§ 2.6) : l'exception transitoire est refermée.
+ *  Activer une bannière est l'affaire de la nature `create`, la retirer celle
+ *  de `withdraw` — aucun payload ne pose cette colonne. */
 export const BANNER_WRITABLE_COLUMN_LIST = [
   "title",
   "subtitle",
@@ -168,7 +172,6 @@ export const BANNER_WRITABLE_COLUMN_LIST = [
   "bg_gradient_to",
   "content_html",
   "display_order",
-  "is_active",
   "starts_at",
   "ends_at",
 ] as const;
@@ -218,6 +221,16 @@ function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload:
     // en silence, la révision passant `applied`.
     if (Object.keys(payload).length > 0) {
       throw new RevisionError("validation_error", "Une révision \"publish\" ne porte aucun champ : le payload doit être vide.");
+    }
+    return;
+  }
+  if (kind === "withdraw") {
+    // Même règle que `publish` : le retrait n'est PAS dans le payload. Seul
+    // `applyRevision` écrit `is_active = 0`, pour cette nature ; un payload
+    // qui porterait `is_active` (ou tout autre champ) serait jeté en silence
+    // à l'application, après avoir été montré à l'écran.
+    if (Object.keys(payload).length > 0) {
+      throw new RevisionError("validation_error", "Une révision \"withdraw\" ne porte aucun champ : le payload doit être vide.");
     }
     return;
   }
@@ -583,6 +596,78 @@ async function readTargetVersion(
   return row?.updated_at ?? null;
 }
 
+/**
+ * Nom que l'administrateur doit saisir pour confirmer un retrait : le nom du
+ * produit, le titre de la bannière. `null` si la ligne n'existe plus.
+ */
+async function readTargetName(db: DrizzleDB, target: RevisionTarget, targetId: string): Promise<string | null> {
+  if (target === "banner") {
+    const bannerId = Number(targetId);
+    if (!Number.isInteger(bannerId)) return null;
+    const row = await db.select({ name: banners.title }).from(banners).where(eq(banners.id, bannerId)).limit(1).get();
+    return row?.name ?? null;
+  }
+  const row = await db.select({ name: products.name }).from(products).where(eq(products.id, targetId)).limit(1).get();
+  return row?.name ?? null;
+}
+
+/**
+ * Un retrait n'a de sens que sur une cible ACTUELLEMENT en ligne. Vérifié au
+ * dépôt, dans `createRevision` et non dans les outils : la garantie ne doit pas
+ * dépendre de l'appelant (la surface conversationnelle dépose par le même
+ * chemin). Sans elle, `withdraw_product` sur un brouillon déposerait une
+ * révision dont l'écran dirait « retirer cette fiche » d'une fiche que
+ * personne ne voit.
+ */
+async function assertWithdrawable(db: DrizzleDB, target: RevisionTarget, targetId: string): Promise<void> {
+  if (target === "banner") {
+    const row = await db
+      .select({ is_active: banners.is_active })
+      .from(banners)
+      .where(eq(banners.id, Number(targetId)))
+      .limit(1)
+      .get();
+    if (!row) throw new RevisionError("not_found", "Cible introuvable.");
+    if (!row.is_active) throw new RevisionError("conflict", "Cette bannière est déjà retirée (inactive).");
+    return;
+  }
+  const row = await db
+    .select({ is_active: products.is_active, is_draft: products.is_draft })
+    .from(products)
+    .where(eq(products.id, targetId))
+    .limit(1)
+    .get();
+  if (!row) throw new RevisionError("not_found", "Cible introuvable.");
+  if (row.is_draft) {
+    throw new RevisionError(
+      "validation_error",
+      "Ce produit est un brouillon : il n'est pas en ligne, il n'y a rien à retirer.",
+    );
+  }
+  if (!row.is_active) throw new RevisionError("conflict", "Cette fiche est déjà retirée (inactive).");
+}
+
+/**
+ * Une publication ne s'applique qu'à un BROUILLON. Sans ce contrôle au dépôt,
+ * un `publish` déposé sur une fiche retirée (is_draft = 0, is_active = 0) était
+ * accepté puis la remettait en ligne sans la saisie qu'exige un retrait, sur un
+ * écran qui ne dit pas qu'il annule un retrait. Le contrôle ne vivait que dans
+ * `publish_product` : un autre appelant le contournait. Remettre en ligne une
+ * fiche retirée est l'affaire de `reactivate` (§ 2.6 bis), pas de `publish`.
+ */
+async function assertPublishable(db: DrizzleDB, target: RevisionTarget, targetId: string): Promise<void> {
+  if (target !== "product") return;
+  const row = await db.select({ is_draft: products.is_draft }).from(products).where(eq(products.id, targetId)).limit(1).get();
+  if (!row) throw new RevisionError("not_found", "Cible introuvable.");
+  if (!row.is_draft) {
+    throw new RevisionError(
+      "conflict",
+      "Cette fiche n'est pas un brouillon : « publish » ne s'applique qu'à un brouillon. Pour remettre en " +
+      "ligne une fiche retirée, utilisez une révision « reactivate ».",
+    );
+  }
+}
+
 export async function createRevision(input: {
   target: RevisionTarget;
   targetId: string;
@@ -605,6 +690,8 @@ export async function createRevision(input: {
   if (baseVersion === null) {
     throw new RevisionError("not_found", "Cible introuvable.");
   }
+  if (input.kind === "withdraw") await assertWithdrawable(db, input.target, input.targetId);
+  if (input.kind === "publish") await assertPublishable(db, input.target, input.targetId);
 
   const id = nanoid();
   const payload = sanitizePayload(input.target, input.targetId, input.payload);
@@ -832,6 +919,7 @@ async function reconcileFailedApply(
 export async function applyRevision(
   revisionId: string,
   actor: RevisionActor,
+  options: { confirmation?: string } = {},
 ): Promise<{ applied: true; superseded: number }> {
   const db = await getDrizzle();
   const rev = await getRevision(revisionId);
@@ -856,6 +944,20 @@ export async function applyRevision(
   // la seule qui écrit réellement sur la cible et doit donc rester, elle
   // aussi, sourde à `is_draft`/`id`/`slug`.
   assertValidPayload(rev.target_type, rev.kind, rev.payload);
+
+  // § 2.6 : un retrait se confirme par une saisie, et c'est ICI que c'est
+  // exigé — pas seulement dans le composant qui affiche le champ. Un appelant
+  // qui n'en affiche aucun (autre surface, script) est refusé, pas dispensé.
+  if (rev.kind === "withdraw") {
+    const targetName = await readTargetName(db, rev.target_type, rev.target_id);
+    if (targetName === null) throw new RevisionError("not_found", "La cible a disparu depuis le dépôt.");
+    if (!isWithdrawalConfirmed(options.confirmation, targetName)) {
+      throw new RevisionError(
+        "validation_error",
+        `Retrait non confirmé : saisissez exactement « ${targetName} » pour l'appliquer.`,
+      );
+    }
+  }
 
   // Comptées avant le batch pour le retour à l'appelant. La même condition de
   // filtrage (cible + pending) est répétée dans l'UPDATE du batch ci-dessous,
@@ -910,6 +1012,12 @@ export async function applyRevision(
       targetSet.is_draft = 0;
       targetSet.is_active = 1;
     }
+  } else if (rev.kind === "withdraw") {
+    // § 2.6 : `is_active = 0`, rien d'autre, posé ICI. Le payload est vide
+    // (`assertValidPayload`) et n'est pas assigné : il ne peut pas dicter la
+    // valeur. Le contenu, le stock, les commandes restent intacts : le retrait
+    // est réversible parce qu'il ne détruit rien.
+    targetSet.is_active = 0;
   } else if (rev.kind === "create") {
     // Les champs rédigés sont déjà sur la ligne (inactive) ; le payload ne
     // porte que le HTML assaini. L'activation est posée ICI, après le
@@ -1288,6 +1396,38 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
     throw new RevisionError("conflict", REJECT_RACE_MESSAGE);
   }
 
+  // Cycle de vie de la ligne d'une bannière `create` : `create_banner` a
+  // INSÉRÉ la ligne (inactive, vide) avant de déposer cette révision, et seule
+  // l'application de la révision l'active. La rejeter sans rien faire laisserait
+  // une bannière fantôme inactive dans la liste d'administration — « rejeter la
+  // création » doit vouloir dire qu'elle n'existe plus.
+  //
+  // `is_active = 0` dans le WHERE : on ne supprime jamais une bannière qui
+  // serait, par quelque chemin, devenue visible. Les révisions sœurs encore en
+  // attente sur cette ligne passent `superseded` — leur cible disparaît, et
+  // l'écran de détail d'une cible absente est un 404 qu'on ne saurait plus
+  // résoudre. Meilleur effort, comme le nettoyage R2 : le rejet est déjà acté.
+  let bannerRowRemoved: boolean | undefined;
+  if (rev.kind === "create" && rev.target_type === "banner") {
+    try {
+      const cleanup = await db.batch([
+        db
+          .update(contentRevisions)
+          .set({ status: "superseded", resolved_at: sql`datetime('now')`, resolved_by: actor.id })
+          .where(and(
+            eq(contentRevisions.target_type, "banner"),
+            eq(contentRevisions.target_id, rev.target_id),
+            eq(contentRevisions.status, "pending"),
+            ne(contentRevisions.id, rev.id),
+          )),
+        db.delete(banners).where(and(eq(banners.id, Number(rev.target_id)), eq(banners.is_active, 0))),
+      ] satisfies Batch);
+      bannerRowRemoved = ((cleanup[1] as D1Result)?.meta?.changes ?? 0) > 0;
+    } catch (err) {
+      console.error("[revisions] rejet d'une création : suppression de la ligne de bannière échouée", { revisionId: rev.id }, err);
+    }
+  }
+
   await db.insert(auditLog).values({
     id: nanoid(),
     actor_id: actor.id,
@@ -1295,7 +1435,11 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
     action: REJECTED_ACTION,
     target_type: rev.target_type,
     target_id: rev.target_id,
-    details: JSON.stringify({ via: "admin", revisionId: rev.id }),
+    details: JSON.stringify({
+      via: "admin",
+      revisionId: rev.id,
+      ...(bannerRowRemoved === undefined ? {} : { banner_row_removed: bannerRowRemoved }),
+    }),
   });
 
   // Cycle de vie R2 d'une révision `add_images` : ses objets ont déjà été

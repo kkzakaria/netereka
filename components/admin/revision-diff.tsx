@@ -20,6 +20,9 @@ import {
   type RevisionTarget,
 } from "@/lib/db/revisions";
 import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
+import type { WithdrawImpact } from "@/lib/db/withdraw-impact";
+import { bannerClock } from "@/lib/db/storefront/banners";
+import { dateWithdrawalWarning, withdrawalReading, type WithdrawalLine } from "@/lib/revisions/withdraw-reading";
 
 /**
  * Décide comment une révision se présente : seule, côte à côte avec l'état
@@ -35,6 +38,9 @@ import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/
  * - `update` modifie des colonnes d'une fiche déjà en ligne : son état actuel
  *   existe et mérite d'être vu à côté de la proposition → `"side-by-side"`,
  *   la comparaison Description/FAQ de `ProductContentTabs`.
+ * - `withdraw` (§ 2.6) : un retrait est une absence, donc invisible par nature.
+ *   Ni comparaison ni objet neuf : l'écran montre ce qui DISPARAÎT, chiffré
+ *   (`WithdrawalScreen`) — `"withdrawal"`.
  * - `add_images`/`remove_image`/`set_variants` (phase 2) n'écrivent JAMAIS de
  *   colonne de `products` : leur payload porte une forme différente à chaque
  *   fois (tableau d'images, id d'image, tableau de variantes — voir
@@ -51,7 +57,7 @@ import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/
  * sans jsdom dans ce dépôt, donc aucun composant de ce fichier ne peut être
  * rendu dans un test — seule cette décision, extraite du rendu, peut l'être.
  */
-export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | "child" {
+export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | "child" | "withdrawal" {
   // Switch EXHAUSTIF, sans `default` qui avale : une nouvelle `RevisionKind`
   // (`withdraw`, § 2.6) échoue ici à la COMPILATION au lieu de tomber dans
   // `"child"`, dont le rendu est un <div> vide au-dessus du bouton Appliquer.
@@ -61,6 +67,8 @@ export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | 
       return "single";
     case "update":
       return "side-by-side";
+    case "withdraw":
+      return "withdrawal";
     case "add_images":
     case "remove_image":
     case "set_variants":
@@ -781,32 +789,6 @@ function ConformanceSection({ fields }: { fields: { label: string; html: string 
   );
 }
 
-const PRODUCT_SCALAR_LABELS: Record<string, string> = {
-  name: "Nom",
-  base_price: "Prix",
-  compare_price: "Prix barré",
-  short_description: "Description courte",
-  brand: "Marque",
-  sku: "SKU",
-  is_active: "Actif",
-  is_featured: "Mis en avant",
-  stock_quantity: "Stock",
-  meta_title: "Titre SEO",
-  meta_description: "Description SEO",
-  description_type: "Type de description",
-};
-
-const BANNER_SCALAR_LABELS: Record<string, string> = {
-  title: "Titre",
-  subtitle: "Sous-titre",
-  link_url: "Lien",
-  cta_text: "Texte du bouton",
-  price: "Prix",
-  badge_text: "Badge",
-  is_active: "Active",
-  display_order: "Ordre d'affichage",
-};
-
 const PRICE_KEYS = new Set(["base_price", "compare_price", "price"]);
 const BOOLEAN_KEYS = new Set(["is_active", "is_featured"]);
 
@@ -876,7 +858,6 @@ const BANNER_REVIEW_LABELS: Record<BannerWritableColumn, string | null> = {
   bg_gradient_to: "Dégradé (fin)",
   content_html: null,
   display_order: "Ordre d'affichage",
-  is_active: "Active",
   starts_at: "Début d'affichage",
   ends_at: "Fin d'affichage",
 };
@@ -904,6 +885,19 @@ const PRODUCT_REVIEW_LABELS: Record<ProductWritableColumn, string | null> = {
   faq: "FAQ structurée",
   faq_html: null,
 };
+
+/**
+ * Libellés de la carte « Autres champs modifiés » : DÉRIVÉS des tables ci-dessus
+ * (donc typés sur la liste blanche), pas une seconde table tenue à la main. La
+ * seconde table avait oublié `badge_color`, `bg_gradient_*`, `starts_at` et
+ * `ends_at` — écrivables, rendus en noms de colonnes bruts. Or une `ends_at`
+ * passée est un retrait de fait : la relecture doit la lire en clair.
+ */
+function scalarLabels(labels: Record<string, string | null>): Record<string, string> {
+  return Object.fromEntries(Object.entries(labels).filter((e): e is [string, string] => e[1] !== null));
+}
+const BANNER_SCALAR_LABELS = scalarLabels(BANNER_REVIEW_LABELS);
+const PRODUCT_SCALAR_LABELS = scalarLabels(PRODUCT_REVIEW_LABELS);
 
 function reviewFields(
   labels: Record<string, string | null>,
@@ -973,6 +967,98 @@ function ScalarChangesCard({ changes }: { changes: ScalarChange[] }) {
   );
 }
 
+function WithdrawalLines({ lines }: { lines: WithdrawalLine[] }) {
+  return (
+    <ul className="space-y-2">
+      {lines.map((l) => (
+        <li
+          key={l.text}
+          className={cn("text-sm", l.warning && "rounded-md border border-amber-500/40 bg-amber-500/5 p-2 font-medium")}
+        >
+          {l.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Écran d'un retrait (§ 2.6) : ce qui disparaît, ce qui reste, et que c'est
+ * réversible. La fiche ou la bannière s'affiche telle qu'un client la voit
+ * MAINTENANT (le rendu « Actuel » des autres écrans, pas un diff : il n'y a
+ * rien de proposé à comparer). Les chiffres viennent de `getWithdrawImpact`,
+ * le texte de `withdrawalReading` — aucune des deux n'est recomposée ici.
+ */
+function WithdrawalScreen({
+  target,
+  targetId,
+  current,
+  impact,
+}: {
+  target: RevisionTarget;
+  targetId: string;
+  current: ProductDetail | Banner;
+  impact: WithdrawImpact;
+}) {
+  const reading = withdrawalReading(impact);
+  return (
+    <div className="space-y-6">
+      {reading.alreadyHidden && (
+        <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm font-medium">
+          {reading.alreadyHidden}
+        </p>
+      )}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle>Ce qui disparaît pour un client</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {reading.disappears.length > 0 ? (
+              <WithdrawalLines lines={reading.disappears} />
+            ) : (
+              <p className="text-sm text-muted-foreground">Rien : elle n&apos;est déjà plus visible.</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Ce qui reste, sans être modifié</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <WithdrawalLines lines={reading.stays} />
+          </CardContent>
+        </Card>
+      </div>
+      <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/5 p-3 text-sm">{reading.reversible}</p>
+      <Card>
+        <CardHeader>
+          <CardTitle>{target === "banner" ? "La bannière telle qu'un client la voit maintenant" : "La fiche telle qu'un client la voit maintenant"}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {target === "banner" ? (
+            <BannerContentBlock contentHtml={(current as Banner).content_html} bannerId={targetId} variant="current" />
+          ) : (
+            <>
+              <ImagesPreview images={(current as ProductDetail).images} />
+              <ProductContentTabs
+                descriptionSlot={
+                  <DescriptionBlockCurrent
+                    description={(current as ProductDetail).description}
+                    descriptionType={(current as ProductDetail).description_type}
+                    productId={targetId}
+                  />
+                }
+                faqSlot={<FaqBlock faqHtml={(current as ProductDetail).faq_html} productId={targetId} variant="current" />}
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export interface RevisionDiffProps {
   target: RevisionTarget;
   kind: RevisionKind;
@@ -981,6 +1067,8 @@ export interface RevisionDiffProps {
   current: ProductDetail | Banner;
   /** Colonnes proposées par la révision — déjà assainies au dépôt. */
   payload: Record<string, unknown>;
+  /** Conséquences mesurées d'un retrait (§ 2.6) — requises pour `kind: "withdraw"`. */
+  impact?: WithdrawImpact | null;
 }
 
 /**
@@ -1007,8 +1095,22 @@ export interface RevisionDiffProps {
  * fiche boutique (galerie, carrousel, avis) reste hors périmètre de cette
  * tâche.
  */
-export function RevisionDiff({ target, kind, targetId, current, payload }: RevisionDiffProps) {
+export function RevisionDiff({ target, kind, targetId, current, payload, impact }: RevisionDiffProps) {
   const layout = revisionLayout(kind);
+
+  if (layout === "withdrawal") {
+    // Jamais un écran vide au-dessus du bouton Appliquer : sans mesure, on le
+    // dit, et on ne laisse pas croire qu'il n'y a rien à perdre.
+    if (!impact) {
+      return (
+        <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
+          Les conséquences de ce retrait n&apos;ont pas pu être mesurées. N&apos;appliquez pas cette révision avant
+          d&apos;avoir rechargé la page.
+        </p>
+      );
+    }
+    return <WithdrawalScreen target={target} targetId={targetId} current={current} impact={impact} />;
+  }
 
   if (target === "banner") {
     const currentBanner = current as Banner;
@@ -1017,7 +1119,7 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
     if (layout === "single") {
       return (
         <div className="space-y-6">
-          <FieldsCard title="Champs de la bannière" fields={bannerReviewFields(proposedBanner)} />
+          <FieldsCard title="Champs de la bannière (la création l'active : elle entre au carrousel)" fields={bannerReviewFields(proposedBanner)} />
           <Card>
             <CardHeader>
               <CardTitle>{proposedBanner.title}</CardTitle>
@@ -1037,8 +1139,14 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
     // (lib/db/revisions.ts) réserve `add_images`/`remove_image`/`set_variants`
     // à `target: "product"`, donc `layout` ne vaut jamais `"child"` ici.
     const scalarChanges = changedScalarFields(target, currentBanner as unknown as Record<string, unknown>, payload);
+    const dateWarning = dateWithdrawalWarning(currentBanner, payload, bannerClock());
     return (
       <div className="space-y-6">
+        {dateWarning && (
+          <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm font-medium">
+            {dateWarning}
+          </p>
+        )}
         {scalarChanges.length > 0 && <ScalarChangesCard changes={scalarChanges} />}
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>

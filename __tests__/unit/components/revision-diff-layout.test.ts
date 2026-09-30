@@ -24,6 +24,13 @@ describe("revisionLayout", () => {
     expect(revisionLayout("create")).toBe("single");
   });
 
+  // § 2.6 : un retrait est une absence. Ni diff ni objet neuf : l'écran montre
+  // ce qui disparaît. Tomber sur "side-by-side" l'afficherait comme une
+  // modification, « is_active : true → false » déguisé en champ.
+  it("une révision withdraw a son propre écran, jamais celui d'une modification", () => {
+    expect(revisionLayout("withdraw")).toBe("withdrawal");
+  });
+
   it("une révision update se compare côte à côte à l'état actuel", () => {
     expect(revisionLayout("update")).toBe("side-by-side");
   });
@@ -73,7 +80,7 @@ describe("écran d'une création de bannière", () => {
 
 describe("revisionLayout : pas de porte de sortie silencieuse", () => {
   it("une nature inconnue lève au lieu de tomber sur un écran vide", () => {
-    expect(() => revisionLayout("withdraw" as never)).toThrow(/sans écran/);
+    expect(() => revisionLayout("bogus" as never)).toThrow(/sans écran/);
   });
 });
 
@@ -91,5 +98,38 @@ describe("les écrans « objet entier » couvrent toutes les colonnes écrivable
     const expected = PRODUCT_WRITABLE_COLUMN_LIST.filter((c) => !(PRODUCT_HTML_COLUMNS as readonly string[]).includes(c));
     expect(shown.sort()).toEqual([...expected].sort());
     expect(shown).toContain("is_featured");
+  });
+});
+
+// § 2.6 : ni le diff de champs ni l'écran « objet entier » ne savent lire un
+// retrait ; `is_active` n'est plus une colonne écrivable de bannière.
+describe("libellés des champs de bannière : chaque colonne écrivable a le sien", () => {
+  it("changedScalarFields traduit TOUTES les colonnes écrivables non HTML, sans nom de colonne brut", () => {
+    const payload = Object.fromEntries(
+      BANNER_WRITABLE_COLUMN_LIST.filter((c) => !(BANNER_HTML_COLUMNS as readonly string[]).includes(c)).map((c) => [c, "x"]),
+    );
+    const changes = changedScalarFields("banner", {}, payload);
+    expect(changes.map((c) => c.key).sort()).toEqual(Object.keys(payload).sort());
+    for (const c of changes) expect(c.label, `colonne ${c.key} affichée en nom brut`).not.toBe(c.key);
+  });
+
+  it("ends_at et starts_at se lisent en clair (une ends_at passée est un retrait de fait)", () => {
+    const labels = Object.fromEntries(
+      changedScalarFields("banner", {}, { starts_at: "a", ends_at: "b", badge_color: "red" }).map((c) => [c.key, c.label]),
+    );
+    expect(labels).toEqual({ starts_at: "Début d'affichage", ends_at: "Fin d'affichage", badge_color: "Couleur du badge" });
+  });
+
+  it("is_active n'est plus écrivable sur une bannière", () => {
+    expect(BANNER_WRITABLE_COLUMN_LIST).not.toContain("is_active");
+  });
+
+  it("idem côté fiche : chaque colonne écrivable non HTML a son libellé", () => {
+    const payload = Object.fromEntries(
+      PRODUCT_WRITABLE_COLUMN_LIST.filter((c) => !(PRODUCT_HTML_COLUMNS as readonly string[]).includes(c)).map((c) => [c, "x"]),
+    );
+    for (const c of changedScalarFields("product", {}, payload)) {
+      expect(c.label, `colonne ${c.key} affichée en nom brut`).not.toBe(c.key);
+    }
   });
 });

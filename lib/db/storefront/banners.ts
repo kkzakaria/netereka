@@ -1,6 +1,6 @@
 import { getDrizzle } from "@/lib/db/drizzle";
 import { banners } from "@/lib/db/schema";
-import { eq, and, or, isNull, lte, gt, asc } from "drizzle-orm";
+import { eq, and, or, isNull, lte, gt, asc, type SQL } from "drizzle-orm";
 import type { Banner } from "@/lib/db/types";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 
@@ -18,20 +18,33 @@ export function sanitizeBannerContent(rows: Banner[]): Banner[] {
   }));
 }
 
+/** Horodatage au format de `starts_at`/`ends_at` (comparés comme des chaînes). */
+export function bannerClock(date: Date = new Date()): string {
+  return date.toISOString().replace("T", " ").slice(0, 19);
+}
+
+/**
+ * LA définition de « affichée en ce moment » : active ET dans sa fenêtre.
+ * Partagée par le carrousel (`getActiveBanners`), le préchargement du hero et
+ * l'écran d'un retrait (lib/db/withdraw-impact.ts) : un écran qui mesurerait
+ * « ce qui disparaît » avec une condition écrite à part pourrait annoncer
+ * qu'une bannière est visible quand la vitrine ne l'affiche pas.
+ */
+export function displayedBannerCondition(now: string): SQL | undefined {
+  return and(
+    eq(banners.is_active, 1),
+    or(isNull(banners.starts_at), lte(banners.starts_at, now)),
+    or(isNull(banners.ends_at), gt(banners.ends_at, now)),
+  );
+}
+
 export async function getActiveBanners(): Promise<Banner[]> {
   const db = await getDrizzle();
-  const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
   const rows = (await db
     .select()
     .from(banners)
-    .where(
-      and(
-        eq(banners.is_active, 1),
-        or(isNull(banners.starts_at), lte(banners.starts_at, now)),
-        or(isNull(banners.ends_at), gt(banners.ends_at, now))
-      )
-    )
+    .where(displayedBannerCondition(bannerClock()))
     .orderBy(asc(banners.display_order))) as unknown as Banner[];
 
   return sanitizeBannerContent(rows);

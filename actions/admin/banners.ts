@@ -1,62 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, and, or, isNull, isNotNull, lte, gt, asc, max } from "drizzle-orm";
+import { eq, max } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
 import { banners, bannerGradients } from "@/lib/db/schema";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
-import { getImageUrl } from "@/lib/utils/images";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
-import { getKV } from "@/lib/cloudflare/context";
+import { refreshHeroPreload } from "@/lib/cloudflare/hero-preload";
 import type { ActionResult } from "@/lib/utils";
 import type { BannerGradient } from "@/lib/db/types";
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "avif"]);
-const KV_HERO_PRELOAD_KEY = "hero:lcp:preload-url";
-
-// Cache the first active banner's CF image URL in KV so middleware can send a
-// Link: <...>; rel=preload response header — allowing the browser to start the
-// hero image fetch at TTFB (0ms) rather than after downloading ~340KB of HTML.
-async function refreshHeroPreload(): Promise<void> {
-  try {
-    const db = await getDrizzle();
-    const now = new Date().toISOString().replace("T", " ").slice(0, 19);
-
-    const banner = await db.query.banners.findFirst({
-      where: and(
-        eq(banners.is_active, 1),
-        isNotNull(banners.image_url),
-        or(isNull(banners.starts_at), lte(banners.starts_at, now)),
-        or(isNull(banners.ends_at), gt(banners.ends_at, now))
-      ),
-      orderBy: [asc(banners.display_order)],
-      columns: { image_url: true },
-    });
-
-    const kv = await getKV();
-
-    if (!banner?.image_url) {
-      await kv.delete(KV_HERO_PRELOAD_KEY);
-      return;
-    }
-
-    const r2Url = getImageUrl(banner.image_url);
-    const path = r2Url.startsWith("/") ? r2Url.slice(1) : r2Url;
-    const cfUrl = (w: number) => `/cdn-cgi/image/width=${w},quality=75,format=auto/${path}`;
-    // Use a simple preload without imagesrcset/imagesizes: Cloudflare Early Hints garbles
-    // multi-value imagesrcset (commas inside the quoted string are misread as Link header
-    // value separators), causing the browser to skip the preload entirely.
-    // width=640 matches what mobile browsers (DPR ~2-3, 44vw on 360-412px) actually request.
-    const linkValue = `<${cfUrl(640)}>; rel=preload; as=image; fetchpriority=high`;
-
-    await kv.put(KV_HERO_PRELOAD_KEY, linkValue);
-  } catch (error) {
-    console.error("[admin/banners] refreshHeroPreload error:", error);
-  }
-}
 
 const bannerSchema = z.object({
   title: z.string().min(1, "Le titre est requis").max(200),
