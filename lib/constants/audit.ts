@@ -8,6 +8,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "product.draft_created": "Brouillon produit créé",
   "product.draft_updated": "Brouillon produit modifié",
   "product.draft_deleted": "Brouillon produit supprimé",
+  "banner.created": "Bannière créée (inactive)",
   "revision.created.update": "Révision déposée (mise à jour)",
   "revision.created.publish": "Révision déposée (publication)",
   "revision.created.add_images": "Révision déposée (ajout d'images)",

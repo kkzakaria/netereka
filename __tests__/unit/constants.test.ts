@@ -125,7 +125,7 @@ describe("AUDIT_ACTION_OPTIONS", () => {
 });
 
 describe("audit actions — product drafts (MCP)", () => {
-  it.each(["product.draft_created", "product.draft_updated", "product.draft_deleted"] as const)(
+  it.each(["product.draft_created", "product.draft_updated", "product.draft_deleted", "banner.created"] as const)(
     "%s a un libellé et une option de filtre",
     (action) => {
       expect(AUDIT_ACTION_LABELS[action]).toBeTruthy();

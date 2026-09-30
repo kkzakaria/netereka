@@ -353,6 +353,7 @@ export type AuditAction =
   | "product.draft_created"
   | "product.draft_updated"
   | "product.draft_deleted"
+  | "banner.created"
   | "revision.created.update"
   | "revision.created.publish"
   | "revision.created.add_images"
