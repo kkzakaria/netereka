@@ -137,10 +137,11 @@ describe("resolveVariantPrice", () => {
 // ferme la classe de bug (une future RevisionKind sans libellé fait échouer
 // la compilation, voir le commentaire de REVISION_KIND_LABELS).
 describe("REVISION_KIND_LABELS", () => {
-  it("porte un libellé pour chacune des cinq natures de révision", () => {
+  it("porte un libellé pour chacune des six natures de révision", () => {
     expect(REVISION_KIND_LABELS).toEqual({
       update: "Modification",
       publish: "Publication",
+      create: "Création",
       add_images: "Ajout d'images",
       remove_image: "Suppression d'image",
       set_variants: "Variantes",
@@ -712,9 +713,67 @@ describe("applyRevision", () => {
     expect(d1.current!.batch).not.toHaveBeenCalled();
   });
 
+  // B4 (§ 2.6) : `products.is_active = 0` retire la fiche de sa page, des
+  // catégories et de la recherche — un canal de dépublication par la liste
+  // blanche elle-même. Re-vérifié aux deux bouts, dépôt et application.
+  it("rejette is_active dans le payload d'une révision produit, au dépôt", async () => {
+    await expect(
+      createRevision({
+        target: "product", targetId: "p1", kind: "update", payload: { is_active: 0 }, origin: "mcp", actor: ADMIN,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error", message: expect.stringContaining("is_active") });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejette is_active dans une révision produit déjà stockée, à l'application", async () => {
+    mockApplyReads({
+      rev: revisionRow({ payload: JSON.stringify({ is_active: 0 }) }),
+      targetVersion: "2026-01-01 00:00:00",
+    });
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("une révision create n'est acceptée que sur une bannière, et ne dicte pas is_active côté produit", async () => {
+    await expect(
+      createRevision({ target: "product", targetId: "p1", kind: "create", payload: {}, origin: "mcp", actor: ADMIN }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+  });
+
+  it("kind create active la bannière à l'application, sans que le payload ait à le dire", async () => {
+    mockApplyReads({
+      rev: revisionRow({ kind: "create", target_type: "banner", target_id: "42", payload: JSON.stringify({ content_html: "<p>Hi</p>" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+    });
+    await applyRevision("rev-1", ADMIN);
+    const targetUpdate = d1.current!.batchStatements().find((s) => /^update "banners"/i.test(s.sql))!;
+    expect(targetUpdate.sql).toMatch(/"is_active" = \?/);
+    expect(targetUpdate.params).toEqual(expect.arrayContaining([1, "<p>Hi</p>", 42]));
+  });
+
+  // Un payload de `publish` serait affiché « tel qu'il paraîtra » puis jeté :
+  // `applyRevision` n'assigne jamais son payload.
+  it("refuse un payload non vide pour publish, au dépôt", async () => {
+    await expect(
+      createRevision({
+        target: "product", targetId: "p1", kind: "publish", payload: { name: "Autre nom" }, origin: "mcp", actor: ADMIN,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("refuse un payload non vide pour publish, à l'application", async () => {
+    mockApplyReads({
+      rev: revisionRow({ kind: "publish", payload: JSON.stringify({ name: "Autre nom" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+    });
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
   it("kind publish met is_draft = 0 sur le produit cible", async () => {
     mockApplyReads({
-      rev: revisionRow({ kind: "publish", payload: JSON.stringify({ name: "Nouveau nom" }) }),
+      rev: revisionRow({ kind: "publish", payload: JSON.stringify({}) }),
       targetVersion: "2026-01-01 00:00:00",
     });
     await applyRevision("rev-1", ADMIN);

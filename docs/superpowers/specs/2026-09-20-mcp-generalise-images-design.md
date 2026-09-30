@@ -16,7 +16,11 @@ Ce lot lève cette limite, ajoute la production d'images, et donne à l'administ
 
 2. **L'administration gagne une surface conversationnelle, bâtie sur TanStack AI.** L'administrateur échange avec le modèle et valide depuis la même page. **Ce n'est pas un retour de l'IA embarquée retirée au lot A** — voir § 1, qui est le cœur de ce document.
 
-3. **Le MCP peut proposer une publication, jamais une dépublication.** Comme toute modification atteignant un client, une publication passe par une révision que l'administrateur applique (§ 2.3). La dépublication, elle, n'est pas exposée du tout : une mise en ligne ratée est visible et se corrige ; un retrait passe inaperçu jusqu'à ce qu'un client cherche un produit disparu.
+3. **Une seule règle : tout passe par une révision, et l'écran est proportionné à la conséquence.** Le MCP peut proposer une publication *et* un retrait. Ce qui distingue les deux n'est pas le droit de le proposer, mais ce que l'administrateur doit voir avant d'appliquer (§ 2.6).
+
+   *Amendement du 2026-09-30, remplaçant « jamais une dépublication ».* L'interdiction reposait sur « un retrait passe inaperçu » — un argument formé **avant** le § 2.3, donc avant qu'on décide que la publication elle-même passe par une révision. Une fois que rien n'atteint un client sans un clic humain, « passe inaperçu » ne qualifie plus l'opération mais **l'écran**. Interdire l'opération répondait à un risque que le portail traite déjà.
+
+   Et l'interdiction ne protégeait pas ce qu'elle prétendait : `is_active` figurait dans `PRODUCT_WRITABLE_COLUMNS` alors que `products.is_active = 0` retire une fiche de la page produit, de toutes les catégories et de la recherche. Un canal de dépublication complet, par l'interface même que la liste blanche est censée garder — inatteignable depuis les outils d'alors, mais ouvert à la phase 5, qui dépose par le même `createRevision` sans passer par les schémas Zod. Une règle avec une liste d'exceptions se corrompt ; une règle uniforme tient.
 
 4. **La génération d'images est bornée par un quota et un budget mensuel.** `grok-imagine-image-2.0` est facturé à l'image. Le dépassement renvoie un **échec typé**, jamais un résultat vide : ce lot hérite d'une session où quatre défauts sur douze étaient des pertes silencieuses.
 
@@ -67,7 +71,8 @@ Une révision est une proposition de modification, non appliquée.
 | modifier une fiche **publiée** | révision |
 | modifier un **brouillon** | écriture directe (comportement du lot A, inchangé) |
 | publier | révision de type `publish` — § 2.3 |
-| dépublier | **interdit au MCP** |
+| retirer (dépublier, désactiver) | révision de type `withdraw` — § 2.6 |
+| créer une ligne publiable | révision de type `create` — § 2.7 |
 | créer un brouillon | écriture directe |
 
 ### 2.3 La publication passe par une révision — et pourquoi
@@ -86,6 +91,8 @@ L'administrateur qui applique une révision `publish` voit la fiche entière ava
 
 Une révision se lit, pas se devine. L'écran montre, côte à côte, **le rendu actuel et le rendu proposé**, dans le conteneur de portée correct, avec le vocabulaire `nk-` chargé.
 
+**L'écran est proportionné à la conséquence.** C'est le principe qui remplace l'ancienne liste d'interdictions (décision 3) : une modification se compare, une création se montre entière (§ 2.7), un retrait montre ce qui disparaît et demande une saisie (§ 2.6). Un même écran pour des conséquences différentes, c'est ce qui laisse un clic valoir pour tout.
+
 Un diff textuel de HTML est illisible et le lot A l'a prouvé à ses dépens : trois défauts sur douze portaient sur de la mise en forme qu'aucune lecture de code n'aurait attrapée. C'est le rendu qu'il faut comparer, pas la source.
 
 Une révision `publish` fait exception au côte-à-côte : il n'y a pas d'état antérieur, l'écran montre la fiche complète telle qu'elle paraîtra.
@@ -97,6 +104,45 @@ Les avertissements de `checkDesignConformance` s'affichent à côté du rendu pr
 Deux révisions en attente sur la même cible ne doivent pas s'écraser. Appliquer une révision passe les autres révisions `pending` de la même cible en `superseded`, et l'écran le dit. La ligne cible porte une version, contrôlée à l'application : si la fiche a changé depuis le dépôt, l'application échoue et l'administrateur est invité à redemander une proposition fraîche.
 
 ---
+
+### 2.6 Retirer : le type `withdraw`
+
+Un retrait est une révision comme une autre. Ce qui change est l'écran.
+
+**Pourquoi un type distinct plutôt qu'un `update` portant `is_active: false`.** Un retrait noyé parmi des changements de champs se clique sans être vu. Un type propre force un écran propre — c'est la leçon du mode `child` en phase 2 : séparer structurellement plutôt que brancher dans le composant.
+
+**L'asymétrie est réelle et doit être honorée, pas niée.** Un ajout se voit quand on le regarde ; un retrait est une absence, donc invisible par nature. Un écran affichant « `is_active` : true → false » ne fait pas relire un retrait, il le déguise en changement de champ.
+
+L'écran d'un `withdraw` montre donc **ce qui disparaît**, mesuré et non décrit :
+
+- la fiche ou la bannière telle qu'un client la voit **maintenant** ;
+- ce qui cesse d'exister pour lui : pour un produit, sa page, sa présence dans chaque catégorie et dans la recherche ; pour une bannière, sa place dans le carrousel ;
+- ce qui reste attaché : stock restant, commandes qui la référencent, statut « en vedette » — une fiche en vedette disparaît aussi du hero ;
+- **et que le retrait est réversible** : une réactivation est à une révision de distance. C'est ce qui le distingue d'une suppression, et ce qui le rend acceptable.
+
+La confirmation est plus forte qu'un clic : une saisie explicite, comme le runbook de conversion l'exigeait pour son étape irréversible.
+
+**Côté produit**, `is_draft` et `is_active` sortent tous deux de `PRODUCT_WRITABLE_COLUMNS` : aucun payload ne les modifie, seul `applyRevision` les écrit pour le type qui le déclare. La garantie tient ainsi au dépôt et non chez l'appelant.
+
+**Côté bannière, `is_active` reste écrivable pour l'instant**, et cette asymétrie est délibérée mais provisoire. Elle se justifie par une différence réelle entre les objets : une diapositive absente du carrousel se remarque au prochain chargement de la page d'accueil, alors qu'un produit retiré du catalogue ne se remarque que le jour où un client le cherche. Elle est provisoire parce que `update_banner` l'expose déjà et que la retirer sans remplaçant supprimerait une capacité existante.
+
+`withdraw` unifie les deux : quand il existera, `is_active` sortira aussi de `BANNER_WRITABLE_COLUMNS` et les deux surfaces passeront par le même écran. Tant que ce n'est pas fait, le spec porte une exception — et une règle avec exception se corrompt, donc celle-ci a une date de péremption, pas un statut.
+
+### 2.7 Créer : le type `create`
+
+Une création n'a pas d'état antérieur — comme une publication (§ 2.3), l'écran montre l'objet entier tel qu'il paraîtra, en une colonne.
+
+Ce n'est pas un raffinement : rendu comme un `update`, le diff ne montre que ce qui **change**, et un objet neuf ne change rien. Le filtre d'égalité posé en phase 2 — pour supprimer le bruit `html → html` — élimine précisément les champs qu'un modèle vient d'écrire. Une bannière créée par le MCP s'y réduisait à une ligne « Active : Non → Oui », pendant que dix champs rédigés par le modèle atteignaient la page d'accueil sans qu'aucun humain les ait lus.
+
+### 2.8 Ce que « publier » veut dire
+
+Publier rend visible. Sur ce projet, cela demande **deux** colonnes : `is_draft = 0` **et** `is_active = 1`.
+
+Un brouillon MCP naît `is_active = 0`. Une application qui ne lève que `is_draft` laisse donc la fiche invisible sur toutes les requêtes vitrine, pendant que l'outil annonce qu'elle « devient visible en boutique » et que l'écran la montre « telle qu'elle paraîtra ». L'administrateur applique, on lui dit que c'est fait, et rien n'apparaît.
+
+Le défaut n'était dans aucune couche : le brouillon inactif est normal, lever `is_draft` est conforme, filtrer sur `is_active` est évident. **Il était dans leur jonction** — ce qu'aucune revue de couche ne voit.
+
+Un `publish` écrit donc les deux, ou refuse le dépôt en disant laquelle manque.
 
 ## 3. Généralisation des outils
 
