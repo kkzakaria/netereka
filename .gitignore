@@ -71,6 +71,11 @@ next-env.d.ts
 scripts/images/
 .superpowers/
 
+# Constats d'exploitation : état ponctuel de la production à une date donnée.
+# Utile sur le moment, périmé ensuite, et sans rapport avec le code livré —
+# comme .superpowers/, ça vit sur la machine et pas dans l'historique.
+docs/exploitation/
+
 # security audit artefacts — must never be committed to a public repo
 security-audit/
 *security*audit*.tar.gz
