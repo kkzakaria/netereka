@@ -61,7 +61,7 @@ describe("productTools", () => {
     expect(productTools.map((t) => t.name).sort()).toEqual([
       "add_product_images", "create_product_draft", "delete_product_draft", "get_product", "get_product_draft",
       "publish_product", "remove_product_image", "search_products", "set_product_variants", "update_product",
-      "update_product_draft",
+      "update_product_draft", "withdraw_product",
     ]);
   });
 

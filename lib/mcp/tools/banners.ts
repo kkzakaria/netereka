@@ -9,6 +9,7 @@ import {
   createBannerShape,
   updateBannerShape,
 } from "@/lib/validations/mcp-banner";
+import { withdrawReasonSchema } from "@/lib/validations/mcp-common";
 import { defineTool, type ToolDefinition } from "./types";
 
 /**
@@ -78,8 +79,10 @@ export const bannerTools: ToolDefinition[] = [
       "révision est déposée et l'administrateur doit l'appliquer depuis /revisions (la réponse porte " +
       "revision.id et revision.status). Champs : title, subtitle, badge_text, badge_color (mint|red|orange|blue), " +
       "link_url (chemin relatif commençant par /), cta_text, price (XOF entier), bg_gradient_from/to (#rrggbb), " +
-      "content_html (HTML libre assaini côté serveur, rendu dans le hero), display_order, is_active, " +
-      "starts_at/ends_at. Champs absents ignorés, null efface (pour ceux qui l'admettent).",
+      "content_html (HTML libre assaini côté serveur, rendu dans le hero), display_order, " +
+      "starts_at/ends_at. Champs absents ignorés, null efface (pour ceux qui l'admettent). Ne permet pas de " +
+      "retirer une bannière : utilisez withdraw_banner (une ends_at passée la retire aussi, et l'écran de " +
+      "validation le signale).",
     inputSchema: updateBannerShape,
     handler: async (ctx, input) => {
       try {
@@ -105,7 +108,7 @@ export const bannerTools: ToolDefinition[] = [
         const payload: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(patch)) {
           if (value === undefined) continue;
-          payload[key] = key === "is_active" ? (value ? 1 : 0) : value;
+          payload[key] = value;
         }
         if (Object.keys(payload).length === 0) return fail("validation_error", "Aucun champ à modifier.");
 
@@ -125,6 +128,38 @@ export const bannerTools: ToolDefinition[] = [
         ));
       } catch (err) {
         return toolError("update_banner", err);
+      }
+    },
+  }),
+
+  defineTool({
+    name: "withdraw_banner",
+    description:
+      "Propose le RETRAIT d'une bannière du carrousel (elle devient inactive). Rien n'est écrit directement : " +
+      "une révision de type withdraw est déposée, et l'administrateur voit ce qui disparaît (sa place dans le " +
+      "carrousel, ce qu'il en reste) puis doit saisir le titre de la bannière pour confirmer, depuis " +
+      "/revisions. Le retrait est réversible (réactivation en un clic) : rien n'est supprimé. Refuse avec " +
+      "conflict si la bannière est déjà inactive. reason : pourquoi la retirer, lu par l'administrateur.",
+    inputSchema: { id: bannerIdSchema, reason: withdrawReasonSchema },
+    handler: async (ctx, input) => {
+      try {
+        const { revisionId, status } = await createRevision({
+          target: "banner",
+          targetId: String(input.id),
+          kind: "withdraw",
+          payload: {},
+          origin: "mcp",
+          actor: { id: ctx.user.id, name: ctx.user.name },
+          summary: input.reason,
+        });
+        return ok(revisionAnswer(
+          revisionId,
+          status,
+          `Retrait déposé en révision (${revisionId}) : la bannière reste affichée tant qu'un administrateur ` +
+          `n'a pas confirmé sur /revisions/${revisionId}.`,
+        ));
+      } catch (err) {
+        return toolError("withdraw_banner", err);
       }
     },
   }),

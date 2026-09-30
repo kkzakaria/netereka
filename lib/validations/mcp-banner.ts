@@ -41,7 +41,8 @@ const DATES_MESSAGE = "La date de fin doit être postérieure à la date de déb
 export const bannerIdSchema = z.number().int().positive();
 
 /** Champs modifiables d'une bannière existante, tous optionnels ; `null`
- *  efface les champs qui l'admettent. */
+ *  efface les champs qui l'admettent. `is_active` n'en fait plus partie
+ *  (§ 2.6) : activer relève de `create_banner`, retirer de `withdraw_banner`. */
 export const updateBannerShape = {
   id: bannerIdSchema,
   title: bannerFields.title.optional(),
@@ -55,7 +56,6 @@ export const updateBannerShape = {
   bg_gradient_to: bannerFields.bg_gradient_to.optional(),
   content_html: bannerFields.content_html.optional(),
   display_order: z.number().int().min(0).optional(),
-  is_active: z.boolean().optional(),
   starts_at: bannerFields.starts_at.optional(),
   ends_at: bannerFields.ends_at.optional(),
 };

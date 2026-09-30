@@ -54,8 +54,8 @@ beforeEach(() => {
 });
 
 describe("bannerTools", () => {
-  it("expose get_banner, update_banner, create_banner", () => {
-    expect(bannerTools.map((t) => t.name).sort()).toEqual(["create_banner", "get_banner", "update_banner"]);
+  it("expose get_banner, update_banner, create_banner, withdraw_banner", () => {
+    expect(bannerTools.map((t) => t.name).sort()).toEqual(["create_banner", "get_banner", "update_banner", "withdraw_banner"]);
   });
 
   it("get_banner : not_found si la bannière n'existe pas", async () => {
@@ -66,7 +66,7 @@ describe("bannerTools", () => {
   });
 
   it("update_banner dépose une révision scopée banner-<id> et n'écrit jamais la ligne", async () => {
-    const r = await tool("update_banner").handler(ctx, { id: 42, content_html: STYLED, is_active: true });
+    const r = await tool("update_banner").handler(ctx, { id: 42, content_html: STYLED });
     expect(r.isError).toBeUndefined();
     const out = parse(r);
     expect(out.applied).toBe("revision");
@@ -75,7 +75,8 @@ describe("bannerTools", () => {
     const stored = revisionPayload();
     expect(stored.content_html).toContain(".desc-banner-42 .a");
     expect(stored.content_html).not.toContain(".desc-42 .a");
-    expect(stored.is_active).toBe(1);
+    // § 2.6 : aucun moyen de poser is_active depuis update_banner.
+    expect(stored).not.toHaveProperty("is_active");
     expect(allStatements().some(isBannerRowWrite)).toBe(false);
     expect(allStatements().some(isBannerInsert)).toBe(false);
   });
