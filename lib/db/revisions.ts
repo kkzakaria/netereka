@@ -32,7 +32,7 @@ export type RevisionTarget = "product" | "banner";
  * elle-même. Uniquement pour `target: "product"` : une bannière n'a ni
  * images ni variantes.
  */
-export type RevisionKind = "update" | "publish" | "add_images" | "remove_image" | "set_variants";
+export type RevisionKind = "update" | "publish" | "create" | "add_images" | "remove_image" | "set_variants";
 export type RevisionOrigin = "mcp" | "admin_chat";
 export type RevisionStatus = "pending" | "applied" | "rejected" | "superseded";
 
@@ -49,6 +49,7 @@ export type RevisionStatus = "pending" | "applied" | "rejected" | "superseded";
 export const REVISION_KIND_LABELS: Record<RevisionKind, string> = {
   update: "Modification",
   publish: "Publication",
+  create: "Création",
   add_images: "Ajout d'images",
   remove_image: "Suppression d'image",
   set_variants: "Variantes",
@@ -104,10 +105,14 @@ export function scopeFor(target: RevisionTarget, id: string): string {
  * - `id`, `slug` — les réécrire détacherait instantanément tout CSS scopé
  *   déjà stocké sous l'ancien identifiant (`.desc-<ancien-id>`), la même
  *   classe de défaut que `scopeFor` existe pour éviter ailleurs.
- * - `is_draft` — § 2.3 du spec : « la dépublication n'est pas exposée du
- *   tout », parce qu'un retrait passe inaperçu alors qu'une mise en ligne
- *   ratée se voit. `applyRevision` reste seul à le poser, et seulement pour
- *   `kind: "publish"`.
+ * - `is_draft` et `is_active` — § 2.6 du spec : ni l'un ni l'autre ne se
+ *   modifie par un payload. `products.is_active = 0` retire une fiche de sa
+ *   page, de toutes les catégories et de la recherche : dans la liste blanche,
+ *   il ouvrait un canal de dépublication complet par l'interface même que
+ *   cette liste garde (la phase 5 dépose par ce `createRevision` sans passer
+ *   par les schémas Zod). `applyRevision` reste seul à les poser, pour la
+ *   nature qui le déclare : `publish` écrit les DEUX (§ 2.8) ; le retrait
+ *   (`withdraw`, § 2.6) rouvrira `is_active` proprement, avec son écran.
  * - `created_at`, `updated_at` — `updated_at` est géré par `applyRevision`
  *   lui-même : c'est l'horodatage de l'écriture ET la clé du contrôle de
  *   version (`base_version`), une révision ne doit donc jamais pouvoir le
@@ -129,7 +134,6 @@ const PRODUCT_WRITABLE_COLUMNS = new Set([
   "compare_price",
   "sku",
   "brand",
-  "is_active",
   "is_featured",
   "stock_quantity",
   "low_stock_threshold",
@@ -144,7 +148,11 @@ const PRODUCT_WRITABLE_COLUMNS = new Set([
 ]);
 
 /** Pas d'`id`/`created_at`/`updated_at` — mêmes raisons que pour les
- *  produits. Les bannières n'ont ni `slug` ni `is_draft`. */
+ *  produits. Les bannières n'ont ni `slug` ni `is_draft`.
+ *
+ *  `is_active` y reste pour l'instant : `update_banner` l'émet (activer ou
+ *  désactiver une bannière). C'est le même canal de retrait que sur les
+ *  produits, à refermer avec `withdraw` (§ 2.6) — voir le rapport de phase 3. */
 const BANNER_WRITABLE_COLUMNS = new Set([
   "title",
   "subtitle",
@@ -200,6 +208,15 @@ function assertWritablePayload(target: RevisionTarget, payload: Record<string, u
  */
 function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload: Record<string, unknown>): void {
   if (kind === "update" || kind === "publish") {
+    assertWritablePayload(target, payload);
+    return;
+  }
+  if (kind === "create") {
+    // Seule une bannière se crée par révision : la ligne existe déjà, inactive
+    // (`insertInactiveBanner`), et c'est `applyRevision` qui l'active.
+    if (target !== "banner") {
+      throw new RevisionError("validation_error", `Une révision "create" ne s'applique qu'à une bannière.`);
+    }
     assertWritablePayload(target, payload);
     return;
   }
@@ -855,7 +872,7 @@ export async function applyRevision(
   // colonnes directement sur la cible (comportement de la phase 1) ;
   // `publish` ne porte plus de colonnes — voir `publish_product`,
   // lib/mcp/tools/products.ts, qui dépose systématiquement un payload vide —
-  // seul `is_draft` change, jamais le contenu. Les trois natures de la
+  // seuls `is_draft` et `is_active` changent, jamais le contenu. Les trois natures de la
   // généralisation des outils (`add_images`, `remove_image`,
   // `set_variants`) n'ont aucune colonne `products` à écrire : la cible
   // n'obtient que l'ancre de concurrence (`updated_at`), et l'écriture
@@ -872,7 +889,19 @@ export async function applyRevision(
   if (rev.kind === "update") {
     Object.assign(targetSet, rev.payload);
   } else if (rev.kind === "publish") {
-    if (rev.target_type === "product") targetSet.is_draft = 0;
+    // § 2.8 : publier rend visible, donc DEUX colonnes. Un brouillon MCP naît
+    // `is_active = 0` et la vitrine filtre sur `is_active` : ne lever que
+    // `is_draft` « publiait » une fiche que personne ne voyait.
+    if (rev.target_type === "product") {
+      targetSet.is_draft = 0;
+      targetSet.is_active = 1;
+    }
+  } else if (rev.kind === "create") {
+    // Les champs rédigés sont déjà sur la ligne (inactive) ; le payload ne
+    // porte que le HTML assaini. L'activation est posée ICI, après le
+    // payload, pour qu'il ne puisse jamais la dicter.
+    Object.assign(targetSet, rev.payload);
+    targetSet.is_active = 1;
   } else if (rev.kind === "add_images") {
     // La clé R2 est déjà en place depuis le dépôt (voir le commentaire de
     // haut de fichier de lib/mcp/tools/products.ts sur le cycle de vie R2) :

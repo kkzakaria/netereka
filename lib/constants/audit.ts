@@ -11,6 +11,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "banner.created": "Bannière créée (inactive)",
   "revision.created.update": "Révision déposée (mise à jour)",
   "revision.created.publish": "Révision déposée (publication)",
+  "revision.created.create": "Révision déposée (création)",
   "revision.created.add_images": "Révision déposée (ajout d'images)",
   "revision.created.remove_image": "Révision déposée (suppression d'image)",
   "revision.created.set_variants": "Révision déposée (variantes)",

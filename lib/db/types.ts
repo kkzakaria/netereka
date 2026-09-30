@@ -356,6 +356,7 @@ export type AuditAction =
   | "banner.created"
   | "revision.created.update"
   | "revision.created.publish"
+  | "revision.created.create"
   | "revision.created.add_images"
   | "revision.created.remove_image"
   | "revision.created.set_variants"

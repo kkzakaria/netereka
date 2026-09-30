@@ -401,8 +401,8 @@ export const productTools: ToolDefinition[] = [
   defineTool({
     name: "publish_product",
     description:
-      "Propose la publication d'un brouillon : dépose une révision de type publish (payload vide — seul is_draft " +
-      "change, pas le contenu) que l'administrateur doit appliquer depuis /revisions pour que la fiche devienne " +
+      "Propose la publication d'un brouillon : dépose une révision de type publish (payload vide — seuls is_draft " +
+      "et is_active changent, pas le contenu : l'application lève le brouillon ET active la fiche) que l'administrateur doit appliquer depuis /revisions pour que la fiche devienne " +
       "visible en boutique. Refuse avec conflict si la fiche est déjà publiée. Aucun outil de dépublication " +
       "n'existe : un retrait du catalogue reste une décision humaine directe, hors MCP.",
     inputSchema: { id: idSchema },
