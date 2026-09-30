@@ -5,7 +5,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 const { BASE, RESOURCE, mocks } = vi.hoisted(() => ({
   BASE: "https://netereka.ci/api/auth",
   RESOURCE: "https://netereka.ci/api/mcp",
-  mocks: { buildMcpContext: vi.fn() },
+  mocks: { buildMcpContext: vi.fn(), getJwks: vi.fn() },
 }));
 
 // requireMcpAuth (réel, @better-auth/mcp) lit auth.$context pour l'émetteur et
@@ -13,6 +13,7 @@ const { BASE, RESOURCE, mocks } = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({
   initAuth: vi.fn().mockResolvedValue({
     options: {},
+    api: { getJwks: mocks.getJwks },
     $context: Promise.resolve({ baseURL: BASE, internalAdapter: {} }),
   }),
   getMcpResource: vi.fn().mockResolvedValue(RESOURCE),
@@ -28,15 +29,25 @@ import * as route from "@/app/api/mcp/route";
 
 let privateKey: CryptoKey;
 const realFetch = globalThis.fetch;
+let networkJwksCalls = 0;
 
 beforeAll(async () => {
   const pair = await generateKeyPair("EdDSA", { extractable: true });
   privateKey = pair.privateKey as CryptoKey;
   const jwk = { ...(await exportJWK(pair.publicKey)), kid: "k1", alg: "EdDSA" };
-  // Le JWKS est servi par notre propre fetch factice : aucun réseau.
+  mocks.getJwks.mockResolvedValue({ keys: [jwk] });
+  // Régression de production : un Worker ne peut pas récupérer son propre JWKS
+  // par HTTP (auto-sous-requête refusée, "Jwks failed"). Le JWKS doit donc venir
+  // de auth.api.getJwks() en mémoire. Ce faux "réseau" échoue bruyamment et
+  // compte les appels : l'ancien test servait le JWKS ici même, ce qui masquait
+  // le défaut. Il est posé AVANT l'import de la route (installation de
+  // l'enveloppe de fetch sur ce global).
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url === `${BASE}/jwks`) return Response.json({ keys: [jwk] });
+    if (url === `${BASE}/jwks`) {
+      networkJwksCalls++;
+      return new Response("error code: 1042", { status: 404 });
+    }
     return realFetch(input, init);
   });
 });
@@ -100,6 +111,14 @@ describe("POST /api/mcp — authentification", () => {
   it("répond 401 pour un jeton mal formé", async () => {
     const res = await route.POST(rpc(LIST, "pas-un-jwt"));
     expect(res.status).toBe(401);
+  });
+
+  it("vérifie le jeton avec les clés lues en mémoire, sans jamais requêter le JWKS en HTTP", async () => {
+    networkJwksCalls = 0;
+    const res = await route.POST(rpc(LIST, await token()));
+    expect(res.status).not.toBe(401);
+    expect(mocks.buildMcpContext).toHaveBeenCalled();
+    expect(networkJwksCalls).toBe(0);
   });
 
   it("transmet sub et azp du jeton à buildMcpContext", async () => {
