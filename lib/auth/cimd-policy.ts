@@ -6,7 +6,22 @@ import type { GenericEndpointContext } from "@better-auth/core";
  * établir). Une liste non vide réduit à rien l'oracle d'atteignabilité décrit
  * dans isCimdUrlAllowed.
  */
-export const CIMD_ALLOWED_ORIGINS: readonly string[] = [];
+export const CIMD_ALLOWED_ORIGINS: readonly string[] = [
+  // Vérifié le 2026-09-30 : https://claude.ai/oauth/mcp-oauth-client-metadata et
+  // .../claude-code-client-metadata répondent 200 application/json, avec un
+  // `client_id` auto-référentiel comme CIMD l'exige. Couvre claude.ai, Claude
+  // Desktop et Claude Code.
+  "https://claude.ai",
+  // Codex et ChatGPT desktop publient sous
+  // https://chatgpt.com/oauth/codex/<callback_id>/client.json — le chemin varie
+  // par installation, donc seule l'origine est vérifiable ici, et elle ne l'a
+  // pas été par une récupération réelle. À confirmer à la première connexion.
+  "https://chatgpt.com",
+  // Cursor N'EST PAS dans cette liste, et ce n'est pas un oubli : il
+  // s'enregistre par DCR, que le régime CIMD seul n'expose pas. L'ajouter ici
+  // ne le ferait pas fonctionner — c'est la décision « CIMD seul » qui
+  // l'exclut, pas cette liste.
+];
 
 /**
  * Filtre `isMetadataDocumentUrlAllowed` de cimd() : décide, AVANT toute requête
