@@ -124,7 +124,7 @@ export function scopeFor(target: RevisionTarget, id: string): string {
  * dépôt, pas dépendre de ce que chaque appelant pense à vérifier lui-même —
  * même principe que `sanitizePayload` ci-dessus.
  */
-const PRODUCT_WRITABLE_COLUMNS = new Set([
+export const PRODUCT_WRITABLE_COLUMN_LIST = [
   "category_id",
   "name",
   "description",
@@ -145,7 +145,9 @@ const PRODUCT_WRITABLE_COLUMNS = new Set([
   "feature_blocks",
   "faq",
   "faq_html",
-]);
+] as const;
+export type ProductWritableColumn = (typeof PRODUCT_WRITABLE_COLUMN_LIST)[number];
+const PRODUCT_WRITABLE_COLUMNS = new Set<string>(PRODUCT_WRITABLE_COLUMN_LIST);
 
 /** Pas d'`id`/`created_at`/`updated_at` — mêmes raisons que pour les
  *  produits. Les bannières n'ont ni `slug` ni `is_draft`.
@@ -153,7 +155,7 @@ const PRODUCT_WRITABLE_COLUMNS = new Set([
  *  `is_active` y reste pour l'instant : `update_banner` l'émet (activer ou
  *  désactiver une bannière). C'est le même canal de retrait que sur les
  *  produits, à refermer avec `withdraw` (§ 2.6) — voir le rapport de phase 3. */
-const BANNER_WRITABLE_COLUMNS = new Set([
+export const BANNER_WRITABLE_COLUMN_LIST = [
   "title",
   "subtitle",
   "badge_text",
@@ -169,7 +171,9 @@ const BANNER_WRITABLE_COLUMNS = new Set([
   "is_active",
   "starts_at",
   "ends_at",
-]);
+] as const;
+export type BannerWritableColumn = (typeof BANNER_WRITABLE_COLUMN_LIST)[number];
+const BANNER_WRITABLE_COLUMNS = new Set<string>(BANNER_WRITABLE_COLUMN_LIST);
 
 function writableColumnsFor(target: RevisionTarget): Set<string> {
   return target === "banner" ? BANNER_WRITABLE_COLUMNS : PRODUCT_WRITABLE_COLUMNS;
@@ -207,7 +211,17 @@ function assertWritablePayload(target: RevisionTarget, payload: Record<string, u
  * ne s'appliquent qu'à un produit, jamais à une bannière.
  */
 function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload: Record<string, unknown>): void {
-  if (kind === "update" || kind === "publish") {
+  if (kind === "publish") {
+    // Une publication ne porte AUCUNE colonne : `applyRevision` n'assigne pas
+    // son payload (seuls is_draft et is_active changent). Accepter des champs
+    // ici les ferait afficher à l'écran « tels qu'ils paraîtront » puis jeter
+    // en silence, la révision passant `applied`.
+    if (Object.keys(payload).length > 0) {
+      throw new RevisionError("validation_error", "Une révision \"publish\" ne porte aucun champ : le payload doit être vide.");
+    }
+    return;
+  }
+  if (kind === "update") {
     assertWritablePayload(target, payload);
     return;
   }

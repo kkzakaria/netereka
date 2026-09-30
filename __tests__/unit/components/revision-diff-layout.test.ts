@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { revisionLayout, bannerReviewFields, changedScalarFields } from "@/components/admin/revision-diff";
+import {
+  revisionLayout,
+  bannerReviewFields,
+  productReviewFields,
+  changedScalarFields,
+} from "@/components/admin/revision-diff";
+import {
+  BANNER_WRITABLE_COLUMN_LIST,
+  PRODUCT_WRITABLE_COLUMN_LIST,
+  BANNER_HTML_COLUMNS,
+  PRODUCT_HTML_COLUMNS,
+} from "@/lib/db/revisions";
 
 describe("revisionLayout", () => {
   it("une révision publish se montre seule — pas d'état antérieur côté client", () => {
@@ -57,5 +68,28 @@ describe("écran d'une création de bannière", () => {
   it("le rendu en diff, lui, ne montrerait rien de ces champs (la raison d'être du type create)", () => {
     // La ligne porte déjà tout ; le payload répète les mêmes valeurs : le filtre d'égalité les retire.
     expect(changedScalarFields("banner", row, { title: "Soldes", link_url: "/c/promo" })).toEqual([]);
+  });
+});
+
+describe("revisionLayout : pas de porte de sortie silencieuse", () => {
+  it("une nature inconnue lève au lieu de tomber sur un écran vide", () => {
+    expect(() => revisionLayout("withdraw" as never)).toThrow(/sans écran/);
+  });
+});
+
+// Une colonne écrivable non affichée atteint la boutique sans relecture (B1).
+describe("les écrans « objet entier » couvrent toutes les colonnes écrivables", () => {
+  it("bannière : chaque colonne écrivable non HTML est affichée (image_url comprise)", () => {
+    const shown = bannerReviewFields({} as never).map((f) => f.key);
+    const expected = BANNER_WRITABLE_COLUMN_LIST.filter((c) => !(BANNER_HTML_COLUMNS as readonly string[]).includes(c));
+    expect(shown.sort()).toEqual([...expected].sort());
+    expect(shown).toContain("image_url");
+  });
+
+  it("produit : chaque colonne écrivable non HTML est affichée (is_featured comprise)", () => {
+    const shown = productReviewFields({} as never).map((f) => f.key);
+    const expected = PRODUCT_WRITABLE_COLUMN_LIST.filter((c) => !(PRODUCT_HTML_COLUMNS as readonly string[]).includes(c));
+    expect(shown.sort()).toEqual([...expected].sort());
+    expect(shown).toContain("is_featured");
   });
 });

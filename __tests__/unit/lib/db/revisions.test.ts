@@ -751,9 +751,29 @@ describe("applyRevision", () => {
     expect(targetUpdate.params).toEqual(expect.arrayContaining([1, "<p>Hi</p>", 42]));
   });
 
+  // Un payload de `publish` serait affiché « tel qu'il paraîtra » puis jeté :
+  // `applyRevision` n'assigne jamais son payload.
+  it("refuse un payload non vide pour publish, au dépôt", async () => {
+    await expect(
+      createRevision({
+        target: "product", targetId: "p1", kind: "publish", payload: { name: "Autre nom" }, origin: "mcp", actor: ADMIN,
+      }),
+    ).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
+  it("refuse un payload non vide pour publish, à l'application", async () => {
+    mockApplyReads({
+      rev: revisionRow({ kind: "publish", payload: JSON.stringify({ name: "Autre nom" }) }),
+      targetVersion: "2026-01-01 00:00:00",
+    });
+    await expect(applyRevision("rev-1", ADMIN)).rejects.toMatchObject({ code: "validation_error" });
+    expect(d1.current!.batch).not.toHaveBeenCalled();
+  });
+
   it("kind publish met is_draft = 0 sur le produit cible", async () => {
     mockApplyReads({
-      rev: revisionRow({ kind: "publish", payload: JSON.stringify({ name: "Nouveau nom" }) }),
+      rev: revisionRow({ kind: "publish", payload: JSON.stringify({}) }),
       targetVersion: "2026-01-01 00:00:00",
     });
     await applyRevision("rev-1", ADMIN);

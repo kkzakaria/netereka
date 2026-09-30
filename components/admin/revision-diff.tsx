@@ -14,6 +14,8 @@ import {
   resolveVariantPrice,
   PRODUCT_HTML_COLUMNS,
   BANNER_HTML_COLUMNS,
+  type BannerWritableColumn,
+  type ProductWritableColumn,
   type RevisionKind,
   type RevisionTarget,
 } from "@/lib/db/revisions";
@@ -50,9 +52,24 @@ import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/
  * rendu dans un test — seule cette décision, extraite du rendu, peut l'être.
  */
 export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | "child" {
-  if (kind === "publish" || kind === "create") return "single";
-  if (kind === "update") return "side-by-side";
-  return "child";
+  // Switch EXHAUSTIF, sans `default` qui avale : une nouvelle `RevisionKind`
+  // (`withdraw`, § 2.6) échoue ici à la COMPILATION au lieu de tomber dans
+  // `"child"`, dont le rendu est un <div> vide au-dessus du bouton Appliquer.
+  switch (kind) {
+    case "publish":
+    case "create":
+      return "single";
+    case "update":
+      return "side-by-side";
+    case "add_images":
+    case "remove_image":
+    case "set_variants":
+      return "child";
+    default: {
+      const inconnue: never = kind;
+      throw new Error(`Nature de révision sans écran : ${String(inconnue)}`);
+    }
+  }
 }
 
 /**
@@ -797,6 +814,7 @@ function formatScalar(key: string, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (PRICE_KEYS.has(key) && typeof value === "number") return formatPrice(value);
   if (BOOLEAN_KEYS.has(key)) return value ? "Oui" : "Non";
+  if (Array.isArray(value)) return value.length === 0 ? "—" : `${value.length} élément(s)`;
   return String(value);
 }
 
@@ -838,20 +856,63 @@ export function changedScalarFields(
     .filter((change) => change.before !== change.after);
 }
 
-const BANNER_REVIEW_FIELDS: { key: keyof Banner; label: string }[] = [
-  { key: "title", label: "Titre" },
-  { key: "subtitle", label: "Sous-titre" },
-  { key: "link_url", label: "Lien" },
-  { key: "cta_text", label: "Texte du bouton" },
-  { key: "price", label: "Prix" },
-  { key: "badge_text", label: "Badge" },
-  { key: "badge_color", label: "Couleur du badge" },
-  { key: "bg_gradient_from", label: "Dégradé (début)" },
-  { key: "bg_gradient_to", label: "Dégradé (fin)" },
-  { key: "starts_at", label: "Début d'affichage" },
-  { key: "ends_at", label: "Fin d'affichage" },
-  { key: "display_order", label: "Ordre d'affichage" },
-];
+/**
+ * Libellé de chaque colonne ÉCRIVABLE, typé sur la liste blanche du dépôt :
+ * une colonne ajoutée à `BANNER_WRITABLE_COLUMN_LIST` fait échouer la
+ * COMPILATION ici, au lieu d'atteindre la boutique sans s'afficher à la
+ * relecture (même dérive que B1, une liste d'affichage tenue à la main).
+ * `null` = HTML libre, rendu à part (`BannerContentBlock`).
+ */
+const BANNER_REVIEW_LABELS: Record<BannerWritableColumn, string | null> = {
+  title: "Titre",
+  subtitle: "Sous-titre",
+  badge_text: "Badge",
+  badge_color: "Couleur du badge",
+  image_url: "Image",
+  link_url: "Lien",
+  cta_text: "Texte du bouton",
+  price: "Prix",
+  bg_gradient_from: "Dégradé (début)",
+  bg_gradient_to: "Dégradé (fin)",
+  content_html: null,
+  display_order: "Ordre d'affichage",
+  is_active: "Active",
+  starts_at: "Début d'affichage",
+  ends_at: "Fin d'affichage",
+};
+
+/** Idem pour les produits (écran d'une publication). */
+const PRODUCT_REVIEW_LABELS: Record<ProductWritableColumn, string | null> = {
+  category_id: "Catégorie (id)",
+  name: "Nom",
+  description: null,
+  description_type: "Type de description",
+  short_description: "Description courte",
+  base_price: "Prix",
+  compare_price: "Prix barré",
+  sku: "SKU",
+  brand: "Marque",
+  is_featured: "Mis en avant (hero)",
+  stock_quantity: "Stock",
+  low_stock_threshold: "Seuil de stock bas",
+  weight_grams: "Poids (g)",
+  meta_title: "Titre SEO",
+  meta_description: "Description SEO",
+  tagline: "Accroche",
+  highlights: "Points forts",
+  feature_blocks: "Blocs de caractéristiques",
+  faq: "FAQ structurée",
+  faq_html: null,
+};
+
+function reviewFields(
+  labels: Record<string, string | null>,
+  row: Record<string, unknown>,
+): { key: string; label: string; value: string }[] {
+  return Object.entries(labels).flatMap(([key, label]) =>
+    label === null ? [] : [{ key, label, value: formatScalar(key, row[key]) }],
+  );
+}
 
 /**
  * Tous les champs d'une bannière, VALEURS et non différences — l'écran d'une
@@ -860,22 +921,23 @@ const BANNER_REVIEW_FIELDS: { key: keyof Banner; label: string }[] = [
  * qu'un filtre aurait pris pour du bruit.
  */
 export function bannerReviewFields(banner: Banner): { key: string; label: string; value: string }[] {
-  return BANNER_REVIEW_FIELDS.map(({ key, label }) => ({
-    key,
-    label,
-    value: formatScalar(key, banner[key]),
-  }));
+  return reviewFields(BANNER_REVIEW_LABELS, banner as unknown as Record<string, unknown>);
 }
 
-function BannerFieldsCard({ banner }: { banner: Banner }) {
+/** Champs scalaires d'une fiche telle qu'elle paraîtra — écran d'une `publish`. */
+export function productReviewFields(product: ProductDetail): { key: string; label: string; value: string }[] {
+  return reviewFields(PRODUCT_REVIEW_LABELS, product as unknown as Record<string, unknown>);
+}
+
+function FieldsCard({ title, fields }: { title: string; fields: { key: string; label: string; value: string }[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Champs de la bannière</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-3 sm:grid-cols-2">
-          {bannerReviewFields(banner).map((f) => (
+          {fields.map((f) => (
             <div key={f.key} className="rounded-lg border p-3">
               <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{f.label}</dt>
               <dd className="mt-1 break-words text-sm font-medium">{f.value}</dd>
@@ -955,7 +1017,7 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
     if (layout === "single") {
       return (
         <div className="space-y-6">
-          <BannerFieldsCard banner={proposedBanner} />
+          <FieldsCard title="Champs de la bannière" fields={bannerReviewFields(proposedBanner)} />
           <Card>
             <CardHeader>
               <CardTitle>{proposedBanner.title}</CardTitle>
@@ -1023,6 +1085,7 @@ export function RevisionDiff({ target, kind, targetId, current, payload }: Revis
   if (layout === "single") {
     return (
       <div className="space-y-6">
+        <FieldsCard title="Champs de la fiche (la publication lève le brouillon et l'active)" fields={productReviewFields(proposedProduct)} />
         <Card>
           <CardHeader>
             <CardTitle>{proposedProduct.name}</CardTitle>
