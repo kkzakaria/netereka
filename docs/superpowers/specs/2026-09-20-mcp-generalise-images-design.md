@@ -122,7 +122,11 @@ L'écran d'un `withdraw` montre donc **ce qui disparaît**, mesuré et non décr
 
 La confirmation est plus forte qu'un clic : une saisie explicite, comme le runbook de conversion l'exigeait pour son étape irréversible.
 
-`is_draft` reste hors de `PRODUCT_WRITABLE_COLUMNS`, et `is_active` en sort aussi : ni l'un ni l'autre ne se modifie par un payload. Seul `applyRevision` les écrit, pour le type qui le déclare. La garantie tient ainsi au dépôt et non chez l'appelant.
+**Côté produit**, `is_draft` et `is_active` sortent tous deux de `PRODUCT_WRITABLE_COLUMNS` : aucun payload ne les modifie, seul `applyRevision` les écrit pour le type qui le déclare. La garantie tient ainsi au dépôt et non chez l'appelant.
+
+**Côté bannière, `is_active` reste écrivable pour l'instant**, et cette asymétrie est délibérée mais provisoire. Elle se justifie par une différence réelle entre les objets : une diapositive absente du carrousel se remarque au prochain chargement de la page d'accueil, alors qu'un produit retiré du catalogue ne se remarque que le jour où un client le cherche. Elle est provisoire parce que `update_banner` l'expose déjà et que la retirer sans remplaçant supprimerait une capacité existante.
+
+`withdraw` unifie les deux : quand il existera, `is_active` sortira aussi de `BANNER_WRITABLE_COLUMNS` et les deux surfaces passeront par le même écran. Tant que ce n'est pas fait, le spec porte une exception — et une règle avec exception se corrompt, donc celle-ci a une date de péremption, pas un statut.
 
 ### 2.7 Créer : le type `create`
 
