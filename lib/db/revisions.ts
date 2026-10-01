@@ -34,8 +34,19 @@ export type RevisionTarget = "product" | "banner";
  * images ni variantes.
  * `withdraw` (§ 2.6) : retire du public un produit ou une bannière. Son
  * payload est vide et `applyRevision` seul écrit `is_active = 0`.
+ * `reactivate` (§ 2.6 bis) : remet en ligne un PRODUIT retiré (publié, inactif).
+ * Son payload est vide et `applyRevision` seul écrit `is_active = 1`. Les
+ * bannières se remettent en ligne depuis leur liste d'administration.
  */
-export type RevisionKind = "update" | "publish" | "create" | "withdraw" | "add_images" | "remove_image" | "set_variants";
+export type RevisionKind =
+  | "update"
+  | "publish"
+  | "create"
+  | "withdraw"
+  | "reactivate"
+  | "add_images"
+  | "remove_image"
+  | "set_variants";
 export type RevisionOrigin = "mcp" | "admin_chat";
 export type RevisionStatus = "pending" | "applied" | "rejected" | "superseded";
 
@@ -54,6 +65,7 @@ export const REVISION_KIND_LABELS: Record<RevisionKind, string> = {
   publish: "Publication",
   create: "Création",
   withdraw: "Retrait",
+  reactivate: "Remise en ligne",
   add_images: "Ajout d'images",
   remove_image: "Suppression d'image",
   set_variants: "Variantes",
@@ -231,6 +243,19 @@ function assertValidPayload(target: RevisionTarget, kind: RevisionKind, payload:
     // à l'application, après avoir été montré à l'écran.
     if (Object.keys(payload).length > 0) {
       throw new RevisionError("validation_error", "Une révision \"withdraw\" ne porte aucun champ : le payload doit être vide.");
+    }
+    return;
+  }
+  if (kind === "reactivate") {
+    // Symétrique de `withdraw` : la remise en ligne n'est PAS dans le payload. Seul
+    // `applyRevision` écrit `is_active = 1`, pour cette nature. Un payload qui
+    // porterait des champs serait montré puis jeté — ou, pire, laisserait croire
+    // qu'une remise en ligne peut aussi modifier la fiche.
+    if (target !== "product") {
+      throw new RevisionError("validation_error", "Une révision \"reactivate\" ne s'applique qu'à un produit.");
+    }
+    if (Object.keys(payload).length > 0) {
+      throw new RevisionError("validation_error", "Une révision \"reactivate\" ne porte aucun champ : le payload doit être vide.");
     }
     return;
   }
@@ -648,6 +673,34 @@ async function assertWithdrawable(db: DrizzleDB, target: RevisionTarget, targetI
 }
 
 /**
+ * Une remise en ligne ne s'applique qu'à une fiche PUBLIÉE et RETIRÉE
+ * (`is_draft = 0`, `is_active = 0`). Vérifié au dépôt ET à l'application : la
+ * garantie ne doit pas dépendre de l'outil qui dépose. Sans le contrôle du
+ * brouillon, une `reactivate` lèverait `is_active` d'un brouillon sans jamais
+ * lever `is_draft` (§ 2.8) : invisible, mais annoncée « en ligne ». Un brouillon
+ * se publie (`publish`).
+ */
+async function assertReactivatable(db: DrizzleDB, target: RevisionTarget, targetId: string): Promise<void> {
+  if (target !== "product") {
+    throw new RevisionError("validation_error", "Une révision \"reactivate\" ne s'applique qu'à un produit.");
+  }
+  const row = await db
+    .select({ is_active: products.is_active, is_draft: products.is_draft })
+    .from(products)
+    .where(eq(products.id, targetId))
+    .limit(1)
+    .get();
+  if (!row) throw new RevisionError("not_found", "Cible introuvable.");
+  if (row.is_draft) {
+    throw new RevisionError(
+      "validation_error",
+      "Ce produit est un brouillon : il ne se remet pas en ligne, il se publie (publish_product).",
+    );
+  }
+  if (row.is_active) throw new RevisionError("conflict", "Cette fiche est déjà en ligne : rien à remettre en ligne.");
+}
+
+/**
  * Une publication ne s'applique qu'à un BROUILLON. Sans ce contrôle au dépôt,
  * un `publish` déposé sur une fiche retirée (is_draft = 0, is_active = 0) était
  * accepté puis la remettait en ligne sans la saisie qu'exige un retrait, sur un
@@ -692,6 +745,7 @@ export async function createRevision(input: {
   }
   if (input.kind === "withdraw") await assertWithdrawable(db, input.target, input.targetId);
   if (input.kind === "publish") await assertPublishable(db, input.target, input.targetId);
+  if (input.kind === "reactivate") await assertReactivatable(db, input.target, input.targetId);
 
   const id = nanoid();
   const payload = sanitizePayload(input.target, input.targetId, input.payload);
@@ -946,6 +1000,10 @@ export async function applyRevision(
   // aussi, sourde à `is_draft`/`id`/`slug`.
   assertValidPayload(rev.target_type, rev.kind, rev.payload);
 
+  // Re-vérifié à l'application : l'état de la fiche a pu changer sans toucher
+  // `updated_at` (la version ci-dessus), et c'est cette ligne qui écrit `is_active = 1`.
+  if (rev.kind === "reactivate") await assertReactivatable(db, rev.target_type, rev.target_id);
+
   // § 2.6 : un retrait se confirme par une saisie, et c'est ICI que c'est
   // exigé — pas seulement dans le composant qui affiche le champ. Un appelant
   // qui n'en affiche aucun (autre surface, script) est refusé, pas dispensé.
@@ -1019,6 +1077,11 @@ export async function applyRevision(
     // valeur. Le contenu, le stock, les commandes restent intacts : le retrait
     // est réversible parce qu'il ne détruit rien.
     targetSet.is_active = 0;
+  } else if (rev.kind === "reactivate") {
+    // § 2.6 bis : `is_active = 1`, rien d'autre, posé ICI — jamais lu du payload
+    // (vide, `assertValidPayload`). `is_draft` n'est pas touché : une fiche
+    // brouillon est refusée par `assertReactivatable` ci-dessus.
+    targetSet.is_active = 1;
   } else if (rev.kind === "create") {
     // Les champs rédigés sont déjà sur la ligne (inactive) ; le payload ne
     // porte que le HTML assaini. L'activation est posée ICI, après le

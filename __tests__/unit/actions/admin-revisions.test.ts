@@ -84,9 +84,9 @@ describe("applyRevisionAction", () => {
     expect(mocks.refreshHeroPreload).not.toHaveBeenCalled();
   });
 
-  it("revalide toute la vitrine du produit pour publish et withdraw, sa page seule pour une modification", async () => {
+  it("revalide toute la vitrine du produit pour publish, withdraw et reactivate, sa page seule pour une modification", async () => {
     mocks.applyRevision.mockResolvedValue({ applied: true, superseded: 0 });
-    for (const kind of ["publish", "withdraw"]) {
+    for (const kind of ["publish", "withdraw", "reactivate"]) {
       mocks.revalidateProductStorefront.mockClear();
       mocks.getRevision.mockResolvedValue({ id: "rev-1", target_type: "product", target_id: "p1", kind });
       await applyRevisionAction("rev-1", "x");

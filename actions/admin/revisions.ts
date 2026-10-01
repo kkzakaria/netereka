@@ -17,7 +17,7 @@ import type { ActionResult } from "@/lib/types/actions";
  * actions d'administration des bannières : sans cela, une bannière retirée ou
  * remplacée laisse le middleware précharger l'image de l'ancienne.
  *
- * Une publication ou un retrait touchent plus que la page
+ * Une publication, un retrait ou une remise en ligne touchent plus que la page
  * du produit : l'accueil et chaque page catégorie qui le liste (`revalidateProductStorefront`).
  */
 async function revalidateTarget(targetType: RevisionTarget, targetId: string, kind: RevisionKind): Promise<void> {
@@ -27,7 +27,7 @@ async function revalidateTarget(targetType: RevisionTarget, targetId: string, ki
     return;
   }
   // Ces natures changent la visibilité de la fiche : accueil et catégories aussi.
-  if (kind === "publish" || kind === "withdraw") {
+  if (kind === "publish" || kind === "withdraw" || kind === "reactivate") {
     await revalidateProductStorefront(targetId);
     return;
   }

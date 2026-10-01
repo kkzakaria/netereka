@@ -28,6 +28,9 @@ import { applyRevisionAction, rejectRevisionAction } from "@/actions/admin/revis
  * `applyRevision`) — les deux peuvent différer d'une unité si une révision
  * a été déposée ou résolue entre l'affichage de la page et le clic.
  *
+ * Une remise en ligne (§ 2.6 bis) n'a PAS de saisie : elle se voit, et un retrait la
+ * corrige. Seul son libellé (`applyLabel`) la distingue d'un « Appliquer » anonyme.
+ *
  * `withdrawal` (§ 2.6) : pour un retrait, le bouton ne s'active qu'une fois le
  * nom saisi. Ce champ est la moitié VISIBLE de la garantie : la saisie est
  * aussi envoyée à l'action, et `applyRevision` la vérifie elle-même.
@@ -36,10 +39,13 @@ export function RevisionActions({
   revisionId,
   otherPendingCount = 0,
   withdrawal,
+  applyLabel,
 }: {
   revisionId: string;
   otherPendingCount?: number;
   withdrawal?: { targetName: string };
+  /** Libellé du bouton d'application quand « Appliquer » est trop vague (remise en ligne, § 2.6 bis). */
+  applyLabel?: string;
 }) {
   const [typed, setTyped] = useState("");
   const confirmed = !withdrawal || isWithdrawalConfirmed(typed, withdrawal.targetName);
@@ -165,7 +171,7 @@ export function RevisionActions({
             disabled={isPending || !confirmed}
             onClick={handleApply}
           >
-            {withdrawal ? "Retirer du public" : "Appliquer"}
+            {withdrawal ? "Retirer du public" : (applyLabel ?? "Appliquer")}
           </Button>
         </div>
       </div>

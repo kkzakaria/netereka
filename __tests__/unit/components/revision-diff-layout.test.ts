@@ -32,6 +32,13 @@ describe("revisionLayout", () => {
     expect(revisionLayout("withdraw")).toBe("withdrawal");
   });
 
+  // § 2.6 bis : une remise en ligne est une apparition. Pas de diff (rien à comparer : la
+  // fiche existe déjà, seule sa visibilité change) et pas l'écran d'un retrait (qui demande une saisie).
+  it("une révision reactivate a son propre écran : la fiche entière avec ses constats, ni diff ni retrait", () => {
+    expect(revisionLayout("reactivate")).toBe("reactivation");
+    expect(revisionLayout("reactivate")).not.toBe(revisionLayout("withdraw"));
+  });
+
   it("une révision update se compare côte à côte à l'état actuel", () => {
     expect(revisionLayout("update")).toBe("side-by-side");
   });

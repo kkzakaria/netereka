@@ -11,6 +11,7 @@ import { getBannerById } from "@/lib/db/admin/banners";
 import { RevisionDiff } from "@/components/admin/revision-diff";
 import { RevisionActions } from "@/components/admin/revision-actions";
 import { getWithdrawImpact } from "@/lib/db/withdraw-impact";
+import { getReactivationReadiness } from "@/lib/db/reactivation-readiness";
 import { withdrawalReading } from "@/lib/revisions/withdraw-reading";
 import { formatDateTime } from "@/lib/utils/format";
 
@@ -72,6 +73,13 @@ export default async function RevisionDetailPage({ params }: Props) {
   const withdrawal =
     revision.kind === "withdraw" ? { targetName: impact ? withdrawalReading(impact).confirmName : "" } : undefined;
 
+  // § 2.6 bis : les constats d'une remise en ligne sont mesurés de la même façon, à chaque
+  // affichage. Un produit seulement : `assertValidPayload` refuse `reactivate` sur une bannière.
+  const readiness =
+    revision.kind === "reactivate" && revision.target_type === "product"
+      ? await getReactivationReadiness(revision.target_id)
+      : null;
+
   return (
     <div>
       <AdminPageHeader>
@@ -107,9 +115,15 @@ export default async function RevisionDetailPage({ params }: Props) {
         current={current}
         payload={revision.payload}
         impact={impact}
+        readiness={readiness}
       />
 
-      <RevisionActions revisionId={revision.id} otherPendingCount={otherPendingCount} withdrawal={withdrawal} />
+      <RevisionActions
+        revisionId={revision.id}
+        otherPendingCount={otherPendingCount}
+        withdrawal={withdrawal}
+        applyLabel={revision.kind === "reactivate" ? "Remettre en ligne" : undefined}
+      />
     </div>
   );
 }

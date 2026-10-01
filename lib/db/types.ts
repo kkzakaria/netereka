@@ -361,6 +361,7 @@ export type AuditAction =
   | "revision.created.remove_image"
   | "revision.created.set_variants"
   | "revision.created.withdraw"
+  | "revision.created.reactivate"
   | "revision.applied"
   | "revision.rejected"
   | "revision.create_superseded"
