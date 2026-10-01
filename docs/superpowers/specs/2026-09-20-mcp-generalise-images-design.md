@@ -202,7 +202,7 @@ La réponse d'un outil qui dépose une révision **dit qu'il a déposé une rév
 
 ### 4.1 Recherche — `search_product_images`
 
-`lib/media/image-search.ts` existe, testé, sans appelant : le lot A l'a conservé pour ce moment. Il lit `BRAVE_API_KEY` et renvoie `{ ok: false, reason: "no_api_key" }` en cas d'absence — un échec typé, que l'outil doit propager tel quel plutôt que de le replier sur « aucune image trouvée ».
+`lib/media/image-search.ts` existe, testé, sans appelant : le lot A l'a conservé pour ce moment. Il lit `BRAVE_SEARCH_API_KEY` — le nom du secret réellement posé en production ; cette ligne a longtemps écrit `BRAVE_API_KEY`, repris du spec du lot A, et personne ne l'avait confronté au Worker — et renvoie `{ ok: false, reason: "no_api_key" }` en cas d'absence — un échec typé, que l'outil doit propager tel quel plutôt que de le replier sur « aucune image trouvée ».
 
 La recherche sert à **montrer au modèle à quoi ressemble réellement le produit** avant qu'il compose. Elle ne fournit pas les images finales : rien de ce qu'elle renvoie n'est téléchargé ni publié sans passer par § 4.2 ou par un ajout explicite via `add_product_images`.
 
