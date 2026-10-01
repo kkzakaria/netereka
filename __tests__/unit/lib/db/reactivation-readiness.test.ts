@@ -151,6 +151,13 @@ describe("isDescriptionEmpty", () => {
     // et le texte visible reste vu, lui, après autant de tours qu'il faut
     expect(isDescriptionEmpty("<sty<style>x</style>le>a{b:c}</style>Vrai texte")).toBe(false);
   });
+
+  // Une balise jamais fermée : le navigateur l'abandonne sans rien afficher.
+  it("un chevron orphelin ne compte pas pour du contenu", () => {
+    expect(isDescriptionEmpty("<")).toBe(true);
+    expect(isDescriptionEmpty("<p><")).toBe(true);
+    expect(isDescriptionEmpty("Prix < 100")).toBe(false); // le texte autour, lui, compte
+  });
 });
 
 describe("reactivationReading : ce qui ne se remet pas en ligne", () => {

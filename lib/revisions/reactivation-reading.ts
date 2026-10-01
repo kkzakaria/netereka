@@ -60,6 +60,11 @@ export function isDescriptionEmpty(description: string | null | undefined): bool
   } while (stripped !== previous);
   const text = stripped
     .replace(/<[^>]*>/g, "")
+    // Ce qui reste de chevron après ce dépouillement est le fragment d'une balise
+    // jamais fermée (`<script` en fin de chaîne), que le navigateur abandonne sans
+    // rien afficher : ça ne doit donc pas compter pour du contenu. Accessoirement,
+    // c'est ce qui empêche la sortie de reporter un `<script` intact.
+    .replace(/[<>]/g, "")
     .replace(/&nbsp;|&#160;|&#xa0;/gi, " ")
     .replace(/[\s ​]+/g, "");
   return text.length === 0;
