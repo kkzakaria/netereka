@@ -10,14 +10,18 @@ on:
     #   - "src/**/*.js"
     #   - "src/**/*.jsx"
 
+# Une seule revue en vol par PR : une poussée de correctif annule celle en cours
+# plutôt que d'en empiler une seconde sur du code déjà remplacé.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
+    # Les PR de release-please ne portent qu'un CHANGELOG et un numéro de
+    # version : rien à relire. (Pour filtrer par auteur humain, c'est ici :
+    # github.event.pull_request.author_association.)
+    if: github.event.pull_request.user.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,7 +37,8 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@v1
+        # Épinglé au commit, voir claude.yml.
+        uses: anthropics/claude-code-action@97c53473391bff1901034d4b454b5bac7ab7a029 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'

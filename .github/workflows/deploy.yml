@@ -12,6 +12,14 @@ on:
       - "**.md"
       - ".release-please-manifest.json"
 
+  # Filet pour un événement `push` que GitHub ne délivre pas. Vu le 2026-10-01 :
+  # la fusion de #349 a bien posé fbae77f sur `main` (horodatage côté GitHub),
+  # et AUCUNE exécution n'a démarré — ni cette CI, ni Deploy, ni Release Please,
+  # Actions étant activé, aucun marqueur `[skip ci]` dans le message, aucune
+  # exécution en file. `main` est alors fusionné mais pas déployé, sans aucun
+  # moyen de relancer : il fallait écrire sur `main` pour s'en sortir.
+  workflow_dispatch:
+
 concurrency:
   group: deploy
   cancel-in-progress: true
@@ -56,7 +64,10 @@ jobs:
     # `paths-ignore`, car une montée de dépendance touche exactement les deux
     # mêmes fichiers de paquet et doit, elle, se déployer. Le sujet du commit est
     # donc le seul discriminant. La CI tourne quand même, elle valide le commit.
-    if: "${{ !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
+    # `head_commit` n'existe pas sur un déclenchement manuel : la comparaison
+    # porterait sur une valeur vide. On l'écarte explicitement, plutôt que de
+    # dépendre de la façon dont l'expression traite l'absence.
+    if: "${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
