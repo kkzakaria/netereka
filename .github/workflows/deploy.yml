@@ -67,7 +67,18 @@ jobs:
     # `head_commit` n'existe pas sur un déclenchement manuel : la comparaison
     # porterait sur une valeur vide. On l'écarte explicitement, plutôt que de
     # dépendre de la façon dont l'expression traite l'absence.
-    if: "${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
+    #
+    # `github.ref == 'refs/heads/main'` : un `workflow_dispatch` se lance sur
+    # N'IMPORTE QUELLE référence. Sans cette borne, quiconque a le droit d'écrire
+    # ici pouvait construire une branche quelconque et la pousser en production,
+    # alors que l'ancien déclencheur `push` ne connaissait que `main`. Ajouter le
+    # filet de relance ne doit pas élargir ce qui peut être déployé — seulement
+    # ce qui peut le relancer. La CI, elle, tourne sur n'importe quelle référence :
+    # c'est le propre d'une vérification.
+    if: >-
+      ${{ github.ref == 'refs/heads/main' &&
+          (github.event_name == 'workflow_dispatch' ||
+           !startsWith(github.event.head_commit.message, 'chore(main): release')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
