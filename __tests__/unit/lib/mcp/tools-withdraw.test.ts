@@ -12,6 +12,7 @@ import { productTools } from "@/lib/mcp/tools/products";
 import { bannerTools } from "@/lib/mcp/tools/banners";
 import { z } from "zod";
 import { updateBannerShape } from "@/lib/validations/mcp-banner";
+import { createRevision } from "@/lib/db/revisions";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const product = (n: string) => productTools.find((t) => t.name === n)!;
@@ -118,6 +119,24 @@ describe("update_banner porte une raison", () => {
     expect(JSON.parse(rev.payload)).not.toHaveProperty("reason");
     const without = parse(await product("update_product").handler(ctx, { id: "live", pricing: { base_price: 30 } } as never));
     expect(db.prepare("SELECT summary FROM content_revisions WHERE id = ?").get(without.revision.id)).toEqual({ summary: null });
+  });
+
+  // Le `not.toHaveProperty` ci-dessus ne peut PAS échouer : `productColumnsForRevision`
+  // est un bâtisseur par liste blanche, qui laisse tomber `reason` même si la
+  // déstructuration de l'outil cessait de l'écarter. La garantie tient à deux couches ;
+  // voici la seconde, celle qui peut rougir — si `reason` entrait dans les colonnes
+  // inscriptibles d'un produit, cette révision serait acceptée.
+  it("et si la raison atteignait le payload, la révision serait refusée (liste blanche)", async () => {
+    await expect(
+      createRevision({
+        target: "product",
+        targetId: "live",
+        kind: "update",
+        payload: { base_price: 20, reason: "Alignement concurrent" },
+        origin: "mcp",
+        actor: { id: "mcp-1", name: "Assistant" },
+      }),
+    ).rejects.toThrow(/non autoris/i);
   });
 
   it("le schéma d'update_product l'accepte optionnelle, et le brouillon (écriture directe) ne la reçoit pas", () => {

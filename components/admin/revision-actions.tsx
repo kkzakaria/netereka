@@ -77,9 +77,13 @@ export function RevisionActions({
   }
 
   /**
-   * Copie le nom à saisir : 326 noms de produits publiés en production portent un tiret
-   * demi-cadratin (263) ou cadratin (73), intapables sur un clavier AZERTY sans
-   * effort, et certains font 136 caractères. La saisie reste exigée (le champ ne se remplit
+   * Copie le nom à saisir. Mesuré en production sur la population que ce bouton
+   * concerne — les fiches retirables, `is_active = 1 AND is_draft = 0`, soit 989 :
+   * 324 portent un tiret demi-cadratin (255) ou cadratin (69), aucune les deux,
+   * intapables sur un clavier AZERTY sans effort, et certaines font 136 caractères.
+   * Aucune n'a d'apostrophe typographique. Les titres de bannières, que ce bouton
+   * copie aussi, n'en portent aucun (4 lignes, 33 caractères au plus) : c'est le
+   * catalogue qui justifie le bouton. La saisie reste exigée (le champ ne se remplit
    * pas seul) : on aide à l'écrire, on ne la supprime pas. `clipboard` manque hors
    * contexte sécurisé : le nom reste alors sélectionnable d'un clic (`select-all`).
    */

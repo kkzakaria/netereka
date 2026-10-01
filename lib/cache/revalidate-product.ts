@@ -12,9 +12,21 @@ import { categories, products } from "@/lib/db/schema";
  * Écrit une seule fois pour les chemins qui changent la visibilité d'un produit :
  * l'application d'une révision (publish, withdraw, reactivate), la bascule
  * directe de la liste des produits, et le formulaire d'édition (`updateProduct`,
- * qui écrit `is_active` depuis le formulaire). Un chemin qui change `is_active`
- * sans appeler ceci laisse la vitrine sur l'ancienne page jusqu'à l'expiration
- * de l'ISR : à vérifier pour tout nouveau chemin d'écriture.
+ * qui écrit `is_active` depuis le formulaire).
+ *
+ * CE QUE CECI NE GARANTIT PAS, aujourd'hui. Mesuré sur un build de cette branche :
+ * `dynamicRoutes` est vide dans `.next/prerender-manifest.json` et toute la vitrine
+ * est rendue dynamiquement (`ƒ`), y compris `/p/[slug]` malgré son
+ * `export const revalidate = 3600` — parce que le layout vitrine fait
+ * `await headers()` pour le hero (`app/(storefront)/layout.tsx:18`), ce qui écarte
+ * du rendu statique tout son sous-arbre. Il n'y a donc RIEN en cache à invalider :
+ * ces appels sont sans effet observable, et aucun client n'a jamais pu voir de page
+ * périmée. On les garde par symétrie et pour le jour où la vitrine redeviendrait
+ * cacheable ; ce n'est pas une garantie actuelle, et beaucoup d'autres écrivains de
+ * `is_active`/`stock_quantity` ne les appellent pas (suppression d'une fiche,
+ * variantes, décrément de stock d'une commande, et le Worker WhatsApp qui ne peut
+ * structurellement pas appeler `next/cache`). Ne recâblez rien sur la foi de cet
+ * en-tête : vérifiez d'abord que la vitrine est redevenue cacheable.
  *
  * Renvoie une liste vide si le produit n'existe pas. Dans l'ordre : page,
  * accueil, catégorie de la fiche, puis ses ancêtres.
