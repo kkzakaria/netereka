@@ -10,7 +10,9 @@ vi.mock("@/lib/storage/images", () => ({ deleteFromR2: vi.fn(), uploadToR2: vi.f
 
 import { productTools } from "@/lib/mcp/tools/products";
 import { bannerTools } from "@/lib/mcp/tools/banners";
+import { z } from "zod";
 import { updateBannerShape } from "@/lib/validations/mcp-banner";
+import { createRevision } from "@/lib/db/revisions";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const product = (n: string) => productTools.find((t) => t.name === n)!;
@@ -52,6 +54,36 @@ describe("withdraw_product", () => {
   });
 });
 
+describe("reactivate_product", () => {
+  beforeEach(() => {
+    db.exec(`INSERT INTO products (id, category_id, name, slug, base_price, is_active, is_draft) VALUES ('off', 'c1', 'Retirée', 'retiree', 10, 0, 0)`);
+  });
+
+  it("dépose une révision reactivate pending, avec la raison en résumé, sans toucher la fiche", async () => {
+    const r = await product("reactivate_product").handler(ctx, { id: "off", reason: "Réassort reçu ce matin" });
+    expect(r.isError).toBeUndefined();
+    const out = parse(r);
+    expect(out.applied).toBe("revision");
+    const rev = db.prepare("SELECT kind, status, payload, summary, origin FROM content_revisions WHERE id = ?").get(out.revision.id);
+    expect(rev).toEqual({ kind: "reactivate", status: "pending", payload: "{}", summary: "Réassort reçu ce matin", origin: "mcp" });
+    expect(db.prepare("SELECT is_active FROM products WHERE id = 'off'").get()).toEqual({ is_active: 0 });
+  });
+
+  it("refuse une fiche en ligne (conflict), un brouillon (validation_error) et un id inconnu (not_found)", async () => {
+    expect(parse(await product("reactivate_product").handler(ctx, { id: "live", reason: "x" })).code).toBe("conflict");
+    expect(parse(await product("reactivate_product").handler(ctx, { id: "draft", reason: "x" })).code).toBe("validation_error");
+    expect(parse(await product("reactivate_product").handler(ctx, { id: "nope", reason: "x" })).code).toBe("not_found");
+    expect(db.prepare("SELECT COUNT(*) n FROM content_revisions").get()).toEqual({ n: 0 });
+  });
+
+  it("exige une raison, comme withdraw_product", () => {
+    const schema = z.object(product("reactivate_product").inputSchema);
+    expect(schema.safeParse({ id: "off" }).success).toBe(false);
+    expect(schema.safeParse({ id: "off", reason: "  " }).success).toBe(false);
+    expect(schema.safeParse({ id: "off", reason: "Réassort" }).success).toBe(true);
+  });
+});
+
 describe("withdraw_banner", () => {
   it("dépose sans désactiver la bannière", async () => {
     const r = await banner("withdraw_banner").handler(ctx, { id: 1, reason: "Fin de la promo" });
@@ -62,6 +94,56 @@ describe("withdraw_banner", () => {
 
   it("refuse une bannière déjà inactive", async () => {
     expect(parse(await banner("withdraw_banner").handler(ctx, { id: 2, reason: "x" })).code).toBe("conflict");
+  });
+});
+
+describe("update_banner porte une raison", () => {
+  it("la raison devient le summary de la révision, et n'entre jamais dans le payload", async () => {
+    const r = await banner("update_banner").handler(ctx, { id: 1, title: "Nouveau", reason: "Le titre annonçait la mauvaise promo" });
+    const rev = db.prepare("SELECT summary, payload FROM content_revisions WHERE id = ?").get(parse(r).revision.id) as { summary: string; payload: string };
+    expect(rev.summary).toBe("Le titre annonçait la mauvaise promo");
+    expect(JSON.parse(rev.payload)).toEqual({ title: "Nouveau" });
+  });
+
+  it("elle est OPTIONNELLE (contrat des outils en service), mais jamais vide si elle est donnée", () => {
+    const schema = z.object(updateBannerShape);
+    expect(schema.safeParse({ id: 1, title: "X" }).success).toBe(true);
+    expect(schema.safeParse({ id: 1, title: "X", reason: "   " }).success).toBe(false);
+    expect(schema.safeParse({ id: 1, title: "X", reason: "Parce que" }).success).toBe(true);
+  });
+
+  it("update_product dépose la raison en summary sur une fiche publiée, sans la mêler au payload ; absente, summary null", async () => {
+    const withReason = parse(await product("update_product").handler(ctx, { id: "live", pricing: { base_price: 20 }, reason: "Alignement concurrent" } as never));
+    const rev = db.prepare("SELECT summary, payload FROM content_revisions WHERE id = ?").get(withReason.revision.id) as { summary: string; payload: string };
+    expect(rev.summary).toBe("Alignement concurrent");
+    expect(JSON.parse(rev.payload)).not.toHaveProperty("reason");
+    const without = parse(await product("update_product").handler(ctx, { id: "live", pricing: { base_price: 30 } } as never));
+    expect(db.prepare("SELECT summary FROM content_revisions WHERE id = ?").get(without.revision.id)).toEqual({ summary: null });
+  });
+
+  // Le `not.toHaveProperty` ci-dessus ne peut PAS échouer : `productColumnsForRevision`
+  // est un bâtisseur par liste blanche, qui laisse tomber `reason` même si la
+  // déstructuration de l'outil cessait de l'écarter. La garantie tient à deux couches ;
+  // voici la seconde, celle qui peut rougir — si `reason` entrait dans les colonnes
+  // inscriptibles d'un produit, cette révision serait acceptée.
+  it("et si la raison atteignait le payload, la révision serait refusée (liste blanche)", async () => {
+    await expect(
+      createRevision({
+        target: "product",
+        targetId: "live",
+        kind: "update",
+        payload: { base_price: 20, reason: "Alignement concurrent" },
+        origin: "mcp",
+        actor: { id: "mcp-1", name: "Assistant" },
+      }),
+    ).rejects.toThrow(/non autoris/i);
+  });
+
+  it("le schéma d'update_product l'accepte optionnelle, et le brouillon (écriture directe) ne la reçoit pas", () => {
+    const schema = z.object(product("update_product").inputSchema);
+    expect(schema.safeParse({ id: "live", pricing: { base_price: 20 } }).success).toBe(true);
+    expect(schema.safeParse({ id: "live", pricing: { base_price: 20 }, reason: "x" }).success).toBe(true);
+    expect(schema.safeParse({ id: "live", pricing: { base_price: 20 }, reason: "" }).success).toBe(false);
   });
 });
 

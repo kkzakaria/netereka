@@ -153,6 +153,12 @@ Ces constats **n'empêchent pas** d'appliquer : ce sont des avertissements, pas 
 
 **Ce que cela débloque.** Sept fiches sont `is_draft = 0, is_active = 0` en production, sans trace d'audit ni commande, deux d'entre elles sans image (voir le constat d'exploitation du 2026-09-30). Elles n'étaient pas réactivables par une voie relue : `publish_product` refuse une fiche déjà publiée, et aucun payload n'écrit `is_active`. `reactivate` leur donne ce chemin — et son écran montre justement ce qui manquait à celles qui n'ont pas d'image.
 
+*Précisions d'implémentation (2026-10-01) :*
+
+- **Produits seulement.** `reactivate` ne s'applique qu'à une fiche publiée et retirée (`is_draft = 0`, `is_active = 0`), contrôlé au dépôt **et** à l'application. Une bannière se remet en ligne depuis sa liste d'administration. C'est du périmètre différé, pas une impossibilité : `getBannerWithdrawImpact` lit déjà la fenêtre d'affichage (`displayedBannerCondition`, `displayed_after`, `dateWithdrawalWarning`), un écran de remise en ligne de bannière pourrait s'en servir. Le spec n'a décidé que la fiche.
+- **Le stock a deux sources, et l'avertissement lit celle du client.** La page lit `products.stock_quantity`, mais dès qu'une fiche a des variantes actives le paiement ne regarde que celui de la variante (`resolveOrderLine`). En production, `products.stock_quantity` diverge de la somme des variantes sur 42 fiches. « Stock nul » se calcule donc sur les variantes actives quand il y en a (39 fiches publiées sont dans ce cas, contre 7 si l'on ne lisait que la colonne de la fiche), et un écart entre les deux se signale à part.
+- Les constats sont mesurés à l'affichage (`lib/db/reactivation-readiness.ts`) et rédigés par une fonction pure (`lib/revisions/reactivation-reading.ts`) ; l'image « principale » (`is_primary`) se signale distinctement de l'absence d'image, parce que les cartes ne lisent qu'elle.
+
 ### 2.7 Créer : le type `create`
 
 **Rejeter une création supprime la ligne.** `create_banner` insère la ligne (inactive, vide) avant de déposer la révision, et seule l'application l'active. « Rejeter la création » doit donc vouloir dire que la bannière n'existe plus : `rejectRevision` supprime la ligne si elle est encore inactive (jamais une bannière devenue visible) et passe `superseded` les révisions sœurs en attente sur elle. Meilleur effort, journalisé : le rejet est déjà acté en base quand la suppression s'exécute.

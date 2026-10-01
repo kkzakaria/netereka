@@ -28,6 +28,9 @@ import { applyRevisionAction, rejectRevisionAction } from "@/actions/admin/revis
  * `applyRevision`) — les deux peuvent différer d'une unité si une révision
  * a été déposée ou résolue entre l'affichage de la page et le clic.
  *
+ * Une remise en ligne (§ 2.6 bis) n'a PAS de saisie : elle se voit, et un retrait la
+ * corrige. Seul son libellé (`applyLabel`) la distingue d'un « Appliquer » anonyme.
+ *
  * `withdrawal` (§ 2.6) : pour un retrait, le bouton ne s'active qu'une fois le
  * nom saisi. Ce champ est la moitié VISIBLE de la garantie : la saisie est
  * aussi envoyée à l'action, et `applyRevision` la vérifie elle-même.
@@ -36,10 +39,13 @@ export function RevisionActions({
   revisionId,
   otherPendingCount = 0,
   withdrawal,
+  applyLabel,
 }: {
   revisionId: string;
   otherPendingCount?: number;
   withdrawal?: { targetName: string };
+  /** Libellé du bouton d'application quand « Appliquer » est trop vague (remise en ligne, § 2.6 bis). */
+  applyLabel?: string;
 }) {
   const [typed, setTyped] = useState("");
   const confirmed = !withdrawal || isWithdrawalConfirmed(typed, withdrawal.targetName);
@@ -68,6 +74,27 @@ export function RevisionActions({
         toast.error("Erreur de connexion au serveur. Veuillez réessayer.");
       }
     });
+  }
+
+  /**
+   * Copie le nom à saisir. Mesuré en production sur la population que ce bouton
+   * concerne — les fiches retirables, `is_active = 1 AND is_draft = 0`, soit 989 :
+   * 324 portent un tiret demi-cadratin (255) ou cadratin (69), aucune les deux,
+   * intapables sur un clavier AZERTY sans effort, et certaines font 136 caractères.
+   * Aucune n'a d'apostrophe typographique. Les titres de bannières, que ce bouton
+   * copie aussi, n'en portent aucun (4 lignes, 33 caractères au plus) : c'est le
+   * catalogue qui justifie le bouton. La saisie reste exigée (le champ ne se remplit
+   * pas seul) : on aide à l'écrire, on ne la supprime pas. `clipboard` manque hors
+   * contexte sécurisé : le nom reste alors sélectionnable d'un clic (`select-all`).
+   */
+  async function handleCopyName() {
+    if (!withdrawal) return;
+    try {
+      await navigator.clipboard.writeText(withdrawal.targetName);
+      toast.success("Nom copié : collez-le dans le champ.");
+    } catch {
+      toast.error("Copie impossible : sélectionnez le nom affiché et copiez-le à la main.");
+    }
   }
 
   function handleReject() {
@@ -100,16 +127,27 @@ export function RevisionActions({
       {withdrawal && (
         <div className="space-y-2">
           <label htmlFor="withdrawal-confirmation" className="text-sm font-medium">
-            Pour confirmer le retrait, saisissez exactement : <span className="font-mono">{withdrawal.targetName}</span>
+            Pour confirmer le retrait, saisissez exactement : <span className="select-all break-words font-mono">{withdrawal.targetName}</span>
           </label>
-          <Input
-            id="withdrawal-confirmation"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            autoComplete="off"
-            className="min-h-11"
-            disabled={isPending}
-          />
+          <div className="flex gap-2">
+            <Input
+              id="withdrawal-confirmation"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              className="min-h-11"
+              disabled={isPending}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 shrink-0"
+              disabled={isPending || !withdrawal.targetName}
+              onClick={handleCopyName}
+            >
+              Copier le nom
+            </Button>
+          </div>
         </div>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -137,7 +175,7 @@ export function RevisionActions({
             disabled={isPending || !confirmed}
             onClick={handleApply}
           >
-            {withdrawal ? "Retirer du public" : "Appliquer"}
+            {withdrawal ? "Retirer du public" : (applyLabel ?? "Appliquer")}
           </Button>
         </div>
       </div>

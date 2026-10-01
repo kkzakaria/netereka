@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth/guards";
+import { revalidateProductStorefront } from "@/lib/cache/revalidate-product";
 import { execute, query, queryFirst } from "@/lib/db";
 import { getDrizzle } from "@/lib/db/drizzle";
 import { products } from "@/lib/db/schema";
@@ -172,9 +173,9 @@ export async function updateProduct(
   revalidatePath("/products");
   revalidatePath(`/products/${id}/edit`);
   revalidatePath("/dashboard");
-  if (existing.is_draft === 1) {
-    revalidatePath("/p/" + finalSlug);
-  }
+  // Le formulaire écrit `is_active` : désactiver une fiche vivante doit aussi sortir sa page,
+  // l'accueil et les catégories de la vitrine, pas seulement un brouillon qu'on publie.
+  await revalidateProductStorefront(id);
   return { success: true, id };
 }
 
@@ -222,6 +223,9 @@ export async function toggleProductActive(id: string): Promise<ActionResult> {
     [id]
   );
   revalidatePath("/products");
+  // La vitrine aussi : sa page, l'accueil et les catégories qui la listent. Sans cela, un retrait
+  // (ou la remise en ligne que l'écran du retrait promet « en un clic ») attendait l'expiration de l'ISR.
+  await revalidateProductStorefront(id);
   return { success: true };
 }
 

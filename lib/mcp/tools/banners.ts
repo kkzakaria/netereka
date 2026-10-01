@@ -80,13 +80,14 @@ export const bannerTools: ToolDefinition[] = [
       "revision.id et revision.status). Champs : title, subtitle, badge_text, badge_color (mint|red|orange|blue), " +
       "link_url (chemin relatif commençant par /), cta_text, price (XOF entier), bg_gradient_from/to (#rrggbb), " +
       "content_html (HTML libre assaini côté serveur, rendu dans le hero), display_order, " +
-      "starts_at/ends_at. Champs absents ignorés, null efface (pour ceux qui l'admettent). Ne permet pas de " +
+      "starts_at/ends_at. Champs absents ignorés, null efface (pour ceux qui l'admettent). reason (optionnel) : pourquoi " +
+      "cette modification, lu par l'administrateur sous le titre de l'écran de validation. Ne permet pas de " +
       "retirer une bannière : utilisez withdraw_banner (une ends_at passée la retire aussi, et l'écran de " +
       "validation le signale).",
     inputSchema: updateBannerShape,
     handler: async (ctx, input) => {
       try {
-        const { id, ...patch } = input;
+        const { id, reason, ...patch } = input;
 
         // Le patch est PARTIEL : `ends_at` seul se compare à la `starts_at`
         // déjà stockée. Valider le patch tel quel ne peut jamais refuser
@@ -119,6 +120,7 @@ export const bannerTools: ToolDefinition[] = [
           payload,
           origin: "mcp",
           actor: { id: ctx.user.id, name: ctx.user.name },
+          summary: reason,
         });
         return ok(revisionAnswer(
           revisionId,

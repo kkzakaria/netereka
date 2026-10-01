@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   rejectRevision: vi.fn(),
   revalidatePath: vi.fn(),
   refreshHeroPreload: vi.fn(),
+  revalidateProductStorefront: vi.fn(),
 }));
+vi.mock("@/lib/cache/revalidate-product", () => ({ revalidateProductStorefront: mocks.revalidateProductStorefront }));
 vi.mock("@/lib/cloudflare/hero-preload", () => ({ refreshHeroPreload: mocks.refreshHeroPreload }));
 
 vi.mock("@/lib/auth/guards", () => ({ requireAdmin: mocks.requireAdmin }));
@@ -80,6 +82,20 @@ describe("applyRevisionAction", () => {
     mocks.getRevision.mockResolvedValue({ id: "rev-1", target_type: "product", target_id: "p1", kind: "publish" });
     await applyRevisionAction("rev-1");
     expect(mocks.refreshHeroPreload).not.toHaveBeenCalled();
+  });
+
+  it("revalide toute la vitrine du produit pour publish, withdraw et reactivate, sa page seule pour une modification", async () => {
+    mocks.applyRevision.mockResolvedValue({ applied: true, superseded: 0 });
+    for (const kind of ["publish", "withdraw", "reactivate"]) {
+      mocks.revalidateProductStorefront.mockClear();
+      mocks.getRevision.mockResolvedValue({ id: "rev-1", target_type: "product", target_id: "p1", kind });
+      await applyRevisionAction("rev-1", "x");
+      expect(mocks.revalidateProductStorefront, kind).toHaveBeenCalledWith("p1");
+    }
+    mocks.revalidateProductStorefront.mockClear();
+    mocks.getRevision.mockResolvedValue({ id: "rev-1", target_type: "product", target_id: "p1", kind: "update" });
+    await applyRevisionAction("rev-1");
+    expect(mocks.revalidateProductStorefront).not.toHaveBeenCalled();
   });
 
   it("transmet la saisie de confirmation à applyRevision (c'est lui qui la vérifie)", async () => {

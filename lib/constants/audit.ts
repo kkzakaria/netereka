@@ -16,6 +16,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "revision.created.remove_image": "Révision déposée (suppression d'image)",
   "revision.created.set_variants": "Révision déposée (variantes)",
   "revision.created.withdraw": "Révision déposée (retrait)",
+  "revision.created.reactivate": "Révision déposée (remise en ligne)",
   "revision.applied": "Révision appliquée",
   "revision.rejected": "Révision rejetée",
   "revision.apply_conflict": "Application de révision annulée (conflit)",

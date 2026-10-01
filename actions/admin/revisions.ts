@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
-import { categories, products } from "@/lib/db/schema";
+import { products } from "@/lib/db/schema";
+import { revalidateProductStorefront } from "@/lib/cache/revalidate-product";
 import { refreshHeroPreload } from "@/lib/cloudflare/hero-preload";
 import { applyRevision, rejectRevision, getRevision, RevisionError, type RevisionKind, type RevisionTarget } from "@/lib/db/revisions";
 import type { ActionResult } from "@/lib/types/actions";
@@ -16,8 +17,8 @@ import type { ActionResult } from "@/lib/types/actions";
  * actions d'administration des bannières : sans cela, une bannière retirée ou
  * remplacée laisse le middleware précharger l'image de l'ancienne.
  *
- * Un retrait de produit touche plus que sa page : l'accueil (vedette, hero de
- * repli) et chaque page catégorie qui le listait (la sienne et ses parents).
+ * Une publication, un retrait ou une remise en ligne touchent plus que la page
+ * du produit : l'accueil et chaque page catégorie qui le liste (`revalidateProductStorefront`).
  */
 async function revalidateTarget(targetType: RevisionTarget, targetId: string, kind: RevisionKind): Promise<void> {
   if (targetType === "banner") {
@@ -25,31 +26,15 @@ async function revalidateTarget(targetType: RevisionTarget, targetId: string, ki
     await refreshHeroPreload();
     return;
   }
+  // Ces natures changent la visibilité de la fiche : accueil et catégories aussi.
+  if (kind === "publish" || kind === "withdraw" || kind === "reactivate") {
+    await revalidateProductStorefront(targetId);
+    return;
+  }
   try {
     const db = await getDrizzle();
-    const row = await db
-      .select({ slug: products.slug, category_id: products.category_id })
-      .from(products)
-      .where(eq(products.id, targetId))
-      .limit(1)
-      .get();
+    const row = await db.select({ slug: products.slug }).from(products).where(eq(products.id, targetId)).limit(1).get();
     if (row?.slug) revalidatePath(`/p/${row.slug}`);
-    if (kind === "withdraw") {
-      revalidatePath("/");
-      let cursor: string | null = row?.category_id ?? null;
-      // Deux niveaux au plus (MAX_CATEGORY_DEPTH) : la borne évite toute boucle.
-      for (let depth = 0; cursor && depth < 4; depth++) {
-        const cat: { slug: string; parent_id: string | null } | undefined = await db
-          .select({ slug: categories.slug, parent_id: categories.parent_id })
-          .from(categories)
-          .where(eq(categories.id, cursor))
-          .limit(1)
-          .get();
-        if (!cat) break;
-        revalidatePath(`/c/${cat.slug}`);
-        cursor = cat.parent_id;
-      }
-    }
   } catch (error) {
     console.error("[admin/revisions] revalidateTarget: lecture du slug échouée", { targetId }, error);
   }

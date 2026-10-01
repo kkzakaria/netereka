@@ -261,9 +261,117 @@ describe("rejeter une création de bannière", () => {
     expect(db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(sister.revisionId)).toEqual({ status: "superseded" });
   });
 
+  // La mise en `superseded` des sœurs se justifie par la disparition de leur
+  // cible. Quand la bannière survit, la justification tombe : périmer le retrait
+  // qu'un administrateur venait de faire déposer lui ôterait sa décision alors
+  // que rien n'a bougé.
+  it("ne périme pas les sœurs quand la bannière survit : même prédicat des deux côtés", async () => {
+    const { revisionId } = await deposeCreate();
+    db.exec("UPDATE banners SET is_active = 1 WHERE id = 9");
+    const sister = await createRevision({ target: "banner", targetId: "9", kind: "update", payload: { title: "Autre" }, origin: "mcp", actor: ACTOR });
+    await rejectRevision(revisionId, ADMIN);
+    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 9").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(sister.revisionId)).toEqual({ status: "pending" });
+  });
+
   it("rejeter une modification ne supprime jamais la bannière", async () => {
     const r = await createRevision({ target: "banner", targetId: "5", kind: "update", payload: { title: "Autre" }, origin: "mcp", actor: ACTOR });
     await rejectRevision(r.revisionId, ADMIN);
     expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 5").get()).toEqual({ n: 1 });
+  });
+});
+
+describe("une création de bannière en attente se résout avant toute autre application", () => {
+  const dep = (id: string, kind: "create" | "update" | "withdraw", payload: Record<string, unknown> = {}) =>
+    createRevision({ target: "banner", targetId: id, kind, payload, origin: "mcp", actor: ACTOR });
+  const rows = (id: number) => db.prepare("SELECT title, is_active FROM banners WHERE id = ?").get(id);
+  const status = (id: string) => (db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(id) as { status: string }).status;
+
+  it("une mise à jour est refusée : rien n'est écrit, rien n'est supprimé, tout reste en attente", async () => {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await dep("9", "create");
+    const update = await dep("9", "update", { title: "Retouchée" });
+    await expect(applyRevision(update.revisionId, ADMIN)).rejects.toMatchObject({ code: "conflict" });
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 0 });
+    expect(status(create.revisionId)).toBe("pending");
+    expect(status(update.revisionId)).toBe("pending");
+  });
+
+  it("un retrait confirmé est refusé : « rien n'est supprimé » reste vrai", async () => {
+    const create = await dep("2", "create"); // déposée sur une bannière déjà active
+    const withdraw = await dep("2", "withdraw");
+    await expect(applyRevision(withdraw.revisionId, ADMIN, { confirmation: "Seconde" })).rejects.toMatchObject({ code: "conflict" });
+    expect(rows(2)).toEqual({ title: "Seconde", is_active: 1 });
+    expect(status(create.revisionId)).toBe("pending");
+    expect(status(withdraw.revisionId)).toBe("pending");
+  });
+
+  it("la voie de sortie existe : rejeter la création supprime la ligne, la mise à jour devient alors périmée", async () => {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await dep("9", "create");
+    const update = await dep("9", "update", { title: "Retouchée" });
+    await rejectRevision(create.revisionId, ADMIN);
+    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 9").get()).toEqual({ n: 0 });
+    expect(status(update.revisionId)).toBe("superseded");
+  });
+
+  it("appliquer la création elle-même passe, puis la mise à jour (plus de création en attente)", async () => {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await dep("9", "create");
+    await applyRevision(create.revisionId, ADMIN);
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 1 });
+    const update = await dep("9", "update", { title: "Retouchée" });
+    await applyRevision(update.revisionId, ADMIN);
+    expect(rows(9)).toEqual({ title: "Retouchée", is_active: 1 });
+  });
+
+  // Le chemin de production, que les cas ci-dessus ne reproduisent pas :
+  // `create_banner` insère la ligne inactive, l'administrateur l'active lui-même
+  // depuis /banners, puis un retrait est déposé. Le message du refus promet que
+  // le rejet laisse CETTE révision applicable — voici la mesure de cette promesse.
+  it("activée à la main puis retirée : rejeter la création rend le retrait applicable", async () => {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await dep("9", "create");
+    db.exec("UPDATE banners SET is_active = 1 WHERE id = 9"); // toggleBannerActive
+    const withdraw = await dep("9", "withdraw");
+
+    await expect(applyRevision(withdraw.revisionId, ADMIN, { confirmation: "Neuve" })).rejects.toMatchObject({ code: "conflict" });
+
+    await rejectRevision(create.revisionId, ADMIN);
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 1 }); // la bannière active n'est pas supprimée
+    expect(status(withdraw.revisionId)).toBe("pending"); // et le retrait n'est pas périmé
+
+    await expect(applyRevision(withdraw.revisionId, ADMIN, { confirmation: "Neuve" })).resolves.toMatchObject({ applied: true });
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 0 });
+  });
+
+  it("une modification sans création en attente s'applique comme avant", async () => {
+    const plain = await dep("5", "update", { title: "Autre" });
+    await applyRevision(plain.revisionId, ADMIN);
+    expect(rows(5)).toEqual({ title: "Autre", is_active: 0 });
+  });
+});
+
+describe("le rang dans le carrousel est écrit une seule fois", () => {
+  /** Les requêtes émises, pour comparer leur ORDER BY : SQLite rend les ex æquo dans l'ordre du rowid,
+   *  donc un test sur les lignes ne verrait jamais un départage manquant. */
+  function orderByOf(statements: string[], from: string): string {
+    const sql = statements.find((s) => s.includes(from) && /order by/i.test(s));
+    expect(sql, `requête sur ${from} avec ORDER BY`).toBeDefined();
+    return sql!.slice(sql!.toLowerCase().lastIndexOf("order by")).replace(/\s+/g, " ").trim();
+  }
+
+  it("getActiveBanners et la position annoncée par l'écran du retrait partagent le même ORDER BY, départage inclus", async () => {
+    const seen: string[] = [];
+    const real = holder.binding as { prepare: (sql: string) => unknown };
+    holder.binding = { ...real, prepare: (sql: string) => { seen.push(sql); return real.prepare(sql); } };
+    const { getActiveBanners } = await import("@/lib/db/storefront/banners");
+    await getActiveBanners();
+    const carousel = orderByOf(seen, 'from "banners"');
+    seen.length = 0;
+    await getBannerWithdrawImpact(1);
+    const announced = orderByOf(seen, 'from "banners"');
+    expect(announced).toBe(carousel);
+    expect(carousel).toMatch(/"display_order".*"id"/);
   });
 });

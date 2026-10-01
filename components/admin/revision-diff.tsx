@@ -21,6 +21,8 @@ import {
 } from "@/lib/db/revisions";
 import type { Banner, ProductDetail, ProductImage, ProductVariant } from "@/lib/db/types";
 import type { WithdrawImpact } from "@/lib/db/withdraw-impact";
+import type { ReactivationReadiness } from "@/lib/db/reactivation-readiness";
+import { reactivationReading } from "@/lib/revisions/reactivation-reading";
 import { bannerClock } from "@/lib/db/storefront/banners";
 import { dateWithdrawalWarning, withdrawalReading, type WithdrawalLine } from "@/lib/revisions/withdraw-reading";
 
@@ -41,6 +43,11 @@ import { dateWithdrawalWarning, withdrawalReading, type WithdrawalLine } from "@
  * - `withdraw` (§ 2.6) : un retrait est une absence, donc invisible par nature.
  *   Ni comparaison ni objet neuf : l'écran montre ce qui DISPARAÎT, chiffré
  *   (`WithdrawalScreen`) — `"withdrawal"`.
+ * - `reactivate` (§ 2.6 bis) est l'inverse, et plus léger : une remise en ligne
+ *   est une apparition, qui se voit au premier chargement. Comme `publish` et
+ *   `create`, l'objet ENTIER en une colonne — mais précédé de ce qui rend la
+ *   fiche impropre à la vitrine (`ReactivationScreen`), parce que c'est ce
+ *   qu'une remise en ligne risque de laisser passer — `"reactivation"`.
  * - `add_images`/`remove_image`/`set_variants` (phase 2) n'écrivent JAMAIS de
  *   colonne de `products` : leur payload porte une forme différente à chaque
  *   fois (tableau d'images, id d'image, tableau de variantes — voir
@@ -57,7 +64,7 @@ import { dateWithdrawalWarning, withdrawalReading, type WithdrawalLine } from "@
  * sans jsdom dans ce dépôt, donc aucun composant de ce fichier ne peut être
  * rendu dans un test — seule cette décision, extraite du rendu, peut l'être.
  */
-export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | "child" | "withdrawal" {
+export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | "child" | "withdrawal" | "reactivation" {
   // Switch EXHAUSTIF, sans `default` qui avale : une nouvelle `RevisionKind`
   // (`withdraw`, § 2.6) échoue ici à la COMPILATION au lieu de tomber dans
   // `"child"`, dont le rendu est un <div> vide au-dessus du bouton Appliquer.
@@ -69,6 +76,8 @@ export function revisionLayout(kind: RevisionKind): "side-by-side" | "single" | 
       return "side-by-side";
     case "withdraw":
       return "withdrawal";
+    case "reactivate":
+      return "reactivation";
     case "add_images":
     case "remove_image":
     case "set_variants":
@@ -874,7 +883,7 @@ const PRODUCT_REVIEW_LABELS: Record<ProductWritableColumn, string | null> = {
   sku: "SKU",
   brand: "Marque",
   is_featured: "Mis en avant (hero)",
-  stock_quantity: "Stock",
+  stock_quantity: "Stock de la fiche",
   low_stock_threshold: "Seuil de stock bas",
   weight_grams: "Poids (g)",
   meta_title: "Titre SEO",
@@ -921,6 +930,53 @@ export function bannerReviewFields(banner: Banner): { key: string; label: string
 /** Champs scalaires d'une fiche telle qu'elle paraîtra — écran d'une `publish`. */
 export function productReviewFields(product: ProductDetail): { key: string; label: string; value: string }[] {
   return reviewFields(PRODUCT_REVIEW_LABELS, product as unknown as Record<string, unknown>);
+}
+
+/**
+ * Champs de la carte « telle qu'un client la voit maintenant » (retrait, § 2.6).
+ * Cette carte est celle sur laquelle repose la relecture d'un retrait : elle ne
+ * montrait pas le nom ni le prix d'un produit, ni le titre, le badge, le prix ou
+ * le dégradé d'une bannière — alors que l'image d'une bannière en est le visuel
+ * dominant. Les mêmes champs que l'écran d'une création/publication, pas une
+ * liste de plus à tenir. Pure, exportée pour être testée sans rendu.
+ */
+export function currentViewFields(
+  target: RevisionTarget,
+  current: ProductDetail | Banner,
+): { key: string; label: string; value: string }[] {
+  return target === "banner" ? bannerReviewFields(current as Banner) : productReviewFields(current as ProductDetail);
+}
+
+/**
+ * La bannière comme le carrousel la peint : son image sur son dégradé. Le HTML
+ * libre (`BannerContentBlock`) n'en est que la superposition ; sans ceci, la
+ * carte d'un retrait ne montrait pas le visuel que les quatre bannières de
+ * production portent toutes (`image_url`).
+ */
+function BannerVisualPreview({ banner }: { banner: Banner }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Visuel</p>
+      {banner.image_url ? (
+        <div
+          className="relative aspect-[16/6] w-full overflow-hidden rounded-lg border"
+          style={{
+            backgroundImage: `linear-gradient(to right, ${banner.bg_gradient_from || "#183C78"}, ${banner.bg_gradient_to || "#1E4A8F"})`,
+          }}
+        >
+          <Image
+            src={getImageUrl(banner.image_url)}
+            alt={banner.title}
+            fill
+            sizes="(min-width: 1024px) 50vw, 100vw"
+            className="object-contain"
+          />
+        </div>
+      ) : (
+        <EmptyNotice>Aucune image : la bannière ne montre que son texte sur le dégradé.</EmptyNotice>
+      )}
+    </div>
+  );
 }
 
 function FieldsCard({ title, fields }: { title: string; fields: { key: string; label: string; value: string }[] }) {
@@ -1031,13 +1087,20 @@ function WithdrawalScreen({
         </Card>
       </div>
       <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/5 p-3 text-sm">{reading.reversible}</p>
+      <FieldsCard
+        title={target === "banner" ? "Champs de la bannière, tels qu'un client les voit maintenant" : "Champs de la fiche, tels qu'un client les voit maintenant"}
+        fields={currentViewFields(target, current)}
+      />
       <Card>
         <CardHeader>
           <CardTitle>{target === "banner" ? "La bannière telle qu'un client la voit maintenant" : "La fiche telle qu'un client la voit maintenant"}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {target === "banner" ? (
-            <BannerContentBlock contentHtml={(current as Banner).content_html} bannerId={targetId} variant="current" />
+            <>
+              <BannerVisualPreview banner={current as Banner} />
+              <BannerContentBlock contentHtml={(current as Banner).content_html} bannerId={targetId} variant="current" />
+            </>
           ) : (
             <>
               <ImagesPreview images={(current as ProductDetail).images} />
@@ -1059,6 +1122,120 @@ function WithdrawalScreen({
   );
 }
 
+/**
+ * La fiche ENTIÈRE telle qu'elle paraîtra, en une colonne : ses champs, ses
+ * images, sa description et sa FAQ rendues comme la vitrine, et le contrôle de
+ * charte. Partagée par `publish` et `reactivate` — deux apparitions, un seul
+ * écran de fiche.
+ */
+function ProductWholeObject({
+  product,
+  images,
+  targetId,
+  fieldsTitle,
+}: {
+  product: ProductDetail;
+  images: ProductImage[];
+  targetId: string;
+  fieldsTitle: string;
+}) {
+  return (
+    <div className="space-y-6">
+      <FieldsCard title={fieldsTitle} fields={productReviewFields(product)} />
+      <Card>
+        <CardHeader>
+          <CardTitle>{product.name}</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            {formatPrice(product.base_price)}
+            {product.brand ? ` · ${product.brand}` : ""}
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <ImagesPreview images={images} />
+          <ProductContentTabs
+            descriptionSlot={
+              <DescriptionBlockProposed
+                description={product.description}
+                descriptionType={product.description_type}
+                productId={targetId}
+              />
+            }
+            faqSlot={<FaqBlock faqHtml={product.faq_html} productId={targetId} variant="proposed" />}
+          />
+          <ConformanceSection
+            fields={[
+              {
+                label: "Description",
+                html: productDescriptionHtml(product.description, product.description_type, targetId),
+              },
+              { label: "FAQ", html: productFaqHtml(product.faq_html, targetId) },
+            ]}
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * Écran d'une remise en ligne (§ 2.6 bis) : d'abord ce qui rend la fiche
+ * impropre à la vitrine (`reactivationReading`, mesuré par
+ * `getReactivationReadiness`), puis la fiche entière. Les constats sont des
+ * AVERTISSEMENTS : rien ici ne désactive « Remettre en ligne ». Aucune saisie
+ * n'est demandée — une remise en ligne ratée se voit, et un retrait la corrige.
+ */
+function ReactivationScreen({
+  product,
+  targetId,
+  readiness,
+}: {
+  product: ProductDetail;
+  targetId: string;
+  readiness: ReactivationReadiness;
+}) {
+  const reading = reactivationReading(readiness);
+  return (
+    <div className="space-y-6">
+      {reading.notApplicable && (
+        <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm font-medium">
+          {reading.notApplicable}
+        </p>
+      )}
+      {reading.warnings.length > 0 ? (
+        <Card className="border-amber-500/40">
+          <CardHeader>
+            <CardTitle>
+              Ce qui rend cette fiche impropre à la vitrine ({reading.warnings.length})
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Des avertissements, pas des refus : vous pouvez remettre la fiche en ligne malgré eux.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {reading.warnings.map((w) => (
+                <li key={w.code} className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-sm font-medium">
+                  {w.text}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : (
+        reading.allClear && (
+          <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/5 p-3 text-sm">{reading.allClear}</p>
+        )
+      )}
+      <ProductWholeObject
+        product={product}
+        images={product.images}
+        targetId={targetId}
+        fieldsTitle="Champs de la fiche (la remise en ligne l'active : elle réapparaît sur la vitrine)"
+      />
+    </div>
+  );
+}
+
 export interface RevisionDiffProps {
   target: RevisionTarget;
   kind: RevisionKind;
@@ -1069,6 +1246,8 @@ export interface RevisionDiffProps {
   payload: Record<string, unknown>;
   /** Conséquences mesurées d'un retrait (§ 2.6) — requises pour `kind: "withdraw"`. */
   impact?: WithdrawImpact | null;
+  /** Constats d'une remise en ligne (§ 2.6 bis) — requis pour `kind: "reactivate"`. */
+  readiness?: ReactivationReadiness | null;
 }
 
 /**
@@ -1095,7 +1274,7 @@ export interface RevisionDiffProps {
  * fiche boutique (galerie, carrousel, avis) reste hors périmètre de cette
  * tâche.
  */
-export function RevisionDiff({ target, kind, targetId, current, payload, impact }: RevisionDiffProps) {
+export function RevisionDiff({ target, kind, targetId, current, payload, impact, readiness }: RevisionDiffProps) {
   const layout = revisionLayout(kind);
 
   if (layout === "withdrawal") {
@@ -1110,6 +1289,20 @@ export function RevisionDiff({ target, kind, targetId, current, payload, impact 
       );
     }
     return <WithdrawalScreen target={target} targetId={targetId} current={current} impact={impact} />;
+  }
+
+  if (layout === "reactivation") {
+    // Une remise en ligne ne s'applique qu'à un produit (`assertValidPayload`) ; sans mesure,
+    // on le dit plutôt que de montrer une fiche sans ses défauts.
+    if (target !== "product" || !readiness) {
+      return (
+        <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
+          Les constats de cette remise en ligne n&apos;ont pas pu être mesurés. Ne l&apos;appliquez pas avant d&apos;avoir
+          rechargé la page.
+        </p>
+      );
+    }
+    return <ReactivationScreen product={current as ProductDetail} targetId={targetId} readiness={readiness} />;
   }
 
   if (target === "banner") {
@@ -1192,40 +1385,12 @@ export function RevisionDiff({ target, kind, targetId, current, payload, impact 
 
   if (layout === "single") {
     return (
-      <div className="space-y-6">
-        <FieldsCard title="Champs de la fiche (la publication lève le brouillon et l'active)" fields={productReviewFields(proposedProduct)} />
-        <Card>
-          <CardHeader>
-            <CardTitle>{proposedProduct.name}</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {formatPrice(proposedProduct.base_price)}
-              {proposedProduct.brand ? ` · ${proposedProduct.brand}` : ""}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <ImagesPreview images={currentProduct.images} />
-            <ProductContentTabs
-              descriptionSlot={
-                <DescriptionBlockProposed
-                  description={proposedProduct.description}
-                  descriptionType={proposedProduct.description_type}
-                  productId={targetId}
-                />
-              }
-              faqSlot={<FaqBlock faqHtml={proposedProduct.faq_html} productId={targetId} variant="proposed" />}
-            />
-            <ConformanceSection
-              fields={[
-                {
-                  label: "Description",
-                  html: productDescriptionHtml(proposedProduct.description, proposedProduct.description_type, targetId),
-                },
-                { label: "FAQ", html: productFaqHtml(proposedProduct.faq_html, targetId) },
-              ]}
-            />
-          </CardContent>
-        </Card>
-      </div>
+      <ProductWholeObject
+        product={proposedProduct}
+        images={currentProduct.images}
+        targetId={targetId}
+        fieldsTitle="Champs de la fiche (la publication lève le brouillon et l'active)"
+      />
     );
   }
 

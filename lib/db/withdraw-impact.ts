@@ -1,4 +1,4 @@
-import { and, asc, count, countDistinct, eq, inArray } from "drizzle-orm";
+import { and, count, countDistinct, eq, inArray } from "drizzle-orm";
 import { getDrizzle } from "@/lib/db/drizzle";
 import {
   banners,
@@ -10,7 +10,7 @@ import {
   whatsappCarts,
   wishlist,
 } from "@/lib/db/schema";
-import { bannerClock, displayedBannerCondition } from "@/lib/db/storefront/banners";
+import { bannerClock, displayedBannerCondition, displayedBannerOrder } from "@/lib/db/storefront/banners";
 import { MAX_CATEGORY_DEPTH, type OrderStatus } from "@/lib/db/types";
 import type { RevisionTarget } from "@/lib/db/revisions";
 
@@ -208,12 +208,12 @@ export async function getBannerWithdrawImpact(
     .get();
   if (!banner) return null;
 
-  // Même condition et même ordre que le carrousel (`getActiveBanners`).
+  // Même condition et même ordre que le carrousel (`getActiveBanners`) : les deux constantes sont partagées.
   const displayed = await db
     .select({ id: banners.id })
     .from(banners)
     .where(displayedBannerCondition(now))
-    .orderBy(asc(banners.display_order), asc(banners.id))
+    .orderBy(...displayedBannerOrder)
     .all();
   const index = displayed.findIndex((b) => b.id === bannerId);
   const displayedNow = index !== -1;

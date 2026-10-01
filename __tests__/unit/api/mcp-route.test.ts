@@ -147,7 +147,7 @@ describe("POST /api/mcp — protocole 2026-07-28 uniquement", () => {
     expect(body.error.data.supported).toEqual(["2026-07-28"]);
   });
 
-  it("sert les dix-sept outils à un vrai client MCP moderne, jeton signé à l'appui", async () => {
+  it("sert les dix-huit outils à un vrai client MCP moderne, jeton signé à l'appui", async () => {
     const bearer = await token();
     const client = new Client({ name: "test", version: "0" }, { versionNegotiation: { mode: "auto" } });
     const transport = new StreamableHTTPClientTransport(new URL(RESOURCE), {
@@ -157,7 +157,7 @@ describe("POST /api/mcp — protocole 2026-07-28 uniquement", () => {
     await client.connect(transport);
     try {
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(17);
+      expect(tools).toHaveLength(18);
       expect(tools.map((t) => t.name)).toContain("create_product_draft");
       expect(client.getServerVersion()?.name).toBe("netereka-admin");
     } finally {
