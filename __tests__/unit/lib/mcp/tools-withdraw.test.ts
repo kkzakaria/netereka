@@ -53,6 +53,36 @@ describe("withdraw_product", () => {
   });
 });
 
+describe("reactivate_product", () => {
+  beforeEach(() => {
+    db.exec(`INSERT INTO products (id, category_id, name, slug, base_price, is_active, is_draft) VALUES ('off', 'c1', 'Retirée', 'retiree', 10, 0, 0)`);
+  });
+
+  it("dépose une révision reactivate pending, avec la raison en résumé, sans toucher la fiche", async () => {
+    const r = await product("reactivate_product").handler(ctx, { id: "off", reason: "Réassort reçu ce matin" });
+    expect(r.isError).toBeUndefined();
+    const out = parse(r);
+    expect(out.applied).toBe("revision");
+    const rev = db.prepare("SELECT kind, status, payload, summary, origin FROM content_revisions WHERE id = ?").get(out.revision.id);
+    expect(rev).toEqual({ kind: "reactivate", status: "pending", payload: "{}", summary: "Réassort reçu ce matin", origin: "mcp" });
+    expect(db.prepare("SELECT is_active FROM products WHERE id = 'off'").get()).toEqual({ is_active: 0 });
+  });
+
+  it("refuse une fiche en ligne (conflict), un brouillon (validation_error) et un id inconnu (not_found)", async () => {
+    expect(parse(await product("reactivate_product").handler(ctx, { id: "live", reason: "x" })).code).toBe("conflict");
+    expect(parse(await product("reactivate_product").handler(ctx, { id: "draft", reason: "x" })).code).toBe("validation_error");
+    expect(parse(await product("reactivate_product").handler(ctx, { id: "nope", reason: "x" })).code).toBe("not_found");
+    expect(db.prepare("SELECT COUNT(*) n FROM content_revisions").get()).toEqual({ n: 0 });
+  });
+
+  it("exige une raison, comme withdraw_product", () => {
+    const schema = z.object(product("reactivate_product").inputSchema);
+    expect(schema.safeParse({ id: "off" }).success).toBe(false);
+    expect(schema.safeParse({ id: "off", reason: "  " }).success).toBe(false);
+    expect(schema.safeParse({ id: "off", reason: "Réassort" }).success).toBe(true);
+  });
+});
+
 describe("withdraw_banner", () => {
   it("dépose sans désactiver la bannière", async () => {
     const r = await banner("withdraw_banner").handler(ctx, { id: 1, reason: "Fin de la promo" });

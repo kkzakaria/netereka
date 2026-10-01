@@ -29,7 +29,7 @@ import {
   updateDraftSchema,
   type UpdateDraftInput,
 } from "@/lib/validations/mcp-product";
-import { withdrawReasonSchema } from "@/lib/validations/mcp-common";
+import { changeReasonSchema, withdrawReasonSchema } from "@/lib/validations/mcp-common";
 import { defineTool, type ToolDefinition } from "./types";
 
 /**
@@ -405,7 +405,7 @@ export const productTools: ToolDefinition[] = [
       "Propose la publication d'un brouillon : dépose une révision de type publish (payload vide — seuls is_draft " +
       "et is_active changent, pas le contenu : l'application lève le brouillon ET active la fiche) que l'administrateur doit appliquer depuis /revisions pour que la fiche devienne " +
       "visible en boutique. Refuse avec conflict si la fiche est déjà publiée. Pour retirer une fiche du " +
-      "catalogue, utilisez withdraw_product.",
+      "catalogue, utilisez withdraw_product ; pour remettre en ligne une fiche retirée, reactivate_product.",
     inputSchema: { id: idSchema },
     handler: async (ctx, input) => {
       try {
@@ -464,6 +464,41 @@ export const productTools: ToolDefinition[] = [
         });
       } catch (err) {
         return toolError("withdraw_product", err);
+      }
+    },
+  }),
+
+  defineTool({
+    name: "reactivate_product",
+    description:
+      "Propose la REMISE EN LIGNE d'une fiche publiée puis retirée (is_draft = 0, inactive). Rien n'est écrit " +
+      "directement : une révision de type reactivate est déposée, et l'administrateur la relit sur /revisions — " +
+      "la fiche entière telle qu'elle paraîtra, avec ce qui la rend impropre à la vitrine (aucune image, stock " +
+      "nul, aucune description) en avertissements — puis l'applique d'un clic, sans saisie. Aucun de ces " +
+      "constats ne bloque : une fiche sans stock peut revenir en ligne avant un réassort. Refuse un brouillon " +
+      "(utilisez publish_product) et une fiche déjà en ligne. reason : pourquoi la remettre en ligne, lu par " +
+      "l'administrateur.",
+    inputSchema: { id: idSchema, reason: changeReasonSchema },
+    handler: async (ctx, input) => {
+      try {
+        const { revisionId, status } = await createRevision({
+          target: "product",
+          targetId: input.id,
+          kind: "reactivate",
+          payload: {},
+          origin: "mcp",
+          actor: { id: ctx.user.id, name: ctx.user.name },
+          summary: input.reason,
+        });
+        return ok({
+          applied: "revision",
+          revision: { id: revisionId, status },
+          message:
+            `Remise en ligne déposée en révision (${revisionId}) : la fiche reste hors ligne tant qu'un ` +
+            `administrateur n'a pas appliqué sur /revisions/${revisionId}.`,
+        });
+      } catch (err) {
+        return toolError("reactivate_product", err);
       }
     },
   }),
