@@ -3,18 +3,99 @@ import type { McpContext } from "@/lib/mcp/context";
 
 const mediaMocks = vi.hoisted(() => ({ searchImages: vi.fn() }));
 vi.mock("@/lib/media/image-search", () => ({ searchImages: mediaMocks.searchImages }));
+
+const envMocks = vi.hoisted(() => ({ getEnv: vi.fn(), getKV: vi.fn() }));
 vi.mock("@/lib/cloudflare/context", () => ({
   getDB: async () => { throw new Error("no DB in this test"); },
+  getEnv: envMocks.getEnv,
+  getKV: envMocks.getKV,
+  getR2: async () => { throw new Error("no R2 in this test"); },
 }));
 
+const draftMocks = vi.hoisted(() => ({
+  getProductDraftState: vi.fn(),
+  findProductImage: vi.fn(),
+  countProductImages: vi.fn(),
+  addImagesFromUrls: vi.fn(),
+}));
+vi.mock("@/lib/db/product-drafts", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/db/product-drafts")>("@/lib/db/product-drafts");
+  return { ...actual, ...draftMocks };
+});
+
+const revisionMocks = vi.hoisted(() => ({ createRevision: vi.fn() }));
+vi.mock("@/lib/db/revisions", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/db/revisions")>("@/lib/db/revisions");
+  return { ...actual, createRevision: revisionMocks.createRevision };
+});
+
+const storageMocks = vi.hoisted(() => ({ readFromR2: vi.fn(), deleteFromR2: vi.fn(), fetchAndUploadImage: vi.fn() }));
+vi.mock("@/lib/storage/images", () => ({
+  readFromR2: storageMocks.readFromR2,
+  deleteFromR2: storageMocks.deleteFromR2,
+  uploadToR2: vi.fn(),
+}));
+vi.mock("@/lib/storage/fetch-image", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/storage/fetch-image")>("@/lib/storage/fetch-image");
+  return { ...actual, fetchAndUploadImage: storageMocks.fetchAndUploadImage };
+});
+
+// `editProductImage` est mocké (aucune clé xAI n'existe, et on ne veut pas de
+// réseau) ; `encodeSourceImage` reste le VRAI : c'est lui qui refuse un type
+// ou une taille inexploitable, et c'est ce que ces tests doivent voir.
+const genMocks = vi.hoisted(() => ({ editProductImage: vi.fn() }));
+vi.mock("@/lib/ai/image-generation", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/ai/image-generation")>("@/lib/ai/image-generation");
+  return { ...actual, editProductImage: genMocks.editProductImage };
+});
+
+import { MAX_IMAGES_PER_PRODUCT } from "@/lib/db/product-drafts";
+import { RevisionError } from "@/lib/db/revisions";
 import { imageTools } from "@/lib/mcp/tools/images";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const tool = (name: string) => imageTools.find((t) => t.name === name)!;
 const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
+const auditFor = (tool: string) => ({ actor: { id: "admin-1", name: "Admin" }, details: { via: "mcp", tool, client_id: "client-1" } });
+
+/** KV en mémoire, avec la contrainte de TTL du vrai KV. */
+function makeKV(initial: Map<string, string> = new Map()) {
+  const store = new Map(initial);
+  return {
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    put: vi.fn(async (key: string, value: string, options?: KVNamespacePutOptions) => {
+      if (options?.expirationTtl !== undefined && options.expirationTtl < 60) {
+        throw new Error(`KV rejects expirationTtl below 60 seconds (got ${options.expirationTtl})`);
+      }
+      store.set(key, value);
+    }),
+    _store: store,
+  } as unknown as KVNamespace & { put: ReturnType<typeof vi.fn>; _store: Map<string, string> };
+}
+
+const MONTH_KEY = `ai:images:${new Date().toISOString().slice(0, 7)}`;
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+const GEN_INPUT = { product_id: "p1", source_image_id: "img-1", prompt: "Pose le produit sur un bureau en bois clair." };
+
+let kv: ReturnType<typeof makeKV>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  kv = makeKV();
+  envMocks.getKV.mockImplementation(async () => kv);
+  envMocks.getEnv.mockResolvedValue({ XAI_API_KEY: "xai-k", AI_IMAGE_MONTHLY_LIMIT: "50" });
+  // Défaut : brouillon existant, image source présente, fiche vide d'images.
+  draftMocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+  draftMocks.findProductImage.mockResolvedValue({ id: "img-1", url: "/images/products/p1/src.png", is_primary: true });
+  draftMocks.countProductImages.mockResolvedValue(0);
+  storageMocks.readFromR2.mockResolvedValue({ bytes: PNG, contentType: "image/png" });
+  genMocks.editProductImage.mockResolvedValue({ ok: true, url: "https://xai.example/out.png" });
+  draftMocks.addImagesFromUrls.mockResolvedValue({
+    results: [{ url: "https://xai.example/out.png", ok: true, image_id: "new-1" }],
+    primary_image_id: "img-1",
+  });
+  storageMocks.fetchAndUploadImage.mockResolvedValue({ ok: true, key: "products/p1/gen.png", contentType: "image/png", size: 4 });
+  revisionMocks.createRevision.mockResolvedValue({ revisionId: "rev-1", status: "pending" });
 });
 
 describe("search_product_images", () => {
@@ -122,5 +203,274 @@ describe("search_product_images", () => {
     expect(out.code).toBe("internal_error");
     expect(out.message).not.toContain("boom");
     expect(out.message).not.toContain("image-search.ts");
+  });
+});
+
+describe("generate_product_image — refus AVANT toute dépense", () => {
+  it("not_found si le produit n'existe pas, sans rien générer", async () => {
+    const { DraftError } = await import("@/lib/db/product-drafts");
+    draftMocks.getProductDraftState.mockRejectedValue(new DraftError("not_found", "Produit introuvable"));
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(parse(r).code).toBe("not_found");
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+  });
+
+  it("not_found si source_image_id n'est pas une image DE CE produit", async () => {
+    draftMocks.findProductImage.mockResolvedValue(null);
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    const out = parse(r);
+    expect(out.code).toBe("not_found");
+    expect(out.message).toContain("DÉJÀ attachée");
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+  });
+
+  it("limit_exceeded si la fiche est pleine : ne paie pas une image qu'on ne pourrait pas attacher", async () => {
+    draftMocks.countProductImages.mockResolvedValue(MAX_IMAGES_PER_PRODUCT);
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    const out = parse(r);
+    expect(out.code).toBe("limit_exceeded");
+    expect(out.message).toContain(String(MAX_IMAGES_PER_PRODUCT));
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+    // Ni la fenêtre ni le compteur mensuel n'ont été touchés.
+    expect(kv.put).not.toHaveBeenCalled();
+  });
+
+  it("clé xAI absente : échec typé qui NOMME le secret, et aucun jeton de rafale consommé", async () => {
+    envMocks.getEnv.mockResolvedValue({ AI_IMAGE_MONTHLY_LIMIT: "50" });
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(r.isError).toBe(true);
+    const out = parse(r);
+    expect(out.code).toBe("internal_error");
+    expect(out.message).toContain("XAI_API_KEY");
+    expect(out.message).not.toMatch(/aucune image trouvée/i);
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+    expect(kv.put).not.toHaveBeenCalled();
+  });
+
+  // La décision prise là où le plan laissait le choix.
+  it("plafond mensuel NON CONFIGURÉ : la génération REFUSE, elle ne passe pas en illimité", async () => {
+    envMocks.getEnv.mockResolvedValue({ XAI_API_KEY: "xai-k" });
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(r.isError).toBe(true);
+    const out = parse(r);
+    expect(out.message).toContain("AI_IMAGE_MONTHLY_LIMIT");
+    expect(out.message).toMatch(/pas.*illimité|ne vaut pas/i);
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+  });
+
+  it("plafond illisible : refuse en citant la valeur fautive", async () => {
+    envMocks.getEnv.mockResolvedValue({ XAI_API_KEY: "xai-k", AI_IMAGE_MONTHLY_LIMIT: "beaucoup" });
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+    expect(out.message).toContain("beaucoup");
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+  });
+
+  it("plafond atteint : limit_exceeded portant l'usage ET le plafond dans le message", async () => {
+    kv = makeKV(new Map([[MONTH_KEY, "50"]]));
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+    expect(out.code).toBe("limit_exceeded");
+    expect(out.message).toContain("50");
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+  });
+
+  it("objet R2 de la source absent : refuse sans générer", async () => {
+    storageMocks.readFromR2.mockResolvedValue(null);
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+    expect(out.code).toBe("not_found");
+    expect(out.message).toMatch(/absent du stockage/);
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+  });
+
+  it("source d'un type inexploitable : refuse sans générer (encodeSourceImage réel)", async () => {
+    storageMocks.readFromR2.mockResolvedValue({ bytes: PNG, contentType: "image/gif" });
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+    expect(out.code).toBe("validation_error");
+    expect(out.message).toContain("image/gif");
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("generate_product_image — la dépense et le compteur", () => {
+  it("envoie la SOURCE encodée et l'invite, puis attache le résultat sur un brouillon", async () => {
+    const r = await tool("generate_product_image").handler(ctx, { ...GEN_INPUT, alt: "Sur un bureau" });
+
+    expect(r.isError).toBeUndefined();
+    const sent = genMocks.editProductImage.mock.calls[0][0];
+    expect(sent.prompt).toBe(GEN_INPUT.prompt);
+    expect(sent.sourceImage).toBe(`data:image/png;base64,${Buffer.from(PNG).toString("base64")}`);
+    // La clé R2 est dérivée de l'URL stockée (préfixe /images/ retiré).
+    expect(storageMocks.readFromR2).toHaveBeenCalledWith("products/p1/src.png");
+
+    // Brouillon : attachement direct, par addImagesFromUrls — donc par
+    // fetch-image.ts, le chemin unique de téléchargement.
+    expect(draftMocks.addImagesFromUrls).toHaveBeenCalledWith(
+      "p1",
+      [{ url: "https://xai.example/out.png", alt: "Sur un bureau" }],
+      auditFor("generate_product_image"),
+    );
+    const out = parse(r);
+    expect(out.applied).toBe("direct");
+    expect(out.generated).toBe(true);
+    expect(out.results[0].ok).toBe(true);
+  });
+
+  it("une image produite incrémente le compteur MENSUEL de 1", async () => {
+    await tool("generate_product_image").handler(ctx, GEN_INPUT);
+    expect(kv._store.get(MONTH_KEY)).toBe("1");
+  });
+
+  // Discrimination exigée par le plan, vue depuis l'outil.
+  it("une génération EN ÉCHEC ne bouge pas le compteur mensuel", async () => {
+    genMocks.editProductImage.mockResolvedValue({ ok: false, reason: "upstream_error" });
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(r.isError).toBe(true);
+    expect(kv._store.get(MONTH_KEY)).toBeUndefined();
+    expect(draftMocks.addImagesFromUrls).not.toHaveBeenCalled();
+  });
+
+  it("avec un plafond à 1, la DEUXIÈME génération échoue", async () => {
+    envMocks.getEnv.mockResolvedValue({ XAI_API_KEY: "xai-k", AI_IMAGE_MONTHLY_LIMIT: "1" });
+
+    const first = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+    expect(first.isError).toBeUndefined();
+
+    const second = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+    expect(second.isError).toBe(true);
+    const out = parse(second);
+    expect(out.code).toBe("limit_exceeded");
+    expect(out.message).toContain("1");
+    expect(genMocks.editProductImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("avec un plafond à 1, un premier appel EN ÉCHEC laisse passer le suivant", async () => {
+    envMocks.getEnv.mockResolvedValue({ XAI_API_KEY: "xai-k", AI_IMAGE_MONTHLY_LIMIT: "1" });
+    genMocks.editProductImage.mockResolvedValueOnce({ ok: false, reason: "upstream_error" });
+
+    expect((await tool("generate_product_image").handler(ctx, GEN_INPUT)).isError).toBe(true);
+    expect((await tool("generate_product_image").handler(ctx, GEN_INPUT)).isError).toBeUndefined();
+    expect(kv._store.get(MONTH_KEY)).toBe("1");
+  });
+
+  it("un compteur non incrémenté est DIT dans la réponse, pas silencieux", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    kv.put.mockImplementation(async (key: string) => {
+      if (key === MONTH_KEY) throw new Error("KV down");
+    });
+
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+
+    expect(out.generated).toBe(true);
+    expect(out.budget.recorded).toBe(false);
+  });
+
+  it("le refus de xAI (4xx) remonte son détail au modèle pour qu'il corrige son invite", async () => {
+    genMocks.editProductImage.mockResolvedValue({ ok: false, reason: "rejected", detail: "prompt was moderated" });
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+    expect(out.code).toBe("validation_error");
+    expect(out.message).toContain("prompt was moderated");
+  });
+
+  it("les dix raisons d'échec de génération produisent dix messages distincts", async () => {
+    const reasons = [
+      "no_api_key", "auth_failed", "rate_limited", "rejected", "upstream_error",
+      "parse_failed", "no_image", "b64_not_supported", "timeout", "fetch_failed",
+    ] as const;
+    const messages = new Set<string>();
+    for (const reason of reasons) {
+      genMocks.editProductImage.mockResolvedValue({ ok: false, reason });
+      const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+      expect(r.isError).toBe(true);
+      messages.add(parse(r).message);
+    }
+    expect(messages.size).toBe(reasons.length);
+  });
+});
+
+describe("generate_product_image — routage brouillon / fiche publiée", () => {
+  beforeEach(() => {
+    draftMocks.getProductDraftState.mockResolvedValue({ is_draft: false });
+  });
+
+  it("fiche publiée : téléverse le résultat puis dépose une révision add_images, sans attacher", async () => {
+    const r = await tool("generate_product_image").handler(ctx, { ...GEN_INPUT, alt: "Visuel composé" });
+
+    expect(storageMocks.fetchAndUploadImage).toHaveBeenCalledWith("p1", "https://xai.example/out.png");
+    expect(revisionMocks.createRevision).toHaveBeenCalledWith(expect.objectContaining({
+      target: "product",
+      targetId: "p1",
+      kind: "add_images",
+      payload: { images: [{ key: "products/p1/gen.png", alt: "Visuel composé" }] },
+      origin: "mcp",
+    }));
+    // La révision ne porte JAMAIS l'URL de xAI, seulement la clé déjà en place.
+    const payload = revisionMocks.createRevision.mock.calls[0][0].payload as { images: { key: string }[] };
+    expect(JSON.stringify(payload)).not.toContain("xai.example");
+
+    expect(draftMocks.addImagesFromUrls).not.toHaveBeenCalled();
+    const out = parse(r);
+    expect(out.applied).toBe("revision");
+    expect(out.revision).toEqual({ id: "rev-1", status: "pending" });
+    expect(out.message).toContain("/revisions/rev-1");
+  });
+
+  it("téléchargement du résultat en échec : le dit, et ne dépose aucune révision", async () => {
+    storageMocks.fetchAndUploadImage.mockResolvedValue({ ok: false, reason: "too_large" });
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(r.isError).toBe(true);
+    const out = parse(r);
+    expect(out.message).toContain("too_large");
+    expect(out.message).toMatch(/facturée/);
+    expect(revisionMocks.createRevision).not.toHaveBeenCalled();
+    // L'image a bien été produite : le compteur a bougé, elle est payée.
+    expect(kv._store.get(MONTH_KEY)).toBe("1");
+  });
+
+  it("dépôt de révision en échec : nettoie l'objet R2 qui n'aurait jamais été référencé", async () => {
+    revisionMocks.createRevision.mockRejectedValue(new RevisionError("conflict", "Révision concurrente"));
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(parse(r).code).toBe("conflict");
+    expect(storageMocks.deleteFromR2).toHaveBeenCalledWith("products/p1/gen.png");
+  });
+
+  // Ce test a trouvé un vrai défaut : le nettoyage s'écrivait
+  // `deleteFromR2(key).catch(...)`, et un échec SYNCHRONE du nettoyage
+  // (binding R2 absent) remplaçait l'erreur d'origine par une TypeError —
+  // l'administrateur lisait « erreur interne » au lieu du conflit de révision.
+  it("un nettoyage R2 en échec ne masque pas la cause réelle", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    revisionMocks.createRevision.mockRejectedValue(new RevisionError("conflict", "Révision concurrente"));
+    storageMocks.deleteFromR2.mockRejectedValue(new Error("R2 indisponible"));
+
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+
+    expect(out.code).toBe("conflict");
+    expect(out.message).toContain("Révision concurrente");
+  });
+
+  it("une erreur inattendue ne laisse pas fuir de trace de pile", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    revisionMocks.createRevision.mockRejectedValue(new Error("boom at lib/db/revisions.ts:412"));
+
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+
+    expect(out.code).toBe("internal_error");
+    expect(out.message).not.toContain("boom");
+    expect(out.message).not.toContain("revisions.ts");
   });
 });
