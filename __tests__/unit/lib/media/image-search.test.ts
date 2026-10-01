@@ -15,7 +15,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe("searchImages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getEnv.mockResolvedValue({ BRAVE_API_KEY: "k" });
+    mocks.getEnv.mockResolvedValue({ BRAVE_SEARCH_API_KEY: "k" });
   });
 
   it("retourne no_api_key quand la clé est absente de l'environnement", async () => {
@@ -93,8 +93,8 @@ describe("searchImages", () => {
     if (r.ok) expect(r.results).toHaveLength(0);
   });
 
-  it("envoie le header X-Subscription-Token (lu depuis BRAVE_API_KEY) et la query encodée", async () => {
-    mocks.getEnv.mockResolvedValue({ BRAVE_API_KEY: "secret-key" });
+  it("envoie le header X-Subscription-Token (lu depuis BRAVE_SEARCH_API_KEY) et la query encodée", async () => {
+    mocks.getEnv.mockResolvedValue({ BRAVE_SEARCH_API_KEY: "secret-key" });
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results: [] }));
     vi.stubGlobal("fetch", fetchMock);
 

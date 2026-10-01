@@ -30,9 +30,12 @@ interface CloudflareEnv {
 
   // AI-powered product creation
   ANTHROPIC_API_KEY: string;
-  // Brave Search API key for image_search tool. Optional — if absent, the AI
-  // generation falls back to image_candidates: [] and admin uploads images manually.
-  BRAVE_API_KEY?: string;
+  // Clé de l'API Brave Image Search, lue par lib/media/image-search.ts et
+  // exposée par l'outil MCP `search_product_images`. Optionnelle : en son
+  // absence l'outil répond un échec typé qui nomme ce secret, jamais une liste
+  // vide. Le nom est celui du secret réellement posé en production (vérifié
+  // par `npx wrangler secret list`) ; ne pas le renommer en `BRAVE_API_KEY`.
+  BRAVE_SEARCH_API_KEY?: string;
   // "0" disables the feature (button hidden, /products/ai-new returns 404). Any other value or unset = enabled.
   AI_PRODUCT_CREATION_ENABLED?: string;
   // Optional model override (for rolling to newer Anthropic model IDs without a code change)
