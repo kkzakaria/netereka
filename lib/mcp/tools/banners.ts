@@ -80,7 +80,7 @@ export const bannerTools: ToolDefinition[] = [
       "revision.id et revision.status). Champs : title, subtitle, badge_text, badge_color (mint|red|orange|blue), " +
       "link_url (chemin relatif commençant par /), cta_text, price (XOF entier), bg_gradient_from/to (#rrggbb), " +
       "content_html (HTML libre assaini côté serveur, rendu dans le hero), display_order, " +
-      "starts_at/ends_at. Champs absents ignorés, null efface (pour ceux qui l'admettent). reason : pourquoi " +
+      "starts_at/ends_at. Champs absents ignorés, null efface (pour ceux qui l'admettent). reason (optionnel) : pourquoi " +
       "cette modification, lu par l'administrateur sous le titre de l'écran de validation. Ne permet pas de " +
       "retirer une bannière : utilisez withdraw_banner (une ends_at passée la retire aussi, et l'écran de " +
       "validation le signale).",

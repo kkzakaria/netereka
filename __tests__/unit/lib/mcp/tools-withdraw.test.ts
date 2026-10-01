@@ -104,11 +104,27 @@ describe("update_banner porte une raison", () => {
     expect(JSON.parse(rev.payload)).toEqual({ title: "Nouveau" });
   });
 
-  it("le schéma d'entrée l'exige, comme celui d'un retrait", () => {
+  it("elle est OPTIONNELLE (contrat des outils en service), mais jamais vide si elle est donnée", () => {
     const schema = z.object(updateBannerShape);
-    expect(schema.safeParse({ id: 1, title: "X" }).success).toBe(false);
+    expect(schema.safeParse({ id: 1, title: "X" }).success).toBe(true);
     expect(schema.safeParse({ id: 1, title: "X", reason: "   " }).success).toBe(false);
     expect(schema.safeParse({ id: 1, title: "X", reason: "Parce que" }).success).toBe(true);
+  });
+
+  it("update_product dépose la raison en summary sur une fiche publiée, sans la mêler au payload ; absente, summary null", async () => {
+    const withReason = parse(await product("update_product").handler(ctx, { id: "live", pricing: { base_price: 20 }, reason: "Alignement concurrent" } as never));
+    const rev = db.prepare("SELECT summary, payload FROM content_revisions WHERE id = ?").get(withReason.revision.id) as { summary: string; payload: string };
+    expect(rev.summary).toBe("Alignement concurrent");
+    expect(JSON.parse(rev.payload)).not.toHaveProperty("reason");
+    const without = parse(await product("update_product").handler(ctx, { id: "live", pricing: { base_price: 30 } } as never));
+    expect(db.prepare("SELECT summary FROM content_revisions WHERE id = ?").get(without.revision.id)).toEqual({ summary: null });
+  });
+
+  it("le schéma d'update_product l'accepte optionnelle, et le brouillon (écriture directe) ne la reçoit pas", () => {
+    const schema = z.object(product("update_product").inputSchema);
+    expect(schema.safeParse({ id: "live", pricing: { base_price: 20 } }).success).toBe(true);
+    expect(schema.safeParse({ id: "live", pricing: { base_price: 20 }, reason: "x" }).success).toBe(true);
+    expect(schema.safeParse({ id: "live", pricing: { base_price: 20 }, reason: "" }).success).toBe(false);
   });
 });
 

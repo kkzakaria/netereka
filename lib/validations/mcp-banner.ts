@@ -46,7 +46,7 @@ export const bannerIdSchema = z.number().int().positive();
  *  (§ 2.6) : activer relève de `create_banner`, retirer de `withdraw_banner`. */
 export const updateBannerShape = {
   id: bannerIdSchema,
-  reason: changeReasonSchema,
+  reason: changeReasonSchema.optional(),
   title: bannerFields.title.optional(),
   subtitle: bannerFields.subtitle.optional(),
   badge_text: bannerFields.badge_text.optional(),

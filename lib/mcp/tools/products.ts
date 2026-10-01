@@ -99,8 +99,12 @@ const DESCRIPTION_RULES =
  * silencieusement, donc on les refuse ici, avant le dépôt, plutôt que de
  * laisser leur absence du payload se lire comme une réussite.
  */
-async function updateProductHandler(toolName: string, ctx: McpContext, input: { id: string } & UpdateDraftInput): Promise<ToolResult> {
-  const { id, ...patch } = input;
+async function updateProductHandler(
+  toolName: string,
+  ctx: McpContext,
+  input: { id: string; reason?: string } & UpdateDraftInput,
+): Promise<ToolResult> {
+  const { id, reason, ...patch } = input;
   try {
     const { is_draft } = await getProductDraftState(id);
 
@@ -132,6 +136,7 @@ async function updateProductHandler(toolName: string, ctx: McpContext, input: { 
       payload,
       origin: "mcp",
       actor: { id: ctx.user.id, name: ctx.user.name },
+      summary: reason,
     });
     return ok({
       applied: "revision",
@@ -214,8 +219,9 @@ export const productTools: ToolDefinition[] = [
       "\"revision\", avec revision.id et revision.status dans ce second cas). attributes et slug ne sont pas pris " +
       "en charge sur une fiche publiée (validation_error) : passez par un brouillon pour les modifier. " +
       `Champs absents ignorés, null efface. attributes fourni remplace tous les attributs : colors, dimensions et ` +
-      `specs sont alors tous requis (relire la fiche avant pour ne rien perdre). slug optionnel (unique). ${DESCRIPTION_RULES}`,
-    inputSchema: { id: idSchema, ...updateDraftSchema.shape },
+      `specs sont alors tous requis (relire la fiche avant pour ne rien perdre). slug optionnel (unique). ` +
+      `reason (optionnel) : pourquoi cette modification, lu par l'administrateur sous le titre de l'écran de validation d'une fiche publiée. ${DESCRIPTION_RULES}`,
+    inputSchema: { id: idSchema, reason: changeReasonSchema.optional(), ...updateDraftSchema.shape },
     handler: (ctx, input) => updateProductHandler("update_product", ctx, input),
   }),
 
@@ -224,7 +230,7 @@ export const productTools: ToolDefinition[] = [
     description:
       "Déprécié, conservé le temps d'un lot pour les clients déjà enregistrés : utiliser update_product. " +
       "Comportement identique (routage brouillon/publié).",
-    inputSchema: { id: idSchema, ...updateDraftSchema.shape },
+    inputSchema: { id: idSchema, reason: changeReasonSchema.optional(), ...updateDraftSchema.shape },
     handler: (ctx, input) => updateProductHandler("update_product_draft", ctx, input),
   }),
 
