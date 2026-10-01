@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   // Drizzle: `db.update(table).set(values).where(cond)` — set captures values, where executes.
   drizzleSet: vi.fn(),
   drizzleWhere: vi.fn(),
+  revalidateProductStorefront: vi.fn(),
 }));
+vi.mock("@/lib/cache/revalidate-product", () => ({ revalidateProductStorefront: mocks.revalidateProductStorefront }));
 
 vi.mock("@/lib/auth/guards", () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock("@/lib/db", () => ({
@@ -230,7 +232,18 @@ describe("updateProduct", () => {
       mocks.nanoid.mockReturnValue("abcd1234");
       mocks.drizzleWhere.mockResolvedValueOnce(undefined);
       await updateProduct("prod-1", baseFormData());
-      expect(mocks.revalidatePath).toHaveBeenCalledWith("/p/iphone-15-pro");
+      expect(mocks.revalidateProductStorefront).toHaveBeenCalledWith("prod-1");
+    });
+
+    // Le formulaire écrit is_active : désactiver une fiche VIVANTE doit sortir sa page, l'accueil
+    // et les catégories de la vitrine, pas seulement revalider une publication de brouillon.
+    it("revalide aussi la vitrine quand la fiche modifiée était déjà publiée (désactivation par le formulaire)", async () => {
+      mocks.queryFirst
+        .mockResolvedValueOnce({ slug: "iphone-15-pro", sku: "NET-X", is_draft: 0 });
+      mocks.slugify.mockReturnValue("iphone-15-pro");
+      mocks.drizzleWhere.mockResolvedValueOnce(undefined);
+      await updateProduct("prod-1", baseFormData({ is_active: "0" }));
+      expect(mocks.revalidateProductStorefront).toHaveBeenCalledWith("prod-1");
     });
 
     it("préserve le SKU existant si is_draft = 1 mais sku déjà défini (re-draft)", async () => {

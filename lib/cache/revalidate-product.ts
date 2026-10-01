@@ -9,12 +9,12 @@ import { categories, products } from "@/lib/db/schema";
  * et chaque page catégorie qui le liste — la sienne ET celles de ses parents,
  * qui listent leurs descendants (`getCategoryDescendantIds`).
  *
- * Écrit une seule fois pour les trois chemins qui changent `is_active` :
- * l'application d'une révision (publish, withdraw, reactivate) et la bascule
- * directe de la liste des produits. Sans ce partage, la bascule ne revalidait
- * que `/products` (l'admin) : la vitrine gardait l'ancienne page jusqu'à
- * l'expiration de l'ISR, alors que l'écran du retrait promet « un clic » pour
- * remettre la fiche en ligne.
+ * Écrit une seule fois pour les chemins qui changent la visibilité d'un produit :
+ * l'application d'une révision (publish, withdraw, reactivate), la bascule
+ * directe de la liste des produits, et le formulaire d'édition (`updateProduct`,
+ * qui écrit `is_active` depuis le formulaire). Un chemin qui change `is_active`
+ * sans appeler ceci laisse la vitrine sur l'ancienne page jusqu'à l'expiration
+ * de l'ISR : à vérifier pour tout nouveau chemin d'écriture.
  *
  * Renvoie une liste vide si le produit n'existe pas. Dans l'ordre : page,
  * accueil, catégorie de la fiche, puis ses ancêtres.

@@ -77,9 +77,9 @@ export function RevisionActions({
   }
 
   /**
-   * Copie le nom à saisir : 263 noms de production portent un tiret long ou une
-   * apostrophe typographique, intapables sur un clavier AZERTY sans effort, et
-   * certains font 136 caractères. La saisie reste exigée (le champ ne se remplit
+   * Copie le nom à saisir : 326 noms de produits publiés en production portent un tiret
+   * demi-cadratin (263) ou cadratin (73), intapables sur un clavier AZERTY sans
+   * effort, et certains font 136 caractères. La saisie reste exigée (le champ ne se remplit
    * pas seul) : on aide à l'écrire, on ne la supprime pas. `clipboard` manque hors
    * contexte sécurisé : le nom reste alors sélectionnable d'un clic (`select-all`).
    */

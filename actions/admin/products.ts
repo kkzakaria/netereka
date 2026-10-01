@@ -173,9 +173,9 @@ export async function updateProduct(
   revalidatePath("/products");
   revalidatePath(`/products/${id}/edit`);
   revalidatePath("/dashboard");
-  if (existing.is_draft === 1) {
-    revalidatePath("/p/" + finalSlug);
-  }
+  // Le formulaire écrit `is_active` : désactiver une fiche vivante doit aussi sortir sa page,
+  // l'accueil et les catégories de la vitrine, pas seulement un brouillon qu'on publie.
+  await revalidateProductStorefront(id);
   return { success: true, id };
 }
 
