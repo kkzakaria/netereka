@@ -268,37 +268,54 @@ describe("rejeter une création de bannière", () => {
   });
 });
 
-describe("appliquer une révision qui remplace une création de bannière", () => {
-  async function deposeCreateEtUpdate() {
+describe("une création de bannière en attente se résout avant toute autre application", () => {
+  const dep = (id: string, kind: "create" | "update" | "withdraw", payload: Record<string, unknown> = {}) =>
+    createRevision({ target: "banner", targetId: id, kind, payload, origin: "mcp", actor: ACTOR });
+  const rows = (id: number) => db.prepare("SELECT title, is_active FROM banners WHERE id = ?").get(id);
+  const status = (id: string) => (db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(id) as { status: string }).status;
+
+  it("une mise à jour est refusée : rien n'est écrit, rien n'est supprimé, tout reste en attente", async () => {
     db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
-    const create = await createRevision({ target: "banner", targetId: "9", kind: "create", payload: {}, origin: "mcp", actor: ACTOR });
-    const update = await createRevision({ target: "banner", targetId: "9", kind: "update", payload: { title: "Retouchée" }, origin: "mcp", actor: ACTOR });
-    return { create, update };
-  }
+    const create = await dep("9", "create");
+    const update = await dep("9", "update", { title: "Retouchée" });
+    await expect(applyRevision(update.revisionId, ADMIN)).rejects.toMatchObject({ code: "conflict" });
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 0 });
+    expect(status(create.revisionId)).toBe("pending");
+    expect(status(update.revisionId)).toBe("pending");
+  });
 
-  it("supprime la ligne inactive devenue inatteignable (le rejet refuse une révision superseded)", async () => {
-    const { create, update } = await deposeCreateEtUpdate();
-    await applyRevision(update.revisionId, ADMIN);
-    expect(db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(create.revisionId)).toEqual({ status: "superseded" });
+  it("un retrait confirmé est refusé : « rien n'est supprimé » reste vrai", async () => {
+    const create = await dep("2", "create"); // déposée sur une bannière déjà active
+    const withdraw = await dep("2", "withdraw");
+    await expect(applyRevision(withdraw.revisionId, ADMIN, { confirmation: "Seconde" })).rejects.toMatchObject({ code: "conflict" });
+    expect(rows(2)).toEqual({ title: "Seconde", is_active: 1 });
+    expect(status(create.revisionId)).toBe("pending");
+    expect(status(withdraw.revisionId)).toBe("pending");
+  });
+
+  it("la voie de sortie existe : rejeter la création supprime la ligne, la mise à jour devient alors périmée", async () => {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await dep("9", "create");
+    const update = await dep("9", "update", { title: "Retouchée" });
+    await rejectRevision(create.revisionId, ADMIN);
     expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 9").get()).toEqual({ n: 0 });
-    const audit = db.prepare("SELECT details FROM audit_log WHERE action = 'revision.create_superseded'").get() as { details: string };
-    expect(JSON.parse(audit.details).banner_row_removed).toBe(true);
+    expect(status(update.revisionId)).toBe("superseded");
   });
 
-  it("ne supprime jamais une bannière devenue active", async () => {
-    const { update } = await deposeCreateEtUpdate();
-    db.exec("UPDATE banners SET is_active = 1 WHERE id = 9");
-    await applyRevision(update.revisionId, ADMIN);
-    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 9").get()).toEqual({ n: 1 });
-  });
-
-  it("appliquer la création elle-même garde la ligne, et une modification sans création en attente aussi", async () => {
-    const { create } = await deposeCreateEtUpdate();
+  it("appliquer la création elle-même passe, puis la mise à jour (plus de création en attente)", async () => {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await dep("9", "create");
     await applyRevision(create.revisionId, ADMIN);
-    expect(db.prepare("SELECT is_active FROM banners WHERE id = 9").get()).toEqual({ is_active: 1 });
-    const plain = await createRevision({ target: "banner", targetId: "5", kind: "update", payload: { title: "Autre" }, origin: "mcp", actor: ACTOR });
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 1 });
+    const update = await dep("9", "update", { title: "Retouchée" });
+    await applyRevision(update.revisionId, ADMIN);
+    expect(rows(9)).toEqual({ title: "Retouchée", is_active: 1 });
+  });
+
+  it("une modification sans création en attente s'applique comme avant", async () => {
+    const plain = await dep("5", "update", { title: "Autre" });
     await applyRevision(plain.revisionId, ADMIN);
-    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 5").get()).toEqual({ n: 1 });
+    expect(rows(5)).toEqual({ title: "Autre", is_active: 0 });
   });
 });
 

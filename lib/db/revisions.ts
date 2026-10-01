@@ -850,7 +850,6 @@ const TARGET_CHANGED_MESSAGE =
   "proposition fraîche plutôt que d'appliquer celle-ci.";
 
 const APPLIED_ACTION: AuditAction = "revision.applied";
-const CREATE_SUPERSEDED_ACTION: AuditAction = "revision.create_superseded";
 const REJECTED_ACTION: AuditAction = "revision.rejected";
 const APPLY_CONFLICT_ACTION: AuditAction = "revision.apply_conflict";
 const RECONCILE_FAILED_ACTION: AuditAction = "revision.reconcile_failed";
@@ -999,6 +998,34 @@ export async function applyRevision(
   // la seule qui écrit réellement sur la cible et doit donc rester, elle
   // aussi, sourde à `is_draft`/`id`/`slug`.
   assertValidPayload(rev.target_type, rev.kind, rev.payload);
+
+  // Une création de bannière en attente se résout D'ABORD (l'appliquer, ou la
+  // rejeter : rejeter une création supprime la ligne, et c'est le sens de « non »).
+  // Appliquer autre chose sur cette ligne la passerait `superseded`, donc
+  // irrejetable : la ligne resterait inactive et vide dans la liste d'administration.
+  // La supprimer à ce moment-là détruirait ce que l'administrateur vient d'approuver
+  // (une mise à jour, voire un retrait dont l'écran promet « rien n'est supprimé »).
+  // On refuse donc, au lieu de nettoyer. `create` n'a pas de sœur `create`.
+  if (rev.target_type === "banner" && rev.kind !== "create") {
+    const pendingCreate = await db
+      .select({ id: contentRevisions.id })
+      .from(contentRevisions)
+      .where(and(
+        eq(contentRevisions.target_type, "banner"),
+        eq(contentRevisions.target_id, rev.target_id),
+        eq(contentRevisions.kind, "create"),
+        eq(contentRevisions.status, "pending"),
+      ))
+      .limit(1)
+      .get();
+    if (pendingCreate) {
+      throw new RevisionError(
+        "conflict",
+        "Une création est encore en attente sur cette bannière : appliquez-la ou rejetez-la d'abord " +
+        "(rejeter supprime la bannière vide), puis revenez à cette révision.",
+      );
+    }
+  }
 
   // Re-vérifié à l'application : l'état de la fiche a pu changer sans toucher
   // `updated_at` (la version ci-dessus), et c'est cette ligne qui écrit `is_active = 1`.
@@ -1407,42 +1434,6 @@ export async function applyRevision(
         console.warn("[revisions] orphan R2 object after supersede", supersededImageKeys[i], c.reason);
       }
     });
-  }
-
-  // Une création de bannière REMPLACÉE par cette application ne pourra plus
-  // jamais être rejetée (`rejectRevision` refuse tout ce qui n'est plus
-  // `pending`) : sa ligne, insérée inactive et vide par `create_banner`, resterait
-  // pour toujours dans la liste d'administration sans que rien ne puisse l'atteindre.
-  // Même nettoyage que le rejet, même prédicat (`is_active = 0`), même
-  // règle : meilleur effort, journalisé — l'application est déjà acquise.
-  // La création elle-même (`rev.kind === "create"`) n'a pas de sœur `create`.
-  let supersededBannerRowRemoved: boolean | undefined;
-  if (rev.target_type === "banner" && rev.kind !== "create" && others.some((o) => o.kind === "create")) {
-    try {
-      const [removed] = await db.batch([deleteInactiveBannerStatement(db, rev.target_id)] satisfies Batch);
-      supersededBannerRowRemoved = ((removed as D1Result)?.meta?.changes ?? 0) > 0;
-    } catch (err) {
-      console.error(
-        "[revisions] création remplacée : suppression de la ligne de bannière échouée",
-        { revisionId: rev.id },
-        err,
-      );
-    }
-    if (supersededBannerRowRemoved) {
-      try {
-        await db.insert(auditLog).values({
-          id: nanoid(),
-          actor_id: actor.id,
-          actor_name: actor.name,
-          action: CREATE_SUPERSEDED_ACTION,
-          target_type: rev.target_type,
-          target_id: rev.target_id,
-          details: JSON.stringify({ via: "admin", revisionId: rev.id, banner_row_removed: true }),
-        });
-      } catch (err) {
-        console.error("[revisions] audit de la suppression d'une création remplacée échoué", { revisionId: rev.id }, err);
-      }
-    }
   }
 
   return { applied: true, superseded: others.length };

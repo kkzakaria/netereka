@@ -364,7 +364,6 @@ export type AuditAction =
   | "revision.created.reactivate"
   | "revision.applied"
   | "revision.rejected"
-  | "revision.create_superseded"
   | "revision.apply_conflict"
   | "revision.reconcile_failed";
 

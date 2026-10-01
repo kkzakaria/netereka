@@ -19,7 +19,6 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "revision.created.reactivate": "Révision déposée (remise en ligne)",
   "revision.applied": "Révision appliquée",
   "revision.rejected": "Révision rejetée",
-  "revision.create_superseded": "Création de bannière remplacée (ligne supprimée)",
   "revision.apply_conflict": "Application de révision annulée (conflit)",
   "revision.reconcile_failed": "Échec de la réconciliation après conflit",
 };
