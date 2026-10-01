@@ -36,6 +36,19 @@ interface CloudflareEnv {
   // vide. Le nom est celui du secret réellement posé en production (vérifié
   // par `npx wrangler secret list`) ; ne pas le renommer en `BRAVE_API_KEY`.
   BRAVE_SEARCH_API_KEY?: string;
+  // Clé de l'API xAI (https://api.x.ai), lue par l'outil MCP
+  // `generate_product_image` pour `grok-imagine-image-2.0` en mode édition.
+  // Optionnelle, et ABSENTE du Worker de production au 2026-10-01 (vérifié par
+  // `npx wrangler secret list`) : en son absence l'outil rend un échec typé qui
+  // nomme ce secret, jamais une liste vide ni un silence.
+  XAI_API_KEY?: string;
+  // Plafond mensuel d'images générées (entier décimal, en nombre d'images).
+  // ABSENT ⇒ LA GÉNÉRATION REFUSE. Ce n'est pas un oubli : `grok-imagine` est
+  // facturé à l'image, et sur une dépense par appel l'absence de borne est le
+  // pire comportement par défaut. Une valeur non décidée doit se lire « pas
+  // décidé », pas « illimité ». `0` désactive explicitement la génération, ce
+  // qui est différent de ne pas avoir tranché.
+  AI_IMAGE_MONTHLY_LIMIT?: string;
   // "0" disables the feature (button hidden, /products/ai-new returns 404). Any other value or unset = enabled.
   AI_PRODUCT_CREATION_ENABLED?: string;
   // Optional model override (for rolling to newer Anthropic model IDs without a code change)
