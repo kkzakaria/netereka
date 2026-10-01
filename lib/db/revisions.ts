@@ -1006,11 +1006,14 @@ export async function applyRevision(
   // jour, voire un retrait dont l'écran promet « rien n'est supprimé »). On refuse
   // donc, au lieu de nettoyer. `create` n'a pas de sœur `create`.
   //
-  // Le message distingue les deux sorties, parce qu'elles ne mènent PAS au même
-  // endroit : le rejet laisse cette révision applicable (le nettoyage ci-dessous
-  // ne périme les sœurs que si la ligne part), tandis que l'application de la
-  // création écrit sur la cible et périme donc cette révision-ci. Promettre
-  // « revenez à cette révision » des deux côtés serait faux d'un côté.
+  // Le message dit où mène chaque sortie, et le rejet en a DEUX : le nettoyage
+  // ci-dessous ne périme les sœurs que si la ligne part, donc rejeter périme cette
+  // révision quand la bannière est encore inactive (la ligne est supprimée) et la
+  // laisse applicable quand elle a été activée depuis (la ligne reste). Les deux
+  // branches sont mesurées : « périme les révisions sœurs en attente sur la ligne
+  // supprimée » et « ne périme pas les sœurs quand la bannière survit », dans
+  // `__tests__/unit/lib/db/withdraw.test.ts`. Lier la conséquence à sa condition,
+  // au lieu de les juxtaposer : juxtaposées, chaque moitié dément l'autre.
   if (rev.target_type === "banner" && rev.kind !== "create") {
     const pendingCreate = await db
       .select({ id: contentRevisions.id })
@@ -1027,8 +1030,9 @@ export async function applyRevision(
       throw new RevisionError(
         "conflict",
         "Une création est encore en attente sur cette bannière : résolvez-la d'abord. " +
-        "La rejeter laisse cette révision applicable, et supprime la bannière si elle est encore inactive. " +
-        "L'appliquer, au contraire, périme cette révision : il faudra en redemander une.",
+        "La rejeter supprime la bannière si elle est encore inactive, et périme alors cette révision ; " +
+        "si elle a été activée depuis, la bannière reste et cette révision reste applicable. " +
+        "L'appliquer périme cette révision dans tous les cas : il faudra en redemander une.",
       );
     }
   }
