@@ -12,7 +12,7 @@ const holder = vi.hoisted(() => ({ binding: null as unknown }));
 vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => holder.binding }));
 vi.mock("@/lib/storage/images", () => ({ deleteFromR2: vi.fn(), uploadToR2: vi.fn() }));
 
-import { getReactivationReadiness } from "@/lib/db/reactivation-readiness";
+import { getReactivationReadiness, type ReactivationReadiness } from "@/lib/db/reactivation-readiness";
 import {
   isDescriptionEmpty,
   hasPurchasableStock,
@@ -148,5 +148,27 @@ describe("reactivationReading : ce qui ne se remet pas en ligne", () => {
     db.exec("UPDATE products SET is_draft = 1, is_active = 0 WHERE id = 'ok'");
     expect(reactivationReading((await getReactivationReadiness("ok"))!).notApplicable).toMatch(/publie/);
     expect(reactivationReading((await getReactivationReadiness("noimg"))!).notApplicable).toBeNull();
+  });
+});
+
+// « aucune des 1 variante active » : l'écran de validation est lu par un humain,
+// et une fiche à variante unique est le cas le plus courant du catalogue.
+describe("l'avertissement de stock se lit en français au singulier", () => {
+  const avecVariantes = (n: number): ReactivationReadiness => ({
+    name: "Fiche", slug: "fiche", is_active: false, is_draft: false,
+    image_count: 1, has_primary_image: true, product_stock: 0,
+    active_variant_count: n, active_variant_stock: 0, active_variants_in_stock: 0,
+    description: "Texte",
+  });
+
+  it("une seule variante : « sa seule variante active », sans chiffre collé au singulier", () => {
+    const text = reactivationWarnings(avecVariantes(1)).find((w) => w.code === "no_stock")!.text;
+    expect(text).toContain("sa seule variante active n'a pas de stock");
+    expect(text).not.toMatch(/\b1 variante/);
+  });
+
+  it("plusieurs variantes : le compte et le pluriel", () => {
+    const text = reactivationWarnings(avecVariantes(3)).find((w) => w.code === "no_stock")!.text;
+    expect(text).toContain("aucune de ses 3 variantes actives n'a de stock");
   });
 });

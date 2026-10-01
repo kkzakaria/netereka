@@ -89,7 +89,11 @@ export function reactivationWarnings(r: ReactivationReadiness): ReactivationWarn
       code: "no_stock",
       text:
         r.active_variant_count > 0
-          ? `Stock nul : aucune des ${plural(r.active_variant_count, "variante active", "variantes actives")} n'a de stock, aucune commande ne peut aboutir. ` +
+          ? `Stock nul : ${
+              r.active_variant_count === 1
+                ? "sa seule variante active n'a pas de stock"
+                : `aucune de ses ${r.active_variant_count} variantes actives n'a de stock`
+            }, aucune commande ne peut aboutir. ` +
             "À ignorer si la remise en ligne précède un réassort."
           : "Stock nul : 0 unité, aucune commande ne peut aboutir. À ignorer si la remise en ligne précède un réassort.",
     });
