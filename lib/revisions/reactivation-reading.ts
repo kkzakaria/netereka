@@ -39,12 +39,26 @@ const MEDIA_TAG = /<(img|picture|video|iframe|svg|canvas|object|embed)\b/i;
 /**
  * Une description « vide » pour le client : absente, blanche, ou du HTML sans
  * texte ni média (`<p></p>`, `<p>&nbsp;</p>`, un `<style>` seul). Pure.
+ *
+ * Le retrait des éléments `style`/`script` — leur CONTENU, pas seulement leurs
+ * balises, sinon la feuille de style compterait comme du texte — est répété
+ * jusqu'à point fixe, parce qu'une passe unique peut RECOMPOSER ce qu'elle vient
+ * d'enlever : sur `<sty<style>x</style>le>body{color:red}</style>` elle laisse
+ * exactement `<style>body{color:red}</style>`, dont le dépouillement des balises
+ * rend `body{color:red}`. La fonction déclarait alors « non vide » une
+ * description qui ne montre rien, et l'écran ne prévenait pas. Chaque tour
+ * raccourcit la chaîne ou la laisse identique, d'où l'arrêt.
  */
 export function isDescriptionEmpty(description: string | null | undefined): boolean {
   if (!description) return true;
   if (MEDIA_TAG.test(description)) return false;
-  const text = description
-    .replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, "")
+  let stripped = description;
+  let previous: string;
+  do {
+    previous = stripped;
+    stripped = stripped.replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, "");
+  } while (stripped !== previous);
+  const text = stripped
     .replace(/<[^>]*>/g, "")
     .replace(/&nbsp;|&#160;|&#xa0;/gi, " ")
     .replace(/[\s ​]+/g, "");

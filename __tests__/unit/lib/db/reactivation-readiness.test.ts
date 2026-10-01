@@ -140,6 +140,17 @@ describe("isDescriptionEmpty", () => {
   ])("%j -> %s", (input, expected) => {
     expect(isDescriptionEmpty(input as string | null)).toBe(expected);
   });
+
+  // Une passe unique RECOMPOSE l'élément qu'elle vient d'enlever : elle laisse
+  // exactement `<style>body{color:red}</style>`, dont le dépouillement des
+  // balises rend `body{color:red}`, et la description passait pour non vide
+  // alors qu'elle ne montre rien. D'où la répétition jusqu'à point fixe.
+  it("une balise imbriquée ne recompose pas un élément survivant", () => {
+    expect(isDescriptionEmpty("<sty<style>x</style>le>body{color:red}</style>")).toBe(true);
+    expect(isDescriptionEmpty("<scr<script>x</script>ipt>alert(1)</script>")).toBe(true);
+    // et le texte visible reste vu, lui, après autant de tours qu'il faut
+    expect(isDescriptionEmpty("<sty<style>x</style>le>a{b:c}</style>Vrai texte")).toBe(false);
+  });
 });
 
 describe("reactivationReading : ce qui ne se remet pas en ligne", () => {
