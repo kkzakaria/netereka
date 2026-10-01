@@ -162,9 +162,33 @@ interface XaiImageItem {
   b64_json?: unknown;
 }
 
-/** Signal d'authentification dans le corps d'un 4xx — voir l'appelant. */
+/**
+ * Signal d'authentification dans le corps d'un 400 — voir l'appelant.
+ *
+ * La première version cherchait `forbidden`, `unauthori[sz]` et `credential`
+ * nus. Ce ne sont PAS des mots d'authentification : ce sont ceux d'un modèle
+ * d'images qui refuse un contenu (« forbidden content », « unauthorized use of
+ * a likeness » — droit à l'image, marque déposée). Rejoué sur des corps
+ * réalistes, cinq refus d'invite sur six sortaient en `auth_failed`, donc sans
+ * le détail qui disait au modèle quoi corriger, et l'administrateur partait
+ * renouveler un secret intact. La symétrie exacte du défaut qu'on fermait.
+ *
+ * Pire : quand xAI renvoie l'invite fautive dans son corps, l'invite est
+ * CONTRÔLÉE PAR LE MODÈLE — qui pouvait donc orienter sa propre classification
+ * en écrivant « api key » dedans.
+ *
+ * On ne garde donc que ce qu'une erreur d'authentification seule produit : la
+ * clé y est le SUJET de la phrase, pas un mot de passage.
+ */
 function looksLikeAuthFailure(body: string): boolean {
-  return /api[ _-]?key|unauthori[sz]|authenticat|credential|forbidden/i.test(body);
+  // La clé, nommée comme sujet.
+  if (/api[ _-]?key/i.test(body)) return true;
+  // L'authentification comme événement, pas comme adjectif.
+  if (/unauthenticated|authentication (failed|error|required)|failed to authenticate/i.test(body)) return true;
+  // « unauthorized » seul penche vers la clé ; suivi d'un nom de contenu, il
+  // décrit un refus de politique (« unauthorized USE of a likeness »).
+  return /\bunauthori[sz]ed\b(?!\s+(use|depiction|reproduction|representation|likeness|content|request))/i
+    .test(body);
 }
 
 function clampDetail(raw: string): string {
@@ -224,10 +248,16 @@ export async function editProductImage(
       // se déclencher. Sans ce reclassement, une clé révoquée se lisait
       // « xAI a refusé la demande » en validation_error : le modèle aurait
       // réécrit son invite indéfiniment pendant que le secret était le
-      // problème. Heuristique sur le corps, assumée : elle ne peut que
-      // désigner la clé à tort, jamais masquer un refus d'invite derrière un
-      // silence.
-      if (looksLikeAuthFailure(body)) return { ok: false, reason: "auth_failed" };
+      // problème.
+      //
+      // Le reclassement est borné au 400, le seul code dont le libellé couvre
+      // la clé invalide : un 422 (« missing fields ») parlant de `credential`
+      // sortait autrement en `auth_failed`. Et il porte le `detail`, parce
+      // qu'un classement à tort doit rester rattrapable — `auth_failed` sans
+      // détail détruisait la seule information actionnable du lot.
+      if (resp.status === 400 && looksLikeAuthFailure(body)) {
+        return { ok: false, reason: "auth_failed", detail: clampDetail(body) || "HTTP 400" };
+      }
       return { ok: false, reason: "rejected", detail: clampDetail(body) || `HTTP ${resp.status}` };
     }
     if (!resp.ok) return { ok: false, reason: "upstream_error" };

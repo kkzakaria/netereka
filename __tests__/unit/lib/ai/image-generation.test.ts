@@ -143,6 +143,69 @@ describe("editProductImage", () => {
     }
   });
 
+  /**
+   * Les corps que la revue a rejoués et qui sortaient en `auth_failed` : ce
+   * sont des refus de POLITIQUE DE CONTENU, pas d'authentification. « forbidden
+   * content », « unauthorized use of a likeness » (droit à l'image), « marque
+   * déposée » — le vocabulaire d'un modèle d'images qui refuse. Les classer en
+   * clé détruisait le détail qui disait au modèle quoi corriger, et envoyait
+   * l'administrateur renouveler un secret intact.
+   *
+   * Le dernier cas est le plus net : xAI peut renvoyer l'invite fautive dans
+   * son corps, et cette invite est ÉCRITE PAR LE MODÈLE — qui pourrait donc
+   * orienter sa propre classification. Il ne le peut plus par ces mots-là.
+   */
+  it("un refus de contenu ne se déguise pas en problème de clé", async () => {
+    for (const body of [
+      '{"error":"Forbidden content: the prompt requests a depiction that violates our image policy"}',
+      '{"error":{"message":"This request is forbidden by the usage policy"}}',
+      '{"error":"Unauthorized use of a public figure likeness is not permitted"}',
+      '{"error":"unauthorised depiction of a trademarked logo"}',
+      '{"error":"Invalid prompt: \'un carton marqué FORBIDDEN\'"}',
+    ]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 400 })));
+      const r = await editProductImage({ sourceImage: "d", prompt: "p" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.reason).toBe("rejected");
+        expect(r.detail).toBeTruthy(); // le détail est ce qui rend le refus actionnable
+      }
+    }
+  });
+
+  /**
+   * Un classement à tort doit rester rattrapable : `auth_failed` SANS détail
+   * détruisait la seule information actionnable du lot, ce qui rendait
+   * l'heuristique irréversible. Avec le détail, celui qui lit tranche.
+   */
+  it("auth_failed porte le détail de xAI, pour qu'un classement à tort se voie", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response('{"error":"Incorrect API key provided: sk-xx…"}', { status: 400 }),
+    ));
+    const r = await editProductImage({ sourceImage: "d", prompt: "p" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("auth_failed");
+      expect(r.detail).toContain("Incorrect API key");
+    }
+  });
+
+  /**
+   * Seul le 400 couvre la clé invalide dans l'OpenAPI ; le 422 documente des
+   * « missing fields ». Le corps doit ici satisfaire la regex d'authentification
+   * — sinon le test passerait par le texte et ne garderait pas la borne de
+   * statut. C'est le piège : mon premier essai utilisait « credential », que la
+   * regex resserrée ne reconnaît plus, et il restait vert sans la borne.
+   */
+  it("un 422 nommant la clé reste rejected : le reclassement est borné au 400", async () => {
+    const body = '{"error":"missing field: api_key"}';
+    expect(/api[ _-]?key/i.test(body)).toBe(true); // le corps déclencherait bien l'heuristique
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 422 })));
+    const r = await editProductImage({ sourceImage: "d", prompt: "p" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("rejected");
+  });
+
   it("un 400 qui parle de l'invite reste rejected, avec son détail", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
       new Response('{"error":"prompt violates content policy"}', { status: 400 }),

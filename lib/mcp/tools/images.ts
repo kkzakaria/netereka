@@ -116,9 +116,14 @@ const GENERATION_FAILURES: Record<GenerationFailure, { code: McpErrorCode; messa
   },
   auth_failed: {
     code: "internal_error",
+    // Pas de « 401/403 » : xAI ne documente que 200/400/422 pour cet endpoint,
+    // et le classement vient d'une HEURISTIQUE sur le corps du 400. Le message
+    // dit donc l'hypothèse la plus probable sans l'affirmer, et le détail de
+    // xAI est accolé par l'appelant — c'est lui qui tranche.
     message:
-      "xAI a refusé la clé XAI_API_KEY (401/403) : elle est expirée, révoquée ou sans droit sur " +
-      "grok-imagine-image. Un administrateur doit la renouveler.",
+      "xAI a rejeté la demande sur un motif qui ressemble à un problème de clé : XAI_API_KEY est " +
+      "probablement expirée, révoquée ou sans droit sur grok-imagine-image. Un administrateur doit la " +
+      "vérifier. Si le détail ci-dessous parle de l'invite et non de la clé, c'est l'invite qu'il faut corriger",
   },
   rate_limited: {
     code: "limit_exceeded",
@@ -205,11 +210,29 @@ function budgetRefusal(d: Exclude<BudgetDecision, { ok: true }>): ToolResult {
  * attachée ». Les deux chemins (brouillon, fiche publiée) rendent le MÊME
  * message : c'est le même événement, et l'écrire deux fois est ce qui a laissé
  * les deux branches diverger — le côté brouillon le rendait en succès.
+ *
+ * L'état du COMPTEUR n'est pas dans cette constante, et c'est le point : elle
+ * a d'abord affirmé « le compteur a bien compté cette image », ce qu'une
+ * constante ne peut pas savoir. Sur une double panne — écriture D1 impossible,
+ * puis téléchargement raté — elle affirmait un comptage qui n'avait pas eu
+ * lieu. La phrase vient donc de `billedCounterNote(recorded)`.
+ *
+ * Elle porte l'état du compteur dans le MESSAGE et non dans un champ : `fail`
+ * ne transporte que des `fieldErrors`, et élargir ce helper partagé par vingt
+ * outils pour ce seul appel coûterait plus que ça ne rapporte. Le message est
+ * ce que lit le modèle comme l'administrateur.
  */
 const BILLED_BUT_UNATTACHED =
   "L'image a été générée (et facturée) mais son téléchargement a échoué : elle n'est PAS attachée au produit. " +
-  "Réessaie — l'URL temporaire de xAI a pu expirer. Le compteur mensuel a bien compté cette image, " +
-  "puisqu'elle a été produite.";
+  "Réessaie — l'URL temporaire de xAI a pu expirer.";
+
+/** Ce que le compteur mensuel a réellement fait, et non ce qu'il devait faire. */
+function billedCounterNote(recorded: boolean): string {
+  return recorded
+    ? "Le compteur mensuel a compté cette image, puisqu'elle a été produite."
+    : "ATTENTION : le compteur mensuel n'a PAS pu être incrémenté pour cette image pourtant facturée — " +
+      "le total du mois sous-compte d'autant.";
+}
 
 function auditFor(ctx: McpContext, tool: string): DraftAudit {
   return { actor: { id: ctx.user.id, name: ctx.user.name }, details: { via: "mcp", tool, client_id: ctx.clientId } };
@@ -313,10 +336,17 @@ export const imageTools: ToolDefinition[] = [
         // appels à `getKV()` ouvriraient la possibilité de compter dans un
         // espace et de contrôler dans un autre.
         const kv = await getKV();
+        // Un seul instant pour les deux bouts : sans ça, `checkImageBudget` et
+        // `recordImagesProduced` appellent chacun `new Date()`, et un appel à
+        // cheval sur minuit UTC du 1er contrôle le mois N puis incrémente le
+        // mois N+1. Une image mal imputée, au plus une par mois — la couture
+        // est gratuite à fermer, donc on la ferme.
+        const now = new Date();
         const decision = await checkImageBudget({
           kv,
           limitRaw: env.AI_IMAGE_MONTHLY_LIMIT,
           actorId: ctx.user.id,
+          now,
         });
         if (!decision.ok) return budgetRefusal(decision);
 
@@ -353,7 +383,7 @@ export const imageTools: ToolDefinition[] = [
         // encore échouer sans rien rembourser.
         let budgetRecorded = true;
         try {
-          await recordImagesProduced(1);
+          await recordImagesProduced(1, now);
         } catch (err) {
           // Perdre le comptage déplafonnerait le mois. On ne jette pas pour
           // autant une image déjà payée : on le DIT dans la réponse, pour que
@@ -386,7 +416,7 @@ export const imageTools: ToolDefinition[] = [
           if (failed) {
             return fail(
               "internal_error",
-              `${BILLED_BUT_UNATTACHED} (${failed.reason ?? "raison inconnue"})`,
+              `${BILLED_BUT_UNATTACHED} ${billedCounterNote(budgetRecorded)} (${failed.reason ?? "raison inconnue"})`,
             );
           }
           return ok({ applied: "direct", generated: true, budget, ...attached });
@@ -394,7 +424,10 @@ export const imageTools: ToolDefinition[] = [
 
         const fetched = await fetchAndUploadImage(productId, edited.url);
         if (!fetched.ok) {
-          return fail("internal_error", `${BILLED_BUT_UNATTACHED} (${fetched.reason})`);
+          return fail(
+            "internal_error",
+            `${BILLED_BUT_UNATTACHED} ${billedCounterNote(budgetRecorded)} (${fetched.reason})`,
+          );
         }
 
         try {

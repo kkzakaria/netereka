@@ -44,10 +44,12 @@ import { checkKVRateLimit } from "@/lib/rate-limit/kv-window-limit";
  * réellement produite. Les deux fonctions sont séparées pour cette raison.
  *
  * **Ce que le compteur mesure exactement.** Des images produites, pas des
- * francs : xAI facture l'image d'ENTRÉE et celle de SORTIE, et le palier de
- * qualité pèse sur le prix. `image-generation.ts` fixe `quality`
- * explicitement pour que ce palier soit un choix et non un défaut hérité,
- * mais le rapport image → facture n'est pas de un pour un. Le plafond borne
+ * francs : xAI facture l'image d'ENTRÉE et celle de SORTIE, et le palier
+ * tarifaire pèse sur le prix. `image-generation.ts` fixe `resolution`
+ * explicitement — `quality` n'est PAS un champ de requête, seulement une
+ * étiquette de palier dans la grille de prix — pour que ce palier soit un
+ * choix et non un défaut hérité, mais le rapport image → facture n'est pas de
+ * un pour un. Le plafond borne
  * donc le VOLUME, ce qui borne la dépense à un facteur près et constant.
  */
 

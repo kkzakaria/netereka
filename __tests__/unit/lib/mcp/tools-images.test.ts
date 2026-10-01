@@ -387,7 +387,7 @@ describe("generate_product_image — la dépense et le compteur", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     // L'écriture du compteur devient impossible APRÈS que le budget a été lu.
     genMocks.editProductImage.mockImplementation(async () => {
-      db.exec("DROP TABLE ai_image_usage");
+      db.exec("CREATE TRIGGER refuse_insert BEFORE INSERT ON ai_image_usage BEGIN SELECT RAISE(ABORT, 'D1 indisponible'); END");
       return { ok: true, url: "https://xai.example/out.png" };
     });
 
@@ -422,6 +422,44 @@ describe("generate_product_image — la dépense et le compteur", () => {
     // L'image a bien été produite : le compteur a bougé, elle est payée.
     expect(storedUsed()).toBe(1);
   });
+
+  /**
+   * DOUBLE PANNE : l'écriture du compteur échoue, puis le téléchargement aussi.
+   * Le libellé partagé affirmait « le compteur mensuel a bien compté cette
+   * image » — une CONSTANTE, donc une affirmation qu'elle ne pouvait pas
+   * connaître. L'ironie est qu'elle existait pour empêcher les deux branches de
+   * diverger, et qu'en les unifiant elle a figé ce que seule une variable sait.
+   *
+   * Un déclencheur qui refuse l'INSERT, et lui seul : supprimer la table ferait
+   * échouer la LECTURE du budget en amont, et la génération serait refusée avant
+   * toute dépense — le bon comportement, mais pas le cas qu'on veut atteindre.
+   * Ici la lecture passe, l'écriture lève, comme une D1 qui tombe entre les deux.
+   * C'est le vrai chemin d'erreur, pas un mock.
+   */
+  it.each(["brouillon", "fiche publiée"] as const)(
+    "%s : si le compteur n'a pas pu être incrémenté, le message le dit au lieu de l'inverse",
+    async (cas) => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      db.exec("CREATE TRIGGER refuse_insert BEFORE INSERT ON ai_image_usage BEGIN SELECT RAISE(ABORT, 'D1 indisponible'); END");
+      if (cas === "brouillon") {
+        draftMocks.addImagesFromUrls.mockResolvedValue({
+          results: [{ url: "https://xai.example/out.png", ok: false, reason: "too_large" }],
+          primary_image_id: null,
+        });
+      } else {
+        draftMocks.getProductDraftState.mockResolvedValue({ is_draft: false });
+        storageMocks.fetchAndUploadImage.mockResolvedValue({ ok: false, reason: "too_large" });
+      }
+
+      const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+      expect(r.isError).toBe(true);
+      const out = parse(r);
+      expect(out.message).toContain("facturée");
+      expect(out.message).toMatch(/n'a PAS pu être incrémenté/);
+      expect(out.message).not.toMatch(/a compté cette image/);
+    },
+  );
 
   it("brouillon et fiche publiée rendent le MÊME message pour le même événement", async () => {
     draftMocks.addImagesFromUrls.mockResolvedValue({
