@@ -12,11 +12,30 @@ on:
 
 jobs:
   claude:
+    # CE DÉPÔT EST PUBLIC. Le filtre sur « @claude » n'autorise rien : il évite
+    # seulement de démarrer pour rien. La VRAIE garde est l'appartenance de
+    # l'auteur — sans elle, n'importe qui peut ouvrir une issue dont le titre
+    # contient « @claude » et faire tourner un job sur le quota de ce compte,
+    # avec un corps de texte qu'il contrôle entièrement comme consigne. Les deux
+    # conditions sont nécessaires : ne retire pas la seconde en croyant retirer
+    # une redondance.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR' ||
+        github.event.review.author_association == 'OWNER' ||
+        github.event.review.author_association == 'MEMBER' ||
+        github.event.review.author_association == 'COLLABORATOR' ||
+        github.event.issue.author_association == 'OWNER' ||
+        github.event.issue.author_association == 'MEMBER' ||
+        github.event.issue.author_association == 'COLLABORATOR'
+      ) && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,7 +51,10 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@v1
+        # Épinglé au commit : « v1 » est une étiquette mobile, et qui peut la
+        # déplacer exécute du code arbitraire dans ce dépôt. Relever l'épingle
+        # délibérément, en lisant ce qui a changé.
+        uses: anthropics/claude-code-action@97c53473391bff1901034d4b454b5bac7ab7a029 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
