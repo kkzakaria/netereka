@@ -923,6 +923,53 @@ export function productReviewFields(product: ProductDetail): { key: string; labe
   return reviewFields(PRODUCT_REVIEW_LABELS, product as unknown as Record<string, unknown>);
 }
 
+/**
+ * Champs de la carte « telle qu'un client la voit maintenant » (retrait, § 2.6).
+ * Cette carte est celle sur laquelle repose la relecture d'un retrait : elle ne
+ * montrait pas le nom ni le prix d'un produit, ni le titre, le badge, le prix ou
+ * le dégradé d'une bannière — alors que l'image d'une bannière en est le visuel
+ * dominant. Les mêmes champs que l'écran d'une création/publication, pas une
+ * liste de plus à tenir. Pure, exportée pour être testée sans rendu.
+ */
+export function currentViewFields(
+  target: RevisionTarget,
+  current: ProductDetail | Banner,
+): { key: string; label: string; value: string }[] {
+  return target === "banner" ? bannerReviewFields(current as Banner) : productReviewFields(current as ProductDetail);
+}
+
+/**
+ * La bannière comme le carrousel la peint : son image sur son dégradé. Le HTML
+ * libre (`BannerContentBlock`) n'en est que la superposition ; sans ceci, la
+ * carte d'un retrait ne montrait pas le visuel que les quatre bannières de
+ * production portent toutes (`image_url`).
+ */
+function BannerVisualPreview({ banner }: { banner: Banner }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Visuel</p>
+      {banner.image_url ? (
+        <div
+          className="relative aspect-[16/6] w-full overflow-hidden rounded-lg border"
+          style={{
+            backgroundImage: `linear-gradient(to right, ${banner.bg_gradient_from || "#183C78"}, ${banner.bg_gradient_to || "#1E4A8F"})`,
+          }}
+        >
+          <Image
+            src={getImageUrl(banner.image_url)}
+            alt={banner.title}
+            fill
+            sizes="(min-width: 1024px) 50vw, 100vw"
+            className="object-contain"
+          />
+        </div>
+      ) : (
+        <EmptyNotice>Aucune image : la bannière ne montre que son texte sur le dégradé.</EmptyNotice>
+      )}
+    </div>
+  );
+}
+
 function FieldsCard({ title, fields }: { title: string; fields: { key: string; label: string; value: string }[] }) {
   return (
     <Card>
@@ -1031,13 +1078,20 @@ function WithdrawalScreen({
         </Card>
       </div>
       <p className="rounded-lg border border-emerald-600/30 bg-emerald-600/5 p-3 text-sm">{reading.reversible}</p>
+      <FieldsCard
+        title={target === "banner" ? "Champs de la bannière, tels qu'un client les voit maintenant" : "Champs de la fiche, tels qu'un client les voit maintenant"}
+        fields={currentViewFields(target, current)}
+      />
       <Card>
         <CardHeader>
           <CardTitle>{target === "banner" ? "La bannière telle qu'un client la voit maintenant" : "La fiche telle qu'un client la voit maintenant"}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {target === "banner" ? (
-            <BannerContentBlock contentHtml={(current as Banner).content_html} bannerId={targetId} variant="current" />
+            <>
+              <BannerVisualPreview banner={current as Banner} />
+              <BannerContentBlock contentHtml={(current as Banner).content_html} bannerId={targetId} variant="current" />
+            </>
           ) : (
             <>
               <ImagesPreview images={(current as ProductDetail).images} />

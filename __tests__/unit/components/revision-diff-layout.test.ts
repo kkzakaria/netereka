@@ -4,6 +4,7 @@ import {
   bannerReviewFields,
   productReviewFields,
   changedScalarFields,
+  currentViewFields,
 } from "@/components/admin/revision-diff";
 import {
   BANNER_WRITABLE_COLUMN_LIST,
@@ -131,5 +132,34 @@ describe("libellés des champs de bannière : chaque colonne écrivable a le sie
     for (const c of changedScalarFields("product", {}, payload)) {
       expect(c.label, `colonne ${c.key} affichée en nom brut`).not.toBe(c.key);
     }
+  });
+});
+
+// § 2.6 rend la carte « telle qu'un client la voit maintenant » porteuse de la
+// relecture d'un retrait : elle n'affichait ni le nom ni le prix d'un produit,
+// ni titre, badge, prix, dégradé ou image d'une bannière.
+describe("currentViewFields : ce que la carte du retrait montre d'une cible", () => {
+  const banner = {
+    title: "Soldes", subtitle: "Jusqu'à -30%", badge_text: "-30%", badge_color: "red", image_url: "banners/soldes.webp",
+    link_url: "/c/promo", cta_text: "Voir", price: 150000, bg_gradient_from: "#183C78", bg_gradient_to: "#1E4A8F",
+    content_html: null, display_order: 0, starts_at: null, ends_at: null,
+  };
+  const product = { name: "Galaxy S24", base_price: 500000, brand: "Samsung", stock_quantity: 12 };
+
+  it("une bannière : titre, badge, prix, dégradé et image sont tous là, avec leur valeur", () => {
+    const shown = Object.fromEntries(currentViewFields("banner", banner as never).map((f) => [f.key, f.value]));
+    expect(shown.title).toBe("Soldes");
+    expect(shown.badge_text).toBe("-30%");
+    expect(shown.image_url).toBe("banners/soldes.webp");
+    expect(shown.bg_gradient_from).toBe("#183C78");
+    expect(shown.price).not.toBe("—");
+  });
+
+  it("un produit : nom et prix y sont, le prix formaté", () => {
+    const shown = Object.fromEntries(currentViewFields("product", product as never).map((f) => [f.key, f.value]));
+    expect(shown.name).toBe("Galaxy S24");
+    expect(shown.base_price).not.toBe("—");
+    expect(shown.base_price).not.toBe("500000");
+    expect(shown.brand).toBe("Samsung");
   });
 });
