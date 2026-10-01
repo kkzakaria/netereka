@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { changeReasonSchema } from "@/lib/validations/mcp-common";
 
 /**
  * Contrats d'entrée des outils MCP de bannières (lib/mcp/tools/banners.ts).
@@ -45,6 +46,7 @@ export const bannerIdSchema = z.number().int().positive();
  *  (§ 2.6) : activer relève de `create_banner`, retirer de `withdraw_banner`. */
 export const updateBannerShape = {
   id: bannerIdSchema,
+  reason: changeReasonSchema,
   title: bannerFields.title.optional(),
   subtitle: bannerFields.subtitle.optional(),
   badge_text: bannerFields.badge_text.optional(),

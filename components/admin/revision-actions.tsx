@@ -70,6 +70,23 @@ export function RevisionActions({
     });
   }
 
+  /**
+   * Copie le nom à saisir : 263 noms de production portent un tiret long ou une
+   * apostrophe typographique, intapables sur un clavier AZERTY sans effort, et
+   * certains font 136 caractères. La saisie reste exigée (le champ ne se remplit
+   * pas seul) : on aide à l'écrire, on ne la supprime pas. `clipboard` manque hors
+   * contexte sécurisé : le nom reste alors sélectionnable d'un clic (`select-all`).
+   */
+  async function handleCopyName() {
+    if (!withdrawal) return;
+    try {
+      await navigator.clipboard.writeText(withdrawal.targetName);
+      toast.success("Nom copié : collez-le dans le champ.");
+    } catch {
+      toast.error("Copie impossible : sélectionnez le nom affiché et copiez-le à la main.");
+    }
+  }
+
   function handleReject() {
     setError(null);
     startTransition(async () => {
@@ -100,16 +117,27 @@ export function RevisionActions({
       {withdrawal && (
         <div className="space-y-2">
           <label htmlFor="withdrawal-confirmation" className="text-sm font-medium">
-            Pour confirmer le retrait, saisissez exactement : <span className="font-mono">{withdrawal.targetName}</span>
+            Pour confirmer le retrait, saisissez exactement : <span className="select-all break-words font-mono">{withdrawal.targetName}</span>
           </label>
-          <Input
-            id="withdrawal-confirmation"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            autoComplete="off"
-            className="min-h-11"
-            disabled={isPending}
-          />
+          <div className="flex gap-2">
+            <Input
+              id="withdrawal-confirmation"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              className="min-h-11"
+              disabled={isPending}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 shrink-0"
+              disabled={isPending || !withdrawal.targetName}
+              onClick={handleCopyName}
+            >
+              Copier le nom
+            </Button>
+          </div>
         </div>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

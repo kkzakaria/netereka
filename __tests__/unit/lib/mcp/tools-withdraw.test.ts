@@ -10,6 +10,7 @@ vi.mock("@/lib/storage/images", () => ({ deleteFromR2: vi.fn(), uploadToR2: vi.f
 
 import { productTools } from "@/lib/mcp/tools/products";
 import { bannerTools } from "@/lib/mcp/tools/banners";
+import { z } from "zod";
 import { updateBannerShape } from "@/lib/validations/mcp-banner";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
@@ -62,6 +63,22 @@ describe("withdraw_banner", () => {
 
   it("refuse une bannière déjà inactive", async () => {
     expect(parse(await banner("withdraw_banner").handler(ctx, { id: 2, reason: "x" })).code).toBe("conflict");
+  });
+});
+
+describe("update_banner porte une raison", () => {
+  it("la raison devient le summary de la révision, et n'entre jamais dans le payload", async () => {
+    const r = await banner("update_banner").handler(ctx, { id: 1, title: "Nouveau", reason: "Le titre annonçait la mauvaise promo" });
+    const rev = db.prepare("SELECT summary, payload FROM content_revisions WHERE id = ?").get(parse(r).revision.id) as { summary: string; payload: string };
+    expect(rev.summary).toBe("Le titre annonçait la mauvaise promo");
+    expect(JSON.parse(rev.payload)).toEqual({ title: "Nouveau" });
+  });
+
+  it("le schéma d'entrée l'exige, comme celui d'un retrait", () => {
+    const schema = z.object(updateBannerShape);
+    expect(schema.safeParse({ id: 1, title: "X" }).success).toBe(false);
+    expect(schema.safeParse({ id: 1, title: "X", reason: "   " }).success).toBe(false);
+    expect(schema.safeParse({ id: 1, title: "X", reason: "Parce que" }).success).toBe(true);
   });
 });
 
