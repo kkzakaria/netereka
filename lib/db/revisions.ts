@@ -999,13 +999,18 @@ export async function applyRevision(
   // aussi, sourde à `is_draft`/`id`/`slug`.
   assertValidPayload(rev.target_type, rev.kind, rev.payload);
 
-  // Une création de bannière en attente se résout D'ABORD (l'appliquer, ou la
-  // rejeter : rejeter une création supprime la ligne, et c'est le sens de « non »).
-  // Appliquer autre chose sur cette ligne la passerait `superseded`, donc
-  // irrejetable : la ligne resterait inactive et vide dans la liste d'administration.
-  // La supprimer à ce moment-là détruirait ce que l'administrateur vient d'approuver
-  // (une mise à jour, voire un retrait dont l'écran promet « rien n'est supprimé »).
-  // On refuse donc, au lieu de nettoyer. `create` n'a pas de sœur `create`.
+  // Une création de bannière en attente se résout D'ABORD. Appliquer autre chose
+  // sur cette ligne la passerait `superseded`, donc irrejetable : la ligne
+  // resterait inactive et vide dans la liste d'administration. La supprimer à ce
+  // moment-là détruirait ce que l'administrateur vient d'approuver (une mise à
+  // jour, voire un retrait dont l'écran promet « rien n'est supprimé »). On refuse
+  // donc, au lieu de nettoyer. `create` n'a pas de sœur `create`.
+  //
+  // Le message distingue les deux sorties, parce qu'elles ne mènent PAS au même
+  // endroit : le rejet laisse cette révision applicable (le nettoyage ci-dessous
+  // ne périme les sœurs que si la ligne part), tandis que l'application de la
+  // création écrit sur la cible et périme donc cette révision-ci. Promettre
+  // « revenez à cette révision » des deux côtés serait faux d'un côté.
   if (rev.target_type === "banner" && rev.kind !== "create") {
     const pendingCreate = await db
       .select({ id: contentRevisions.id })
@@ -1021,8 +1026,9 @@ export async function applyRevision(
     if (pendingCreate) {
       throw new RevisionError(
         "conflict",
-        "Une création est encore en attente sur cette bannière : appliquez-la ou rejetez-la d'abord " +
-        "(rejeter supprime la bannière vide), puis revenez à cette révision.",
+        "Une création est encore en attente sur cette bannière : résolvez-la d'abord. " +
+        "La rejeter laisse cette révision applicable, et supprime la bannière si elle est encore inactive. " +
+        "L'appliquer, au contraire, périme cette révision : il faudra en redemander une.",
       );
     }
   }
@@ -1505,10 +1511,21 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
   // création » doit vouloir dire qu'elle n'existe plus.
   //
   // `is_active = 0` dans le WHERE : on ne supprime jamais une bannière qui
-  // serait, par quelque chemin, devenue visible. Les révisions sœurs encore en
-  // attente sur cette ligne passent `superseded` — leur cible disparaît, et
-  // l'écran de détail d'une cible absente est un 404 qu'on ne saurait plus
-  // résoudre. Meilleur effort, comme le nettoyage R2 : le rejet est déjà acté.
+  // serait, par quelque chemin, devenue visible (une activation manuelle depuis
+  // `/banners`, par exemple).
+  //
+  // Les révisions sœurs ne passent `superseded` QUE si la ligne part vraiment,
+  // d'où le MÊME prédicat des deux côtés. Leur justification est que la cible
+  // disparaît et que l'écran de détail d'une cible absente est un 404 qu'on ne
+  // saurait plus résoudre ; quand la bannière survit, cette justification tombe,
+  // et périmer un retrait que l'administrateur venait de faire déposer lui
+  // ferait perdre sa décision sans qu'aucune cible ait bougé.
+  //
+  // ORDRE : la mise en `superseded` lit `banners` AVANT la suppression, qui suit
+  // dans le même lot (D1 l'exécute séquentiellement, dans une transaction).
+  // Les inverser rendrait son EXISTS toujours faux.
+  //
+  // Meilleur effort, comme le nettoyage R2 : le rejet est déjà acté.
   let bannerRowRemoved: boolean | undefined;
   if (rev.kind === "create" && rev.target_type === "banner") {
     try {
@@ -1521,6 +1538,7 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
             eq(contentRevisions.target_id, rev.target_id),
             eq(contentRevisions.status, "pending"),
             ne(contentRevisions.id, rev.id),
+            sql`exists (select 1 from ${banners} where ${banners.id} = ${Number(rev.target_id)} and ${banners.is_active} = 0)`,
           )),
         deleteInactiveBannerStatement(db, rev.target_id),
       ] satisfies Batch);

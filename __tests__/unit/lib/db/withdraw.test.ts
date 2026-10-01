@@ -261,6 +261,19 @@ describe("rejeter une création de bannière", () => {
     expect(db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(sister.revisionId)).toEqual({ status: "superseded" });
   });
 
+  // La mise en `superseded` des sœurs se justifie par la disparition de leur
+  // cible. Quand la bannière survit, la justification tombe : périmer le retrait
+  // qu'un administrateur venait de faire déposer lui ôterait sa décision alors
+  // que rien n'a bougé.
+  it("ne périme pas les sœurs quand la bannière survit : même prédicat des deux côtés", async () => {
+    const { revisionId } = await deposeCreate();
+    db.exec("UPDATE banners SET is_active = 1 WHERE id = 9");
+    const sister = await createRevision({ target: "banner", targetId: "9", kind: "update", payload: { title: "Autre" }, origin: "mcp", actor: ACTOR });
+    await rejectRevision(revisionId, ADMIN);
+    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 9").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(sister.revisionId)).toEqual({ status: "pending" });
+  });
+
   it("rejeter une modification ne supprime jamais la bannière", async () => {
     const r = await createRevision({ target: "banner", targetId: "5", kind: "update", payload: { title: "Autre" }, origin: "mcp", actor: ACTOR });
     await rejectRevision(r.revisionId, ADMIN);
@@ -310,6 +323,26 @@ describe("une création de bannière en attente se résout avant toute autre app
     const update = await dep("9", "update", { title: "Retouchée" });
     await applyRevision(update.revisionId, ADMIN);
     expect(rows(9)).toEqual({ title: "Retouchée", is_active: 1 });
+  });
+
+  // Le chemin de production, que les cas ci-dessus ne reproduisent pas :
+  // `create_banner` insère la ligne inactive, l'administrateur l'active lui-même
+  // depuis /banners, puis un retrait est déposé. Le message du refus promet que
+  // le rejet laisse CETTE révision applicable — voici la mesure de cette promesse.
+  it("activée à la main puis retirée : rejeter la création rend le retrait applicable", async () => {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await dep("9", "create");
+    db.exec("UPDATE banners SET is_active = 1 WHERE id = 9"); // toggleBannerActive
+    const withdraw = await dep("9", "withdraw");
+
+    await expect(applyRevision(withdraw.revisionId, ADMIN, { confirmation: "Neuve" })).rejects.toMatchObject({ code: "conflict" });
+
+    await rejectRevision(create.revisionId, ADMIN);
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 1 }); // la bannière active n'est pas supprimée
+    expect(status(withdraw.revisionId)).toBe("pending"); // et le retrait n'est pas périmé
+
+    await expect(applyRevision(withdraw.revisionId, ADMIN, { confirmation: "Neuve" })).resolves.toMatchObject({ applied: true });
+    expect(rows(9)).toEqual({ title: "Neuve", is_active: 0 });
   });
 
   it("une modification sans création en attente s'applique comme avant", async () => {
