@@ -170,3 +170,12 @@ describe("currentViewFields : ce que la carte du retrait montre d'une cible", ()
     expect(shown.brand).toBe("Samsung");
   });
 });
+
+// Sur 42 fiches de production, la carte affichait « Stock : 99 » juste au-dessus de
+// « Stock nul : variantes à 0 » : la colonne de la fiche n'est pas le stock vendable.
+describe("le libellé du stock dit de quel stock il parle", () => {
+  it("la colonne products.stock_quantity se lit « Stock de la fiche », jamais « Stock » seul", () => {
+    const label = productReviewFields({ stock_quantity: 99 } as never).find((f) => f.key === "stock_quantity")!.label;
+    expect(label).toBe("Stock de la fiche");
+  });
+});

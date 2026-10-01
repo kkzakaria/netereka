@@ -35,8 +35,14 @@ export interface ReactivationReadiness {
   /** `products.stock_quantity` : ce que la page affiche (« rupture » à 0). */
   product_stock: number;
   active_variant_count: number;
-  /** Somme du stock des variantes ACTIVES (0 sans variante) : ce que le paiement vérifie dès qu'il y en a. */
+  /** Somme du stock des variantes ACTIVES (0 sans variante) : sert à signaler l'écart avec la fiche, pas à décider. */
   active_variant_stock: number;
+  /**
+   * Variantes actives dont le stock est POSITIF : ce que le paiement vérifie dès qu'il y en a (il refuse une
+   * variante dont le stock est inférieur à la quantité). Un compte, pas une somme : aucune contrainte CHECK
+   * n'interdit un stock négatif, et une somme de 0 pourrait cacher +3 et -3.
+   */
+  active_variants_in_stock: number;
   /** Texte brut de `products.description`, que `reactivation-reading` juge vide ou non. */
   description: string | null;
 }
@@ -66,7 +72,11 @@ export async function getReactivationReadiness(productId: string): Promise<React
       .where(and(eq(productImages.product_id, productId), eq(productImages.is_primary, 1)))
       .get(),
     db
-      .select({ n: count(), stock: sql<number>`coalesce(sum(${productVariants.stock_quantity}), 0)` })
+      .select({
+        n: count(),
+        stock: sql<number>`coalesce(sum(${productVariants.stock_quantity}), 0)`,
+        in_stock: sql<number>`coalesce(sum(case when ${productVariants.stock_quantity} > 0 then 1 else 0 end), 0)`,
+      })
       .from(productVariants)
       .where(and(eq(productVariants.product_id, productId), eq(productVariants.is_active, 1)))
       .get(),
@@ -82,6 +92,7 @@ export async function getReactivationReadiness(productId: string): Promise<React
     product_stock: product.stock_quantity,
     active_variant_count: variants?.n ?? 0,
     active_variant_stock: Number(variants?.stock ?? 0),
+    active_variants_in_stock: Number(variants?.in_stock ?? 0),
     description: product.description,
   };
 }

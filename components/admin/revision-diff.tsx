@@ -883,7 +883,7 @@ const PRODUCT_REVIEW_LABELS: Record<ProductWritableColumn, string | null> = {
   sku: "SKU",
   brand: "Marque",
   is_featured: "Mis en avant (hero)",
-  stock_quantity: "Stock",
+  stock_quantity: "Stock de la fiche",
   low_stock_threshold: "Seuil de stock bas",
   weight_grams: "Poids (g)",
   meta_title: "Titre SEO",

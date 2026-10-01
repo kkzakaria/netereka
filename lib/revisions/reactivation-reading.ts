@@ -54,11 +54,14 @@ export function isDescriptionEmpty(description: string | null | undefined): bool
 const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 
 /**
- * Le stock qu'un client peut réellement acheter : celui des variantes actives
- * dès qu'il y en a (le paiement n'en regarde pas d'autre), sinon celui de la fiche.
+ * Un client peut-il acheter quelque chose ? Dès qu'il y a des variantes actives,
+ * le paiement ne regarde que la leur : il faut qu'UNE ait du stock (existence,
+ * pas somme : un stock négatif n'est pas interdit en base). Sinon, celui de la fiche.
  */
-export function purchasableStock(r: Pick<ReactivationReadiness, "product_stock" | "active_variant_count" | "active_variant_stock">): number {
-  return r.active_variant_count > 0 ? r.active_variant_stock : r.product_stock;
+export function hasPurchasableStock(
+  r: Pick<ReactivationReadiness, "product_stock" | "active_variant_count" | "active_variants_in_stock">,
+): boolean {
+  return r.active_variant_count > 0 ? r.active_variants_in_stock > 0 : r.product_stock > 0;
 }
 
 export function reactivationWarnings(r: ReactivationReadiness): ReactivationWarning[] {
@@ -80,13 +83,13 @@ export function reactivationWarnings(r: ReactivationReadiness): ReactivationWarn
     });
   }
 
-  const sellable = purchasableStock(r);
-  if (sellable <= 0) {
+  const sellable = hasPurchasableStock(r);
+  if (!sellable) {
     warnings.push({
       code: "no_stock",
       text:
         r.active_variant_count > 0
-          ? `Stock nul : ${plural(r.active_variant_count, "variante active", "variantes actives")} à 0, aucune commande ne peut aboutir. ` +
+          ? `Stock nul : aucune des ${plural(r.active_variant_count, "variante active", "variantes actives")} n'a de stock, aucune commande ne peut aboutir. ` +
             "À ignorer si la remise en ligne précède un réassort."
           : "Stock nul : 0 unité, aucune commande ne peut aboutir. À ignorer si la remise en ligne précède un réassort.",
     });
@@ -100,9 +103,9 @@ export function reactivationWarnings(r: ReactivationReadiness): ReactivationWarn
       code: "stock_mismatch",
       text:
         `Le stock de la fiche (${r.product_stock}) diffère de la somme de ses variantes actives (${r.active_variant_stock}) : ` +
-        (pageSaysInStock && sellable <= 0
+        (pageSaysInStock && !sellable
           ? "la page s'affichera « en stock » alors qu'aucune variante ne l'est."
-          : !pageSaysInStock && sellable > 0
+          : !pageSaysInStock && sellable
             ? "la page s'affichera en rupture alors que des variantes sont achetables."
             : "le paiement ne lit que celui des variantes."),
     });

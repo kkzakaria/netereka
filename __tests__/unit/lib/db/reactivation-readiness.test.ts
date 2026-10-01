@@ -15,7 +15,7 @@ vi.mock("@/lib/storage/images", () => ({ deleteFromR2: vi.fn(), uploadToR2: vi.f
 import { getReactivationReadiness } from "@/lib/db/reactivation-readiness";
 import {
   isDescriptionEmpty,
-  purchasableStock,
+  hasPurchasableStock,
   reactivationReading,
   reactivationWarnings,
 } from "@/lib/revisions/reactivation-reading";
@@ -63,7 +63,7 @@ describe("getReactivationReadiness", () => {
 
   it("lit le stock de la fiche ET celui des variantes ACTIVES de cette fiche seulement", async () => {
     expect(await getReactivationReadiness("vzero")).toMatchObject({
-      product_stock: 99, active_variant_count: 2, active_variant_stock: 0, // v3 (inactive, 50) exclue
+      product_stock: 99, active_variant_count: 2, active_variant_stock: 0, active_variants_in_stock: 0, // v3 (inactive, 50) exclue
     });
     expect(await getReactivationReadiness("vok")).toMatchObject({ product_stock: 0, active_variant_count: 2, active_variant_stock: 8 });
     expect(await getReactivationReadiness("nostock")).toMatchObject({ product_stock: 0, active_variant_count: 0, active_variant_stock: 0 });
@@ -96,14 +96,14 @@ describe("les avertissements, de la mesure à la phrase", () => {
   it("avec variantes, un stock de fiche à 99 ne masque pas des variantes toutes à zéro", async () => {
     // Lire products.stock_quantity seul dirait « en stock » : aucun client ne peut pourtant acheter cette fiche.
     const r = (await getReactivationReadiness("vzero"))!;
-    expect(purchasableStock(r)).toBe(0);
+    expect(hasPurchasableStock(r)).toBe(false);
     expect(reactivationWarnings(r).map((w) => w.code)).toEqual(["no_stock", "stock_mismatch"]);
     expect(reactivationWarnings(r).find((w) => w.code === "stock_mismatch")!.text).toMatch(/« en stock » alors qu'aucune variante/);
   });
 
   it("avec variantes, un stock de fiche à 0 ne déclare pas la fiche invendable : la page affiche rupture, des variantes s'achètent", async () => {
     const r = (await getReactivationReadiness("vok"))!;
-    expect(purchasableStock(r)).toBe(8);
+    expect(hasPurchasableStock(r)).toBe(true);
     expect(reactivationWarnings(r).map((w) => w.code)).toEqual(["stock_mismatch"]);
     expect(reactivationWarnings(r)[0].text).toMatch(/en rupture alors que des variantes sont achetables/);
   });
@@ -111,6 +111,24 @@ describe("les avertissements, de la mesure à la phrase", () => {
   it("description absente ou vide de HTML : no_description", async () => {
     expect(await codes("nodesc")).toEqual(["no_description"]);
     expect(await codes("blank")).toEqual(["no_description"]);
+  });
+});
+
+describe("un stock négatif ne fait pas une fiche achetable", () => {
+  it("+3 et -3 : la somme vaut 0 mais UNE variante a du stock ; -3 et -2 : rien d'achetable", async () => {
+    db.exec(`
+      INSERT INTO products (id, name, slug, base_price, is_active, is_draft, stock_quantity, description) VALUES
+        ('neg1', 'Mixte', 'mixte', 10, 0, 0, 0, 'T'), ('neg2', 'Négatives', 'negatives', 10, 0, 0, 0, 'T');
+      INSERT INTO product_variants (id, product_id, name, price, stock_quantity, is_active) VALUES
+        ('n1', 'neg1', 'A', 10, 3, 1), ('n2', 'neg1', 'B', 10, -3, 1), ('n3', 'neg2', 'A', 10, -3, 1), ('n4', 'neg2', 'B', 10, -2, 1);
+    `);
+    const mixte = (await getReactivationReadiness("neg1"))!;
+    expect(mixte).toMatchObject({ active_variant_stock: 0, active_variants_in_stock: 1 });
+    expect(hasPurchasableStock(mixte)).toBe(true);
+    expect(reactivationWarnings(mixte).map((w) => w.code)).not.toContain("no_stock");
+    const neg = (await getReactivationReadiness("neg2"))!;
+    expect(hasPurchasableStock(neg)).toBe(false);
+    expect(reactivationWarnings(neg).map((w) => w.code)).toContain("no_stock");
   });
 });
 
