@@ -1,7 +1,7 @@
-import { and, asc, isNotNull } from "drizzle-orm";
+import { and, isNotNull } from "drizzle-orm";
 import { getDrizzle } from "@/lib/db/drizzle";
 import { banners } from "@/lib/db/schema";
-import { bannerClock, displayedBannerCondition } from "@/lib/db/storefront/banners";
+import { bannerClock, displayedBannerCondition, displayedBannerOrder } from "@/lib/db/storefront/banners";
 import { getImageUrl } from "@/lib/utils/images";
 import { getKV } from "@/lib/cloudflare/context";
 import { KV_HERO_PRELOAD_KEY } from "@/lib/cloudflare/hero-preload-key";
@@ -22,7 +22,7 @@ export async function refreshHeroPreload(): Promise<void> {
     const banner = await db.query.banners.findFirst({
       // Même définition de « affichée » que le carrousel, plus une image.
       where: and(displayedBannerCondition(bannerClock()), isNotNull(banners.image_url)),
-      orderBy: [asc(banners.display_order)],
+      orderBy: [...displayedBannerOrder],
       columns: { image_url: true },
     });
 

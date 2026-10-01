@@ -267,3 +267,61 @@ describe("rejeter une création de bannière", () => {
     expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 5").get()).toEqual({ n: 1 });
   });
 });
+
+describe("appliquer une révision qui remplace une création de bannière", () => {
+  async function deposeCreateEtUpdate() {
+    db.exec(`INSERT INTO banners (id, title, link_url, is_active, display_order) VALUES (9, 'Neuve', '/n', 0, 9)`);
+    const create = await createRevision({ target: "banner", targetId: "9", kind: "create", payload: {}, origin: "mcp", actor: ACTOR });
+    const update = await createRevision({ target: "banner", targetId: "9", kind: "update", payload: { title: "Retouchée" }, origin: "mcp", actor: ACTOR });
+    return { create, update };
+  }
+
+  it("supprime la ligne inactive devenue inatteignable (le rejet refuse une révision superseded)", async () => {
+    const { create, update } = await deposeCreateEtUpdate();
+    await applyRevision(update.revisionId, ADMIN);
+    expect(db.prepare("SELECT status FROM content_revisions WHERE id = ?").get(create.revisionId)).toEqual({ status: "superseded" });
+    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 9").get()).toEqual({ n: 0 });
+    const audit = db.prepare("SELECT details FROM audit_log WHERE action = 'revision.create_superseded'").get() as { details: string };
+    expect(JSON.parse(audit.details).banner_row_removed).toBe(true);
+  });
+
+  it("ne supprime jamais une bannière devenue active", async () => {
+    const { update } = await deposeCreateEtUpdate();
+    db.exec("UPDATE banners SET is_active = 1 WHERE id = 9");
+    await applyRevision(update.revisionId, ADMIN);
+    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 9").get()).toEqual({ n: 1 });
+  });
+
+  it("appliquer la création elle-même garde la ligne, et une modification sans création en attente aussi", async () => {
+    const { create } = await deposeCreateEtUpdate();
+    await applyRevision(create.revisionId, ADMIN);
+    expect(db.prepare("SELECT is_active FROM banners WHERE id = 9").get()).toEqual({ is_active: 1 });
+    const plain = await createRevision({ target: "banner", targetId: "5", kind: "update", payload: { title: "Autre" }, origin: "mcp", actor: ACTOR });
+    await applyRevision(plain.revisionId, ADMIN);
+    expect(db.prepare("SELECT COUNT(*) n FROM banners WHERE id = 5").get()).toEqual({ n: 1 });
+  });
+});
+
+describe("le rang dans le carrousel est écrit une seule fois", () => {
+  /** Les requêtes émises, pour comparer leur ORDER BY : SQLite rend les ex æquo dans l'ordre du rowid,
+   *  donc un test sur les lignes ne verrait jamais un départage manquant. */
+  function orderByOf(statements: string[], from: string): string {
+    const sql = statements.find((s) => s.includes(from) && /order by/i.test(s));
+    expect(sql, `requête sur ${from} avec ORDER BY`).toBeDefined();
+    return sql!.slice(sql!.toLowerCase().lastIndexOf("order by")).replace(/\s+/g, " ").trim();
+  }
+
+  it("getActiveBanners et la position annoncée par l'écran du retrait partagent le même ORDER BY, départage inclus", async () => {
+    const seen: string[] = [];
+    const real = holder.binding as { prepare: (sql: string) => unknown };
+    holder.binding = { ...real, prepare: (sql: string) => { seen.push(sql); return real.prepare(sql); } };
+    const { getActiveBanners } = await import("@/lib/db/storefront/banners");
+    await getActiveBanners();
+    const carousel = orderByOf(seen, 'from "banners"');
+    seen.length = 0;
+    await getBannerWithdrawImpact(1);
+    const announced = orderByOf(seen, 'from "banners"');
+    expect(announced).toBe(carousel);
+    expect(carousel).toMatch(/"display_order".*"id"/);
+  });
+});

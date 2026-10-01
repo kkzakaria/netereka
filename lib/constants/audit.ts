@@ -18,6 +18,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   "revision.created.withdraw": "Révision déposée (retrait)",
   "revision.applied": "Révision appliquée",
   "revision.rejected": "Révision rejetée",
+  "revision.create_superseded": "Création de bannière remplacée (ligne supprimée)",
   "revision.apply_conflict": "Application de révision annulée (conflit)",
   "revision.reconcile_failed": "Échec de la réconciliation après conflit",
 };

@@ -38,6 +38,15 @@ export function displayedBannerCondition(now: string): SQL | undefined {
   );
 }
 
+/**
+ * LE rang dans le carrousel : `display_order`, puis `id` pour départager les
+ * ex æquo. Partagé comme `displayedBannerCondition` : sans départage, deux
+ * bannières de même `display_order` n'ont de rang que celui que SQLite veut
+ * bien leur donner, et la position annoncée par l'écran d'un retrait pourrait
+ * différer de celle du carrousel.
+ */
+export const displayedBannerOrder = [asc(banners.display_order), asc(banners.id)] as const;
+
 export async function getActiveBanners(): Promise<Banner[]> {
   const db = await getDrizzle();
 
@@ -45,7 +54,7 @@ export async function getActiveBanners(): Promise<Banner[]> {
     .select()
     .from(banners)
     .where(displayedBannerCondition(bannerClock()))
-    .orderBy(asc(banners.display_order))) as unknown as Banner[];
+    .orderBy(...displayedBannerOrder)) as unknown as Banner[];
 
   return sanitizeBannerContent(rows);
 }

@@ -796,6 +796,7 @@ const TARGET_CHANGED_MESSAGE =
   "proposition fraîche plutôt que d'appliquer celle-ci.";
 
 const APPLIED_ACTION: AuditAction = "revision.applied";
+const CREATE_SUPERSEDED_ACTION: AuditAction = "revision.create_superseded";
 const REJECTED_ACTION: AuditAction = "revision.rejected";
 const APPLY_CONFLICT_ACTION: AuditAction = "revision.apply_conflict";
 const RECONCILE_FAILED_ACTION: AuditAction = "revision.reconcile_failed";
@@ -1345,7 +1346,54 @@ export async function applyRevision(
     });
   }
 
+  // Une création de bannière REMPLACÉE par cette application ne pourra plus
+  // jamais être rejetée (`rejectRevision` refuse tout ce qui n'est plus
+  // `pending`) : sa ligne, insérée inactive et vide par `create_banner`, resterait
+  // pour toujours dans la liste d'administration sans que rien ne puisse l'atteindre.
+  // Même nettoyage que le rejet, même prédicat (`is_active = 0`), même
+  // règle : meilleur effort, journalisé — l'application est déjà acquise.
+  // La création elle-même (`rev.kind === "create"`) n'a pas de sœur `create`.
+  let supersededBannerRowRemoved: boolean | undefined;
+  if (rev.target_type === "banner" && rev.kind !== "create" && others.some((o) => o.kind === "create")) {
+    try {
+      const [removed] = await db.batch([deleteInactiveBannerStatement(db, rev.target_id)] satisfies Batch);
+      supersededBannerRowRemoved = ((removed as D1Result)?.meta?.changes ?? 0) > 0;
+    } catch (err) {
+      console.error(
+        "[revisions] création remplacée : suppression de la ligne de bannière échouée",
+        { revisionId: rev.id },
+        err,
+      );
+    }
+    if (supersededBannerRowRemoved) {
+      try {
+        await db.insert(auditLog).values({
+          id: nanoid(),
+          actor_id: actor.id,
+          actor_name: actor.name,
+          action: CREATE_SUPERSEDED_ACTION,
+          target_type: rev.target_type,
+          target_id: rev.target_id,
+          details: JSON.stringify({ via: "admin", revisionId: rev.id, banner_row_removed: true }),
+        });
+      } catch (err) {
+        console.error("[revisions] audit de la suppression d'une création remplacée échoué", { revisionId: rev.id }, err);
+      }
+    }
+  }
+
   return { applied: true, superseded: others.length };
+}
+
+/**
+ * LA suppression d'une ligne de bannière abandonnée : `is_active = 0` dans le
+ * WHERE, pour ne jamais effacer une bannière qui serait, par quelque chemin,
+ * devenue visible. Partagée par le rejet d'une création et par l'application
+ * qui en remplace une (`applyRevision`) : deux écritures de ce prédicat
+ * pourraient diverger, et c'est lui qui protège le carrousel.
+ */
+function deleteInactiveBannerStatement(db: DrizzleDB, bannerId: string) {
+  return db.delete(banners).where(and(eq(banners.id, Number(bannerId)), eq(banners.is_active, 0)));
 }
 
 /** Message de conflit du jumeau de `applyRevision` : une autre résolution
@@ -1420,7 +1468,7 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
             eq(contentRevisions.status, "pending"),
             ne(contentRevisions.id, rev.id),
           )),
-        db.delete(banners).where(and(eq(banners.id, Number(rev.target_id)), eq(banners.is_active, 0))),
+        deleteInactiveBannerStatement(db, rev.target_id),
       ] satisfies Batch);
       bannerRowRemoved = ((cleanup[1] as D1Result)?.meta?.changes ?? 0) > 0;
     } catch (err) {

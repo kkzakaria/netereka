@@ -363,6 +363,7 @@ export type AuditAction =
   | "revision.created.withdraw"
   | "revision.applied"
   | "revision.rejected"
+  | "revision.create_superseded"
   | "revision.apply_conflict"
   | "revision.reconcile_failed";
 
