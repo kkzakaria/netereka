@@ -166,20 +166,23 @@ function budgetRefusal(d: Exclude<BudgetDecision, { ok: true }>): ToolResult {
         "internal_error",
         `Génération refusée : le plafond mensuel d'images (${MONTHLY_LIMIT_ENV}) n'est pas configuré sur ce ` +
           "déploiement. Un plafond absent ne vaut pas « illimité » — chaque image est facturée, donc la " +
-          "génération refuse jusqu'à ce qu'un administrateur fixe cette valeur.",
+          "génération refuse jusqu'à ce qu'un administrateur fixe cette valeur : " +
+          `\`npx wrangler secret put ${MONTHLY_LIMIT_ENV}\`, ou une entrée \`vars\` dans wrangler.jsonc. ` +
+          "C'est un nombre entier d'images par mois ; 0 désactive explicitement la génération.",
       );
     case "limit_unreadable":
       return fail(
         "internal_error",
         `Génération refusée : le plafond mensuel ${MONTHLY_LIMIT_ENV} vaut « ${d.raw} », qui n'est pas un ` +
-          "nombre entier d'images. Un administrateur doit corriger cette valeur.",
+          "nombre entier d'images. Un administrateur doit corriger cette valeur " +
+          `(\`npx wrangler secret put ${MONTHLY_LIMIT_ENV}\`, ou l'entrée \`vars\` de wrangler.jsonc).`,
       );
-    case "usage_unreadable":
+    case "usage_unavailable":
       return fail(
         "internal_error",
-        `Génération refusée : le compteur mensuel d'images est illisible (« ${d.raw} »). On ne sait donc pas ` +
-          "où en est la dépense du mois, et repartir de zéro déplafonnerait le mois. Un administrateur doit " +
-          "remettre ce compteur à sa valeur réelle.",
+        `Génération refusée : le compteur mensuel d'images n'a pas pu être lu (${d.detail}). On ne sait donc ` +
+          "pas où en est la dépense du mois, et repartir de zéro déplafonnerait le mois entier sur une panne " +
+          "passagère. Réessaie ; si cela persiste, la base est indisponible.",
       );
     case "monthly_budget_exceeded":
       return fail(
@@ -196,6 +199,17 @@ function budgetRefusal(d: Exclude<BudgetDecision, { ok: true }>): ToolResult {
       );
   }
 }
+
+/**
+ * Un seul libellé pour « l'image existe, elle est payée, elle n'est pas
+ * attachée ». Les deux chemins (brouillon, fiche publiée) rendent le MÊME
+ * message : c'est le même événement, et l'écrire deux fois est ce qui a laissé
+ * les deux branches diverger — le côté brouillon le rendait en succès.
+ */
+const BILLED_BUT_UNATTACHED =
+  "L'image a été générée (et facturée) mais son téléchargement a échoué : elle n'est PAS attachée au produit. " +
+  "Réessaie — l'URL temporaire de xAI a pu expirer. Le compteur mensuel a bien compté cette image, " +
+  "puisqu'elle a été produite.";
 
 function auditFor(ctx: McpContext, tool: string): DraftAudit {
   return { actor: { id: ctx.user.id, name: ctx.user.name }, details: { via: "mcp", tool, client_id: ctx.clientId } };
@@ -339,7 +353,7 @@ export const imageTools: ToolDefinition[] = [
         // encore échouer sans rien rembourser.
         let budgetRecorded = true;
         try {
-          await recordImagesProduced(kv, 1);
+          await recordImagesProduced(1);
         } catch (err) {
           // Perdre le comptage déplafonnerait le mois. On ne jette pas pour
           // autant une image déjà payée : on le DIT dans la réponse, pour que
@@ -347,6 +361,8 @@ export const imageTools: ToolDefinition[] = [
           budgetRecorded = false;
           console.error("[mcp/generate_product_image] compteur mensuel non incrémenté", err);
         }
+
+        const budget = { recorded: budgetRecorded, used_before: decision.used, limit: decision.limit };
 
         // ─── Le retour dans R2, par le chemin unique ───
         if (is_draft) {
@@ -358,21 +374,27 @@ export const imageTools: ToolDefinition[] = [
             [{ url: edited.url, alt: input.alt ?? null }],
             auditFor(ctx, "generate_product_image"),
           );
-          return ok({
-            applied: "direct",
-            generated: true,
-            budget: { recorded: budgetRecorded, used_before: decision.used, limit: decision.limit },
-            ...attached,
-          });
+          // `addImagesFromUrls` NE LÈVE PAS sur un téléchargement raté : elle
+          // rend `results: [{ ok: false, reason }]` (lib/db/product-drafts.ts).
+          // Sans ce contrôle, le même événement — une image produite et
+          // facturée qui n'est pas attachée — se lisait « succès » sur un
+          // brouillon et `internal_error` sur une fiche publiée, et le mot
+          // « facturée » n'apparaissait que du second côté. Une asymétrie que
+          // rien ne gardait : la réponse disait `generated: true` avec un
+          // `results[0].ok === false` noyé dedans.
+          const failed = attached.results.find((r) => !r.ok);
+          if (failed) {
+            return fail(
+              "internal_error",
+              `${BILLED_BUT_UNATTACHED} (${failed.reason ?? "raison inconnue"})`,
+            );
+          }
+          return ok({ applied: "direct", generated: true, budget, ...attached });
         }
 
         const fetched = await fetchAndUploadImage(productId, edited.url);
         if (!fetched.ok) {
-          return fail(
-            "internal_error",
-            `L'image a été générée (et facturée) mais son téléchargement a échoué (${fetched.reason}) : elle ` +
-              "n'est pas attachée. Réessaie — l'URL temporaire de xAI a pu expirer.",
-          );
+          return fail("internal_error", `${BILLED_BUT_UNATTACHED} (${fetched.reason})`);
         }
 
         try {
@@ -387,7 +409,7 @@ export const imageTools: ToolDefinition[] = [
           return ok({
             applied: "revision",
             generated: true,
-            budget: { recorded: budgetRecorded, used_before: decision.used, limit: decision.limit },
+            budget,
             revision: { id: revisionId, status },
             message:
               `Fiche publiée : l'image générée a été déposée en révision (${revisionId}), en attente de ` +

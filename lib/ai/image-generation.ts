@@ -22,15 +22,44 @@ import { ALLOWED_IMAGE_TYPES, IMAGE_MAX_BYTES, imageTypeFromKey } from "@/lib/st
  * contrôle de type ni le plafond de taille — elle est donc refusée par un
  * échec typé (`b64_not_supported`) plutôt que décodée ici.
  *
- * Contrat d'API vérifié sur la documentation xAI (docs.x.ai, 2026-10-01) :
- * POST /v1/images/edits, corps JSON, `image: { type: "image_url", url }` où
- * `url` accepte une URL publique OU une data URI base64, réponse
- * `{ data: [{ url }] }`. NON vérifié par un appel réel : aucune clé xAI
- * n'existe sur ce déploiement (cf. `env.d.ts`).
+ * **Contrat d'API, et ce qui est vraiment vérifié.** Lu sur l'OpenAPI
+ * officiel (`https://docs.x.ai/openapi.json`, 2026-10-01) : POST
+ * /v1/images/edits, corps `application/json` (divergence volontaire d'xAI
+ * avec OpenAI, qui attend du multipart), schéma `EditImageRequest` déclarant
+ * `prompt` (requis), `image`, `images`, `model`, `n`, `resolution`,
+ * `aspect_ratio`, `response_format` (défaut `"url"`), `storage_options`,
+ * `user` ; réponse `GeneratedImageResponse`, d'exemple `{ data: [{ url }] }`.
+ * Le schéma `ImageUrl` accepte « a public URL, a base64-encoded data URL, or
+ * a file_id ».
+ *
+ * En revanche `ImageUrl` ne déclare QUE `url` et `file_id` : la clé `type`
+ * qu'on envoie n'apparaît que dans les EXEMPLES publiés, pas dans le schéma.
+ * On l'envoie donc comme « conforme aux exemples publiés », pas comme
+ * « vérifiée sur le schéma » — rien ne pose `additionalProperties: false`,
+ * donc elle passe, mais elle n'est pas contractuelle.
+ *
+ * Rien de tout cela n'est vérifié par un appel RÉEL : aucune clé xAI n'existe
+ * sur ce déploiement (cf. `env.d.ts`).
  */
 
 const XAI_EDITS_ENDPOINT = "https://api.x.ai/v1/images/edits";
 export const XAI_IMAGE_MODEL = "grok-imagine-image-2.0";
+/**
+ * Palier de résolution demandé explicitement.
+ *
+ * C'est le seul levier de facturation que ces endpoints exposent : l'OpenAPI
+ * tarifie « one (quality, resolution) tier », mais `quality` n'est PAS un
+ * champ de `EditImageRequest` ni de `GenerateImageRequest` — il n'apparaît
+ * que dans le schéma de prix, comme étiquette de palier. `resolution`, si :
+ * `1k` | `1.5k` | `2k`, et « Defaults to 1k ».
+ *
+ * On l'écrit donc au lieu de le laisser par défaut, pour que le palier
+ * facturé soit un CHOIX. `1k` est retenu parce que la vitrine sert ses images
+ * via le transformateur Cloudflare (`lib/utils/cloudflare-image-loader.ts`) et
+ * qu'aucune carte ni page produit n'affiche au-delà : payer 2k serait payer
+ * des pixels que personne ne voit.
+ */
+const XAI_IMAGE_RESOLUTION = "1k";
 const DEFAULT_TIMEOUT_MS = 60_000;
 /** Longueur maximale du détail d'erreur renvoyé par xAI qu'on relaie. Borné
  *  pour qu'un corps d'erreur bavard ne devienne pas la réponse de l'outil. */
@@ -38,10 +67,13 @@ const MAX_DETAIL_CHARS = 200;
 
 /**
  * Plafond de l'image SOURCE, repris de `fetch-image.ts` plutôt que choisi
- * ici : toute image entrée dans R2 par le MCP a déjà franchi ce plafond, et
- * une source plus lourde (téléversée autrement) produirait un corps JSON
- * d'environ 4/3 de sa taille — on refuse avant de le construire, au lieu de
- * laisser xAI répondre une erreur de charge.
+ * ici : les cinq autres chemins d'image du dépôt plafonnent déjà à 5 Mo, donc
+ * c'est le plafond de la maison et non une valeur inventée pour l'occasion.
+ *
+ * Ce n'est PAS une limite imposée par xAI : l'OpenAPI ne publie aucune taille
+ * maximale pour `/v1/images/edits`. Le motif est à nous — une source plus
+ * lourde produirait un corps JSON d'environ 4/3 de sa taille, qu'on refuse de
+ * construire sans savoir si l'autre bout l'accepte.
  */
 export const SOURCE_MAX_BYTES = IMAGE_MAX_BYTES;
 
@@ -130,6 +162,11 @@ interface XaiImageItem {
   b64_json?: unknown;
 }
 
+/** Signal d'authentification dans le corps d'un 4xx — voir l'appelant. */
+function looksLikeAuthFailure(body: string): boolean {
+  return /api[ _-]?key|unauthori[sz]|authenticat|credential|forbidden/i.test(body);
+}
+
 function clampDetail(raw: string): string {
   const flat = raw.replace(/\s+/g, " ").trim();
   return flat.length > MAX_DETAIL_CHARS ? `${flat.slice(0, MAX_DETAIL_CHARS)}…` : flat;
@@ -166,6 +203,7 @@ export async function editProductImage(
         prompt: input.prompt,
         image: { type: "image_url", url: input.sourceImage },
         n: 1,
+        resolution: XAI_IMAGE_RESOLUTION,
         // Le résultat doit arriver sous forme d'URL : voir le commentaire de
         // tête. Le base64 contournerait fetch-image.ts.
         response_format: "url",
@@ -179,6 +217,17 @@ export async function editProductImage(
       // dit si l'invite a été modérée, si l'image source est inexploitable ou
       // si la charge est trop lourde. On le relaie, borné.
       const body = await resp.text().catch(() => "");
+      // L'OpenAPI ne documente, pour cet endpoint, que 400 et 422 — et son
+      // libellé du 400 est « The request is invalid OR AN INVALID API KEY IS
+      // PROVIDED ». Une clé invalide arrive donc par ce chemin, pas forcément
+      // par le 401/403 ci-dessus, qui n'est pas documenté et peut ne jamais
+      // se déclencher. Sans ce reclassement, une clé révoquée se lisait
+      // « xAI a refusé la demande » en validation_error : le modèle aurait
+      // réécrit son invite indéfiniment pendant que le secret était le
+      // problème. Heuristique sur le corps, assumée : elle ne peut que
+      // désigner la clé à tort, jamais masquer un refus d'invite derrière un
+      // silence.
+      if (looksLikeAuthFailure(body)) return { ok: false, reason: "auth_failed" };
       return { ok: false, reason: "rejected", detail: clampDetail(body) || `HTTP ${resp.status}` };
     }
     if (!resp.ok) return { ok: false, reason: "upstream_error" };

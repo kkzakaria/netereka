@@ -107,6 +107,10 @@ describe("editProductImage", () => {
     expect(body.n).toBe(1);
     // L'URL est demandée explicitement : le base64 contournerait fetch-image.ts.
     expect(body.response_format).toBe("url");
+    // Le palier facturé est un CHOIX : `resolution` est le seul levier de
+    // facturation que l'OpenAPI expose sur cet endpoint (`quality` n'y est
+    // pas un champ de requête), et son défaut serait hérité sans ça.
+    expect(body.resolution).toBe("1k");
   });
 
   it("auth_failed sur 401 et 403", async () => {
@@ -115,6 +119,39 @@ describe("editProductImage", () => {
       const r = await editProductImage({ sourceImage: "d", prompt: "p" });
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason).toBe("auth_failed");
+    }
+  });
+
+  /**
+   * L'OpenAPI ne documente, pour /v1/images/edits, que 200, 400 et 422 — et
+   * son libellé du 400 est « The request is invalid or an invalid API key is
+   * provided ». Une clé révoquée arrive donc par ce chemin, pas par le
+   * 401/403. Sans reclassement, elle se lisait « xAI a refusé la demande » en
+   * validation_error : le modèle aurait réécrit son invite indéfiniment
+   * pendant que le secret était le problème.
+   */
+  it("un 400 dont le corps parle de la clé devient auth_failed, pas rejected", async () => {
+    for (const body of [
+      '{"error":"Incorrect API key provided"}',
+      '{"error":"unauthorized"}',
+      '{"error":"authentication failed"}',
+    ]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 400 })));
+      const r = await editProductImage({ sourceImage: "d", prompt: "p" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe("auth_failed");
+    }
+  });
+
+  it("un 400 qui parle de l'invite reste rejected, avec son détail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response('{"error":"prompt violates content policy"}', { status: 400 }),
+    ));
+    const r = await editProductImage({ sourceImage: "d", prompt: "p" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("rejected");
+      expect(r.detail).toContain("content policy");
     }
   });
 

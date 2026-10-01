@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { DatabaseSync } from "node:sqlite";
+import { createMigratedDb, sqliteD1 } from "../../../helpers/sqlite-d1";
 import type { McpContext } from "@/lib/mcp/context";
 
 const mediaMocks = vi.hoisted(() => ({ searchImages: vi.fn() }));
 vi.mock("@/lib/media/image-search", () => ({ searchImages: mediaMocks.searchImages }));
 
 const envMocks = vi.hoisted(() => ({ getEnv: vi.fn(), getKV: vi.fn() }));
+// D1 RÉEL (schéma réel) parce que le compteur mensuel y vit : avec un getDB
+// qui lève, les assertions sur le compteur ne mesureraient rien.
+// product-drafts et createRevision restent mockés, donc rien d'autre n'y touche.
+const holder = vi.hoisted(() => ({ binding: null as unknown }));
 vi.mock("@/lib/cloudflare/context", () => ({
-  getDB: async () => { throw new Error("no DB in this test"); },
+  getDB: async () => holder.binding,
   getEnv: envMocks.getEnv,
   getKV: envMocks.getKV,
   getR2: async () => { throw new Error("no R2 in this test"); },
@@ -78,10 +84,21 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 const GEN_INPUT = { product_id: "p1", source_image_id: "img-1", prompt: "Pose le produit sur un bureau en bois clair." };
 
 let kv: ReturnType<typeof makeKV>;
+let db: DatabaseSync;
+
+/** Le compteur mensuel tel qu'il est RÉELLEMENT en base. */
+function storedUsed(): number | null {
+  const row = db.prepare("SELECT used FROM ai_image_usage WHERE month_key = ?").get(MONTH_KEY) as
+    | { used: number }
+    | undefined;
+  return row ? Number(row.used) : null;
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
   kv = makeKV();
+  db = createMigratedDb();
+  holder.binding = sqliteD1(db);
   envMocks.getKV.mockImplementation(async () => kv);
   envMocks.getEnv.mockResolvedValue({ XAI_API_KEY: "xai-k", AI_IMAGE_MONTHLY_LIMIT: "50" });
   // Défaut : brouillon existant, image source présente, fiche vide d'images.
@@ -265,6 +282,9 @@ describe("generate_product_image — refus AVANT toute dépense", () => {
     const out = parse(r);
     expect(out.message).toContain("AI_IMAGE_MONTHLY_LIMIT");
     expect(out.message).toMatch(/pas.*illimité|ne vaut pas/i);
+    // Dire QUOI fixer sans dire OÙ laisse l'administrateur chercher.
+    expect(out.message).toContain("wrangler secret put");
+    expect(out.message).toContain("wrangler.jsonc");
     expect(genMocks.editProductImage).not.toHaveBeenCalled();
   });
 
@@ -276,7 +296,7 @@ describe("generate_product_image — refus AVANT toute dépense", () => {
   });
 
   it("plafond atteint : limit_exceeded portant l'usage ET le plafond dans le message", async () => {
-    kv = makeKV(new Map([[MONTH_KEY, "50"]]));
+    db.exec(`INSERT INTO ai_image_usage (month_key, used) VALUES ('${MONTH_KEY}', 50)`);
     const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
     expect(out.code).toBe("limit_exceeded");
     expect(out.message).toContain("50");
@@ -326,7 +346,7 @@ describe("generate_product_image — la dépense et le compteur", () => {
 
   it("une image produite incrémente le compteur MENSUEL de 1", async () => {
     await tool("generate_product_image").handler(ctx, GEN_INPUT);
-    expect(kv._store.get(MONTH_KEY)).toBe("1");
+    expect(storedUsed()).toBe(1);
   });
 
   // Discrimination exigée par le plan, vue depuis l'outil.
@@ -336,7 +356,7 @@ describe("generate_product_image — la dépense et le compteur", () => {
     const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
 
     expect(r.isError).toBe(true);
-    expect(kv._store.get(MONTH_KEY)).toBeUndefined();
+    expect(storedUsed()).toBeNull();
     expect(draftMocks.addImagesFromUrls).not.toHaveBeenCalled();
   });
 
@@ -360,19 +380,93 @@ describe("generate_product_image — la dépense et le compteur", () => {
 
     expect((await tool("generate_product_image").handler(ctx, GEN_INPUT)).isError).toBe(true);
     expect((await tool("generate_product_image").handler(ctx, GEN_INPUT)).isError).toBeUndefined();
-    expect(kv._store.get(MONTH_KEY)).toBe("1");
+    expect(storedUsed()).toBe(1);
   });
 
   it("un compteur non incrémenté est DIT dans la réponse, pas silencieux", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    kv.put.mockImplementation(async (key: string) => {
-      if (key === MONTH_KEY) throw new Error("KV down");
+    // L'écriture du compteur devient impossible APRÈS que le budget a été lu.
+    genMocks.editProductImage.mockImplementation(async () => {
+      db.exec("DROP TABLE ai_image_usage");
+      return { ok: true, url: "https://xai.example/out.png" };
     });
 
     const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
 
     expect(out.generated).toBe(true);
     expect(out.budget.recorded).toBe(false);
+  });
+
+  /**
+   * L'asymétrie que rien ne gardait. `addImagesFromUrls` NE LÈVE PAS sur un
+   * téléchargement raté : elle rend `results: [{ ok: false, reason }]`
+   * (lib/db/product-drafts.ts). Le même événement — une image produite et
+   * FACTURÉE qui n'est pas attachée — se lisait donc « succès » sur un
+   * brouillon (`isError` absent, `generated: true`, le `ok: false` noyé dans
+   * `results`) et `internal_error` sur une fiche publiée. Les deux branches
+   * doivent rendre le même verdict et le même mot.
+   */
+  it("brouillon : une image facturée dont le téléchargement échoue est une ERREUR, pas un succès", async () => {
+    draftMocks.addImagesFromUrls.mockResolvedValue({
+      results: [{ url: "https://xai.example/out.png", ok: false, reason: "too_large" }],
+      primary_image_id: "img-1",
+    });
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(r.isError).toBe(true);
+    const out = parse(r);
+    expect(out.code).toBe("internal_error");
+    expect(out.message).toContain("facturée");
+    expect(out.message).toContain("too_large");
+    // L'image a bien été produite : le compteur a bougé, elle est payée.
+    expect(storedUsed()).toBe(1);
+  });
+
+  it("brouillon et fiche publiée rendent le MÊME message pour le même événement", async () => {
+    draftMocks.addImagesFromUrls.mockResolvedValue({
+      results: [{ url: "https://xai.example/out.png", ok: false, reason: "too_large" }],
+      primary_image_id: null,
+    });
+    const draftMsg = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT)).message;
+
+    vi.clearAllMocks();
+    db = createMigratedDb();
+    holder.binding = sqliteD1(db);
+    envMocks.getKV.mockImplementation(async () => kv);
+    envMocks.getEnv.mockResolvedValue({ XAI_API_KEY: "xai-k", AI_IMAGE_MONTHLY_LIMIT: "50" });
+    draftMocks.getProductDraftState.mockResolvedValue({ is_draft: false });
+    draftMocks.findProductImage.mockResolvedValue({ id: "img-1", url: "/images/products/p1/src.png", is_primary: true });
+    draftMocks.countProductImages.mockResolvedValue(0);
+    storageMocks.readFromR2.mockResolvedValue({ bytes: PNG, contentType: "image/png" });
+    genMocks.editProductImage.mockResolvedValue({ ok: true, url: "https://xai.example/out.png" });
+    storageMocks.fetchAndUploadImage.mockResolvedValue({ ok: false, reason: "too_large" });
+    const publishedMsg = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT)).message;
+
+    expect(draftMsg).toBe(publishedMsg);
+  });
+
+  // Rien ne retenait `budget.used_before` sur la bonne source : remplacer
+  // `decision.used` par 0 laissait toute la suite verte.
+  it("budget.used_before vient du compteur lu, pas d'une constante", async () => {
+    db.exec(`INSERT INTO ai_image_usage (month_key, used) VALUES ('${MONTH_KEY}', 17)`);
+
+    const out = parse(await tool("generate_product_image").handler(ctx, GEN_INPUT));
+
+    expect(out.budget).toEqual({ recorded: true, used_before: 17, limit: 50 });
+    // Et le compteur a bien avancé d'une image.
+    expect(storedUsed()).toBe(18);
+  });
+
+  it("compteur mensuel illisible (base indisponible) : REFUSE au lieu de repartir de zéro", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.exec("DROP TABLE ai_image_usage");
+
+    const r = await tool("generate_product_image").handler(ctx, GEN_INPUT);
+
+    expect(r.isError).toBe(true);
+    expect(parse(r).message).toMatch(/pas pu être lu/);
+    expect(genMocks.editProductImage).not.toHaveBeenCalled();
   });
 
   it("le refus de xAI (4xx) remonte son détail au modèle pour qu'il corrige son invite", async () => {
@@ -436,7 +530,7 @@ describe("generate_product_image — routage brouillon / fiche publiée", () => 
     expect(out.message).toMatch(/facturée/);
     expect(revisionMocks.createRevision).not.toHaveBeenCalled();
     // L'image a bien été produite : le compteur a bougé, elle est payée.
-    expect(kv._store.get(MONTH_KEY)).toBe("1");
+    expect(storedUsed()).toBe(1);
   });
 
   it("dépôt de révision en échec : nettoie l'objet R2 qui n'aurait jamais été référencé", async () => {
