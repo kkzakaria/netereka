@@ -263,9 +263,14 @@ export function buildAuthOptions(cfEnv: CloudflareEnv) {
         // Flux piloté par un administrateur : pas de client_credentials (un jeton
         // sans utilisateur serait de toute façon refusé par buildMcpContext).
         grantTypes: ["authorization_code", "refresh_token"],
-        // oauthAccessToken et oauthConsent existent déjà (schéma 1.6) : on
-        // écrit ailleurs plutôt que de les recréer, ce qui exigerait un DROP
-        // TABLE. Voir lib/db/schema.ts.
+        // Ce renommage est né d'un contournement : les tables 1.6 du même nom
+        // existaient encore, et les recréer au schéma 1.7 aurait exigé un DROP
+        // TABLE interdit pendant un canari. Elles ont depuis été supprimées (PR
+        // de contrat), mais le renommage RESTE — c'est désormais là que vivent
+        // les données, dont le consentement accordé en production. Le défaire
+        // ferait repartir le fournisseur sur des tables vides, donc redemander
+        // son consentement à chaque client déjà approuvé.
+        // Noms de MODÈLE à gauche, table physique à droite. Voir lib/db/schema.ts.
         schema: {
           oauthAccessToken: { modelName: "oauthProviderAccessToken" },
           oauthConsent: { modelName: "oauthProviderConsent" },
