@@ -35,6 +35,27 @@
       "bucket_name": "netereka-opennext-cache"
     }
   ],
+  // Plafond mensuel d'images générées, lu par lib/ai/image-budget.ts. Déclaré
+  // ICI, et pas posé depuis le tableau de bord, pour deux raisons apprises le
+  // 2026-10-02 : une variable ajoutée au tableau de bord est reconstruite à
+  // chaque `wrangler deploy` depuis ce fichier, donc elle disparaît au
+  // déploiement suivant (c'est ce qui est arrivé — deux versions `dash` à 06:38
+  // et 06:39, effacées par les déploiements de 08:05 et 08:59) ; et une valeur
+  // budgétaire mérite d'être versionnée, pour qu'on sache quand elle a changé
+  // et sur quelle décision.
+  //
+  // CHAÎNE, pas nombre : `parseMonthlyLimit` appelle `raw.trim()`. Un nombre JSON
+  // ici lèverait un TypeError, et la réponse deviendrait « Erreur interne » sans
+  // nommer le plafond — un mauvais réglage qui ne se dit pas. Le JSON Schema de
+  // wrangler accepte les deux, donc rien ne rattraperait l'erreur.
+  //
+  // 0 désactiverait explicitement la génération ; retirer cette ligne la ferait
+  // refuser en disant que le plafond n'est pas configuré. Les deux sont des
+  // états valides et distincts, aucun ne vaut « illimité ».
+  "vars": {
+    "AI_IMAGE_MONTHLY_LIMIT": "100"
+  },
+
   // Workers Logs ingests and indexes everything the Worker writes to console.
   // It was disabled, which meant console output was emitted and then dropped:
   // nothing was stored, so nothing could be read back. The CSP violation
