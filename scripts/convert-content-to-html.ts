@@ -1,6 +1,11 @@
 /**
- * Convertit le contenu structuré existant (story produit, gabarit de bannière)
- * en contenu libre HTML.
+ * Convertit le contenu structuré existant (gabarit de bannière) en contenu
+ * libre HTML.
+ *
+ * Le volet PRODUITS a été retiré : les quatre colonnes Story qu'il lisait
+ * (`tagline`, `highlights`, `feature_blocks`, `faq`) ont quitté le schéma, et
+ * elles étaient vides sur les 1068 fiches de production — il n'y a plus rien à
+ * convertir. Seul le volet bannières subsiste.
  *
  * Usage :
  *   npm run content:convert -- --local   --dry-run
@@ -9,19 +14,11 @@
  *   npm run content:convert -- --remote
  *
  * Par défaut, la sortie ne détaille QUE ce qui mérite un regard humain avant
- * l'écriture irréversible : les lignes converties, les échecs et les lignes
- * dont des colonnes story sont illisibles. Les lignes ignorées sont résumées
- * en un tally par raison — sur une grosse base, un flux d'une ligne par
- * produit ignoré noie précisément la ligne qui compte. `--verbose` restaure
- * le détail ligne à ligne complet (une ligne par ignoré compris).
+ * l'écriture irréversible : les lignes converties et les échecs. Les lignes
+ * ignorées sont résumées en un tally par raison. `--verbose` restaure le
+ * détail ligne à ligne complet (une ligne par ignoré compris).
  *
  * Idempotent : une ligne déjà convertie est ignorée. Rejouable sans risque.
- *
- * IMPORTANT — ce script s'exécute ENTRE deux déploiements (§ 3.4 du spec), pas
- * pendant l'un d'eux. Le pipeline sert deux versions du code en canary : vider
- * les colonnes story est précisément ce qui garde l'ancienne version correcte,
- * puisqu'elle rend alors la description — qui contient désormais tout — et des
- * blocs story vides.
  *
  * La donnée d'origine n'est récupérable que par l'export D1 pris juste avant.
  * Cet export est une étape obligatoire du runbook.
@@ -30,7 +27,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdtempSync, rmSync, readSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { planProduct, planBanner, type ProductRow, type BannerRow } from "../lib/content/conversion-plan";
+import { planBanner, type BannerRow } from "../lib/content/conversion-plan";
 
 const DB_NAME = "netereka-db";
 
@@ -42,14 +39,6 @@ const verbose = args.includes("--verbose");
 
 if (remote === local) {
   console.error("Choisis exactement une cible : --local ou --remote");
-  process.exit(1);
-}
-
-if (!process.env.NEXT_PUBLIC_R2_URL) {
-  console.error(
-    "NEXT_PUBLIC_R2_URL n'est pas défini. Les images des blocs seraient écrites avec un chemin cassé, " +
-      "de façon permanente. Exporte la variable (voir .env.local) et relance.",
-  );
   process.exit(1);
 }
 
@@ -157,11 +146,10 @@ function lit(value: string | null): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-// Raisons de skip connues, telles que retournées par planProduct / planBanner
+// Raisons de skip connues, telles que retournées par planBanner
 // (lib/content/conversion-plan.ts). Pré-initialisées à 0 pour que le tally par
 // défaut montre aussi les raisons qui n'ont déclenché aucune ligne — utile par
 // exemple pour vérifier d'un coup d'œil qu'aucune ligne n'était déjà convertie.
-const PRODUCT_SKIP_REASONS = ["aucun contenu", "déjà converti"];
 const BANNER_SKIP_REASONS = ["déjà converti"];
 
 function newTally(reasons: string[]): Map<string, number> {
@@ -180,54 +168,7 @@ function printTally(map: Map<string, number>): void {
 let converted = 0;
 let skipped = 0;
 let failed = 0;
-let unparsedCount = 0;
 const statements: string[] = [];
-
-console.log(`\n=== Produits (${target}${dryRun ? ", simulation" : ""}) ===`);
-
-const products = d1Query<ProductRow>(
-  `SELECT id, description, description_type, tagline, highlights, feature_blocks, faq, faq_html
-     FROM products`,
-);
-
-const productSkipTally = newTally(PRODUCT_SKIP_REASONS);
-
-for (const row of products) {
-  try {
-    const plan = planProduct(row);
-    if (plan.action === "skip") {
-      skipped++;
-      tally(productSkipTally, plan.reason);
-      if (verbose) console.log(`  · ${row.id} — ignoré (${plan.reason})`);
-      continue;
-    }
-    const icons = plan.unresolvedIcons.length
-      ? ` — icônes non résolues : ${plan.unresolvedIcons.join(", ")}`
-      : "";
-    // Colonnes story non vides mais dont le JSON n'a pas validé le schéma :
-    // leur contenu est perdu de façon permanente par cette conversion.
-    // L'opérateur doit le voir avant le lancement réel (§ 3.3 du spec).
-    const unparsed = plan.unparsedColumns.length
-      ? ` — colonnes illisibles, contenu perdu : ${plan.unparsedColumns.join(", ")}`
-      : "";
-    if (plan.unparsedColumns.length) unparsedCount++;
-    console.log(`  ✓ ${row.id} — converti${icons}${unparsed}`);
-    converted++;
-    statements.push(
-      `UPDATE products SET description = ${lit(plan.updates.description)}, ` +
-        `description_type = 'html', faq_html = ${lit(plan.updates.faq_html)}, ` +
-        `tagline = NULL, highlights = NULL, feature_blocks = NULL, faq = NULL, ` +
-        `updated_at = datetime('now') WHERE id = ${lit(row.id)};`,
-    );
-  } catch (err) {
-    // Une ligne qui échoue est signalée et laissée intacte : le script
-    // n'écrit rien pour elle (§ 3.3 du spec).
-    failed++;
-    console.error(`  ✗ ${row.id} — échec, laissé intact :`, err);
-  }
-}
-
-if (!verbose) printTally(productSkipTally);
 
 console.log(`\n=== Bannières (${target}${dryRun ? ", simulation" : ""}) ===`);
 
@@ -267,11 +208,6 @@ console.log(
 console.log(`  convertis : ${converted}`);
 console.log(`  ignorés   : ${skipped}`);
 console.log(`  échecs    : ${failed}`);
-console.log(
-  unparsedCount > 0
-    ? `  colonnes illisibles (contenu perdu) : ${unparsedCount} produit(s)`
-    : `  colonnes illisibles (contenu perdu) : aucune`,
-);
 
 if (dryRun) {
   console.log(`\nSimulation : aucune écriture. ${statements.length} instruction(s) auraient été appliquées.`);

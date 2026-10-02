@@ -156,10 +156,11 @@ export const PRODUCT_WRITABLE_COLUMN_LIST = [
   "weight_grams",
   "meta_title",
   "meta_description",
-  "tagline",
-  "highlights",
-  "feature_blocks",
-  "faq",
+  // `tagline`, `highlights`, `feature_blocks` et `faq` ont quitté cette liste
+  // avec le schéma : plus aucune colonne Story n'est écrivable par une
+  // révision. Les outils MCP refusent ces noms nommément en amont
+  // (RETIRED_STORY_FIELDS, lib/validations/mcp-product.ts) ; ici, la liste
+  // blanche est la garantie de dernier recours.
   "faq_html",
 ] as const;
 export type ProductWritableColumn = (typeof PRODUCT_WRITABLE_COLUMN_LIST)[number];
