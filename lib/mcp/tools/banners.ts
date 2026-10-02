@@ -41,6 +41,27 @@ function toolError(toolName: string, err: unknown): ToolResult {
   return fail("internal_error", "Erreur interne, réessayez ou contactez un administrateur");
 }
 
+/**
+ * Ce que les outils ne disaient pas, et qui a bloqué un assistant en service le
+ * 2026-10-02 : « ne sachant pas où l'image s'affiche par rapport au texte, je
+ * n'en ai pas ajouté une seconde dans le HTML ». Il avait raison de s'abstenir —
+ * rien ici ne le lui disait. Décrit depuis le rendu réel
+ * (components/storefront/hero-banner.tsx), pas depuis l'intention.
+ */
+const BANNER_LAYOUT =
+  "MISE EN PAGE DU HERO, à connaître avant d'écrire content_html : la diapositive est une grille de DEUX " +
+  "colonnes de largeur égale, centrées verticalement. À gauche, content_html ; à droite, l'image (image_url, " +
+  "ajustée sans recadrage, environ 160 px de haut sur mobile et 360 px sur grand écran). Les deux colonnes " +
+  "existent MÊME SANS IMAGE : content_html occupe donc la moitié gauche dans tous les cas, n'y compose pas " +
+  "une mise en page pleine largeur. N'ajoute pas d'image dans le HTML en pensant compenser : tu en aurais " +
+  "deux, l'une à gauche dans ton HTML et l'autre à droite. " +
+  "Le fond est un dégradé de bg_gradient_from vers bg_gradient_to, donc le texte doit être clair : emploie " +
+  "le vocabulaire prévu (nk-banner pour la carte translucide, nk-banner-badge, nk-banner-title, " +
+  "nk-banner-subtitle, nk-banner-price, et nk-cta pour le bouton), qui porte déjà ces couleurs. " +
+  "image_url n'est PAS modifiable par ces outils : c'est une clé de stockage R2, pas une URL libre, et un " +
+  "champ texte y laisserait poser n'importe quelle adresse. Pour changer l'image, un administrateur passe " +
+  "par /banners. get_banner renvoie image_url, donc tu peux voir s'il y en a une.";
+
 function auditFor(ctx: McpContext, tool: string): DraftAudit {
   return { actor: { id: ctx.user.id, name: ctx.user.name }, details: { via: "mcp", tool, client_id: ctx.clientId } };
 }
@@ -55,7 +76,8 @@ export const bannerTools: ToolDefinition[] = [
     description:
       "Relit une bannière du hero : champs, contenu HTML (content_html, déjà assaini), état d'activation et " +
       "révisions en attente sur cette bannière. Toute modification d'une bannière est déposée en révision " +
-      "et validée par un administrateur depuis /revisions.",
+      "et validée par un administrateur depuis /revisions. " +
+      BANNER_LAYOUT,
     inputSchema: { id: bannerIdSchema },
     handler: async (_ctx, input) => {
       try {
@@ -83,7 +105,8 @@ export const bannerTools: ToolDefinition[] = [
       "starts_at/ends_at. Champs absents ignorés, null efface (pour ceux qui l'admettent). reason (optionnel) : pourquoi " +
       "cette modification, lu par l'administrateur sous le titre de l'écran de validation. Ne permet pas de " +
       "retirer une bannière : utilisez withdraw_banner (une ends_at passée la retire aussi, et l'écran de " +
-      "validation le signale).",
+      "validation le signale). " +
+      BANNER_LAYOUT,
     inputSchema: updateBannerShape,
     handler: async (ctx, input) => {
       try {
@@ -173,7 +196,8 @@ export const bannerTools: ToolDefinition[] = [
       "déposée pour l'activer avec son content_html : l'administrateur doit l'appliquer depuis /revisions " +
       "avant qu'elle apparaisse (la réponse porte banner_id, revision.id et revision.status). Requis : title, " +
       "link_url (chemin relatif commençant par /). Optionnels : subtitle, badge_text, badge_color, cta_text, " +
-      "price, bg_gradient_from/to, content_html (HTML libre assaini), starts_at/ends_at. Placée en dernière position.",
+      "price, bg_gradient_from/to, content_html (HTML libre assaini), starts_at/ends_at. Placée en dernière " +
+      "position. " + BANNER_LAYOUT,
     inputSchema: createBannerShape,
     handler: async (ctx, input) => {
       try {
