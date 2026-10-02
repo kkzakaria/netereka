@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.1.0](https://github.com/kkzakaria/netereka/compare/v2.0.0...v2.1.0) (2026-10-02)
+
+
+### Features
+
+* **admin:** les outils MCP atteignent les fiches publiées via révision ([7c49715](https://github.com/kkzakaria/netereka/commit/7c497158b5994612db7fd235a289eabdd87f057e))
+* **admin:** modèle de révision pour l'écriture MCP sur le contenu publié ([c9b455d](https://github.com/kkzakaria/netereka/commit/c9b455d32b5842e3147eb90e58ee4f539e76a0a6))
+* **admin:** outils MCP d'images, et un plafond de dépense qui borne vraiment (lot B, phase 4) ([#356](https://github.com/kkzakaria/netereka/issues/356)) ([0cf7bb8](https://github.com/kkzakaria/netereka/commit/0cf7bb8801b0f3a3ecfcb2401b2ef1f260e332ba))
+* **admin:** outils MCP pour les bannières, retrait sous validation explicite ([2f58149](https://github.com/kkzakaria/netereka/commit/2f58149f109d0d899c51456e7d7a3299ac5f1030))
+* **admin:** remise en ligne d'une fiche sous validation (reactivate_product) ([#349](https://github.com/kkzakaria/netereka/issues/349)) ([fbae77f](https://github.com/kkzakaria/netereka/commit/fbae77f7619942a6289d5b3cfe4fc9f17c469361))
+* **admin:** retrait de contenu sous validation saisie ([3d1eff2](https://github.com/kkzakaria/netereka/commit/3d1eff22751b130d42cb9e469e1ed0f892c27261))
+* **auth:** migrer vers better-auth 1.7, MCP en CIMD uniquement ([f017283](https://github.com/kkzakaria/netereka/commit/f017283992a0f55be3e25781f65f61e2018489db)), closes [#323](https://github.com/kkzakaria/netereka/issues/323)
+
+
+### Bug Fixes
+
+* **auth:** servir le JWKS en mémoire pour /api/mcp ([67390f0](https://github.com/kkzakaria/netereka/commit/67390f036851e31016035d38b2cc3a9462cec1b5))
+
 ## [2.0.0](https://github.com/kkzakaria/netereka/compare/v1.17.0...v2.0.0) (2026-09-20)
 
 
