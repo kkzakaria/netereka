@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer, uniqueIndex, index, check, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
-import { sql } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 
 // =============================================================================
 // Legacy users table (kept for historical FK references, not used by auth)
@@ -538,7 +538,14 @@ export const auditLog = sqliteTable("audit_log", {
 }, (table) => [
   index("idx_audit_log_actor").on(table.actor_id),
   index("idx_audit_log_action").on(table.action),
-  index("idx_audit_log_created").on(table.created_at),
+  // DESC : l'écran /audit-log liste du plus récent au plus ancien. L'index
+  // existait ainsi en base depuis la migration héritée, mais ce fichier le
+  // déclarait sans ordre — une divergence muette, trouvée en recréant la table.
+  index("idx_audit_log_created").on(desc(table.created_at)),
+  // Existait en production, absent d'ici : l'écran filtre par cible
+  // (`target_type` + `target_id`) pour l'historique d'une fiche. Recréer la
+  // table depuis ce seul fichier l'aurait perdu sans que rien ne le signale.
+  index("idx_audit_log_target").on(table.target_type, table.target_id),
 ]);
 
 // =============================================================================
