@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import type { McpContext } from "@/lib/mcp/context";
 
 const mocks = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => { throw new Erro
 import { DraftError } from "@/lib/db/product-drafts";
 import { RevisionError } from "@/lib/db/revisions";
 import { productTools, writePath } from "@/lib/mcp/tools/products";
+import { createMcpServer } from "@/lib/mcp/server";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 // productTools is typed ToolDefinition[] (base shape), so handler accepts any object literal here.
@@ -384,5 +386,83 @@ describe("productTools", () => {
     mocks.searchProducts.mockResolvedValue([]);
     await tool("search_products").handler(ctx, { query: "galaxy", limit: 7 });
     expect(mocks.searchProducts).toHaveBeenCalledWith("galaxy", 7);
+  });
+});
+
+/**
+ * Le refus des champs Story retirés, pris là où un client le subit : à travers
+ * le SDK, pas sur le schéma seul. C'est le SDK qui valide l'entrée avant
+ * d'appeler le `handler` (lib/mcp/tools/types.ts) — un test qui n'interroge
+ * que `createDraftSchema` ne dit rien de ce que le client reçoit, ni du fait
+ * que rien n'a été écrit.
+ *
+ * Les deux assertions comptent, et pour des raisons différentes : le message
+ * doit nommer le remplaçant (sinon l'appelant ne sait pas quoi faire), et
+ * `createDraft` ne doit pas avoir été appelé (sinon le refus se superpose à
+ * une écriture — le silence d'origine, en pire).
+ */
+describe("contrat : un champ Story retiré ne passe plus par le SDK", () => {
+  /** Le texte que le client reçoit, quel que soit le nombre de blocs. */
+  const textOf = (r: { content?: unknown }) =>
+    (Array.isArray(r.content) ? r.content : [])
+      .map((c) => (typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : ""))
+      .join("\n");
+
+  async function connected() {
+    const server = createMcpServer(ctx);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    return client;
+  }
+
+  it("create_product_draft refuse `tagline` en nommant description_html, et n'écrit rien", async () => {
+    mocks.createDraft.mockResolvedValue({ id: "p1", slug: "galaxy-a55" });
+    const client = await connected();
+    try {
+      const r = await client.callTool({
+        name: "create_product_draft",
+        arguments: { name: "Galaxy A55", category_id: "cat-1", tagline: "Accroche" },
+      });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).toContain("`tagline` a été retiré du contrat");
+      expect(textOf(r)).toContain("description_html");
+      expect(mocks.createDraft).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("update_product refuse `faq` en nommant faq_html, et n'écrit rien", async () => {
+    mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+    mocks.updateDraft.mockResolvedValue({ id: "p1", slug: "s" });
+    const client = await connected();
+    try {
+      const r = await client.callTool({
+        name: "update_product",
+        arguments: { id: "p1", faq: [{ question: "Q", answer: "R" }] },
+      });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).toContain("`faq` a été retiré du contrat");
+      expect(textOf(r)).toContain("faq_html");
+      expect(mocks.updateDraft).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("le même appel sans champ retiré passe — le refus ne mord pas le cas normal", async () => {
+    mocks.createDraft.mockResolvedValue({ id: "p1", slug: "galaxy-a55" });
+    const client = await connected();
+    try {
+      const r = await client.callTool({
+        name: "create_product_draft",
+        arguments: { name: "Galaxy A55", category_id: "cat-1", description_html: "<p>Texte</p>" },
+      });
+      expect(r.isError).toBeFalsy();
+      expect(mocks.createDraft).toHaveBeenCalledTimes(1);
+    } finally {
+      await client.close();
+    }
   });
 });
