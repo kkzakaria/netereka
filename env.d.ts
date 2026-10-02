@@ -28,8 +28,6 @@ interface CloudflareEnv {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string; // defaults to "NETEREKA <commandes@netereka.ci>"
 
-  // AI-powered product creation
-  ANTHROPIC_API_KEY: string;
   // Clé de l'API Brave Image Search, lue par lib/media/image-search.ts et
   // exposée par l'outil MCP `search_product_images`. Optionnelle : en son
   // absence l'outil répond un échec typé qui nomme ce secret, jamais une liste
@@ -49,8 +47,4 @@ interface CloudflareEnv {
   // décidé », pas « illimité ». `0` désactive explicitement la génération, ce
   // qui est différent de ne pas avoir tranché.
   AI_IMAGE_MONTHLY_LIMIT?: string;
-  // "0" disables the feature (button hidden, /products/ai-new returns 404). Any other value or unset = enabled.
-  AI_PRODUCT_CREATION_ENABLED?: string;
-  // Optional model override (for rolling to newer Anthropic model IDs without a code change)
-  AI_MODEL?: string;
 }

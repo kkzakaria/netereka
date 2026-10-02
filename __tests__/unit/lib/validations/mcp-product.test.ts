@@ -5,6 +5,7 @@ import {
   addImagesSchema,
   setVariantsSchema,
   searchProductsSchema,
+  RETIRED_STORY_FIELD_NAMES,
 } from "@/lib/validations/mcp-product";
 
 describe("createDraftSchema", () => {
@@ -34,13 +35,43 @@ describe("createDraftSchema", () => {
 });
 
 describe("contrat de contenu", () => {
-  it("rejette un champ story, qui n'existe plus", () => {
-    const parsed = createDraftSchema.safeParse({
-      name: "X", category_id: "c1",
-      story: { tagline: "Accroche" },
-    });
-    // Le schéma est strict sur ce qu'il connaît : story n'est simplement plus lu.
-    if (parsed.success) expect("story" in parsed.data).toBe(false);
+  // Un `z.object` Zod ÉLAGUE les clés inconnues : jusqu'ici, un client resté
+  // sur l'ancien contrat envoyait `story` (ou `tagline`) et recevait un succès
+  // pour une écriture qui ne portait pas son contenu. Ces champs sont donc
+  // déclarés et refusés nommément — voir RETIRED_STORY_FIELDS dans
+  // lib/validations/mcp-product.ts.
+  //
+  // L'ancienne version de ce test était `if (parsed.success) expect(…)` : elle
+  // ne pouvait pas échouer, puisque la branche ne s'exécutait que dans le cas
+  // qu'elle prétendait interdire. Elle est remplacée, pas déplacée.
+  const RETIRED = ["story", "tagline", "highlights", "feature_blocks", "faq"] as const;
+
+  it("refuse chaque champ Story retiré, en nommant son remplaçant", () => {
+    for (const field of RETIRED) {
+      const parsed = createDraftSchema.safeParse({
+        name: "X", category_id: "c1",
+        [field]: field === "story" ? { tagline: "Accroche" } : "valeur",
+      });
+      expect(parsed.success, `${field} doit être refusé`).toBe(false);
+      const messages = parsed.error!.issues.map((i) => i.message).join(" | ");
+      expect(messages, `${field} doit citer son remplaçant`).toMatch(/description_html|faq_html/);
+      expect(messages, `${field} doit se nommer dans le refus`).toContain(`\`${field}\``);
+    }
+  });
+
+  it("refuse aussi ces champs sur un patch (updateDraftSchema), sans gêner un patch légitime", () => {
+    for (const field of RETIRED) {
+      expect(updateDraftSchema.safeParse({ [field]: "valeur" }).success, field).toBe(false);
+    }
+    expect(updateDraftSchema.safeParse({ name: "X" }).success).toBe(true);
+  });
+
+  it("la liste refusée et les noms exportés ne divergent pas", () => {
+    expect([...RETIRED_STORY_FIELD_NAMES].sort()).toEqual([...RETIRED].sort());
+  });
+
+  it("l'absence de ces champs reste le cas normal", () => {
+    expect(createDraftSchema.safeParse({ name: "X", category_id: "c1" }).success).toBe(true);
   });
 
   it("accepte faq_html", () => {

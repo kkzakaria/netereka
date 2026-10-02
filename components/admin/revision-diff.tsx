@@ -888,10 +888,6 @@ const PRODUCT_REVIEW_LABELS: Record<ProductWritableColumn, string | null> = {
   weight_grams: "Poids (g)",
   meta_title: "Titre SEO",
   meta_description: "Description SEO",
-  tagline: "Accroche",
-  highlights: "Points forts",
-  feature_blocks: "Blocs de caractéristiques",
-  faq: "FAQ structurée",
   faq_html: null,
 };
 

@@ -6,7 +6,6 @@ import type {
   ProductImage,
   ProductVariant,
 } from "@/lib/db/types";
-import { hydrateProductStoryFields, type ProductWithRawStory } from "@/lib/utils/product-story";
 
 export interface AdminProductFilters {
   search?: string;
@@ -102,7 +101,7 @@ export async function getAdminProductCount(
 export async function getAdminProductById(
   id: string
 ): Promise<ProductDetail | null> {
-  const product = await queryFirst<ProductWithRawStory>(
+  const product = await queryFirst<Product>(
     `SELECT p.*, c.name as category_name, c.slug as category_slug
      FROM products p
      LEFT JOIN categories c ON c.id = p.category_id
@@ -126,5 +125,5 @@ export async function getAdminProductById(
     ),
   ]);
 
-  return { ...hydrateProductStoryFields(product), images, variants, attributes };
+  return { ...product, images, variants, attributes };
 }

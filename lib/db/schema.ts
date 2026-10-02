@@ -396,10 +396,16 @@ export const products = sqliteTable("products", {
   weight_grams: integer("weight_grams"),
   meta_title: text("meta_title"),
   meta_description: text("meta_description"),
-  tagline: text("tagline"),
-  highlights: text("highlights"),
-  feature_blocks: text("feature_blocks"),
-  faq: text("faq"),
+  // Les quatre colonnes Story (`tagline`, `highlights`, `feature_blocks`,
+  // `faq`) ont quitté ce schéma : leur contenu a été converti en HTML libre
+  // (`description` + `faq_html`), et elles sont vides sur les 1068 fiches de
+  // production. Les colonnes elles-mêmes existent ENCORE en base — leur
+  // `DROP COLUMN` est une seconde PR, après la promotion de celle-ci à 100 % :
+  // `scripts/migrate.sh --remote` s'applique AVANT que la nouvelle version ne
+  // reçoive du trafic, et les deux `db.select()` sans projection sur `products`
+  // (lib/db/product-drafts.ts) nomment toutes les colonnes de ce schéma —
+  // l'ancienne version, qui sert alors 100 % puis 90 % du trafic, échouerait
+  // en « no such column ». C'est l'expand/contract que ce dépôt impose.
   faq_html: text("faq_html"),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
   updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),

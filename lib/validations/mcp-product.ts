@@ -34,6 +34,51 @@ const pricingSchema = z.object({
   weight_grams: z.number().int().positive().nullable().optional(),
 });
 
+/**
+ * Champs retirés du contrat produit : les quatre colonnes Story (`tagline`,
+ * `highlights`, `feature_blocks`, `faq`) et l'objet `story` qui les portait
+ * avant la 2.0.0. Leur contenu a été converti en HTML libre — la Description
+ * et la FAQ sont désormais les deux seuls porteurs de contenu éditorial d'une
+ * fiche.
+ *
+ * POURQUOI LES DÉCLARER PLUTÔT QUE LES LAISSER INCONNUS : un `z.object` Zod
+ * ÉLAGUE les clés qu'il ne connaît pas, il ne les refuse pas. Un client resté
+ * sur l'ancien contrat envoyait donc `tagline` et recevait un succès — la
+ * fiche écrite sans son accroche, et pas un mot sur ce qui avait été jeté.
+ * Sur un brouillon, `updateDraft` allait jusqu'à ne poser que `updated_at` et
+ * rendre `{ id, slug }` : un succès complet pour une écriture vide. Déclarés
+ * en `z.never()`, ces champs produisent à la place un refus nommé qui dit quoi
+ * employer ; `.optional()` garde le cas normal — champ absent — valide, et la
+ * conversion en JSON Schema (`{ "not": {} }`, hors `required`) les montre
+ * comme refusés dans `tools/list`.
+ */
+function retiredStoryField(hint: string) {
+  return z.never({ error: hint }).optional();
+}
+
+const RETIRED_STORY_FIELDS = {
+  story: retiredStoryField(
+    "`story` a été retiré du contrat : composez le contenu éditorial dans `description_html` " +
+      "(onglet Description) et les questions dans `faq_html` (onglet FAQ).",
+  ),
+  tagline: retiredStoryField(
+    "`tagline` a été retiré du contrat : placez l'accroche en tête de `description_html`, " +
+      "par exemple dans un <p class=\"nk-lead\">.",
+  ),
+  highlights: retiredStoryField(
+    "`highlights` a été retiré du contrat : composez les points forts dans `description_html`, " +
+      "par exemple une <ul class=\"nk-grid\"> de <li class=\"nk-card\">.",
+  ),
+  feature_blocks: retiredStoryField(
+    "`feature_blocks` a été retiré du contrat : composez les blocs dans `description_html`, " +
+      "par exemple des <div class=\"nk-split\">.",
+  ),
+  faq: retiredStoryField(
+    "`faq` a été retiré du contrat : employez `faq_html`, une suite de " +
+      "<details><summary>Question</summary><p>Réponse</p></details> dans un <div class=\"nk-faq\">.",
+  ),
+} as const;
+
 export const createDraftSchema = z.object({
   name: z.string().trim().min(1).max(150),
   category_id: idSchema,
@@ -44,7 +89,13 @@ export const createDraftSchema = z.object({
   seo: seoSchema.optional(),
   attributes: draftAttributesSchema.optional(),
   pricing: pricingSchema.optional(),
+  ...RETIRED_STORY_FIELDS,
 });
+
+/** Les noms que `RETIRED_STORY_FIELDS` refuse — lus par le test de
+ *  non-régression du contrat, pour qu'un champ ajouté à l'un sans l'autre se
+ *  voie. */
+export const RETIRED_STORY_FIELD_NAMES = Object.keys(RETIRED_STORY_FIELDS) as readonly string[];
 
 /**
  * An update replaces the whole attribute set, so every group must be explicit:
