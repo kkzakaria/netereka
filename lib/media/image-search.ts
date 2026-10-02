@@ -62,15 +62,23 @@ interface BraveItem {
  * `image_candidates` reintroduces the `bad_content_type` failure mode the
  * upstream pipeline was hardened against.
  *
- * Reads its own key from the `BRAVE_API_KEY` secret so a caller (the future
- * MCP tool) has nothing to pass in.
+ * Lit sa propre clé dans le secret `BRAVE_SEARCH_API_KEY` : l'appelant
+ * (l'outil MCP `search_product_images`) n'a rien à passer.
+ *
+ * Ce nom N'EST PAS arbitraire et ne doit pas être « simplifié » en
+ * `BRAVE_API_KEY` : c'est le nom du secret réellement posé sur le Worker de
+ * production (vérifié par `npx wrangler secret list` le 2026-10-01), hérité du
+ * pipeline retiré au lot A. Le code lisait `BRAVE_API_KEY`, qui n'existe nulle
+ * part — la recherche aurait donc répondu « clé absente » en production alors
+ * qu'une clé y est posée. Un secret ne se relit pas : on aligne le code sur la
+ * production plutôt que d'ajouter un second nom pour la même clé.
  */
 export async function searchImages(
   input: ImageSearchInput,
   opts: { timeoutMs?: number } = {},
 ): Promise<ImageSearchResult> {
   const env = await getEnv();
-  const apiKey = env.BRAVE_API_KEY ?? null;
+  const apiKey = env.BRAVE_SEARCH_API_KEY ?? null;
   if (!apiKey) return { ok: false, reason: "no_api_key" };
 
   // Validate before any work — Anthropic only best-effort enforces input_schema,

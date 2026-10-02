@@ -4,7 +4,11 @@ import { uploadToR2 } from "@/lib/storage/images";
 export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const IMAGE_FETCH_TIMEOUT_MS = 10_000;
 
-const ALLOWED_TYPES = new Set([
+/** Exporté : `lib/ai/image-generation.ts` doit valider le type de l'image
+ *  SOURCE d'une édition avant de l'envoyer à xAI, et dupliquer cette liste
+ *  ferait exactement ce que ce dépôt a déjà payé ailleurs — deux sources pour
+ *  une même vérité, qui divergent au premier ajout de format. */
+export const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
   "image/jpeg",
   "image/jpg",
   "image/png",
@@ -19,6 +23,20 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/webp": "webp",
   "image/avif": "avif",
 };
+
+/**
+ * Type MIME déduit de l'extension d'une clé R2, ou `null`.
+ *
+ * Secours pour un objet R2 sans `httpMetadata.contentType` : nos propres
+ * téléversements en posent toujours un (`uploadToR2`), mais un objet plus
+ * ancien ou importé à la main peut ne pas en avoir. Dérivé de `EXT_BY_TYPE`
+ * pour que l'ajout d'un format ne se fasse qu'à un endroit.
+ */
+export function imageTypeFromKey(key: string): string | null {
+  const ext = key.split(".").pop()?.toLowerCase();
+  if (!ext) return null;
+  return Object.entries(EXT_BY_TYPE).find(([, e]) => e === ext)?.[0] ?? null;
+}
 
 export type FetchImageResult =
   | { ok: true; key: string; contentType: string; size: number }
@@ -160,7 +178,7 @@ export async function fetchAndUploadImage(
     if (!resp.ok) return { ok: false, reason: "bad_status", status: resp.status };
 
     const ct = (resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-    if (!ALLOWED_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
+    if (!ALLOWED_IMAGE_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
 
     const reader = resp.body?.getReader();
     if (!reader) return { ok: false, reason: "fetch_failed" };

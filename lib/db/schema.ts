@@ -783,3 +783,34 @@ export const contentRevisions = sqliteTable("content_revisions", {
   index("idx_revisions_status").on(table.status),
   index("idx_revisions_created").on(table.created_at),
 ]);
+
+// =============================================================================
+// Budget d'images générées
+// =============================================================================
+
+/**
+ * Compteur mensuel des images produites par `generate_product_image`.
+ *
+ * **Ce compteur vivait en KV, et le plan le voulait en KV** (la clé porte le
+ * mois « pour qu'un mois révolu expire tout seul »). Il est en D1 parce que KV
+ * n'a pas d'incrément atomique : l'incrément s'y écrivait en lire-modifier-
+ * écrire, et deux appels concurrents ne produisaient pas « une image de trop »
+ * — ils PERDAIENT un incrément. Mesuré : deux appels simultanés, deux images
+ * produites, compteur à 1 ; et en pire cas de propagation, dix images pour un
+ * compteur à 1 avec un plafond à 3. Un plafond qui prétend borner une dépense
+ * doit la borner, sinon la seule borne réelle est la fenêtre de rafale (dix par
+ * heure, soit ~7000 par mois). Douze lignes par an sont un coût nul en regard.
+ *
+ * `month_key` est la clé primaire (`ai:images:AAAA-MM`) : l'upsert
+ * `ON CONFLICT DO UPDATE SET used = used + excluded.used` est atomique en une
+ * seule instruction, donc deux incréments concurrents donnent bien deux.
+ *
+ * La fenêtre de rafale reste en KV (`lib/rate-limit/kv-window-limit.ts`) : une
+ * fenêtre approximative est sans conséquence financière.
+ */
+export const aiImageUsage = sqliteTable("ai_image_usage", {
+  /** `ai:images:AAAA-MM` — voir `monthKey()` dans lib/ai/image-budget.ts. */
+  month_key: text("month_key").primaryKey(),
+  used: integer("used").notNull().default(0),
+  updated_at: text("updated_at").notNull().default(sql`(datetime('now'))`),
+});
