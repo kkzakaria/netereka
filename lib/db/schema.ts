@@ -100,60 +100,12 @@ export const rateLimit = sqliteTable("rateLimit", {
   lastRequest: integer("lastRequest").notNull(),
 });
 
-// LEGACY (better-auth 1.6, plugin mcp du cœur) : plus lu ni écrit depuis la 1.7.
-// À supprimer dans une PR contract séparée, une fois le déploiement 1.7 promu à
-// 100 % (DROP TABLE interdit pendant le canary, voir
-// scripts/check-migration-safety.mjs).
-// better-auth `mcp` plugin (OAuth 2.1 provider for MCP clients). Column names
-// mirror node_modules/better-auth/dist/plugins/oidc-provider/schema.mjs exactly:
-// better-auth reaches these tables through its own Kysely adapter, so a
-// mismatch here fails at request time, not at compile time. Dates are ISO
-// strings (the adapter runs with supportsDates: false on sqlite), booleans 0/1.
-export const oauthApplication = sqliteTable("oauthApplication", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  icon: text("icon"),
-  metadata: text("metadata"),
-  clientId: text("clientId").unique().notNull(),
-  clientSecret: text("clientSecret"),
-  redirectUrls: text("redirectUrls").notNull(),
-  type: text("type").notNull(),
-  disabled: integer("disabled").notNull().default(0),
-  userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
-  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
-  updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
-}, (table) => [
-  index("idx_oauthApplication_userId").on(table.userId),
-]);
-
-export const oauthAccessToken = sqliteTable("oauthAccessToken", {
-  id: text("id").primaryKey(),
-  accessToken: text("accessToken").unique().notNull(),
-  refreshToken: text("refreshToken").unique().notNull(),
-  accessTokenExpiresAt: text("accessTokenExpiresAt").notNull(),
-  refreshTokenExpiresAt: text("refreshTokenExpiresAt").notNull(),
-  clientId: text("clientId").notNull().references(() => oauthApplication.clientId, { onDelete: "cascade" }),
-  userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
-  scopes: text("scopes").notNull(),
-  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
-  updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
-}, (table) => [
-  index("idx_oauthAccessToken_clientId").on(table.clientId),
-  index("idx_oauthAccessToken_userId").on(table.userId),
-]);
-
-export const oauthConsent = sqliteTable("oauthConsent", {
-  id: text("id").primaryKey(),
-  clientId: text("clientId").notNull().references(() => oauthApplication.clientId, { onDelete: "cascade" }),
-  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
-  scopes: text("scopes").notNull(),
-  consentGiven: integer("consentGiven").notNull().default(0),
-  createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
-  updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
-}, (table) => [
-  index("idx_oauthConsent_clientId").on(table.clientId),
-  index("idx_oauthConsent_userId").on(table.userId),
-]);
+// Les trois tables du plugin `mcp` de better-auth 1.6 — `oauthApplication`,
+// `oauthAccessToken`, `oauthConsent` — ont été SUPPRIMÉES ici et en base (voir
+// la migration de contrat). Elles n'étaient plus ni lues ni écrites depuis la
+// 1.7, qui passe par `oauthClient` et par les tables renommées ci-dessous, et
+// elles étaient vides en production. Le `DROP TABLE` attendait la promotion du
+// déploiement 1.7 à 100 %, interdit qu'il est pendant un canari.
 
 // better-auth 1.7 : jwt() + mcp() (fournisseur OAuth 2.1, @better-auth/oauth-provider)
 // + cimd(). Les colonnes reproduisent exactement ce que getMigrations() de
@@ -679,6 +631,21 @@ export const whatsappConfig = sqliteTable("whatsapp_config", {
 // =============================================================================
 // AI Config (singleton row: id=1)
 // =============================================================================
+// SURVIVANTE DE LA PR DE CONTRAT, délibérément. Plus aucun code ne la lit : la
+// configuration du pipeline IA embarqué est partie au lot A, et les clés sont
+// désormais des secrets d'environnement. Elle serait donc supprimable.
+//
+// Ce qui la retient : sa ligne unique porte deux identifiants VIVANTS — une clé
+// Anthropic et une clé Brave. Un `DROP TABLE` les effacerait de la base sans les
+// invalider chez les fournisseurs, et surtout `brave_api_key` est la SEULE copie
+// lisible d'une clé Brave : celle du Worker (`BRAVE_SEARCH_API_KEY`, lue par
+// `lib/media/image-search.ts`) ne se relit pas, et sa validité n'a jamais pu
+// être vérifiée. Tant que les deux n'ont pas été comparées, supprimer cette
+// ligne fermerait la seule porte permettant de trancher.
+//
+// À supprimer une fois les deux clés comparées puis révoquées chez leurs
+// fournisseurs. Ne pas la retirer du schéma avant la table : le prochain
+// `db:generate` émettrait le `DROP` sans qu'on l'ait demandé.
 export const aiConfig = sqliteTable(
   "ai_config",
   {
