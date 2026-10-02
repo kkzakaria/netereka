@@ -142,20 +142,44 @@ export function HeroBanner({
               <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#00FF9C]/10 blur-3xl" />
               <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
 
-              <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
-                {/* Text content with glass card */}
-                {slide.content_html ? (
-                  /* Contenu libre, assaini à l'écriture. `getActiveBanners()`
-                     (lib/db/storefront/banners.ts) ré-assainit ce HTML une étape
-                     plus haut, en défense en profondeur, avant qu'il n'atteigne ce
-                     composant — pas ici : faire tourner le sanitizer dans un
-                     composant client l'embarquerait dans le bundle pour rien. */
-                  <div
-                    className={buildBannerScopeClass(slide.id)}
-                    dangerouslySetInnerHTML={{ __html: slide.content_html }}
-                  />
-                ) : (
-                  /* Ce repli sert DEUX cas distincts, pas un seul :
+              {slide.content_html ? (
+                /* TOILE LIBRE : la composition occupe la diapositive ENTIÈRE.
+                   Aucune grille, aucune colonne, aucun emplacement — l'auteur
+                   compose, comme une description libre de fiche produit depuis
+                   le lot A. Le dégradé et les halos restent au-dessus : ce sont
+                   des propriétés de la SURFACE, pas du gabarit.
+
+                   `image_url` n'est volontairement PAS rendue ici : l'auteur
+                   place l'image lui-même (get_banner lui en donne l'URL
+                   publique), et la rendre aussi à côté la ferait apparaître
+                   deux fois. Elle reste une colonne et une donnée — lue par le
+                   préchargement LCP (lib/cloudflare/hero-preload.ts) et par le
+                   repli ci-dessous — elle cesse d'être un emplacement.
+
+                   Ce qui reste imposé, et seulement cela : la taille (h-full
+                   w-full, la surface) et une marge intérieure, pour que le
+                   contenu ne vienne pas buter contre le coin arrondi de la
+                   diapositive. Mêmes 16 px que l'aperçu admin
+                   (`buildSrcDoc`, components/admin/html-editor.tsx), afin que
+                   l'aperçu ne mente pas sur le rendu. `relative` donne à
+                   l'auteur un bloc conteneur pour un positionnement absolu.
+                   Pas de centrage vertical : il serait impossible à défaire
+                   depuis le <style> de l'auteur, dont les sélecteurs sont
+                   préfixés par cette classe de portée et ne peuvent donc pas
+                   viser ce conteneur.
+
+                   Contenu assaini à l'écriture. `getActiveBanners()`
+                   (lib/db/storefront/banners.ts) ré-assainit ce HTML une étape
+                   plus haut, en défense en profondeur, avant qu'il n'atteigne ce
+                   composant — pas ici : faire tourner le sanitizer dans un
+                   composant client l'embarquerait dans le bundle pour rien. */
+                <div
+                  className={cn("relative h-full w-full p-4 sm:p-6", buildBannerScopeClass(slide.id))}
+                  dangerouslySetInnerHTML={{ __html: slide.content_html }}
+                />
+              ) : (
+                <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
+                  {/* Ce repli sert DEUX cas distincts, pas un seul :
                      1. Les produits en vedette (buildSlides pose id: null) :
                         ce n'est pas du contenu éditorial mais notre propre
                         gabarit — il reste en React et le restera après la
@@ -168,7 +192,7 @@ export function HeroBanner({
                         modifiables depuis components/admin/banner-form.tsx et
                         visibles dans son aperçu, donc rendus ici tant que ce
                         cas existe. Seul CE cas disparaît quand la tâche 14
-                        est livrée. */
+                        est livrée. */}
                   <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
                     {slide.badge_text && (
                       <span
@@ -201,24 +225,26 @@ export function HeroBanner({
                       {slide.cta_text}
                     </Link>
                   </div>
-                )}
 
-                {/* Image */}
-                {slide.image_url && (
-                  <div className="relative mx-auto h-[160px] w-full sm:aspect-square sm:h-[280px] lg:h-[360px]">
-                    <Image
-                      src={getImageUrl(slide.image_url)}
-                      alt={slide.title}
-                      fill
-                      className="object-contain"
-                      sizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
-                      {...(i === 0
-                        ? { priority: true, fetchPriority: "high" as const }
-                        : { loading: "lazy" as const })}
-                    />
-                  </div>
-                )}
-              </div>
+                  {/* Emplacement d'image DU REPLI seulement : la colonne de
+                      droite de son gabarit à deux colonnes. Une toile libre
+                      n'en a pas — voir la branche ci-dessus. */}
+                  {slide.image_url && (
+                    <div className="relative mx-auto h-[160px] w-full sm:aspect-square sm:h-[280px] lg:h-[360px]">
+                      <Image
+                        src={getImageUrl(slide.image_url)}
+                        alt={slide.title}
+                        fill
+                        className="object-contain"
+                        sizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
+                        {...(i === 0
+                          ? { priority: true, fetchPriority: "high" as const }
+                          : { loading: "lazy" as const })}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
