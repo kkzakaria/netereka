@@ -54,7 +54,7 @@ content_html: text("content_html"),
 
 Restent structurés et pleinement utilisés :
 
-- `image_url` — rendu par `next/image`, alimente le preload LCP ;
+- `image_url` — rendu par `next/image`, alimente le preload LCP. **Dépassé le 2026-10-02 :** sur une diapositive qui porte un `content_html`, l'image n'est plus rendue par React du tout. L'administrateur a tranché que l'agent doit avoir « carte blanche pour composer la bannière suivant sa guise et ne pas être figé par le modèle actuel » : la composition occupe la diapositive entière, l'auteur y place l'image lui-même, et `get_banner` lui en rend l'URL publique. `image_url` reste une colonne et une donnée — elle cesse d'être un emplacement. Le repli sans `content_html` la rend toujours, lui. Le préchargement LCP, en revanche, déduit encore son URL de cette colonne : voir la note de la § 1.3 ;
 - `link_url` — la slide entière reste cliquable ;
 - `title` — obligatoire, sert à identifier la bannière dans l'administration et alimente `alt` / `aria-label` ;
 - `display_order`, `is_active`, `starts_at`, `ends_at` — ordonnancement, activation, planification ;
@@ -65,6 +65,8 @@ Passent en legacy, conservés jusqu'au *contract* : `subtitle`, `badge_text`, `b
 ### 1.3 Migration
 
 Une seule migration Drizzle en phase *expand*, ajoutant deux colonnes : `banners.content_html` et `products.faq_html`. Workflow habituel — éditer `lib/db/schema.ts`, `npm run db:generate`, relire le SQL produit dans `drizzle/`, `npm run db:migrate`, committer `schema.ts` + `drizzle/*.sql` + `drizzle/meta/`.
+
+**Note du 2026-10-02 — le préchargement LCP n'a pas suivi la libération de la diapositive.** `lib/cloudflare/hero-preload.ts` et `maybePreloadHero()` déduisent l'URL à précharger de `banners.image_url`, en y appliquant la transformation `/cdn-cgi/image/width=…` et des `sizes` calculés pour la grille à deux colonnes (`44vw`, `40vw`). Une composition libre, elle, écrit son propre `<img src>` — URL différente, donc **préchargement gaspillé d'un côté et image réelle non préchargée de l'autre**. S'ajoute un effet de React 19, constaté au rendu : il émet un `<link rel="preload" as="image">` pour une `<img>` qu'il rend lui-même, mais pas pour une image à l'intérieur d'un `dangerouslySetInnerHTML`, qu'il ne voit pas. À traiter — soit en rendant une URL déjà transformée à l'auteur, soit en dérivant le préchargement du `content_html`. Mesuré sur les quatre bannières actives : toutes portent `content_html` et `image_url`, aucune ne porte d'`<img>` dans son HTML.
 
 La migration *contract* qui supprimera `tagline`, `highlights`, `feature_blocks`, `faq`, les cinq colonnes legacy de `banners` et la table `ai_config` est **hors périmètre** de ce lot. Elle devra porter le marqueur `-- migration-safety: acknowledged reason="..."` et n'être appliquée qu'après promotion à 100 % de la version qui cesse de lire ces colonnes.
 
