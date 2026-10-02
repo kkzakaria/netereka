@@ -1,0 +1,87 @@
+name: Derive environnement
+
+# Compare ce que le code SUPPOSE de son environnement à ce que cet
+# environnement EST : lib/db/schema.ts face à la D1 de production, et
+# l'interface CloudflareEnv d'env.d.ts face aux liaisons du Worker déployé.
+#
+# POURQUOI UNE TÂCHE PLANIFIÉE ET PAS UNE ÉTAPE DE ci.yml.
+#
+# Une étape de PR ne peut pas attraper ce qu'on cherche. La dérive des
+# liaisons naît SANS commit : un secret posé depuis le tableau de bord
+# Cloudflare, une variable effacée par un déploiement, une migration appliquée
+# à la main. Aucune relecture de code ne la voit, donc aucun contrôle déclenché
+# par une pull request ne la voit non plus. Seul un contrôle déclenché par le
+# TEMPS la voit.
+#
+# Et une étape de PR coûterait cher pour rien : elle exige les identifiants
+# Cloudflare (donc elle échoue sur toute PR venue d'un fork), elle ajoute une
+# minute de réseau à chaque itération, et elle rendrait rouge une PR qui n'a
+# rien cassé. Le moteur, lui, est déjà couvert par des tests unitaires
+# déterministes qui tournent dans ci.yml et dans le hook de pré-commit : ce qui
+# a besoin du réseau ici, c'est la lecture de la réalité, pas la logique.
+#
+# CE TRAVAIL ÉCHOUE AUJOURD'HUI, ET C'EST VOULU. Au 2026-10-02 la production
+# porte sept écarts de gravité « erreur » : quatre secrets (ANTHROPIC_API_KEY,
+# GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_ENGINE_ID, OPENROUTER_API_KEY) qu'aucun
+# code de ce dépôt ne lit, et trois index (idx_promo_codes_code,
+# idx_session_token, idx_user_email) présents en base et absents de
+# lib/db/schema.ts. Chacun se résout en tranchant : soit le déclarer, soit le
+# retirer. Tant que ce n'est pas tranché, ce travail reste rouge — c'est son
+# rôle, pas une panne. Ne le neutralisez pas par une liste d'exceptions : c'est
+# exactement ce qui a permis à la clé étrangère d'audit_log de survivre un an.
+
+on:
+  schedule:
+    # 04:17 UTC, décalé de l'heure pile pour ne pas croiser la tâche horaire
+    # "Reap Pending Orders".
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: derive-environnement
+  cancel-in-progress: false
+
+jobs:
+  derive:
+    name: Code suppose vs realite
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Le rapport part dans le résumé du travail pour être lisible sans
+      # ouvrir les journaux, ET sur la sortie standard pour rester dans les
+      # journaux. `tee` préserve le code de sortie de npm grâce à pipefail.
+      - name: Controle de derive
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo '## Derive entre le code et son environnement'
+            echo
+            echo '```text'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # `set +e` est indispensable : GitHub lance `shell: bash` avec -e, donc
+          # l'échec attendu du contrôle interromprait l'étape avant qu'on ait
+          # refermé le bloc du résumé — et le rapport serait tronqué au moment
+          # précis où il a quelque chose à dire.
+          set +e
+          npm run --silent check:drift 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          code=$?
+          set -e
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
