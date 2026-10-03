@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { createMigratedDb, sqliteD1 } from "../../../helpers/sqlite-d1";
 
@@ -15,6 +15,9 @@ const holder = vi.hoisted(() => ({ binding: null as unknown }));
 vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => holder.binding }));
 
 import { listBanners } from "@/lib/db/banners";
+import { getDrizzle } from "@/lib/db/drizzle";
+import { banners } from "@/lib/db/schema";
+import { bannerClock, displayedBannerCondition, displayedBannerOrder } from "@/lib/db/storefront/banners";
 
 let db: DatabaseSync;
 
@@ -114,5 +117,62 @@ describe("listBanners : ce qu'elle ne renvoie pas", () => {
 
   it("rend une liste vide sans bannière, pas une erreur", async () => {
     expect(await listBanners()).toEqual([]);
+  });
+});
+
+describe("listBanners : la même définition d'« affichée » que la vitrine", () => {
+  /**
+   * `displayedBannerCondition` se dit « LA définition » et met en garde contre
+   * une condition écrite à part. `listBanners` en écrit pourtant une seconde,
+   * en JavaScript, parce qu'elle doit dire LAQUELLE des trois causes empêche
+   * l'affichage — un booléen rendu par SQL ne le dirait pas.
+   *
+   * Ce test est le couplage qui manquait : il compare les deux verdicts sur
+   * les bornes exactes, horloge gelée. Si quelqu'un passe le `gt(ends_at)` du
+   * SQL à un `gte`, ou le `<=` du JS à un `<`, les deux cessent de s'accorder
+   * et c'est ici que ça rougit — pas sur la vitrine.
+   */
+  const MAINTENANT = "2026-06-15 12:00:00";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  async function affichéesSelonLaVitrine(): Promise<number[]> {
+    const d = await getDrizzle();
+    const rows = await d
+      .select({ id: banners.id })
+      .from(banners)
+      .where(displayedBannerCondition(bannerClock()))
+      .orderBy(...displayedBannerOrder)
+      .all();
+    return rows.map((r) => r.id);
+  }
+
+  it("l'horloge gelée est bien celle que partagent les deux chemins", () => {
+    expect(bannerClock()).toBe(MAINTENANT);
+  });
+
+  it("aux bornes exactes, les deux verdicts désignent les mêmes bannières", async () => {
+    // Une fin AU MOMENT PRÉCIS où l'on regarde : terminée (gt, pas gte).
+    banniere({ id: 1, titre: "Finit maintenant", ordre: 0, fin: MAINTENANT });
+    // Une seconde de plus : encore à l'écran.
+    banniere({ id: 2, titre: "Finit dans 1 s", ordre: 1, fin: "2026-06-15 12:00:01" });
+    // Un début AU MOMENT PRÉCIS : commencée (lte).
+    banniere({ id: 3, titre: "Commence maintenant", ordre: 2, debut: MAINTENANT });
+    banniere({ id: 4, titre: "Commence dans 1 s", ordre: 3, debut: "2026-06-15 12:00:01" });
+    banniere({ id: 5, titre: "Sans fenêtre", ordre: 4 });
+    banniere({ id: 6, titre: "Inactive, fenêtre ouverte", ordre: 5, active: 0 });
+
+    const parListBanners = (await listBanners())
+      .filter((b) => b.carousel_position !== null)
+      .map((b) => b.id);
+
+    expect(parListBanners).toEqual(await affichéesSelonLaVitrine());
+    // Et la liste attendue, écrite à la main : sans elle, deux chemins
+    // également faux s'accorderaient.
+    expect(parListBanners).toEqual([2, 3, 5]);
   });
 });
