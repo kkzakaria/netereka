@@ -63,7 +63,9 @@ export const bannerTools: ToolDefinition[] = [
       "lever la première ne suffit alors pas à la faire revenir. " +
       "Le contenu HTML n'est pas renvoyé, seulement has_content_html : relis-le avec get_banner si tu en as " +
       "besoin. pending_revisions liste les modifications DÉJÀ déposées sur cette bannière et pas encore " +
-      "tranchées par un administrateur : si elle n'est pas vide, inutile d'en déposer une seconde. " +
+      "tranchées par un administrateur : si elle n'est pas vide, vérifie avec get_banner qu'elle ne couvre " +
+      "pas déjà ce que tu allais proposer — plusieurs révisions peuvent coexister, c'est l'administrateur " +
+      "qui choisit celle qu'il applique. " +
       "count compte toutes les bannières, displayed_count les seules affichées. Aucun argument.",
     inputSchema: {},
     handler: async () => {

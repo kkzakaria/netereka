@@ -140,6 +140,13 @@ export interface BannerSummary {
  * d'identifier, pas de relire — `get_banner` est là pour ça. Un simple drapeau
  * dit s'il y en a un.
  *
+ * Elle le LIT en revanche, avec toute la ligne : la table compte une poignée
+ * de lignes, écrites par des administrateurs et jamais par un visiteur (4 en
+ * production le 2026-10-03, 1257 octets de HTML en tout, 401 au maximum). À
+ * projeter si elle grossit — c'est une dette assumée et datée, pas un oubli.
+ * `listPendingRevisionHandles`, elle, projette : la file d'attente n'est
+ * bornée par rien et chaque payload porte un `content_html` proposé.
+ *
  * « Affichée » répète en JavaScript le prédicat SQL `displayedBannerCondition`
  * — elle ne l'APPELLE pas, parce qu'elle doit dire LAQUELLE des conditions
  * manque, ce qu'un booléen rendu par SQL ne dirait pas. Les deux définitions
@@ -156,8 +163,12 @@ export async function listBanners(): Promise<BannerSummary[]> {
   return rows.map((b) => {
     const raisons: BannerHiddenReason[] = [];
     if (b.is_active !== 1) raisons.push("désactivée");
-    if (b.starts_at && b.starts_at > now) raisons.push("pas encore commencée");
-    if (b.ends_at && b.ends_at <= now) raisons.push("terminée");
+    // `!= null` et non la véracité : SQL compare la chaîne telle quelle, donc
+    // une date vide (`''`) y est une date — début déjà passé, fin déjà échue.
+    // La traiter ici comme « pas de date » ferait dire « affichée » à une
+    // bannière que la vitrine masque.
+    if (b.starts_at != null && b.starts_at > now) raisons.push("pas encore commencée");
+    if (b.ends_at != null && b.ends_at <= now) raisons.push("terminée");
     const affichee = raisons.length === 0;
     if (affichee) rang += 1;
     return {

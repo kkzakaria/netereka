@@ -17,7 +17,7 @@ vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => holder.binding }
 import { listBanners } from "@/lib/db/banners";
 import { getDrizzle } from "@/lib/db/drizzle";
 import { banners } from "@/lib/db/schema";
-import { bannerClock, displayedBannerCondition, displayedBannerOrder } from "@/lib/db/storefront/banners";
+import { bannerClock, displayedBannerCondition, displayedBannerOrder, getActiveBanners } from "@/lib/db/storefront/banners";
 
 let db: DatabaseSync;
 
@@ -92,6 +92,18 @@ describe("listBanners : pourquoi une bannière ne s'affiche pas", () => {
     banniere({ id: 1, titre: "Les deux", ordre: 0, active: 0, fin: "2020-01-01 00:00:00" });
     const [b] = await listBanners();
     expect(b.not_displayed_because).toEqual(["désactivée", "terminée"]);
+  });
+
+  /**
+   * Dates inversées : impossible par les outils MCP (`datesInOrder`) et par le
+   * formulaire d'administration, donc seulement par une écriture directe. Le
+   * tableau reste exact à l'instant où on le lit — il ne prédit pas que lever
+   * la première raison ferait tomber sur la seconde.
+   */
+  it("dates inversées : les deux raisons, chacune vraie maintenant", async () => {
+    banniere({ id: 1, titre: "À l'envers", ordre: 0, debut: "2099-01-01 00:00:00", fin: "2020-01-01 00:00:00" });
+    const [b] = await listBanners();
+    expect(b.not_displayed_because).toEqual(["pas encore commencée", "terminée"]);
   });
 
   it("une bannière affichée ne porte aucune raison, pas une raison vide", async () => {
@@ -204,14 +216,25 @@ describe("listBanners : la même définition d'« affichée » que la vitrine", 
     banniere({ id: 4, titre: "Commence dans 1 s", ordre: 3, debut: "2026-06-15 12:00:01" });
     banniere({ id: 5, titre: "Sans fenêtre", ordre: 4 });
     banniere({ id: 6, titre: "Inactive, fenêtre ouverte", ordre: 5, active: 0 });
+    // Une date VIDE n'est pas une absence de date : SQL compare la chaîne, et
+    // `'' > maintenant` est faux comme `'' <= maintenant` est vrai. Aucune
+    // écriture ne devrait en produire (l'action admin convertit "" en null,
+    // et la production n'en compte aucune au 2026-10-03), mais les deux
+    // chemins doivent dire la même chose si l'une apparaît.
+    banniere({ id: 7, titre: "Fin vide", ordre: 6, fin: "" });
+    banniere({ id: 8, titre: "Début vide", ordre: 7, debut: "" });
 
     const parListBanners = (await listBanners())
       .filter((b) => b.carousel_position !== null)
       .map((b) => b.id);
 
     expect(parListBanners).toEqual(await affichéesSelonLaVitrine());
+    // Et au carrousel LUI-MÊME, pas seulement au prédicat qu'il est censé
+    // employer : sans ce terme, `getActiveBanners` pourrait s'écrire demain
+    // une condition à part sans que rien ne rougisse.
+    expect(parListBanners).toEqual((await getActiveBanners()).map((b) => b.id));
     // Et la liste attendue, écrite à la main : sans elle, deux chemins
     // également faux s'accorderaient.
-    expect(parListBanners).toEqual([2, 3, 5]);
+    expect(parListBanners).toEqual([2, 3, 5, 8]);
   });
 });
