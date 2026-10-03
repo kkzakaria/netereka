@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const { uploadToR2Mock } = vi.hoisted(() => ({ uploadToR2Mock: vi.fn() }));
 vi.mock("@/lib/storage/images", () => ({ uploadToR2: uploadToR2Mock }));
 
-import { fetchAndUploadImage, isBlockedHost, IMAGE_MAX_BYTES } from "@/lib/storage/fetch-image";
+import { fetchAndUploadImage, isBlockedHost, IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES, extensionPour } from "@/lib/storage/fetch-image";
 
 function makeImageResponse(opts: {
   ok?: boolean;
@@ -180,6 +180,72 @@ describe("fetchAndUploadImage", () => {
     expect(f).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * Les trois `cancel()` du correctif précédent n'avaient AUCUN test : les
+   * supprimer laissait les 1936 au vert. Pire, une sonde a montré qu'ils
+   * annulaient le mauvais corps — celui du second essai, pas l'initial, qui
+   * fuyait sur les quatre chemins d'échec. Le message de commit affirmait
+   * « les corps inutilisés sont annulés » : l'inverse, pour celui qui compte.
+   *
+   * Sous workerd, une réponse non consommée retient la sous-requête.
+   */
+  function corpsEspionne(contentType: string) {
+    const annule = { fait: false };
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) { c.enqueue(new Uint8Array([1, 2, 3, 4])); c.close(); },
+      cancel() { annule.fait = true; },
+    });
+    return { resp: new Response(body, { status: 200, headers: { "content-type": contentType } }), annule };
+  }
+
+  it("annule le corps initial quand le second essai le remplace", async () => {
+    const a = corpsEspionne("image/avif");
+    const b = corpsEspionne("image/jpeg");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(a.resp).mockResolvedValueOnce(b.resp));
+
+    await fetchAndUploadImage("draft-1", "https://example.test/x.png");
+
+    expect(a.annule.fait, "le corps AVIF jeté n'a pas été annulé").toBe(true);
+    expect(b.annule.fait, "le corps retenu ne doit PAS être annulé").toBe(false);
+  });
+
+  it("annule le corps initial quand le second essai échoue aussi", async () => {
+    const a = corpsEspionne("image/avif");
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(a.resp)
+      .mockRejectedValueOnce(new TypeError("network boom")));
+
+    const r = await fetchAndUploadImage("draft-1", "https://example.test/x.png");
+
+    expect(r.ok).toBe(false);
+    expect(a.annule.fait, "le corps initial fuit sur le chemin d'échec").toBe(true);
+  });
+
+  it("annule le corps même sur un refus de type qui n'a rien à voir avec l'AVIF", async () => {
+    const a = corpsEspionne("text/html");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(a.resp));
+
+    await fetchAndUploadImage("draft-1", "https://example.test/x.png");
+
+    expect(a.annule.fait).toBe(true);
+  });
+
+  // Un `cancel()` qui rejette ne doit pas renverser l'appel : le seul signal
+  // perdu serait « ce flux était déjà verrouillé », donc un défaut chez nous.
+  it("un cancel qui rejette ne fait pas échouer l'appel", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) { c.enqueue(new Uint8Array([1])); c.close(); },
+      cancel() { throw new Error("cancel boom"); },
+    });
+    const avif = new Response(body, { status: 200, headers: { "content-type": "image/avif" } });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(avif)
+      .mockResolvedValueOnce(makeImageResponse({ contentType: "image/jpeg" })));
+
+    const r = await fetchAndUploadImage("draft-1", "https://example.test/x.png");
+    expect(r.ok).toBe(true);
+  });
+
   it("accepte toujours les formats que le redimensionneur sait lire", async () => {
     for (const ct of ["image/png", "image/jpeg", "image/webp"]) {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeImageResponse({ contentType: ct })));
@@ -332,6 +398,31 @@ describe("fetchAndUploadImage", () => {
  * numérique que sous sa forme canonique non rembourrée à quatre octets, et ne
  * reconnaissait que le littéral exact `::1` en IPv6.
  */
+/**
+ * L'invariant qui rend la levée d'`extensionPour` inatteignable : chaque type
+ * accepté a une extension. Il tenait auparavant à une convention entre deux
+ * littéraux tenus à la main, que le message d'erreur lui-même décrivait comme
+ * pouvant diverger — une garantie énoncée sans garde. La liste est maintenant
+ * DÉRIVÉE de la table, donc la divergence est impossible par construction ;
+ * ce test le vérifie depuis l'extérieur, sans que la table soit exportée.
+ *
+ * S'il rougit, c'est que quelqu'un a réécrit la liste à la main.
+ */
+describe("chaque type accepté a une extension", () => {
+  it("extensionPour répond pour tous, et ne rend jamais de chaîne vide", () => {
+    expect(ALLOWED_IMAGE_TYPES.size).toBeGreaterThan(0); // pas de comparaison à vide
+    for (const ct of ALLOWED_IMAGE_TYPES) {
+      const ext = extensionPour(ct);
+      expect(ext, `${ct} sans extension`).toBeTruthy();
+      expect(ext).toMatch(/^[a-z0-9]{2,5}$/);
+    }
+  });
+
+  it("et un type hors liste lève, au lieu d'inventer une extension", () => {
+    expect(() => extensionPour("image/avif")).toThrow(/divergé/);
+  });
+});
+
 describe("isBlockedHost", () => {
   it.each([
     ["2130706433", "127.0.0.1 en décimal 32 bits"],

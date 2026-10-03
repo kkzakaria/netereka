@@ -8,12 +8,20 @@ export const IMAGE_FETCH_TIMEOUT_MS = 10_000;
  *  SOURCE d'une édition avant de l'envoyer à xAI, et dupliquer cette liste
  *  ferait exactement ce que ce dépôt a déjà payé ailleurs — deux sources pour
  *  une même vérité, qui divergent au premier ajout de format. */
-export const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/webp",
-]);
+/**
+ * Extension de fichier par type d'image accepté. C'est la SEULE table : la
+ * liste des types autorisés en est dérivée juste en dessous, si bien que les
+ * deux ne peuvent plus diverger — elles l'ont fait assez longtemps pour qu'un
+ * `?? "jpg"` passe pour une garde alors qu'il était inatteignable.
+ */
+const EXT_BY_TYPE: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg":  "jpg",
+  "image/png":  "png",
+  "image/webp": "webp",
+};
+
+export const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set(Object.keys(EXT_BY_TYPE));
 
 /**
  * PAS d'`image/avif`, et c'est le correctif d'un défaut vu en production le
@@ -38,14 +46,6 @@ export const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
  */
 
 /**
- * Extension de fichier pour un type MIME accepté. EXPORTÉE pour la même raison
- * que `ALLOWED_IMAGE_TYPES` : le téléversement d'administration
- * (`actions/admin/images.ts`) en a besoin, et la dupliquer y produirait deux
- * sources pour une même vérité. Il la lit plutôt que le nom du fichier déposé —
- * un « photo.avif » renommé « photo.png » donnerait sinon une clé .png portant
- * des octets AVIF.
- */
-/**
  * Extension de fichier pour un type d'image ACCEPTÉ.
  *
  * Lève si le type n'est pas dans `ALLOWED_IMAGE_TYPES` : les deux tables ont
@@ -65,13 +65,6 @@ export function extensionPour(contentType: string): string {
   }
   return ext;
 }
-
-const EXT_BY_TYPE: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/jpg":  "jpg",
-  "image/png":  "png",
-  "image/webp": "webp",
-};
 
 /**
  * Type MIME déduit de l'extension d'une clé R2, ou `null`.
@@ -290,16 +283,35 @@ export async function fetchAndUploadImage(
           }
         } else if (retry.ok) {
           await retry.resp.body?.cancel().catch(() => {});
+        } else if (retry.reason === "ssrf") {
+          // Une redirection du second essai vers un hôte interne. Retomber en
+          // silence sur l'AVIF initial dirait au modèle « mauvais format,
+          // cherche ailleurs » là où la cause est une redirection interne : le
+          // code `reason` pilote ce que l'outil MCP répond, et ce diagnostic-là
+          // ne doit pas se perdre.
+          await resp.body?.cancel().catch(() => {});
+          return { ok: false, reason: "ssrf" };
         }
       } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") return { ok: false, reason: "timeout" };
+        if (err instanceof Error && err.name === "AbortError") {
+          await resp.body?.cancel().catch(() => {});
+          return { ok: false, reason: "timeout" };
+        }
         // Toute autre panne du second essai : on garde la réponse AVIF
         // initiale, et le contrôle de type juste en dessous rend
         // `bad_content_type`. Échouer typé, comme avant ce chemin.
       }
     }
 
-    if (!ALLOWED_IMAGE_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
+    if (!ALLOWED_IMAGE_TYPES.has(ct)) {
+      // Le corps n'est jamais lu sur ce chemin : sous workerd, une réponse non
+      // consommée retient la sous-requête. Annulé ICI plutôt qu'à chaque
+      // branche en amont, parce que c'est le point de passage unique de tous
+      // les refus de type — y compris ceux qui précèdent le second essai
+      // (text/html, et tout ce qui n'est pas une image).
+      await resp.body?.cancel().catch(() => {});
+      return { ok: false, reason: "bad_content_type" };
+    }
 
     const reader = resp.body?.getReader();
     if (!reader) return { ok: false, reason: "fetch_failed" };
