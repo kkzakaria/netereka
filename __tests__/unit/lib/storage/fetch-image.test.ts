@@ -131,6 +131,44 @@ describe("fetchAndUploadImage", () => {
     expect(f).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * RÉGRESSION : le second essai vivait hors du try/catch qui normalise les
+   * erreurs, donc `fetchAndUploadImage` LEVAIT au lieu de rendre un résultat
+   * typé — alors qu'elle rendait toujours un résultat jusque-là.
+   *
+   * Le cas n'est pas théorique : le délai et l'AbortController sont PARTAGÉS
+   * entre les deux appels. Une origine lente qui consomme la fenêtre au premier
+   * fait avorter le second presque aussitôt.
+   *
+   * Ses appelants travaillent en `Promise.all` : un seul rejet aurait perdu
+   * tout un lot d'images déjà écrites en R2.
+   */
+  it("un second essai interrompu rend un timeout typé, il ne lève pas", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const f = vi.fn()
+      .mockResolvedValueOnce(makeImageResponse({ contentType: "image/avif" }))
+      .mockRejectedValueOnce(abort);
+    vi.stubGlobal("fetch", f);
+
+    const r = await fetchAndUploadImage("draft-1", "https://example.test/x.png");
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("timeout");
+  });
+
+  it("une panne réseau au second essai retombe sur un refus typé", async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(makeImageResponse({ contentType: "image/avif" }))
+      .mockRejectedValueOnce(new TypeError("network boom"));
+    vi.stubGlobal("fetch", f);
+
+    const r = await fetchAndUploadImage("draft-1", "https://example.test/x.png");
+
+    expect(r.ok).toBe(false);
+    // On garde la réponse AVIF initiale : c'est bien le TYPE qui est refusé.
+    if (!r.ok) expect(r.reason).toBe("bad_content_type");
+  });
+
   // Le second essai ne doit pas se déclencher pour un type simplement
   // inconnu : seul l'AVIF a une origine capable de le convertir à la demande.
   it("ne réessaie pas pour un content-type qui n'est pas une image", async () => {

@@ -45,7 +45,28 @@ export const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
  * un « photo.avif » renommé « photo.png » donnerait sinon une clé .png portant
  * des octets AVIF.
  */
-export const EXT_BY_TYPE: Record<string, string> = {
+/**
+ * Extension de fichier pour un type d'image ACCEPTÉ.
+ *
+ * Lève si le type n'est pas dans `ALLOWED_IMAGE_TYPES` : les deux tables ont
+ * exactement les mêmes clés, et chaque appelant vérifie l'appartenance juste
+ * avant. Un repli `?? "jpg"` y avait l'air d'une garde alors qu'il était
+ * inatteignable — et un repli mort qui ressemble à une protection est pire
+ * qu'un invariant qui s'annonce. Si cette exception survient un jour, c'est que
+ * les deux tables ont divergé.
+ */
+export function extensionPour(contentType: string): string {
+  const ext = EXT_BY_TYPE[contentType.toLowerCase()];
+  if (!ext) {
+    throw new Error(
+      `extensionPour: type « ${contentType} » absent d'EXT_BY_TYPE alors qu'il a passé ALLOWED_IMAGE_TYPES — ` +
+      "les deux tables ont divergé.",
+    );
+  }
+  return ext;
+}
+
+const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/jpg":  "jpg",
   "image/png":  "png",
@@ -157,6 +178,15 @@ const MAX_REDIRECTS = 3;
  *
  * WebP reste demandé : le redimensionneur le lit en entrée sur tous les plans.
  */
+/**
+ * En-tête du SECOND essai, quand une origine a servi un AVIF malgré le premier.
+ * Il met le JPEG et le PNG en tête, mais garde un joker en dernier recours : une
+ * origine qui ignore les facteurs de qualité peut donc encore servir de l'AVIF,
+ * et c'est prévu — le contrôle de type qui suit rend alors `bad_content_type`.
+ * Un seul second essai, jamais de boucle.
+ */
+const RETRY_ACCEPT = "image/jpeg,image/png;q=0.9,*/*;q=0.1";
+
 const FETCH_HEADERS: Record<string, string> = {
   "user-agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -233,14 +263,39 @@ export async function fetchAndUploadImage(
     // Un seul second essai, et seulement pour ce cas : un `Accept` restreint
     // dès le premier appel ferait échouer des hôtes qui exigent un en-tête de
     // navigateur plausible, ce que FETCH_HEADERS existe précisément pour imiter.
+    //
+    // DANS LE MÊME try/catch que le premier appel, et ce n'est pas un détail de
+    // style : sans lui, une erreur du second essai SORTAIT de cette fonction au
+    // lieu d'être normalisée, alors qu'elle rendait jusqu'ici toujours un
+    // résultat typé. Le délai et l'AbortController étant PARTAGÉS, une origine
+    // lente qui consomme la fenêtre au premier appel fait avorter le second
+    // presque aussitôt — le `timeout` typé devenait donc une exception. Ses
+    // appelants travaillent en `Promise.all` : un seul rejet aurait perdu tout
+    // un lot d'images déjà téléchargées et déjà écrites en R2, et, sur le
+    // chemin de la génération, aurait court-circuité l'avertissement
+    // « facturée mais non attachée ».
     if (ct === "image/avif") {
-      const retry = await fetchWithSsrfSafeRedirects(parsed, ac.signal, "image/jpeg,image/png;q=0.9,*/*;q=0.1");
-      if (retry.ok && retry.resp.ok) {
-        const retryCt = (retry.resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-        if (ALLOWED_IMAGE_TYPES.has(retryCt)) {
-          resp = retry.resp;
-          ct = retryCt;
+      try {
+        const retry = await fetchWithSsrfSafeRedirects(parsed, ac.signal, RETRY_ACCEPT);
+        if (retry.ok && retry.resp.ok) {
+          const retryCt = (retry.resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+          if (ALLOWED_IMAGE_TYPES.has(retryCt)) {
+            // Le corps AVIF initial ne sera jamais lu : sous workerd, une
+            // réponse non consommée retient la sous-requête.
+            await resp.body?.cancel().catch(() => {});
+            resp = retry.resp;
+            ct = retryCt;
+          } else {
+            await retry.resp.body?.cancel().catch(() => {});
+          }
+        } else if (retry.ok) {
+          await retry.resp.body?.cancel().catch(() => {});
         }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return { ok: false, reason: "timeout" };
+        // Toute autre panne du second essai : on garde la réponse AVIF
+        // initiale, et le contrôle de type juste en dessous rend
+        // `bad_content_type`. Échouer typé, comme avant ce chemin.
       }
     }
 
@@ -274,7 +329,7 @@ export async function fetchAndUploadImage(
     let offset = 0;
     for (const c of chunks) { buffer.set(c, offset); offset += c.byteLength; }
 
-    const ext = EXT_BY_TYPE[ct] ?? "jpg";
+    const ext = extensionPour(ct);
     const key = `products/${draftId}/${nanoid()}.${ext}`;
     const file = new File([buffer], key, { type: ct });
     try {
