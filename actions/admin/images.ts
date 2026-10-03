@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { execute, query, queryFirst } from "@/lib/db";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
 import type { ActionResult } from "@/lib/utils";
+import { ALLOWED_IMAGE_TYPES, extensionPour } from "@/lib/storage/fetch-image";
 
 const idSchema = z.string().min(1, "ID requis");
 
@@ -24,8 +25,28 @@ export async function uploadProductImage(
     return { success: false, error: "Aucun fichier sélectionné" };
   }
 
-  if (!file.type.startsWith("image/")) {
-    return { success: false, error: "Le fichier doit être une image" };
+  // La même liste que le téléchargement MCP (lib/storage/fetch-image.ts), pas
+  // une copie : deux sources pour une même vérité divergent au premier format
+  // ajouté, et c'est par cette porte-ci qu'un AVIF entrerait sinon.
+  //
+  // `image/*` suffisait avant le 2026-10-02. Ce jour-là, trois images d'une
+  // fiche publiée ne s'affichaient pas — « ERROR 9520 » — parce que la vitrine
+  // sert tout par /cdn-cgi/image/ et que Cloudflare ne lit l'AVIF en entrée que
+  // sur un plan Enterprise. Un administrateur qui dépose un .avif depuis son
+  // ordinateur produisait exactement la même image invisible.
+  //
+  // La liste est plus étroite que ce que Cloudflare sait lire : il accepte
+  // aussi le GIF, le SVG et le HEIC sur tous les plans. C'est NOTRE choix, pas
+  // sa limite — le message au-dessus le dit ainsi, après avoir un temps
+  // attribué la restriction au service, ce qui aurait envoyé un administrateur
+  // convertir un GIF parfaitement transformable pour un motif inventé.
+  if (!ALLOWED_IMAGE_TYPES.has(file.type.toLowerCase())) {
+    return {
+      success: false,
+      error:
+        `Format non pris en charge (${file.type || "inconnu"}). Nous n'acceptons que le JPEG, le PNG et le ` +
+        "WebP. Convertissez l'image avant de la déposer.",
+    };
   }
 
   if (file.size > 5 * 1024 * 1024) {
@@ -33,7 +54,10 @@ export async function uploadProductImage(
   }
 
   const id = nanoid();
-  const ext = file.name.split(".").pop() || "jpg";
+  // L'extension vient du TYPE, pas du nom du fichier : un « photo.avif »
+  // renommé « photo.png » aurait sinon produit une clé .png portant des octets
+  // AVIF, donc une image que le redimensionneur refuse malgré son extension.
+  const ext = extensionPour(file.type);
   const key = `products/${productId}/${id}.${ext}`;
 
   await uploadToR2(file, key);
