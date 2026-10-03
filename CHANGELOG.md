@@ -1,5 +1,30 @@
 # Changelog
 
+## [3.0.0](https://github.com/kkzakaria/netereka/compare/v2.1.0...v3.0.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** les outils MCP refusent désormais tout champ qu'ils ne déclarent pas, à la racine comme dans leurs objets imbriqués, au lieu de l'ignorer en silence. Un appelant qui s'appuyait sur cet élagage reçoit un validation_error qui nomme la clé fautive, son niveau, et les champs acceptés à ce niveau. Aucun appel correct ne change de comportement.
+* **db:** les outils MCP `create_product_draft`, `update_product` et `update_product_draft` refusent désormais les champs `story`, `tagline`, `highlights`, `feature_blocks` et `faq`. Un appel qui en porte un reçoit une erreur d'outil (`isError: true`) nommant le champ et son remplaçant, là où il recevait auparavant un succès dont le champ avait été silencieusement jeté. Migration : l'accroche, les points forts et les blocs vont dans `description_html` (classes `nk-lead`, `nk-grid`/`nk-card`, `nk-split`), les questions dans `faq_html` (`<div class="nk-faq">`).
+
+### Features
+
+* **admin:** un champ inconnu est refusé, à la racine comme dans les objets imbriqués ([c9c190d](https://github.com/kkzakaria/netereka/commit/c9c190d2e173fa734f6d1bba3e0cd93bf894bda0))
+
+
+### Bug Fixes
+
+* **admin:** l'AVIF cessait d'être stocké, servi et demandé ([#375](https://github.com/kkzakaria/netereka/issues/375)) ([c852f33](https://github.com/kkzakaria/netereka/commit/c852f33ff24dfbd7bdcc3092e2d5ba64606dc45f))
+* **admin:** un 429 de xAI relaie sa cause au lieu de l'inventer ([#373](https://github.com/kkzakaria/netereka/issues/373)) ([2c0319c](https://github.com/kkzakaria/netereka/commit/2c0319ce37a2621fa81ab0c78f716dfafb112f93))
+* **db:** audit_log pointait sa clé étrangère vers une table vide ([#367](https://github.com/kkzakaria/netereka/issues/367)) ([582f6d9](https://github.com/kkzakaria/netereka/commit/582f6d9611e28e60edb62a8246da90c09c39eec0))
+
+
+### Refactoring
+
+* **db:** les quatre colonnes Story quittent le code (contrat, 1/2) ([#358](https://github.com/kkzakaria/netereka/issues/358)) ([6eaa752](https://github.com/kkzakaria/netereka/commit/6eaa7524aaad8b064c65f99a5021a4830da959b8))
+* **db:** phase de contraction — quatre colonnes et trois tables partent ([#361](https://github.com/kkzakaria/netereka/issues/361)) ([6a0901d](https://github.com/kkzakaria/netereka/commit/6a0901d6d877cf56fbbaf8d07dd13021fdb15e97))
+
 ## [2.1.0](https://github.com/kkzakaria/netereka/compare/v2.0.0...v2.1.0) (2026-10-02)
 
 
