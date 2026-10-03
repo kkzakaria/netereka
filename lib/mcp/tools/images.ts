@@ -127,7 +127,14 @@ const GENERATION_FAILURES: Record<GenerationFailure, { code: McpErrorCode; messa
   },
   rate_limited: {
     code: "limit_exceeded",
-    message: "xAI a répondu 429 : limite de débit du fournisseur atteinte. Réessaie dans quelques minutes.",
+    // Pas d'affirmation sur la CAUSE : un 429 de xAI couvre aussi bien une
+    // limite de débit qu'un crédit épuisé ou une facturation non activée. Dire
+    // « réessaie dans quelques minutes » sur un compte sans crédit fait
+    // attendre indéfiniment. Le détail de xAI, accolé par l'appelant, tranche.
+    message:
+      "xAI a répondu 429. Ce code couvre deux causes très différentes : une limite de débit, qui passe en " +
+      "attendant, ou un crédit épuisé / une facturation non activée, qui ne passera jamais seule et demande " +
+      "un administrateur. Le détail ci-dessous vient de xAI et dit laquelle",
   },
   rejected: {
     code: "validation_error",
