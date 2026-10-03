@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { objetStrict } from "./mcp-common";
 import { colorSchema, dimensionsSchema, specSchema } from "@/lib/validations/product-attributes";
 
 /**
@@ -14,25 +15,25 @@ const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Upper bound of sanitizeDescriptionHtml's input (lib/utils/sanitize-html.ts). */
 const DESCRIPTION_MAX_BYTES = 512_000;
 
-export const draftAttributesSchema = z.object({
+export const draftAttributesSchema = objetStrict({
   colors: z.array(colorSchema).max(12).default([]),
   dimensions: dimensionsSchema.default({}),
   specs: z.array(specSchema).max(20).default([]),
-});
+}, "attributes");
 
-const seoSchema = z.object({
+const seoSchema = objetStrict({
   meta_title: z.string().trim().max(60).nullable().optional(),
   meta_description: z.string().trim().max(160).nullable().optional(),
-});
+}, "seo");
 
-const pricingSchema = z.object({
+const pricingSchema = objetStrict({
   base_price: z.number().int().min(0).optional(),
   compare_price: z.number().int().min(0).nullable().optional(),
   sku: z.string().trim().min(1).max(64).nullable().optional(),
   stock_quantity: z.number().int().min(0).optional(),
   low_stock_threshold: z.number().int().min(0).optional(),
   weight_grams: z.number().int().positive().nullable().optional(),
-});
+}, "pricing");
 
 /**
  * Champs retirés du contrat produit : les quatre colonnes Story (`tagline`,
@@ -102,11 +103,11 @@ export const RETIRED_STORY_FIELD_NAMES = Object.keys(RETIRED_STORY_FIELDS) as re
  * with the create-time defaults a colours-only patch would silently wipe the
  * stored specs and dimensions.
  */
-export const updateAttributesSchema = z.object({
+export const updateAttributesSchema = objetStrict({
   colors: z.array(colorSchema).max(12),
   dimensions: dimensionsSchema,
   specs: z.array(specSchema).max(20),
-});
+}, "attributes");
 
 export const updateDraftSchema = createDraftSchema.partial().extend({
   slug: z.string().trim().max(160).regex(SLUG_RE, "Slug invalide (minuscules, chiffres, tirets)").optional(),
@@ -115,22 +116,22 @@ export const updateDraftSchema = createDraftSchema.partial().extend({
 
 export const addImagesSchema = z.object({
   images: z
-    .array(z.object({
+    .array(objetStrict({
       url: z.string().url().max(2048).refine((u) => /^https?:\/\//i.test(u), "URL http(s) requise"),
       alt: z.string().trim().max(200).nullable().optional(),
-    }))
+    }, "images[]"))
     .min(1)
     .max(8),
 });
 
 export const setVariantsSchema = z.object({
   variants: z
-    .array(z.object({
+    .array(objetStrict({
       color_name: z.string().trim().min(1).max(40),
       color_hex: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur hex invalide (format #rrggbb)"),
       stock: z.number().int().min(0),
       price: z.number().int().min(0).nullable().optional(),
-    }))
+    }, "variants[]"))
     .max(12),
   uniform_price: z.boolean().default(true),
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { RETIRED_STORY_FIELD_NAMES } from "@/lib/validations/mcp-product";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import type { McpContext } from "@/lib/mcp/context";
 
@@ -460,7 +461,11 @@ describe("contrat : un champ Story retiré ne passe plus par le SDK", () => {
       // Mais PAS les champs déclarés pour être refusés : les annoncer comme
       // acceptés enverrait l'appelant droit vers un second refus. Mesuré sur
       // les vingt outils — trois en déclarent cinq dans ce cas.
-      for (const refuse of ["story", "tagline", "highlights", "feature_blocks"]) {
+      // Lue, pas recopiée : ma première version en listait quatre sur cinq et
+      // omettait `faq` — précisément le plus dangereux, puisqu'un `faq_html`
+      // légitime vit juste à côté et que les deux paraissent plausibles.
+      expect(RETIRED_STORY_FIELD_NAMES.length).toBeGreaterThanOrEqual(5);
+      for (const refuse of RETIRED_STORY_FIELD_NAMES) {
         expect(textOf(r), `${refuse} annoncé comme acceptable`).not.toMatch(
           new RegExp(`n'accepte que[^.]*\\b${refuse}\\b`),
         );
@@ -481,13 +486,64 @@ describe("contrat : un champ Story retiré ne passe plus par le SDK", () => {
         arguments: { id: "p1", pricing: { base_price: 35000 } },
       });
       expect(r.isError).toBeFalsy();
-      expect(mocks.updateDraft).toHaveBeenCalled();
+      // Pas seulement « appelée » : AVEC la valeur. Retirer `pricing` du patch
+      // dans le handler laissait ce test au vert — il gardait l'absence
+      // d'erreur, pas l'écriture, c'est-à-dire exactement l'incident d'origine.
+      expect(mocks.updateDraft).toHaveBeenCalledWith(
+        "p1",
+        expect.objectContaining({ pricing: { base_price: 35000 } }),
+        expect.anything(),
+      );
     } finally {
       await client.close();
     }
   });
 
-  // Les cinq noms Story sont DÉCLARÉS dans la forme, donc connus : leur message
+  /**
+   * LE défaut que la racine stricte ne fermait pas, et vers lequel elle
+   * poussait : le message répond « n'accepte que : …, pricing, … », donc
+   * l'assistant corrige `base_price` en `pricing: { … }` — et s'il se trompe à
+   * l'intérieur, il retombait sur un succès pour une écriture vide, cette fois
+   * avec la conviction d'avoir le bon conteneur.
+   *
+   * Mesuré par une relecture avant correction : `pricing: { basePrice }` rendait
+   * un succès et écrivait `pricing: {}`.
+   */
+  it.each([
+    ["pricing", { pricing: { basePrice: 35000 } }, "pricing"],
+    ["seo", { seo: { metaTitle: "x" } }, "seo"],
+  ])("refuse un champ inconnu IMBRIQUÉ dans %s, au lieu de l'élaguer", async (_nom, args, chemin) => {
+    mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+    mocks.updateDraft.mockResolvedValue({ id: "p1", slug: "s" });
+    const client = await connected();
+    try {
+      const r = await client.callTool({ name: "update_product", arguments: { id: "p1", ...args } });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).toContain(`Champ inconnu dans « ${chemin} »`);
+      expect(mocks.updateDraft).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("refuse un champ inconnu dans un élément de variants[]", async () => {
+    mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+    const client = await connected();
+    try {
+      const r = await client.callTool({
+        name: "set_product_variants",
+        arguments: { id: "p1", variants: [{ color_name: "Noir", color_hex: "#000000", stock: 1, prix: 500 }] },
+      });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).toContain("variants[]");
+      // Sans ça, la variante partait à l'écriture SANS prix, silencieusement.
+      expect(textOf(r)).toContain("price");
+    } finally {
+      await client.close();
+    }
+  });
+
+  // Les cinq noms Story sont DÉCLARÉS dans la forme, donc connus  // Les cinq noms Story sont DÉCLARÉS dans la forme, donc connus : leur message
   // sur mesure, qui nomme le remplaçant, doit continuer de l'emporter sur le
   // message générique.
   it("un champ Story garde son message propre, plus précis que le refus générique", async () => {

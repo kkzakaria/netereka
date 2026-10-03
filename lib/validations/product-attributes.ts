@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { objetStrict } from "./mcp-common";
 
 /**
  * Shared product attribute schemas (colors, dimensions, specs).
@@ -10,19 +11,19 @@ import { z } from "zod";
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur hex invalide (format #rrggbb)");
 
-export const colorSchema = z.object({
+export const colorSchema = objetStrict({
   name: z.string().trim().min(1).max(40),
   hex: hexColor,
-});
+}, "attributes.colors[]");
 
-export const dimensionsSchema = z.object({
+export const dimensionsSchema = objetStrict({
   length_mm: z.number().int().positive().optional(),
   height_mm: z.number().int().positive().optional(),
   width_mm:  z.number().int().positive().optional(),
   weight_g:  z.number().int().positive().optional(),
-});
+}, "attributes.dimensions");
 
-export const specSchema = z.object({
+export const specSchema = objetStrict({
   name:  z.string().trim().min(1).max(60),
   value: z.string().trim().min(1).max(200),
-});
+}, "attributes.specs[]");
