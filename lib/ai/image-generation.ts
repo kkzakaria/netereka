@@ -235,7 +235,16 @@ export async function editProductImage(
     });
 
     if (resp.status === 401 || resp.status === 403) return { ok: false, reason: "auth_failed" };
-    if (resp.status === 429) return { ok: false, reason: "rate_limited" };
+    // Le corps d'un 429 est relayé, pour la même raison que celui d'un 400 :
+    // il est la seule information actionnable. Un 429 n'est pas toujours une
+    // limite de débit — sur une clé neuve, c'est le plus souvent un crédit
+    // épuisé ou une facturation non activée, et le conseil « réessaie dans
+    // quelques minutes » est alors faux : on attendrait indéfiniment. Sans ce
+    // détail, rien ne permet de distinguer les deux.
+    if (resp.status === 429) {
+      const body = await resp.text().catch(() => "");
+      return { ok: false, reason: "rate_limited", detail: clampDetail(body) || "HTTP 429" };
+    }
     if (resp.status >= 400 && resp.status < 500) {
       // Le détail d'un 4xx est la seule information actionnable du lot : il
       // dit si l'invite a été modérée, si l'image source est inexploitable ou

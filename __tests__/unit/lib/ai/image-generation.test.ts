@@ -244,6 +244,33 @@ describe("editProductImage", () => {
     if (!r.ok) expect(r.detail).toBe("HTTP 422");
   });
 
+  /**
+   * Un 429 de xAI n'est pas toujours une limite de débit. Sur une clé neuve,
+   * c'est le plus souvent un crédit épuisé ou une facturation non activée — et
+   * le conseil « réessaie dans quelques minutes » fait alors attendre
+   * indéfiniment. Le détail distingue les deux ; sans lui, l'outil donne un
+   * conseil faux avec aplomb. Même défaut qu'`auth_failed` sans détail, au même
+   * endroit du code, trouvé au premier appel réel.
+   */
+  it("un 429 porte le détail de xAI, qui dit s'il faut attendre ou agir", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response('{"error":"Your team has insufficient credits"}', { status: 429 }),
+    ));
+    const r = await editProductImage({ sourceImage: "d", prompt: "p" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("rate_limited");
+      expect(r.detail).toContain("insufficient credits");
+    }
+  });
+
+  it("un 429 sans corps lisible reste identifiable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 429 })));
+    const r = await editProductImage({ sourceImage: "d", prompt: "p" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.detail).toBe("HTTP 429");
+  });
+
   it("upstream_error sur 5xx", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 503 })));
     const r = await editProductImage({ sourceImage: "d", prompt: "p" });
