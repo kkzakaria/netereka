@@ -128,5 +128,32 @@ describe("cloudflareImageLoader", () => {
         cloudflareImageLoader({ src: "/images/img.webp?v=1", width: 80 })
       ).toBe("/cdn-cgi/image/width=80,quality=75,format=auto/images/img.webp?v=1");
     });
+
+    /**
+     * Cloudflare ne lit l'AVIF EN ENTRÉE que sur un plan Enterprise : sur
+     * celui-ci, `/cdn-cgi/image/…` répond « ERROR 9520 » et l'image ne
+     * s'affiche pas du tout. Mesuré le 2026-10-02 sur une fiche publiée.
+     * 48 images stockées sur 29 fiches sont dans ce cas.
+     */
+    it("sert un AVIF tel quel : le redimensionneur le refuserait", () => {
+      const src = "https://r2.netereka.ci/products/p1/a.avif";
+      expect(cloudflareImageLoader({ src, width: 640 })).toBe(src);
+    });
+
+    it("y compris avec une query ou une ancre après l'extension", () => {
+      expect(cloudflareImageLoader({ src: "/x/a.avif?v=2", width: 80 })).toBe("/x/a.avif?v=2");
+      expect(cloudflareImageLoader({ src: "/x/a.AVIF", width: 80 })).toBe("/x/a.AVIF");
+    });
+
+    // Le repli doit viser l'EXTENSION, pas la sous-chaîne : un fichier dont le
+    // nom contient « avif » reste une image que le redimensionneur sait lire,
+    // et la priver de redimensionnement coûterait de la bande passante pour
+    // rien.
+    it("ne se déclenche pas sur un nom qui contient seulement « avif »", () => {
+      expect(cloudflareImageLoader({ src: "/x/avif-comparison.png", width: 80 }))
+        .toBe("/cdn-cgi/image/width=80,quality=75,format=auto/x/avif-comparison.png");
+      expect(cloudflareImageLoader({ src: "/x/photo.avifx", width: 80 }))
+        .toContain("/cdn-cgi/image/");
+    });
   });
 });

@@ -13,15 +13,43 @@ export const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
   "image/jpg",
   "image/png",
   "image/webp",
-  "image/avif",
 ]);
 
-const EXT_BY_TYPE: Record<string, string> = {
+/**
+ * PAS d'`image/avif`, et c'est le correctif d'un défaut vu en production le
+ * 2026-10-02 : trois images d'une fiche publiée ne s'affichaient pas, sur
+ * `ERROR 9520: Original image has unsupported format`.
+ *
+ * La vitrine sert toute image par `/cdn-cgi/image/…`, et Cloudflare ne lit
+ * l'AVIF EN ENTRÉE que sur un plan Enterprise (documentation Images, « Supported
+ * formats → Input formats », l'astérisque sur AVIF). Ce compte n'y est pas.
+ * Stocker un AVIF revient donc à stocker une image que la boutique ne peut pas
+ * rendre — et rien ne le signalait : le téléversement réussissait, la fiche se
+ * publiait, et le défaut n'apparaissait qu'à l'œil d'un visiteur.
+ *
+ * Un AVIF est désormais refusé par `bad_content_type`, un échec typé qui dit au
+ * modèle de chercher une autre source. Le refuser à l'entrée vaut mieux que de
+ * le convertir : convertir demanderait un décodeur AVIF dans le Worker, pour un
+ * format dont aucune source ne dépend — toutes servent du JPEG ou du PNG dès
+ * qu'on cesse de leur demander autre chose (voir FETCH_HEADERS).
+ *
+ * À rouvrir si ce compte passe en Enterprise, ou si la vitrine cesse de passer
+ * par le redimensionneur. Pas avant.
+ */
+
+/**
+ * Extension de fichier pour un type MIME accepté. EXPORTÉE pour la même raison
+ * que `ALLOWED_IMAGE_TYPES` : le téléversement d'administration
+ * (`actions/admin/images.ts`) en a besoin, et la dupliquer y produirait deux
+ * sources pour une même vérité. Il la lit plutôt que le nom du fichier déposé —
+ * un « photo.avif » renommé « photo.png » donnerait sinon une clé .png portant
+ * des octets AVIF.
+ */
+export const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/jpg":  "jpg",
   "image/png":  "png",
   "image/webp": "webp",
-  "image/avif": "avif",
 };
 
 /**
@@ -115,11 +143,24 @@ const MAX_REDIRECTS = 3;
  * Claude cites) gate on User-Agent and 403 Cloudflare Workers' default UA.
  * A realistic Chrome UA + standard image Accept dramatically improves the
  * fetch success rate without changing semantics for hosts that don't care.
+ *
+ * `image/avif` RETIRÉ de l'Accept le 2026-10-02. C'est cette ligne qui a cassé
+ * trois images en production : l'en-tête annonçait l'AVIF en premier choix, et
+ * honor.com — comme tout CDN qui négocie le contenu — a servi de l'AVIF là où
+ * l'URL demandée était un `.png`. On stockait donc un format que le
+ * redimensionneur de la vitrine ne sait pas lire sur ce plan.
+ *
+ * La leçon vaut d'être écrite : cet en-tête a été ajouté pour FIABILISER la
+ * récupération, et il y est parvenu — en cassant l'affichage, sans qu'aucun
+ * test ni aucune erreur ne le signale. Demander un format qu'on ne sait pas
+ * servir est une contradiction qui ne se voit qu'à l'œil, chez un visiteur.
+ *
+ * WebP reste demandé : le redimensionneur le lit en entrée sur tous les plans.
  */
 const FETCH_HEADERS: Record<string, string> = {
   "user-agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+  accept: "image/webp,image/apng,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5",
 };
 
 /**
@@ -130,13 +171,14 @@ const FETCH_HEADERS: Record<string, string> = {
 async function fetchWithSsrfSafeRedirects(
   initialUrl: URL,
   signal: AbortSignal,
+  accept: string = FETCH_HEADERS.accept,
 ): Promise<{ ok: true; resp: Response } | { ok: false; reason: "ssrf" | "fetch_failed" }> {
   let current = initialUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const resp = await fetch(current.toString(), {
       signal,
       redirect: "manual",
-      headers: FETCH_HEADERS,
+      headers: { ...FETCH_HEADERS, accept },
     });
     const status = resp.status;
     if (status < 300 || status >= 400) return { ok: true, resp };
@@ -177,7 +219,31 @@ export async function fetchAndUploadImage(
 
     if (!resp.ok) return { ok: false, reason: "bad_status", status: resp.status };
 
-    const ct = (resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    let ct = (resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+
+    // Un AVIF servi malgré un `Accept` qui ne le demande pas : on redemande en
+    // n'annonçant QUE des formats anciens. C'est l'origine qui convertit —
+    // elle a l'original et le fait gratuitement, là où convertir nous-mêmes
+    // exigerait un décodeur AVIF en WebAssembly dans le Worker.
+    //
+    // L'Images binding de Cloudflare ne nous sauverait pas : `.input()` lit la
+    // même liste de formats d'entrée, où l'AVIF est réservé au plan Enterprise.
+    // Il n'existe donc aucune conversion côté Cloudflare sur ce compte.
+    //
+    // Un seul second essai, et seulement pour ce cas : un `Accept` restreint
+    // dès le premier appel ferait échouer des hôtes qui exigent un en-tête de
+    // navigateur plausible, ce que FETCH_HEADERS existe précisément pour imiter.
+    if (ct === "image/avif") {
+      const retry = await fetchWithSsrfSafeRedirects(parsed, ac.signal, "image/jpeg,image/png;q=0.9,*/*;q=0.1");
+      if (retry.ok && retry.resp.ok) {
+        const retryCt = (retry.resp.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+        if (ALLOWED_IMAGE_TYPES.has(retryCt)) {
+          resp = retry.resp;
+          ct = retryCt;
+        }
+      }
+    }
+
     if (!ALLOWED_IMAGE_TYPES.has(ct)) return { ok: false, reason: "bad_content_type" };
 
     const reader = resp.body?.getReader();
