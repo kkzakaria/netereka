@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { getDrizzle } from "@/lib/db/drizzle";
 import type { DraftAudit } from "@/lib/db/product-drafts";
 import { auditLog, banners } from "@/lib/db/schema";
+import { bannerClock, displayedBannerOrder } from "@/lib/db/storefront/banners";
 import type { AuditAction } from "@/lib/db/types";
 
 /**
@@ -100,4 +101,72 @@ export async function insertInactiveBanner(fields: NewBannerFields, audit: Draft
 export async function deleteBannerRow(id: number): Promise<void> {
   const db = await getDrizzle();
   await db.delete(banners).where(eq(banners.id, id));
+}
+
+/** Une bannière telle que `list_banners` la rend : de quoi l'IDENTIFIER, pas la relire. */
+export interface BannerSummary {
+  id: number;
+  title: string;
+  link_url: string;
+  is_active: boolean;
+  display_order: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  /** Rang dans le carrousel, à partir de 1 — `null` si la bannière ne s'affiche pas en ce moment. */
+  carousel_position: number | null;
+  /** Pourquoi elle ne s'affiche pas, quand c'est le cas. */
+  not_displayed_because: "inactive" | "pas encore commencée" | "terminée" | null;
+  has_content_html: boolean;
+  has_image: boolean;
+}
+
+/**
+ * Toutes les bannières, dans l'ordre du carrousel.
+ *
+ * Elle existe parce qu'un assistant en service a brûlé trois échanges à
+ * deviner un identifiant le 2026-10-02 : `get_banner` exige un numéro, rien ne
+ * permettait de l'obtenir, et « la bannière 0 » voulait dire la PREMIÈRE du
+ * carrousel — une position, pas un identifiant. D'où `carousel_position`, qui
+ * traduit exactement ce que l'administrateur voit.
+ *
+ * Elle ne rend PAS `content_html` : jusqu'à 512 Ko par bannière, et le but est
+ * d'identifier, pas de relire — `get_banner` est là pour ça. Un simple drapeau
+ * dit s'il y en a un.
+ *
+ * « Affichée » emploie `displayedBannerCondition`, la même définition que le
+ * carrousel et que l'écran d'un retrait : une bannière active dont la fenêtre
+ * est passée n'est pas affichée, et le dire évite de chercher pourquoi une
+ * bannière « active » reste invisible.
+ */
+export async function listBanners(): Promise<BannerSummary[]> {
+  const db = await getDrizzle();
+  const now = bannerClock();
+  const rows = await db.select().from(banners).orderBy(...displayedBannerOrder).all();
+
+  let rang = 0;
+  return rows.map((b) => {
+    const commencee = !b.starts_at || b.starts_at <= now;
+    const terminee = !!b.ends_at && b.ends_at <= now;
+    const affichee = b.is_active === 1 && commencee && !terminee;
+    if (affichee) rang += 1;
+    return {
+      id: b.id,
+      title: b.title,
+      link_url: b.link_url,
+      is_active: b.is_active === 1,
+      display_order: b.display_order,
+      starts_at: b.starts_at,
+      ends_at: b.ends_at,
+      carousel_position: affichee ? rang : null,
+      not_displayed_because: affichee
+        ? null
+        : b.is_active !== 1
+          ? "inactive"
+          : !commencee
+            ? "pas encore commencée"
+            : "terminée",
+      has_content_html: !!b.content_html && b.content_html.trim().length > 0,
+      has_image: !!b.image_url && b.image_url.trim().length > 0,
+    };
+  });
 }

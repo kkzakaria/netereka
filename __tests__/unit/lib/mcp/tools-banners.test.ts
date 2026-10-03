@@ -54,8 +54,8 @@ beforeEach(() => {
 });
 
 describe("bannerTools", () => {
-  it("expose get_banner, update_banner, create_banner, withdraw_banner", () => {
-    expect(bannerTools.map((t) => t.name).sort()).toEqual(["create_banner", "get_banner", "update_banner", "withdraw_banner"]);
+  it("expose list_banners, get_banner, update_banner, create_banner, withdraw_banner", () => {
+    expect(bannerTools.map((t) => t.name).sort()).toEqual(["create_banner", "get_banner", "list_banners", "update_banner", "withdraw_banner"]);
   });
 
   it("get_banner : not_found si la bannière n'existe pas", async () => {
