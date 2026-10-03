@@ -433,6 +433,79 @@ describe("contrat : un champ Story retiré ne passe plus par le SDK", () => {
     }
   });
 
+  /**
+   * LE cas relevé en service le 2026-10-02. Un assistant a écrit
+   * `base_price: 35000`, reçu un succès, et le prix est resté à 0 — `z.object`
+   * élaguait la clé. Il a recommencé sous trois autres formes, toutes
+   * « réussies », avant de recharger la définition de l'outil pour découvrir
+   * que le champ s'appelle `pricing.base_price`.
+   *
+   * Un succès pour une écriture vide est pire qu'un refus : il apprend à
+   * l'appelant qu'il peut croire un succès.
+   */
+  it("update_product refuse un nom de champ inventé au lieu de l'ignorer", async () => {
+    mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+    mocks.updateDraft.mockResolvedValue({ id: "p1", slug: "s" });
+    const client = await connected();
+    try {
+      const r = await client.callTool({
+        name: "update_product",
+        arguments: { id: "p1", base_price: 35000 },
+      });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).toContain("Champ inconnu");
+      // Refuser sans dire quoi employer ne ferait que déplacer les essais à
+      // l'aveugle : le message liste les champs acceptés, dont `pricing`.
+      expect(textOf(r)).toContain("pricing");
+      // Mais PAS les champs déclarés pour être refusés : les annoncer comme
+      // acceptés enverrait l'appelant droit vers un second refus. Mesuré sur
+      // les vingt outils — trois en déclarent cinq dans ce cas.
+      for (const refuse of ["story", "tagline", "highlights", "feature_blocks"]) {
+        expect(textOf(r), `${refuse} annoncé comme acceptable`).not.toMatch(
+          new RegExp(`n'accepte que[^.]*\\b${refuse}\\b`),
+        );
+      }
+      expect(mocks.updateDraft).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("un champ légitime passe toujours : le SDK n'ajoute aucune clé aux arguments", async () => {
+    mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+    mocks.updateDraft.mockResolvedValue({ id: "p1", slug: "s" });
+    const client = await connected();
+    try {
+      const r = await client.callTool({
+        name: "update_product",
+        arguments: { id: "p1", pricing: { base_price: 35000 } },
+      });
+      expect(r.isError).toBeFalsy();
+      expect(mocks.updateDraft).toHaveBeenCalled();
+    } finally {
+      await client.close();
+    }
+  });
+
+  // Les cinq noms Story sont DÉCLARÉS dans la forme, donc connus : leur message
+  // sur mesure, qui nomme le remplaçant, doit continuer de l'emporter sur le
+  // message générique.
+  it("un champ Story garde son message propre, plus précis que le refus générique", async () => {
+    mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+    const client = await connected();
+    try {
+      const r = await client.callTool({
+        name: "update_product",
+        arguments: { id: "p1", tagline: "Accroche" },
+      });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).toContain("a été retiré du contrat");
+      expect(textOf(r)).not.toContain("Champ inconnu");
+    } finally {
+      await client.close();
+    }
+  });
+
   it("update_product refuse `faq` en nommant faq_html, et n'écrit rien", async () => {
     mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
     mocks.updateDraft.mockResolvedValue({ id: "p1", slug: "s" });
