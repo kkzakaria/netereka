@@ -31,9 +31,26 @@ export const changeReasonSchema = withdrawReasonSchema;
  * quoi employer ne fait que déplacer les essais à l'aveugle.
  */
 export function objetStrict<T extends z.ZodRawShape>(shape: T, chemin: string) {
+  const champs = Object.keys(shape).sort().join(", ");
   return z.strictObject(shape, {
-    error:
-      `Champ inconnu dans « ${chemin} ». Cet objet n'accepte que : ` +
-      `${Object.keys(shape).sort().join(", ")}.`,
+    // Une FONCTION, pas une chaîne : une chaîne s'applique à TOUTES les issues
+    // de l'objet, `invalid_type` comprise. À la racine c'était inatteignable —
+    // le SDK refuse un `arguments` non-objet avant d'arriver au schéma — mais
+    // les objets imbriqués ne sont gardés par personne. Mesuré : `pricing: 35000`
+    // répondait « Champ inconnu dans « pricing » » alors qu'aucun champ inconnu
+    // n'avait été envoyé, sur neuf chemins.
+    //
+    // Et c'est précisément l'erreur que le refus de la racine rend probable :
+    // son message nomme `pricing` sans dire que c'est un OBJET. L'appelant écrit
+    // donc `pricing: 35000` et part chercher une clé fautive qui n'existe pas —
+    // la boucle d'essais à l'aveugle que cette PR existe pour fermer,
+    // reconstituée un cran plus bas.
+    //
+    // `undefined` retombe sur le message par défaut de Zod, qui dit la vraie
+    // cause : « expected object, received number ».
+    error: (iss) =>
+      iss.code === "unrecognized_keys"
+        ? `Champ inconnu dans « ${chemin} ». Cet objet n'accepte que : ${champs}.`
+        : undefined,
   });
 }

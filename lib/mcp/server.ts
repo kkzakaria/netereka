@@ -78,7 +78,14 @@ export function createMcpServer(ctx: McpContext): McpServer {
       // employer ne fait que déplacer les quatre essais à l'aveugle.
       {
         description: tool.description,
-        inputSchema: z.strictObject(tool.inputSchema, { error: refusDeCleInconnue(tool.inputSchema) }),
+        // Même forme fonctionnelle que `objetStrict` : une chaîne s'appliquerait
+        // aussi à l'`invalid_type` de la racine. Inatteignable ici — le SDK
+        // refuse un `arguments` non-objet avant d'arriver au schéma de l'outil —
+        // mais la symétrie évite que le prochain qui copie ce bloc hérite du
+        // piège que les objets imbriqués, eux, ont réellement subi.
+        inputSchema: z.strictObject(tool.inputSchema, {
+          error: (iss) => (iss.code === "unrecognized_keys" ? refusDeCleInconnue(tool.inputSchema) : undefined),
+        }),
       },
       async (input) => tool.handler(ctx, input),
     );

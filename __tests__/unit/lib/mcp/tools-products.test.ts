@@ -526,6 +526,33 @@ describe("contrat : un champ Story retiré ne passe plus par le SDK", () => {
     }
   });
 
+  /**
+   * Un objet imbriqué reçu avec le MAUVAIS TYPE ne doit pas se voir répondre
+   * « champ inconnu » : aucun champ inconnu n'a été envoyé. Une chaîne passée
+   * à `error` s'appliquait à toutes les issues, y compris `invalid_type`, et
+   * neuf chemins mentaient ainsi.
+   *
+   * C'est l'erreur que le refus de la racine rend probable, puisque son
+   * message nomme `pricing` sans dire que c'est un objet : répondre « champ
+   * inconnu » y renvoyait l'appelant chercher une clé fautive inexistante.
+   */
+  it.each([
+    ["un nombre", 35000],
+    ["null", null],
+    ["une chaîne", "gratuit"],
+  ])("un pricing reçu comme %s dit le vrai problème, pas « champ inconnu »", async (_nom, valeur) => {
+    mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
+    const client = await connected();
+    try {
+      const r = await client.callTool({ name: "update_product", arguments: { id: "p1", pricing: valeur } });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).not.toContain("Champ inconnu");
+      expect(textOf(r)).toMatch(/expected object/i);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("refuse un champ inconnu dans un élément de variants[]", async () => {
     mocks.getProductDraftState.mockResolvedValue({ is_draft: true });
     const client = await connected();
@@ -543,7 +570,7 @@ describe("contrat : un champ Story retiré ne passe plus par le SDK", () => {
     }
   });
 
-  // Les cinq noms Story sont DÉCLARÉS dans la forme, donc connus  // Les cinq noms Story sont DÉCLARÉS dans la forme, donc connus : leur message
+  // Les cinq noms Story sont DÉCLARÉS dans la forme, donc connus : leur message
   // sur mesure, qui nomme le remplaçant, doit continuer de l'emporter sur le
   // message générique.
   it("un champ Story garde son message propre, plus précis que le refus générique", async () => {
