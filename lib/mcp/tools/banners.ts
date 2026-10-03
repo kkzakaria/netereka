@@ -1,6 +1,6 @@
 import { DraftError, type DraftAudit } from "@/lib/db/product-drafts";
 import { deleteBannerRow, getBannerById, insertInactiveBanner, listBanners } from "@/lib/db/banners";
-import { RevisionError, createRevision, listPendingRevisions } from "@/lib/db/revisions";
+import { RevisionError, createRevision, listPendingRevisions, listPendingRevisionHandles } from "@/lib/db/revisions";
 import type { McpContext } from "@/lib/mcp/context";
 import { ok, fail, type ToolResult } from "@/lib/mcp/result";
 import {
@@ -55,18 +55,20 @@ export const bannerTools: ToolDefinition[] = [
     description:
       "Liste TOUTES les bannières du hero, dans l'ordre du carrousel, avec leur identifiant. Commence par " +
       "là quand tu ne connais pas le numéro d'une bannière : get_banner, update_banner et withdraw_banner " +
-      "en exigent un, et il n'apparaît nulle part ailleurs. " +
-      "carousel_position donne le rang de la diapositive à partir de 1 — c'est ce qu'un administrateur voit " +
-      "et ce qu'il désigne quand il parle de « la première bannière » ; il ne vaut PAS l'identifiant. Une " +
-      "bannière qui ne s'affiche pas a carousel_position à null et not_displayed_because dit pourquoi " +
-      "(inactive, pas encore commencée, terminée) : une bannière active dont la fenêtre de dates est passée " +
-      "ne s'affiche pas. " +
+      "en exigent un, et aucun outil de lecture ne le donne. " +
+      "carousel_position est le rang de la diapositive à partir de 1, pas l'identifiant : quand un " +
+      "administrateur parle de « la première bannière », traduis-le en carousel_position puis lis l'id sur " +
+      "la même ligne. Une bannière qui ne s'affiche pas a carousel_position à null et not_displayed_because " +
+      "donne TOUTES les raisons (désactivée, pas encore commencée, terminée) — il peut y en avoir deux, et " +
+      "lever la première ne suffit alors pas à la faire revenir. " +
       "Le contenu HTML n'est pas renvoyé, seulement has_content_html : relis-le avec get_banner si tu en as " +
-      "besoin. Aucun argument.",
+      "besoin. pending_revisions liste les modifications DÉJÀ déposées sur cette bannière et pas encore " +
+      "tranchées par un administrateur : si elle n'est pas vide, inutile d'en déposer une seconde. " +
+      "count compte toutes les bannières, displayed_count les seules affichées. Aucun argument.",
     inputSchema: {},
     handler: async () => {
       try {
-        const [rows, pending] = await Promise.all([listBanners(), listPendingRevisions("banner")]);
+        const [rows, pending] = await Promise.all([listBanners(), listPendingRevisionHandles("banner")]);
         // Les révisions en attente par bannière : c'est ce qui dit à l'appelant
         // qu'une modification est déjà déposée, avant d'en déposer une seconde.
         const enAttente = new Map<string, { id: string; kind: string }[]>();

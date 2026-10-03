@@ -20,6 +20,7 @@ const holder = vi.hoisted(() => ({ binding: null as unknown }));
 vi.mock("@/lib/cloudflare/context", () => ({ getDB: async () => holder.binding }));
 
 import { bannerTools } from "@/lib/mcp/tools/banners";
+import { listPendingRevisionHandles } from "@/lib/db/revisions";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const listBannersTool = bannerTools.find((t) => t.name === "list_banners")!;
@@ -89,6 +90,29 @@ describe("list_banners : les révisions en attente, rattachées à leur bannièr
     const [b] = (await appel()).banners;
     expect(b.pending_revisions).toEqual([]);
   });
+
+  /**
+   * Une révision porte le `content_html` proposé dans son `payload` — jusqu'à
+   * 512 Ko, et leur nombre n'est borné par rien. La liste n'en garde que l'id
+   * et le genre ; les charger pour les jeter ferait grossir la réponse D1 avec
+   * la file d'attente.
+   */
+  it("le payload d'une révision ne traverse pas le fil", async () => {
+    banniere(7, "Sept", 0);
+    db.prepare(
+      `INSERT INTO content_revisions (id, target_type, target_id, kind, payload, origin, actor_id, actor_name, status)
+       VALUES ('rev-lourde', 'banner', '7', 'update', '{"content_html":"<div>charge utile</div>"}', 'mcp', 'a', 'A', 'pending')`,
+    ).run();
+    const out = await appel();
+    expect(JSON.stringify(out)).not.toContain("charge utile");
+    expect(out.banners[0].pending_revisions).toEqual([{ id: "rev-lourde", kind: "update" }]);
+
+    // Et il n'est pas seulement écarté de la réponse : il n'est pas LU.
+    // Ce que l'assertion ci-dessus ne prouve pas — le gestionnaire ne garde
+    // que l'id et le genre, quelle que soit la requête.
+    const handles = await listPendingRevisionHandles("banner");
+    expect(Object.keys(handles[0]).sort()).toEqual(["id", "kind", "target_id"]);
+  });
 });
 
 describe("list_banners : les compteurs de l'en-tête", () => {
@@ -105,6 +129,22 @@ describe("list_banners : les compteurs de l'en-tête", () => {
 
   it("aucune bannière : une liste vide et des compteurs à zéro, pas une erreur", async () => {
     expect(await appel()).toEqual({ banners: [], count: 0, displayed_count: 0 });
+  });
+
+  /**
+   * L'ensemble des clés qui traversent le fil MCP, figé. Le `not.toContain`
+   * ci-dessous ne surveille qu'une valeur ; celui-ci verrait passer un champ
+   * ajouté par mégarde, HTML ou non.
+   */
+  it("la réponse ne porte que ces champs, par bannière et à la racine", async () => {
+    banniere(1, "Une", 0);
+    const out = await appel();
+    expect(Object.keys(out).sort()).toEqual(["banners", "count", "displayed_count"]);
+    expect(Object.keys(out.banners[0]).sort()).toEqual([
+      "carousel_position", "display_order", "ends_at", "has_content_html", "has_image",
+      "id", "is_active", "link_url", "not_displayed_because", "pending_revisions",
+      "starts_at", "title",
+    ]);
   });
 
   // Le contenu HTML monte à 512 Ko par bannière : l'outil en rend le drapeau,

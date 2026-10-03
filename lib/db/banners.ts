@@ -103,6 +103,8 @@ export async function deleteBannerRow(id: number): Promise<void> {
   await db.delete(banners).where(eq(banners.id, id));
 }
 
+export type BannerHiddenReason = "désactivée" | "pas encore commencée" | "terminée";
+
 /** Une bannière telle que `list_banners` la rend : de quoi l'IDENTIFIER, pas la relire. */
 export interface BannerSummary {
   id: number;
@@ -114,8 +116,13 @@ export interface BannerSummary {
   ends_at: string | null;
   /** Rang dans le carrousel, à partir de 1 — `null` si la bannière ne s'affiche pas en ce moment. */
   carousel_position: number | null;
-  /** Pourquoi elle ne s'affiche pas, quand c'est le cas. */
-  not_displayed_because: "inactive" | "pas encore commencée" | "terminée" | null;
+  /**
+   * TOUTES les raisons qui l'empêchent de s'afficher, vide quand elle
+   * s'affiche. Un tableau et non une raison unique : une bannière peut être
+   * désactivée ET terminée, et n'annoncer que la première ferait croire qu'une
+   * réactivation suffit à la faire revenir.
+   */
+  not_displayed_because: BannerHiddenReason[];
   has_content_html: boolean;
   has_image: boolean;
 }
@@ -133,10 +140,12 @@ export interface BannerSummary {
  * d'identifier, pas de relire — `get_banner` est là pour ça. Un simple drapeau
  * dit s'il y en a un.
  *
- * « Affichée » emploie `displayedBannerCondition`, la même définition que le
- * carrousel et que l'écran d'un retrait : une bannière active dont la fenêtre
- * est passée n'est pas affichée, et le dire évite de chercher pourquoi une
- * bannière « active » reste invisible.
+ * « Affichée » répète en JavaScript le prédicat SQL `displayedBannerCondition`
+ * — elle ne l'APPELLE pas, parce qu'elle doit dire LAQUELLE des conditions
+ * manque, ce qu'un booléen rendu par SQL ne dirait pas. Les deux définitions
+ * sont donc liées par un test d'accord aux bornes exactes
+ * (`__tests__/unit/lib/db/list-banners.test.ts`), seul garde-fou contre leur
+ * divergence.
  */
 export async function listBanners(): Promise<BannerSummary[]> {
   const db = await getDrizzle();
@@ -145,9 +154,11 @@ export async function listBanners(): Promise<BannerSummary[]> {
 
   let rang = 0;
   return rows.map((b) => {
-    const commencee = !b.starts_at || b.starts_at <= now;
-    const terminee = !!b.ends_at && b.ends_at <= now;
-    const affichee = b.is_active === 1 && commencee && !terminee;
+    const raisons: BannerHiddenReason[] = [];
+    if (b.is_active !== 1) raisons.push("désactivée");
+    if (b.starts_at && b.starts_at > now) raisons.push("pas encore commencée");
+    if (b.ends_at && b.ends_at <= now) raisons.push("terminée");
+    const affichee = raisons.length === 0;
     if (affichee) rang += 1;
     return {
       id: b.id,
@@ -158,13 +169,7 @@ export async function listBanners(): Promise<BannerSummary[]> {
       starts_at: b.starts_at,
       ends_at: b.ends_at,
       carousel_position: affichee ? rang : null,
-      not_displayed_because: affichee
-        ? null
-        : b.is_active !== 1
-          ? "inactive"
-          : !commencee
-            ? "pas encore commencée"
-            : "terminée",
+      not_displayed_because: raisons,
       has_content_html: !!b.content_html && b.content_html.trim().length > 0,
       has_image: !!b.image_url && b.image_url.trim().length > 0,
     };

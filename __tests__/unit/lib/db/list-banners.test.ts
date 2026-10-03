@@ -56,7 +56,7 @@ describe("listBanners : le rang du carrousel n'est pas l'identifiant", () => {
 
     const l = await listBanners();
 
-    expect(l.find((b) => b.id === 1)).toMatchObject({ carousel_position: null, not_displayed_because: "inactive" });
+    expect(l.find((b) => b.id === 1)).toMatchObject({ carousel_position: null, not_displayed_because: ["désactivée"] });
     expect(l.find((b) => b.id === 7)?.carousel_position).toBe(1);
     expect(l.find((b) => b.id === 9)?.carousel_position).toBe(2);
   });
@@ -73,19 +73,31 @@ describe("listBanners : pourquoi une bannière ne s'affiche pas", () => {
     const [b] = await listBanners();
     expect(b.is_active).toBe(true);
     expect(b.carousel_position).toBeNull();
-    expect(b.not_displayed_because).toBe("terminée");
+    expect(b.not_displayed_because).toEqual(["terminée"]);
   });
 
   it("active mais pas encore commencée : la raison le distingue d'une fin", async () => {
     banniere({ id: 1, titre: "À venir", ordre: 0, debut: "2099-01-01 00:00:00" });
     const [b] = await listBanners();
-    expect(b.not_displayed_because).toBe("pas encore commencée");
+    expect(b.not_displayed_because).toEqual(["pas encore commencée"]);
   });
 
-  it("inactive l'emporte sur la fenêtre : une seule raison, la plus décisive", async () => {
+  /**
+   * Les raisons sont CUMULÉES, pas hiérarchisées. N'annoncer que la première
+   * ferait croire qu'une réactivation suffit : la bannière resterait invisible,
+   * sa fenêtre étant passée, et il faudrait chercher pourquoi une seconde fois
+   * — exactement ce que cet outil existe pour éviter.
+   */
+  it("désactivée ET terminée : les deux raisons, pas la plus décisive", async () => {
     banniere({ id: 1, titre: "Les deux", ordre: 0, active: 0, fin: "2020-01-01 00:00:00" });
     const [b] = await listBanners();
-    expect(b.not_displayed_because).toBe("inactive");
+    expect(b.not_displayed_because).toEqual(["désactivée", "terminée"]);
+  });
+
+  it("une bannière affichée ne porte aucune raison, pas une raison vide", async () => {
+    banniere({ id: 1, titre: "Visible", ordre: 0 });
+    const [b] = await listBanners();
+    expect(b.not_displayed_because).toEqual([]);
   });
 });
 
@@ -113,6 +125,21 @@ describe("listBanners : ce qu'elle ne renvoie pas", () => {
     const l = await listBanners();
     expect(l.find((b) => b.id === 1)?.has_image).toBe(true);
     expect(l.find((b) => b.id === 2)?.has_image).toBe(false);
+  });
+
+  /**
+   * Fige l'ensemble des clés : construire l'objet champ par champ empêche
+   * déjà une colonne ajoutée demain de remonter dans la réponse MCP, mais rien
+   * n'empêche quelqu'un d'en ajouter une à la main. Un `not.toContain` sur une
+   * valeur précise ne verrait pas passer `subtitle` ou `badge_text`.
+   */
+  it("l'ensemble des clés rendues est exactement celui-ci", async () => {
+    banniere({ id: 1, titre: "Une", ordre: 0 });
+    const [b] = await listBanners();
+    expect(Object.keys(b).sort()).toEqual([
+      "carousel_position", "display_order", "ends_at", "has_content_html", "has_image",
+      "id", "is_active", "link_url", "not_displayed_because", "starts_at", "title",
+    ]);
   });
 
   it("rend une liste vide sans bannière, pas une erreur", async () => {
@@ -150,6 +177,18 @@ describe("listBanners : la même définition d'« affichée » que la vitrine", 
       .all();
     return rows.map((r) => r.id);
   }
+
+  // À `display_order` égal, c'est `id` qui départage (`displayedBannerOrder`).
+  // Sans cela le rang n'est que celui que SQLite veut bien donner.
+  it("à display_order égal, le rang suit l'identifiant croissant", async () => {
+    banniere({ id: 9, titre: "Neuf", ordre: 0 });
+    banniere({ id: 2, titre: "Deux", ordre: 0 });
+    banniere({ id: 5, titre: "Cinq", ordre: 0 });
+
+    const l = await listBanners();
+
+    expect(l.map((b) => [b.carousel_position, b.id])).toEqual([[1, 2], [2, 5], [3, 9]]);
+  });
 
   it("l'horloge gelée est bien celle que partagent les deux chemins", () => {
     expect(bannerClock()).toBe(MAINTENANT);
