@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { getDrizzle } from "@/lib/db/drizzle";
 import type { DraftAudit } from "@/lib/db/product-drafts";
 import { auditLog, banners } from "@/lib/db/schema";
-import { bannerClock, displayedBannerOrder } from "@/lib/db/storefront/banners";
+import { bannerClock, displayedBannerOrder, raisonsDeNonAffichage, type BannerHiddenReason } from "@/lib/db/storefront/banners";
 import type { AuditAction } from "@/lib/db/types";
 
 /**
@@ -103,7 +103,7 @@ export async function deleteBannerRow(id: number): Promise<void> {
   await db.delete(banners).where(eq(banners.id, id));
 }
 
-export type BannerHiddenReason = "désactivée" | "pas encore commencée" | "terminée";
+export type { BannerHiddenReason };
 
 /** Une bannière telle que `list_banners` la rend : de quoi l'IDENTIFIER, pas la relire. */
 export interface BannerSummary {
@@ -161,14 +161,9 @@ export async function listBanners(): Promise<BannerSummary[]> {
 
   let rang = 0;
   return rows.map((b) => {
-    const raisons: BannerHiddenReason[] = [];
-    if (b.is_active !== 1) raisons.push("désactivée");
-    // `!= null` et non la véracité : SQL compare la chaîne telle quelle, donc
-    // une date vide (`''`) y est une date — début déjà passé, fin déjà échue.
-    // La traiter ici comme « pas de date » ferait dire « affichée » à une
-    // bannière que la vitrine masque.
-    if (b.starts_at != null && b.starts_at > now) raisons.push("pas encore commencée");
-    if (b.ends_at != null && b.ends_at <= now) raisons.push("terminée");
+    // Le verdict vient de `raisonsDeNonAffichage`, partagé avec l'aperçu
+    // d'une révision : une seconde lecture de « affichée » dériverait.
+    const raisons = raisonsDeNonAffichage(b, now);
     const affichee = raisons.length === 0;
     if (affichee) rang += 1;
     return {

@@ -47,6 +47,40 @@ export function displayedBannerCondition(now: string): SQL | undefined {
  */
 export const displayedBannerOrder = [asc(banners.display_order), asc(banners.id)] as const;
 
+/** Ce que `displayedBannerCondition` dit, mais LISIBLE EN JAVASCRIPT. */
+export interface FenetreBanniere {
+  is_active: number;
+  starts_at: string | null;
+  ends_at: string | null;
+}
+
+/**
+ * Les raisons pour lesquelles une bannière ne s'affiche PAS, vide quand elle
+ * s'affiche. C'est la traduction JavaScript de `displayedBannerCondition`.
+ *
+ * Elle existe parce que deux chemins ont besoin du verdict EN MÉMOIRE, sans
+ * requête : `listBanners`, qui doit dire LAQUELLE des conditions manque (un
+ * booléen rendu par SQL ne le dirait pas), et l'aperçu d'une révision, qui
+ * juge une bannière qui n'est pas encore en base sous cette forme. Les deux
+ * écrivaient ou auraient écrit leur propre copie — une troisième lecture de
+ * « affichée » était la dérive assurée.
+ *
+ * `!= null` et non la véracité : SQL compare la chaîne telle quelle, donc une
+ * date vide (`''`) y est une date — début déjà passé, fin déjà échue. La
+ * traiter ici comme « pas de date » ferait dire « affichée » à une bannière
+ * que la vitrine masque. Un test d'accord aux bornes exactes lie les deux
+ * (`__tests__/unit/lib/db/list-banners.test.ts`).
+ */
+export function raisonsDeNonAffichage(b: FenetreBanniere, now: string): BannerHiddenReason[] {
+  const raisons: BannerHiddenReason[] = [];
+  if (b.is_active !== 1) raisons.push("désactivée");
+  if (b.starts_at != null && b.starts_at > now) raisons.push("pas encore commencée");
+  if (b.ends_at != null && b.ends_at <= now) raisons.push("terminée");
+  return raisons;
+}
+
+export type BannerHiddenReason = "désactivée" | "pas encore commencée" | "terminée";
+
 export async function getActiveBanners(): Promise<Banner[]> {
   const db = await getDrizzle();
 

@@ -1,4 +1,5 @@
 import { BANNER_WRITABLE_COLUMN_LIST, type RevisionRecord } from "@/lib/db/revisions";
+import { raisonsDeNonAffichage } from "@/lib/db/storefront/banners";
 import type { Banner } from "@/lib/db/types";
 
 /**
@@ -41,4 +42,32 @@ export function banniereApresRevision(courante: Banner, revision: RevisionRecord
   if (revision.kind === "withdraw") apres.is_active = 0;
 
   return apres;
+}
+
+/**
+ * Le CARROUSEL tel qu'il serait, pas la diapositive seule.
+ *
+ * Une bannière ne se juge pas hors de son voisinage : on veut voir où elle
+ * tombe dans l'ordre, ce qui la précède et ce qui la suit, et les puces de
+ * navigation. L'aperçu rendait une diapositive isolée — il répondait « ma
+ * composition est-elle bien formée », pas « comment se tient-elle parmi les
+ * autres ».
+ *
+ * Deux cas, et un seul verdict pour les deux : `raisonsDeNonAffichage`, la
+ * même lecture de « affichée » que la vitrine et que `list_banners`.
+ *  - la bannière révisée s'afficherait : elle REMPLACE sa version actuelle
+ *    dans la liste, ou s'y INSÈRE à son rang si elle n'y était pas (une
+ *    création, ou une réactivation par les dates) ;
+ *  - elle ne s'afficherait pas (un retrait, une fenêtre passée) : elle sort
+ *    de la liste, et l'aperçu montre le carrousel amputé — c'est précisément
+ *    ce qu'un administrateur doit voir avant d'appliquer un retrait.
+ *
+ * L'ordre est celui de `displayedBannerOrder` : `display_order`, puis `id`
+ * pour départager. Sans ce départage, deux bannières de même rang
+ * n'auraient que l'ordre que SQLite veut bien leur donner.
+ */
+export function carrouselApresRevision(affichees: Banner[], apres: Banner, now: string): Banner[] {
+  const sansElle = affichees.filter((b) => b.id !== apres.id);
+  if (raisonsDeNonAffichage(apres, now).length > 0) return sansElle;
+  return [...sansElle, apres].sort((a, b) => a.display_order - b.display_order || a.id - b.id);
 }

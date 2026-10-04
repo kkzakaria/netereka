@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getRevision } from "@/lib/db/revisions";
 import { getBannerById } from "@/lib/db/banners";
-import { sanitizeBannerContent } from "@/lib/db/storefront/banners";
-import { banniereApresRevision } from "@/lib/revisions/apercu-banniere";
+import { bannerClock, getActiveBanners, sanitizeBannerContent } from "@/lib/db/storefront/banners";
+import { banniereApresRevision, carrouselApresRevision } from "@/lib/revisions/apercu-banniere";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import type { Banner } from "@/lib/db/types";
 
@@ -60,11 +60,21 @@ export default async function ApercuRevisionBanniere({ params }: Props) {
   if (!courante) notFound();
 
   const apres = banniereApresRevision(courante as unknown as Banner, revision);
-  const [assainie] = sanitizeBannerContent([apres]);
+
+  // LE CARROUSEL ENTIER, pas la diapositive seule : une bannière ne se juge
+  // pas hors de son voisinage — son rang, ce qui la précède, ce qui la suit,
+  // les puces. Et pour un retrait, c'est le carrousel AMPUTÉ qu'il faut voir
+  // avant d'appliquer.
+  const affichees = await getActiveBanners();
+  const carrousel = carrouselApresRevision(affichees, apres, bannerClock());
+
+  // Ré-assaini comme la vitrine le fait : les voisines le sont déjà par
+  // `getActiveBanners`, la révisée ne l'est pas encore.
+  const assainies = sanitizeBannerContent(carrousel);
 
   return (
     <main className="min-h-dvh bg-background">
-      <HeroBanner banners={[assainie]} fallbackProducts={[]} />
+      <HeroBanner banners={assainies} fallbackProducts={[]} />
     </main>
   );
 }

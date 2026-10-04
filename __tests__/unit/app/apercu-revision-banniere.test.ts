@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
   getRevision: vi.fn(),
   getBannerById: vi.fn(),
+  getActiveBanners: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
 }));
 
@@ -23,6 +24,10 @@ vi.mock("@/lib/db/revisions", async (importOriginal) => ({
   getRevision: mocks.getRevision,
 }));
 vi.mock("@/lib/db/banners", () => ({ getBannerById: mocks.getBannerById }));
+vi.mock("@/lib/db/storefront/banners", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db/storefront/banners")>()),
+  getActiveBanners: mocks.getActiveBanners,
+}));
 
 import Page from "@/app/(apercu)/apercu/banniere/[revisionId]/page";
 
@@ -40,17 +45,28 @@ const revision = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** La bannière telle qu'elle parvient au composant de la vitrine. */
-async function banniereRendue(revisionId = "rev-1") {
+/** Le carrousel tel qu'il parvient au composant de la vitrine. */
+async function carrouselRendu(revisionId = "rev-1") {
   const el = await Page({ params: Promise.resolve({ revisionId }) });
-  const hero = (el as unknown as { props: { children: { props: { banners: unknown[] } } } }).props.children;
-  return hero.props.banners[0] as Record<string, unknown>;
+  const hero = (el as unknown as { props: { children: { props: { banners: Record<string, unknown>[] } } } }).props.children;
+  return hero.props.banners;
+}
+
+/** La bannière RÉVISÉE dans ce carrousel. */
+async function banniereRendue(revisionId = "rev-1") {
+  const c = await carrouselRendu(revisionId);
+  return c.find((b) => b.id === 7) as Record<string, unknown>;
 }
 
 beforeEach(() => {
   mocks.requireAdmin.mockReset().mockResolvedValue(undefined);
   mocks.getRevision.mockReset().mockResolvedValue(revision());
   mocks.getBannerById.mockReset().mockResolvedValue(BANNIERE);
+  mocks.getActiveBanners.mockReset().mockResolvedValue([
+    { ...BANNIERE, id: 3, display_order: 0, title: "Voisine avant", content_html: "<p>voisine</p>" },
+    BANNIERE,
+    { ...BANNIERE, id: 9, display_order: 2, title: "Voisine après", content_html: "<p>voisine</p>" },
+  ]);
   mocks.notFound.mockClear();
 });
 
@@ -89,6 +105,49 @@ describe("aperçu de révision : ce qui est rendu", () => {
     mocks.requireAdmin.mockRejectedValue(new Error("NEXT_REDIRECT"));
     await expect(banniereRendue()).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.getRevision).not.toHaveBeenCalled();
+  });
+});
+
+describe("aperçu de révision : le carrousel, pas la diapositive seule", () => {
+  /**
+   * Une bannière ne se juge pas hors de son voisinage : son rang, ce qui la
+   * précède, ce qui la suit, les puces. La première version rendait une
+   * diapositive isolée — elle répondait « ma composition est-elle bien
+   * formée », pas « comment se tient-elle parmi les autres ».
+   */
+  it("rend les voisines, à leur place", async () => {
+    const c = await carrouselRendu();
+    expect(c.map((b) => b.id)).toEqual([3, 7, 9]);
+    expect(c.map((b) => b.title)).toEqual(["Voisine avant", "Avant", "Voisine après"]);
+    // Et seule la révisée porte le contenu proposé : les voisines sont intactes.
+    expect(c.map((b) => String(b.content_html).includes("après"))).toEqual([false, true, false]);
+  });
+
+  /**
+   * Le cas qui compte le plus avant un clic : un retrait montre le carrousel
+   * AMPUTÉ. Voir ce qui reste est exactement la décision qu'on prend.
+   */
+  it("un retrait montre le carrousel sans elle", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ kind: "withdraw", payload: {} }));
+    expect((await carrouselRendu()).map((b) => b.id)).toEqual([3, 9]);
+  });
+
+  // Une bannière dont la fenêtre serait passée disparaît aussi : c'est la
+  // même lecture de « affichée » que la vitrine, pas une seconde.
+  it("une fin de fenêtre passée la retire aussi", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ payload: { ends_at: "2020-01-01 00:00:00" } }));
+    expect((await carrouselRendu()).map((b) => b.id)).toEqual([3, 9]);
+  });
+
+  // Et l'inverse : une création l'INSÈRE à son rang, là où elle n'était pas.
+  it("une bannière absente du carrousel y est insérée à son rang", async () => {
+    mocks.getActiveBanners.mockResolvedValue([
+      { ...BANNIERE, id: 3, display_order: 0, title: "Voisine avant" },
+      { ...BANNIERE, id: 9, display_order: 2, title: "Voisine après" },
+    ]);
+    mocks.getBannerById.mockResolvedValue({ ...BANNIERE, is_active: 0, display_order: 1 });
+    mocks.getRevision.mockResolvedValue(revision({ kind: "create" }));
+    expect((await carrouselRendu()).map((b) => b.id)).toEqual([3, 7, 9]);
   });
 });
 
