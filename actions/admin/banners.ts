@@ -200,7 +200,10 @@ async function deleteOldBannerImage(previous: string | null, bannerId: number): 
   try {
     await deleteFromR2(oldKey);
   } catch (deleteError) {
-    console.error(`[admin/banners] Failed to delete old R2 image key="${oldKey}" for banner=${bannerId}:`, deleteError);
+    // La clé en ARGUMENT et non interpolée dans le message : elle vient
+    // d'une colonne, donc d'une saisie, et CodeQL la voit comme une chaîne
+    // de format teintée (`js/tainted-format-string`).
+    console.error("[admin/banners] suppression R2 de l'ancienne image échouée", { key: oldKey, bannerId }, deleteError);
   }
 }
 
@@ -413,7 +416,7 @@ export async function deleteBanner(id: number): Promise<ActionResult> {
       try {
         key = (JSON.parse(rev.payload) as { image_url?: unknown }).image_url;
       } catch (e) {
-        console.error(`[admin/banners] payload illisible au nettoyage R2 (révision ${rev.id})`, e);
+        console.error("[admin/banners] payload illisible au nettoyage R2", { revisionId: rev.id }, e);
         continue;
       }
       if (typeof key === "string" && key.length > 0) await deleteOldBannerImage(key, id);

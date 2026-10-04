@@ -108,6 +108,8 @@ describe("rejet d'une CRÉATION de bannière", () => {
        VALUES (?, 'banner', ?, 'create', '{"content_html":"<p>x</p>"}', 'mcp', 'admin-1', 'Admin', 'pending', ?)`,
     ).run(id, String(bannerId), VERSION);
   }
+  const banniereDisparue = () =>
+    (db.prepare(`SELECT count(*) AS n FROM banners WHERE id = 5`).get() as { n: number }).n === 0;
   function banniereInactive(id: number) {
     db.prepare(
       `INSERT INTO banners (id, title, link_url, display_order, is_active, updated_at)
@@ -131,6 +133,23 @@ describe("rejet d'une CRÉATION de bannière", () => {
 
     expect(db.prepare(`SELECT count(*) AS n FROM banners WHERE id = 5`).get()).toEqual({ n: 0 });
     expect(storage.deleteFromR2).toHaveBeenCalledWith("banners/5/jamais-vue.png");
+  });
+
+  /**
+   * La ligne inactive peut porter une image, posée depuis l'écran
+   * d'administration pendant que la création attendait. `deleteBanner`
+   * l'efface ; ne pas le faire ici donnerait deux comportements à la même
+   * suppression, et l'objet resterait sans ligne pour le nommer.
+   */
+  it("efface aussi l'image de la ligne que le rejet supprime", async () => {
+    banniereInactive(5);
+    db.prepare(`UPDATE banners SET image_url = 'banners/5-posee-par-admin.png' WHERE id = 5`).run();
+    creation("rev-create", 5);
+
+    await rejectRevision("rev-create", ADMIN);
+
+    expect(banniereDisparue()).toBe(true);
+    expect(storage.deleteFromR2).toHaveBeenCalledWith("banners/5-posee-par-admin.png");
   });
 
   // Si la bannière a été activée entre-temps, elle survit et les sœurs

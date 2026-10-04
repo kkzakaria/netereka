@@ -1500,7 +1500,8 @@ export async function applyRevision(
   // ni rejetée. Jamais la clé que CE batch vient d'installer : deux révisions
   // peuvent proposer la même (une reprise, un redépôt), et l'effacer viderait
   // l'image que l'administrateur vient d'approuver.
-  const poseeParCeLot = (rev.payload as { image_url?: unknown }).image_url;
+  const poseeBrute = (rev.payload as { image_url?: unknown }).image_url;
+  const poseeParCeLot = typeof poseeBrute === "string" ? r2KeyFromImageUrl(poseeBrute) : poseeBrute;
   const supersededImageKeys = others
     .flatMap((o) => {
       try {
@@ -1510,7 +1511,13 @@ export async function applyRevision(
         }
         if (o.kind === "update" && rev.target_type === "banner") {
           const key = (JSON.parse(o.payload) as { image_url?: unknown }).image_url;
-          return typeof key === "string" && key.length > 0 && key !== poseeParCeLot ? [key] : [];
+          if (typeof key !== "string" || key.length === 0) return [];
+          // Normalisée comme partout ailleurs : rien ne garantit qu'un futur
+          // écrivain de `image_url` emploiera la forme courte, et une clé
+          // héritée comparée brute se verrait comme différente de celle que
+          // ce lot vient de poser — donc effacée.
+          const normalisee = r2KeyFromImageUrl(key);
+          return normalisee !== poseeParCeLot ? [normalisee] : [];
         }
         return [];
       } catch (e) {
@@ -1616,8 +1623,24 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
     // Lues AVANT le lot : ce sont exactement celles qu'il va périmer, et une
     // révision `superseded` ne sera plus jamais ni appliquée ni rejetée — son
     // image, téléversée au dépôt par `set_banner_image`, n'aurait plus aucun
-    // chemin vers l'effacement. La bannière part avec la création rejetée,
-    // donc aucune de ces clés n'est affichée nulle part.
+    // chemin vers l'effacement. SI la ligne part — la suppression est
+    // conditionnelle (`is_active = 0`) —, aucune de ces clés n'est affichée
+    // nulle part, puisque la bannière qui aurait pu les montrer n'existe plus.
+    //
+    // La ligne elle-même peut porter une image, posée depuis l'écran
+    // d'administration pendant que la création attendait : `deleteBanner`
+    // l'efface, et ne pas le faire ici donnerait deux comportements à la même
+    // suppression.
+    //
+    // Lecture AVANT le lot, effacement après : une révision déposée entre les
+    // deux est périmée par le lot sans que sa clé soit effacée. Fenêtre de
+    // quelques millisecondes, même approximation assumée que `others` dans
+    // `applyRevision` — au pire un orphelin, jamais une image affichée.
+    const ligne = await db
+      .select({ image_url: banners.image_url })
+      .from(banners)
+      .where(eq(banners.id, Number(rev.target_id)))
+      .get();
     const soeurs = await db
       .select({ payload: contentRevisions.payload })
       .from(contentRevisions)
@@ -1649,15 +1672,16 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
       // `pending` et leurs images gardent leur chemin normal (application ou
       // rejet) — les effacer ici les viderait de leur objet.
       if (bannerRowRemoved) {
-        const cles = soeurs.flatMap((o) => {
+        const cles = ligne?.image_url ? [r2KeyFromImageUrl(ligne.image_url)] : [];
+        cles.push(...soeurs.flatMap((o) => {
           try {
             const key = (JSON.parse(o.payload) as { image_url?: unknown }).image_url;
-            return typeof key === "string" && key.length > 0 ? [key] : [];
+            return typeof key === "string" && key.length > 0 ? [r2KeyFromImageUrl(key)] : [];
           } catch (e) {
             console.error("[revisions] payload d'une sœur illisible au nettoyage R2", rev.id, e);
             return [];
           }
-        });
+        }));
         const efface = await Promise.allSettled(cles.map((key) => deleteFromR2(key)));
         efface.forEach((c, i) => {
           if (c.status === "rejected") {
@@ -1714,7 +1738,8 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
         // `/images/banners/x.png` désigne la même image que `banners/x.png`,
         // et la comparer brute effacerait l'image AFFICHÉE.
         const affichee = live?.image_url ? r2KeyFromImageUrl(live.image_url) : null;
-        if (affichee !== proposedKey) await deleteFromR2(proposedKey);
+        const proposee = r2KeyFromImageUrl(proposedKey);
+        if (affichee !== proposee) await deleteFromR2(proposee);
       } catch (err) {
         console.warn("[revisions] orphan R2 object after reject", proposedKey, err);
       }
