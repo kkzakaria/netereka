@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { textOf, type ToolResult } from "@/lib/mcp/result";
 import { createD1Mock, type BoundStatement } from "../../../helpers/d1-mock";
 import type { McpContext } from "@/lib/mcp/context";
 
@@ -20,7 +21,7 @@ import { bannerTools } from "@/lib/mcp/tools/banners";
 // la cible, et c'est ce que ces tests doivent voir. Seul D1 est simulé.
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const tool = (name: string) => bannerTools.find((t) => t.name === name)!;
-const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
+const parse = (r: ToolResult) => JSON.parse(textOf(r));
 
 const STYLED = "<style>.a { color: red; }</style><div class=\"a\">Libre</div>";
 
