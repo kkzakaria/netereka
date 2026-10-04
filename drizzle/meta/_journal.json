@@ -169,6 +169,13 @@
       "when": 1790940607985,
       "tag": "0023_lame_layla_miller",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791111867791,
+      "tag": "0024_blue_jigsaw",
+      "breakpoints": true
     }
   ]
 }

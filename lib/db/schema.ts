@@ -40,7 +40,14 @@ export const user = sqliteTable("user", {
   banned: integer("banned").notNull().default(0),
   banReason: text("banReason"),
   banExpires: text("banExpires"),
-});
+}, (table) => [
+  // Hérité de `db/migrations-legacy/0002_better_auth.sql`, jamais repris par
+  // la ligne de base Drizzle : la production le porte depuis toujours, le
+  // schéma l'ignorait, et une reconstruction de table depuis ce fichier
+  // l'aurait perdu en silence. Déclaré ici pour que les deux disent la même
+  // chose — c'est l'un des trois écarts que le contrôle de dérive signale.
+  index("idx_user_email").on(table.email),
+]);
 
 export const session = sqliteTable("session", {
   id: text("id").primaryKey(),
@@ -57,6 +64,8 @@ export const session = sqliteTable("session", {
   impersonatedBy: text("impersonatedBy"),
 }, (table) => [
   index("idx_session_userId").on(table.userId),
+  // Hérité de `0002_better_auth.sql`, comme `idx_user_email`.
+  index("idx_session_token").on(table.token),
 ]);
 
 export const account = sqliteTable("account", {
@@ -431,7 +440,11 @@ export const promoCodes = sqliteTable("promo_codes", {
   expires_at: text("expires_at"),
   is_active: integer("is_active").notNull().default(1),
   created_at: text("created_at").notNull().default(sql`(datetime('now'))`),
-});
+}, (table) => [
+  // Hérité de `db/migrations-legacy/0001_initial.sql`, comme les deux index
+  // de `user` et `session`.
+  index("idx_promo_codes_code").on(table.code),
+]);
 
 // =============================================================================
 // Orders
