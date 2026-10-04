@@ -1137,6 +1137,13 @@ export async function applyRevision(
     // si l'écriture échouait ensuite. Et seulement si la clé change vraiment
     // — un payload qui repose la clé déjà en place effacerait sinon l'image
     // qu'il vient de confirmer.
+    //
+    // Cet `afterCommit` ne regarde aucun `meta.changes`, contrairement à celui
+    // de `remove_image`, et c'est volontaire : l'objet à effacer dépend d'une
+    // COLONNE DE LA CIBLE, et le contrôle `targetResult.meta.changes === 0`
+    // (plus bas, qui lève `conflict`) précède son appel. L'atteindre prouve
+    // donc que l'UPDATE de la bannière a matché. Déplacer ce contrôle, ou
+    // appeler `afterCommit` avant lui, romprait la propriété sans signal.
     if (rev.target_type === "banner" && "image_url" in (rev.payload as Record<string, unknown>)) {
       const nouvelle = (rev.payload as { image_url?: unknown }).image_url;
       const avant = await db
@@ -1144,7 +1151,12 @@ export async function applyRevision(
         .from(banners)
         .where(eq(banners.id, Number(rev.target_id)))
         .get();
-      const ancienne = avant?.image_url;
+      // `r2KeyFromImageUrl` des deux côtés : une ligne héritée porte
+      // `/images/banners/x.png` (l'écran d'administration le reconnaît encore,
+      // `setBannerImageUrl`). Comparer et effacer la forme brute ferait deux
+      // dégâts silencieux — une clé identique vue comme différente, puis un
+      // DELETE R2 sur une clé inexistante, qui réussit sans rien effacer.
+      const ancienne = avant?.image_url ? r2KeyFromImageUrl(avant.image_url) : null;
       if (ancienne && ancienne !== nouvelle) {
         afterCommit = async () => {
           try {
@@ -1698,7 +1710,11 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
           .from(banners)
           .where(eq(banners.id, Number(rev.target_id)))
           .get();
-        if (live?.image_url !== proposedKey) await deleteFromR2(proposedKey);
+        // Normalisée comme à l'application : une ligne héritée
+        // `/images/banners/x.png` désigne la même image que `banners/x.png`,
+        // et la comparer brute effacerait l'image AFFICHÉE.
+        const affichee = live?.image_url ? r2KeyFromImageUrl(live.image_url) : null;
+        if (affichee !== proposedKey) await deleteFromR2(proposedKey);
       } catch (err) {
         console.warn("[revisions] orphan R2 object after reject", proposedKey, err);
       }

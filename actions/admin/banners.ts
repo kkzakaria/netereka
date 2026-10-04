@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, max } from "drizzle-orm";
+import { eq, and, max, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
-import { banners, bannerGradients } from "@/lib/db/schema";
+import { banners, bannerGradients, contentRevisions } from "@/lib/db/schema";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { refreshHeroPreload } from "@/lib/cloudflare/hero-preload";
@@ -248,10 +248,24 @@ export async function uploadBannerImage(
     await uploadToR2(file, key);
 
     const url = key;
-    await db.update(banners).set({
-      image_url: url,
-      updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
-    }).where(eq(banners.id, bannerId));
+    // L'objet est DÉJÀ en R2 : si l'écriture lève, ou ne touche aucune ligne
+    // (bannière supprimée entre la lecture et ici), plus rien ne le nommera.
+    // Sans ce nettoyage, l'action rendait même `success` pour une écriture
+    // qui n'avait rien écrit — le visuel semblait posé, la bannière était
+    // inchangée, et l'objet restait.
+    try {
+      const written = await db.update(banners).set({
+        image_url: url,
+        updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
+      }).where(eq(banners.id, bannerId));
+      if ((written as { meta?: { changes?: number } })?.meta?.changes === 0) {
+        await deleteOldBannerImage(url, bannerId);
+        return { success: false, error: "Bannière introuvable" };
+      }
+    } catch (writeError) {
+      await deleteOldBannerImage(url, bannerId);
+      throw writeError;
+    }
 
     // L'ancienne image n'est effacée qu'APRÈS que la nouvelle est en place et
     // que la ligne la désigne. L'ordre inverse — effacer d'abord — laissait la
@@ -364,16 +378,46 @@ export async function deleteBanner(id: number): Promise<ActionResult> {
       return { success: false, error: "Bannière introuvable" };
     }
 
-    if (banner.image_url) {
-      const key = banner.image_url.replace(/^\/images\//, "");
-      try {
-        await deleteFromR2(key);
-      } catch (deleteError) {
-        console.error(`[admin/banners] Failed to delete R2 image key="${key}" for banner=${id}:`, deleteError);
-      }
-    }
+    // Les révisions encore en attente sur cette bannière sont lues AVANT la
+    // suppression : elles vont désigner une cible absente, et leur écran de
+    // détail est alors un 404 que personne ne saurait plus résoudre — ni
+    // appliquer, ni rejeter. L'image que `set_banner_image` leur a fait
+    // téléverser n'aurait donc plus aucun chemin vers l'effacement.
+    const enAttente = await db
+      .select({ id: contentRevisions.id, payload: contentRevisions.payload })
+      .from(contentRevisions)
+      .where(and(
+        eq(contentRevisions.target_type, "banner"),
+        eq(contentRevisions.target_id, String(id)),
+        eq(contentRevisions.status, "pending"),
+      ));
 
-    await db.delete(banners).where(eq(banners.id, id));
+    await db.batch([
+      db.delete(banners).where(eq(banners.id, id)),
+      db
+        .update(contentRevisions)
+        .set({ status: "superseded", resolved_at: sql`datetime('now')` })
+        .where(and(
+          eq(contentRevisions.target_type, "banner"),
+          eq(contentRevisions.target_id, String(id)),
+          eq(contentRevisions.status, "pending"),
+        )),
+    ]);
+
+    // Après la suppression, jamais avant : l'ordre inverse laissait, si
+    // l'écriture échouait, une bannière en ligne désignant une clé effacée.
+    // Même raison que dans `uploadBannerImage`.
+    await deleteOldBannerImage(banner.image_url, id);
+    for (const rev of enAttente) {
+      let key: unknown;
+      try {
+        key = (JSON.parse(rev.payload) as { image_url?: unknown }).image_url;
+      } catch (e) {
+        console.error(`[admin/banners] payload illisible au nettoyage R2 (révision ${rev.id})`, e);
+        continue;
+      }
+      if (typeof key === "string" && key.length > 0) await deleteOldBannerImage(key, id);
+    }
 
     revalidatePath("/banners");
     revalidatePath("/");

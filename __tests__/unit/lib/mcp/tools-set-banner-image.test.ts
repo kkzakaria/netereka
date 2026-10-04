@@ -94,6 +94,25 @@ describe("set_banner_image : ce qui est déposé", () => {
     expect(out.image_src).toBe("https://r2.netereka.ci/banners/7/abc.png");
   });
 
+  /**
+   * `NEXT_PUBLIC_R2_URL` est une variable de BUILD : absente en local et en
+   * préproduction, `getImageUrl` y rend `/images/<clé>`, un chemin qui ne
+   * correspond à aucune route. Le livrer en promettant « une URL absolue »
+   * enverrait le modèle composer autour d'une image invisible.
+   */
+  it("image_src est null plutôt qu'un chemin relatif quand l'adresse publique est inconnue", async () => {
+    vi.stubEnv("NEXT_PUBLIC_R2_URL", "");
+    banniere(7);
+
+    const { out } = await appel({ id: 7, url: SOURCE });
+
+    expect(out.image_key).toBe("banners/7/abc.png");
+    expect(out.image_src).toBeNull();
+    // Le dépôt, lui, a bien eu lieu : l'image est posée, seule son adresse
+    // publique est hors de portée.
+    expect(out.revision.status).toBe("pending");
+  });
+
   it("url: null retire l'image et ne télécharge rien", async () => {
     banniere(7, "banners/7/avant.png");
 

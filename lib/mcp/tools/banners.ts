@@ -84,6 +84,22 @@ const FETCH_FAILURES: Record<FetchFailure, { code: McpErrorCode; message: string
   },
 };
 
+/**
+ * L'URL publique d'un objet, ou `null` quand on ne peut pas la former.
+ *
+ * `getImageUrl` retombe sur `/images/<clé>` quand `NEXT_PUBLIC_R2_URL` — une
+ * variable de BUILD, absente en local et en préproduction — n'est pas posée.
+ * Ce chemin relatif ne correspond à AUCUNE route : rendu dans un
+ * `<img src>` de `content_html`, il n'afficherait rien. Promettre « une URL
+ * absolue » et livrer cela enverrait le modèle composer autour d'une image
+ * invisible, sans qu'aucun message ne le dise. Mieux vaut l'absence, qui se
+ * voit.
+ */
+function urlPubliqueOuNull(key: string): string | null {
+  const url = getImageUrl(key);
+  return /^https?:\/\//i.test(url) ? url : null;
+}
+
 function revisionAnswer(revisionId: string, status: string, message: string) {
   return { applied: "revision" as const, revision: { id: revisionId, status }, message };
 }
@@ -136,9 +152,10 @@ export const bannerTools: ToolDefinition[] = [
       "téléchargée (5 Mo au maximum, JPEG/PNG/WebP — pas d'AVIF) et déposée dans le stockage de la boutique, " +
       "puis une révision est déposée pour l'attacher à la bannière ; l'administrateur l'applique depuis " +
       "/revisions, et l'image n'apparaît qu'ensuite. url: null retire l'image (rien n'est téléchargé). " +
-      "La réponse porte image_key, la clé de stockage, et image_src, l'URL à employer telle quelle dans un " +
-      "<img src=\"…\"> si tu composes la bannière en HTML libre avec content_html (update_banner) — dans ce " +
-      "cas l'image posée ici sert de visuel du modèle classique, les deux peuvent coexister. " +
+      "La réponse porte image_key, la clé de stockage, et image_src, l'URL absolue à employer telle quelle " +
+      "dans un <img src=\"…\"> si tu composes la bannière en HTML libre avec content_html (update_banner). " +
+      "image_src peut être null si le serveur ne connaît pas l'adresse publique de son stockage : n'invente " +
+      "alors pas d'URL à partir de image_key, elle ne s'afficherait pas. " +
       "reason (optionnel) : pourquoi cette image, lu par l'administrateur sur l'écran de validation.",
     inputSchema: setBannerImageShape,
     handler: async (ctx, input) => {
@@ -202,7 +219,7 @@ export const bannerTools: ToolDefinition[] = [
               `/revisions/${revisionId}.`,
             ),
             image_key: fetched.key,
-            image_src: getImageUrl(fetched.key),
+            image_src: urlPubliqueOuNull(fetched.key),
           });
         } catch (err) {
           // Le dépôt a échoué APRÈS le téléversement : sans ce nettoyage,

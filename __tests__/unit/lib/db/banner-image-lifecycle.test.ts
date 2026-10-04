@@ -82,6 +82,15 @@ describe("rejet d'une image de bannière", () => {
     expect(storage.deleteFromR2).not.toHaveBeenCalled();
   });
 
+  it("n'efface pas l'image affichée écrite sous sa forme héritée", async () => {
+    banniere(1, "/images/banners/1/en-ligne.png");
+    revision("rev-1", 1, { image_url: "banners/1/en-ligne.png" });
+
+    await rejectRevision("rev-1", ADMIN);
+
+    expect(storage.deleteFromR2).not.toHaveBeenCalled();
+  });
+
   it("un rejet qui ne touche pas à l'image n'efface rien", async () => {
     banniere(1, "banners/1/en-ligne.png");
     revision("rev-1", 1, { title: "Autre titre" });
@@ -170,6 +179,33 @@ describe("application d'une image de bannière", () => {
     await applyRevision("rev-1", ADMIN);
 
     expect(imageDe(1)).toBe("banners/1/meme.png");
+    expect(storage.deleteFromR2).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Format hérité : des lignes portent encore `/images/banners/x.png`, que
+   * l'écran d'administration reconnaît (`setBannerImageUrl`). R2, lui, ne
+   * connaît que `banners/x.png` — un DELETE sur la forme brute réussit sans
+   * rien effacer, et l'ancienne image reste pour toujours.
+   */
+  it("une clé héritée /images/ est normalisée avant l'effacement", async () => {
+    banniere(1, "/images/banners/1/heritee.png");
+    revision("rev-1", 1, { image_url: "banners/1/nouvelle.png" });
+
+    await applyRevision("rev-1", ADMIN);
+
+    expect(storage.deleteFromR2).toHaveBeenCalledWith("banners/1/heritee.png");
+  });
+
+  // Et le corollaire : la MÊME image sous ses deux écritures n'est pas un
+  // remplacement. Comparer brut l'effacerait — l'image que l'application
+  // vient de confirmer.
+  it("la même image sous sa forme héritée n'est pas effacée", async () => {
+    banniere(1, "/images/banners/1/meme.png");
+    revision("rev-1", 1, { image_url: "banners/1/meme.png" });
+
+    await applyRevision("rev-1", ADMIN);
+
     expect(storage.deleteFromR2).not.toHaveBeenCalled();
   });
 
