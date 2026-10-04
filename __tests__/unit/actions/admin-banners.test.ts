@@ -416,10 +416,33 @@ describe("uploadBannerImage", () => {
     expect(result.error).toContain("5 Mo");
   });
 
-  it("rejette une extension non supportée (.gif)", async () => {
+  it("rejette un GIF, par son TYPE", async () => {
     const result = await uploadBannerImage(1, makeFormData(makeFile("anim.gif", "image/gif")));
     expect(result.success).toBe(false);
-    expect(result.error).toContain("Format d'image non supporté");
+    expect(result.error).toMatch(/image\/gif/);
+    expect(result.error).toMatch(/nous n'acceptons que/i);
+  });
+
+  /**
+   * La bannière est la porte la plus grave pour l'AVIF, et pour une raison
+   * non évidente : le préchargement LCP du hero construit son URL
+   * `/cdn-cgi/image/…` À LA MAIN, sans passer par le chargeur qui sert les
+   * AVIF bruts. Une bannière en AVIF s'affichait donc, mais son
+   * préchargement partait vers une URL répondant « ERROR 9520 ».
+   */
+  it("rejette un AVIF : son préchargement LCP partirait vers une URL en erreur", async () => {
+    const result = await uploadBannerImage(1, makeFormData(makeFile("photo.avif", "image/avif")));
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/image\/avif/);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
+  it("la clé vient du type, jamais du nom", async () => {
+    makeDrizzleMock({ image_url: null });
+    await uploadBannerImage(1, makeFormData(makeFile("piege.png", "image/webp")));
+    const [, key] = mocks.uploadToR2.mock.calls[0] as [File, string];
+    expect(key).toMatch(/\.webp$/);
+    expect(key).not.toMatch(/\.png$/);
   });
 
   // ── DB ───────────────────────────────────────────────────────────────────

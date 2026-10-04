@@ -7,18 +7,11 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
 import { products } from "@/lib/db/schema";
 import { uploadToR2 } from "@/lib/storage/images";
+import { ALLOWED_IMAGE_TYPES, extensionPour } from "@/lib/storage/fetch-image";
 import type { ActionResult } from "@/lib/utils";
 
 const idSchema = z.string().min(1, "ID requis");
 
-const ALLOWED_IMAGE_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "gif",
-  "webp",
-  "avif",
-]);
 
 export async function uploadStoryImage(
   productId: string,
@@ -51,11 +44,17 @@ export async function uploadStoryImage(
     return { success: false, error: "L'image ne doit pas dépasser 5 Mo" };
   }
 
-  const rawExt = (file.name.split(".").pop() ?? "").toLowerCase();
-  if (!ALLOWED_IMAGE_EXTENSIONS.has(rawExt)) {
-    return { success: false, error: "Format d'image non pris en charge" };
+  // Le TYPE décide, et l'extension en découle — jamais le nom du fichier,
+  // qui ment sans effort. Même porte que `uploadProductImage`, même liste.
+  if (!ALLOWED_IMAGE_TYPES.has(file.type.toLowerCase())) {
+    return {
+      success: false,
+      error:
+        `Format non pris en charge (${file.type || "inconnu"}). Nous n'acceptons que le JPEG, le PNG et le ` +
+        "WebP. Convertissez l'image avant de la déposer.",
+    };
   }
-  const key = `products/${productId}/story/${nanoid()}.${rawExt}`;
+  const key = `products/${productId}/story/${nanoid()}.${extensionPour(file.type)}`;
 
   try {
     await uploadToR2(file, key);
