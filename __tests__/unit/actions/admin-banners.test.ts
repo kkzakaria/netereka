@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockAdminSession, mockCustomerSession } from "../../helpers/mocks";
+import { octetsDe } from "../../helpers/octets-image";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -51,13 +52,19 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/**
+ * Les OCTETS comptent désormais autant que le type déclaré : la porte lit
+ * les douze premiers. `octetsDeType` permet de les faire DIVERGER du type —
+ * ce qu'un navigateur produit tout seul quand on renomme un `.avif` en
+ * `.png`, puisqu'il déduit le type de l'extension.
+ */
 function makeFile(
   name = "photo.jpg",
   type = "image/jpeg",
-  size = 1024
+  size = 1024,
+  octetsDeType: string = type,
 ): File {
-  const buf = new Uint8Array(size);
-  return new File([buf], name, { type });
+  return new File([octetsDe(octetsDeType, size)], name, { type });
 }
 
 function makeFormData(file: File): FormData {
@@ -416,10 +423,44 @@ describe("uploadBannerImage", () => {
     expect(result.error).toContain("5 Mo");
   });
 
-  it("rejette une extension non supportée (.gif)", async () => {
+  it("rejette un GIF, par son TYPE", async () => {
     const result = await uploadBannerImage(1, makeFormData(makeFile("anim.gif", "image/gif")));
     expect(result.success).toBe(false);
-    expect(result.error).toContain("Format d'image non supporté");
+    expect(result.error).toMatch(/image\/gif/);
+    expect(result.error).toMatch(/nous n'acceptons que/i);
+  });
+
+  /**
+   * La bannière est la porte la plus grave pour l'AVIF, et pour une raison
+   * non évidente : le préchargement LCP du hero construit son URL
+   * `/cdn-cgi/image/…` À LA MAIN, sans passer par le chargeur qui sert les
+   * AVIF bruts. Une bannière en AVIF s'affichait donc, mais son
+   * préchargement partait vers une URL répondant « ERROR 9520 ».
+   */
+  it("rejette un AVIF : son préchargement LCP partirait vers une URL en erreur", async () => {
+    const result = await uploadBannerImage(1, makeFormData(makeFile("photo.avif", "image/avif")));
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/image\/avif/);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
+  // Un AVIF renommé, tel qu'un navigateur le présente : type `image/png`
+  // déduit de l'extension, octets AVIF. La bannière est la porte où ce cas
+  // coûte le plus cher — son préchargement LCP partirait vers une URL en
+  // « ERROR 9520 ».
+  it("refuse un AVIF renommé .png, que seul l'examen des octets révèle", async () => {
+    const r = await uploadBannerImage(1, makeFormData(makeFile("photo.png", "image/png", 1024, "image/avif")));
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/AVIF/);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
+  it("la clé vient du type, jamais du nom", async () => {
+    makeDrizzleMock({ image_url: null });
+    await uploadBannerImage(1, makeFormData(makeFile("piege.png", "image/webp")));
+    const [, key] = mocks.uploadToR2.mock.calls[0] as [File, string];
+    expect(key).toMatch(/\.webp$/);
+    expect(key).not.toMatch(/\.png$/);
   });
 
   // ── DB ───────────────────────────────────────────────────────────────────

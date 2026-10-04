@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockAdminSession } from "../../helpers/mocks";
+import { fichierImage } from "../../helpers/octets-image";
 
 /**
  * La porte d'administration du téléversement d'images.
@@ -35,10 +36,15 @@ vi.mock("@/lib/db", () => ({ execute: mocks.execute, query: mocks.query, queryFi
 
 import { uploadProductImage } from "@/actions/admin/images";
 
-/** Un fichier déposé depuis le navigateur : le TYPE est déclaré par le client. */
-function fichier(type: string, nom = "photo.png"): FormData {
+/**
+ * Un fichier déposé depuis le navigateur. Le TYPE est déclaré par le client,
+ * et les OCTETS peuvent en dire autre chose — c'est ce qu'un navigateur
+ * produit tout seul quand on renomme un `.avif` en `.png`, puisqu'il déduit
+ * le type de l'extension.
+ */
+function fichier(type: string, nom = "photo.png", octetsDeType: string = type): FormData {
   const fd = new FormData();
-  fd.append("file", new File([new Uint8Array([1, 2, 3, 4])], nom, { type }));
+  fd.append("file", fichierImage(type, nom, octetsDeType));
   return fd;
 }
 
@@ -79,6 +85,35 @@ describe("uploadProductImage : les formats que la vitrine sait rendre", () => {
       expect(r.success, `${type} refusé à tort`).toBe(true);
       expect(mocks.uploadToR2).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+/**
+ * LE cas que la validation du type seul ne voyait pas. Un navigateur déduit
+ * `File.type` de l'EXTENSION : un « photo.avif » renommé « photo.png »
+ * arrive donc en `image/png`, honnêtement, sans que personne n'ait menti. La
+ * porte disait corriger ce scénario alors qu'elle ne fermait que le cas d'un
+ * client dont le nom et le type divergent.
+ */
+describe("uploadProductImage : ce sont les octets qui tranchent", () => {
+  it("refuse un AVIF renommé .png et déclaré image/png", async () => {
+    const r = await uploadProductImage("p1", fichier("image/png", "photo.png", "image/avif"));
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/AVIF/);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
+  it("refuse des octets qui ne sont aucune des trois images", async () => {
+    const r = await uploadProductImage("p1", fichier("image/png", "photo.png", "application/pdf"));
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/octets/);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
+  it("l'extension vient des OCTETS, pas du type déclaré", async () => {
+    await uploadProductImage("p1", fichier("image/png", "photo.png", "image/jpeg"));
+    const [, key] = mocks.uploadToR2.mock.calls[0] as [File, string];
+    expect(key).toMatch(/\.jpg$/);
   });
 });
 

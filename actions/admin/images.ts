@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { execute, query, queryFirst } from "@/lib/db";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
 import type { ActionResult } from "@/lib/utils";
-import { ALLOWED_IMAGE_TYPES, extensionPour } from "@/lib/storage/fetch-image";
+import { verifierImageTeleversee } from "@/lib/storage/verifier-image";
 
 const idSchema = z.string().min(1, "ID requis");
 
@@ -40,24 +40,20 @@ export async function uploadProductImage(
   // sa limite — le message au-dessus le dit ainsi, après avoir un temps
   // attribué la restriction au service, ce qui aurait envoyé un administrateur
   // convertir un GIF parfaitement transformable pour un motif inventé.
-  if (!ALLOWED_IMAGE_TYPES.has(file.type.toLowerCase())) {
-    return {
-      success: false,
-      error:
-        `Format non pris en charge (${file.type || "inconnu"}). Nous n'acceptons que le JPEG, le PNG et le ` +
-        "WebP. Convertissez l'image avant de la déposer.",
-    };
-  }
-
+  // Les OCTETS décident, pas la déclaration : un navigateur déduit
+  // `File.type` de l'EXTENSION, donc un « photo.avif » renommé « photo.png »
+  // arrive en `image/png` sans que personne n'ait menti. La porte partagée
+  // lit les douze premiers octets et c'est eux qui donnent l'extension de la
+  // clé ET le Content-Type stocké sur l'objet R2.
   if (file.size > 5 * 1024 * 1024) {
     return { success: false, error: "L'image ne doit pas dépasser 5 Mo" };
   }
 
+  const verif = await verifierImageTeleversee(file);
+  if (!verif.ok) return { success: false, error: verif.erreur };
+
   const id = nanoid();
-  // L'extension vient du TYPE, pas du nom du fichier : un « photo.avif »
-  // renommé « photo.png » aurait sinon produit une clé .png portant des octets
-  // AVIF, donc une image que le redimensionneur refuse malgré son extension.
-  const ext = extensionPour(file.type);
+  const ext = verif.extension;
   const key = `products/${productId}/${id}.${ext}`;
 
   await uploadToR2(file, key);

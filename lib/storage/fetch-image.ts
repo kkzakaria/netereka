@@ -23,6 +23,38 @@ const EXT_BY_TYPE: Record<string, string> = {
 
 export const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set(Object.keys(EXT_BY_TYPE));
 
+/** Nombre d'octets de tête suffisant pour reconnaître les quatre formats. */
+export const OCTETS_DE_SIGNATURE = 12;
+
+/**
+ * Le format RÉEL d'une image, lu dans ses premiers octets.
+ *
+ * Pourquoi cela existe, alors que le type déclaré est déjà validé : un
+ * navigateur déduit `File.type` de l'EXTENSION. Un « photo.avif » renommé
+ * « photo.png » arrive donc avec `image/png`, honnêtement, sans que personne
+ * ne mente — et la validation du type ne voit rien. Le scénario que nous
+ * disions corriger (« une clé .png portant des octets AVIF ») restait donc
+ * entier dans le cas COURANT : seul le cas d'un client dont le nom et le type
+ * divergent était fermé. Ce sont les octets qui tranchent, pas la déclaration.
+ *
+ * Rend `null` pour tout ce qui n'est pas l'un des trois formats retenus —
+ * y compris un AVIF, reconnu explicitement pour pouvoir le NOMMER dans le
+ * refus plutôt que de répondre « format inconnu ».
+ */
+export function formatDesOctets(octets: Uint8Array): { type: string } | { avif: true } | null {
+  const a = (i: number) => octets[i];
+  const ascii = (debut: number, mot: string) =>
+    [...mot].every((c, i) => a(debut + i) === c.charCodeAt(0));
+
+  if (a(0) === 0xff && a(1) === 0xd8 && a(2) === 0xff) return { type: "image/jpeg" };
+  if (a(0) === 0x89 && ascii(1, "PNG")) return { type: "image/png" };
+  if (ascii(0, "RIFF") && ascii(8, "WEBP")) return { type: "image/webp" };
+  // ISO-BMFF : « ftyp » en 4–7, puis la marque en 8–11. `avis` est la
+  // séquence d'images, refusée pour la même raison que `avif`.
+  if (ascii(4, "ftyp") && (ascii(8, "avif") || ascii(8, "avis"))) return { avif: true };
+  return null;
+}
+
 /**
  * PAS d'`image/avif`, et c'est le correctif d'un défaut vu en production le
  * 2026-10-02 : trois images d'une fiche publiée ne s'affichaient pas, sur

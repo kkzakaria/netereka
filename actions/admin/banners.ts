@@ -8,12 +8,12 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { getDrizzle } from "@/lib/db/drizzle";
 import { banners, bannerGradients, contentRevisions } from "@/lib/db/schema";
 import { uploadToR2, deleteFromR2 } from "@/lib/storage/images";
+import { verifierImageTeleversee } from "@/lib/storage/verifier-image";
 import { sanitizeDescriptionHtml } from "@/lib/utils/sanitize-html";
 import { refreshHeroPreload } from "@/lib/cloudflare/hero-preload";
 import type { ActionResult } from "@/lib/utils";
 import type { BannerGradient } from "@/lib/db/types";
 
-const ALLOWED_IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "avif"]);
 
 const bannerSchema = z.object({
   title: z.string().min(1, "Le titre est requis").max(200),
@@ -228,10 +228,15 @@ export async function uploadBannerImage(
     return { success: false, error: "L'image ne doit pas dépasser 5 Mo" };
   }
 
-  const rawExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-  if (!ALLOWED_IMAGE_EXTENSIONS.has(rawExt)) {
-    return { success: false, error: "Format d'image non supporté. Utilisez JPG, PNG ou WebP." };
-  }
+  // Les OCTETS décident, pas le nom ni le type déclaré. Deux raisons, et la
+  // seconde est propre aux bannières : l'AVIF passait, et le préchargement
+  // LCP du hero construit son URL `/cdn-cgi/image/…` À LA MAIN
+  // (`lib/cloudflare/hero-preload.ts`), sans passer par le chargeur qui sert
+  // les AVIF bruts. Une bannière en AVIF s'affichait donc, mais son
+  // préchargement partait vers une URL répondant « ERROR 9520 » : l'élément
+  // LCP de la page d'accueil, non préchargé, sans que rien ne le dise.
+  const verif = await verifierImageTeleversee(file);
+  if (!verif.ok) return { success: false, error: verif.erreur };
 
   try {
     const db = await getDrizzle();
@@ -246,7 +251,10 @@ export async function uploadBannerImage(
     }
 
     const uid = nanoid(8);
-    const key = `banners/${bannerId}-${uid}.${rawExt}`;
+    // L'extension vient du TYPE : un « photo.avif » renommé « photo.png »
+    // aurait produit une clé .png portant des octets AVIF, que le repli du
+    // chargeur — qui teste l'extension — ne reconnaîtrait pas.
+    const key = `banners/${bannerId}-${uid}.${verif.extension}`;
 
     await uploadToR2(file, key);
 

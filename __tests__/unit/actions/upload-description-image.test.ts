@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { octetsDe } from "../../helpers/octets-image";
 
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
@@ -17,8 +18,9 @@ function makeFormData(file: File | null): FormData {
   return fd;
 }
 
-function imageFile(name: string, type = "image/jpeg", size = 1024): File {
-  return new File([new Uint8Array(size)], name, { type });
+/** Les octets comptent : `octetsDeType` les fait diverger du type déclaré. */
+function imageFile(name: string, type = "image/jpeg", size = 1024, octetsDeType: string = type): File {
+  return new File([octetsDe(octetsDeType, size)], name, { type });
 }
 
 describe("uploadDescriptionImage", () => {
@@ -65,10 +67,47 @@ describe("uploadDescriptionImage", () => {
     expect(mocks.uploadToR2).not.toHaveBeenCalled();
   });
 
-  it("returns error for disallowed extension (html)", async () => {
+  /**
+   * Le NOM ne décide plus de rien : c'est le type déclaré qui est validé, et
+   * c'est de lui que vient l'extension de la clé. Un « evil.html » déclaré
+   * image/png est donc accepté — et stocké sous une clé `.png`, jamais
+   * `.html`. L'ancienne version refusait sur le nom, ce qui laissait passer
+   * l'inverse : un `.avif` renommé `.png` produisait une clé `.png` portant
+   * des octets AVIF.
+   */
+  it("un nom mensonger ne décide ni du refus ni de la clé", async () => {
     const result = await uploadDescriptionImage(makeFormData(imageFile("evil.html", "image/png")));
+    expect(result.success).toBe(true);
+    const [, key] = mocks.uploadToR2.mock.calls[0] as [File, string];
+    expect(key).toMatch(/\.png$/);
+    expect(key).not.toMatch(/\.html$/);
+  });
+
+  // L'AVIF part avec le reste : le redimensionneur de la vitrine ne le lit
+  // pas sur ce plan, et le message INVITAIT à en déposer.
+  it("refuse un AVIF, et ne l'invite plus", async () => {
+    const result = await uploadDescriptionImage(makeFormData(imageFile("photo.avif", "image/avif")));
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error).toBeTruthy();
+    if (!result.success) {
+      expect(result.error).toMatch(/image\/avif/);
+      expect(result.error).not.toMatch(/AVIF\.$/);
+    }
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
+  // Zéro GIF en production au 2026-10-04 : l'aligner sur la liste de la
+  // maison ne retire donc aucune capacité en service.
+  // Un AVIF renommé, tel qu'un navigateur le présente.
+  it("refuse un AVIF renommé .png : les octets le disent", async () => {
+    const result = await uploadDescriptionImage(makeFormData(imageFile("photo.png", "image/png", 1024, "image/avif")));
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toMatch(/AVIF/);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
+  it("refuse un GIF, comme les autres portes", async () => {
+    const result = await uploadDescriptionImage(makeFormData(imageFile("anim.gif", "image/gif")));
+    expect(result.success).toBe(false);
     expect(mocks.uploadToR2).not.toHaveBeenCalled();
   });
 

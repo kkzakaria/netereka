@@ -3,12 +3,12 @@
 import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
 import { uploadToR2 } from "@/lib/storage/images";
+import { verifierImageTeleversee } from "@/lib/storage/verifier-image";
 
 export type UploadDescriptionImageResult =
   | { success: true; key: string }
   | { success: false; error: string };
 
-const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
 
 export async function uploadDescriptionImage(
   formData: FormData
@@ -28,12 +28,17 @@ export async function uploadDescriptionImage(
     return { success: false, error: "L'image ne doit pas dépasser 5 Mo" };
   }
 
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
-    return { success: false, error: "Format non supporté. Utilisez JPG, PNG, GIF, WebP ou AVIF." };
-  }
+  // Le message invitait à déposer de l'AVIF, que le redimensionneur de la
+  // vitrine ne sait pas lire sur ce plan, et contredisait frontalement celui
+  // de `images.ts`, dans le même répertoire. Le GIF part avec — y compris le
+  // GIF ANIMÉ, qui n'est donc plus pris en charge dans les descriptions : la
+  // liste est celle de toute la maison, et la production n'en comptait aucun
+  // (vérifié le 2026-10-04 : zéro `.gif` et zéro `.avif` dans les
+  // descriptions, et aucune image de description en service).
+  const verif = await verifierImageTeleversee(file);
+  if (!verif.ok) return { success: false, error: verif.erreur };
 
-  const key = `description-images/${nanoid()}.${ext}`;
+  const key = `description-images/${nanoid()}.${verif.extension}`;
 
   try {
     await uploadToR2(file, key);
