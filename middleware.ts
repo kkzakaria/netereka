@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { KV_HERO_PRELOAD_KEY } from "@/lib/cloudflare/hero-preload-key";
+import { KV_HERO_PRELOAD_KEY, cleDuPrechargementRepli } from "@/lib/cloudflare/hero-preload-key";
 
 const PROTECTED_PATHS = ["/account", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
 const SESSION_COOKIE = "better-auth.session_token";
@@ -26,12 +26,12 @@ export async function middleware(request: NextRequest) {
       const { env } = await getCloudflareContext();
       const linkValue = await env.KV.get(KV_HERO_PRELOAD_KEY);
       if (linkValue) {
-        // Extract image key from the stored Link header value, e.g.:
-        //   </cdn-cgi/image/width=640,...https://r2.netereka.ci/banners/foo.png>; rel=preload...
-        const urlMatch = linkValue.match(/<([^>]+)>/);
-        const imageUrl = urlMatch?.[1] ?? "";
-        const keyMatch = imageUrl.match(/format=auto\/https?:\/\/r2\.netereka\.ci\/(.+)/);
-        const imageKey = keyMatch?.[1];
+        // La clé n'est transmise que si le préchargement vient du chemin de
+        // REPLI (image rendue par React). Une composition libre demande
+        // exactement l'URL de l'en-tête `Link` ci-dessous : lui ajouter un
+        // `imagesrcset` ferait télécharger une seconde image, jamais
+        // demandée. Voir `cleDuPrechargementRepli`.
+        const imageKey = cleDuPrechargementRepli(linkValue);
 
         const requestHeaders = new Headers(request.headers);
         if (imageKey) requestHeaders.set("x-hero-image-key", imageKey);

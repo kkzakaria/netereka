@@ -54,7 +54,7 @@ content_html: text("content_html"),
 
 Restent structurés et pleinement utilisés :
 
-- `image_url` — rendu par `next/image`, alimente le preload LCP ;
+- `image_url` — rendu par `next/image`, alimente le preload LCP. **Dépassé le 2026-10-02 :** sur une diapositive qui porte un `content_html`, l'image n'est plus rendue par React du tout. L'administrateur a tranché que l'agent doit avoir « carte blanche pour composer la bannière suivant sa guise et ne pas être figé par le modèle actuel » : la composition occupe la diapositive entière, l'auteur y place l'image lui-même, et `get_banner` lui en rend l'URL publique. `image_url` reste une colonne et une donnée — elle cesse d'être un emplacement. Le repli sans `content_html` la rend toujours, lui. Le préchargement LCP, en revanche, déduit encore son URL de cette colonne : voir la note de la § 1.3 ;
 - `link_url` — la slide entière reste cliquable ;
 - `title` — obligatoire, sert à identifier la bannière dans l'administration et alimente `alt` / `aria-label` ;
 - `display_order`, `is_active`, `starts_at`, `ends_at` — ordonnancement, activation, planification ;
@@ -65,6 +65,10 @@ Passent en legacy, conservés jusqu'au *contract* : `subtitle`, `badge_text`, `b
 ### 1.3 Migration
 
 Une seule migration Drizzle en phase *expand*, ajoutant deux colonnes : `banners.content_html` et `products.faq_html`. Workflow habituel — éditer `lib/db/schema.ts`, `npm run db:generate`, relire le SQL produit dans `drizzle/`, `npm run db:migrate`, committer `schema.ts` + `drizzle/*.sql` + `drizzle/meta/`.
+
+**Note du 2026-10-02 — le préchargement LCP n'a pas suivi la libération de la diapositive.** `lib/cloudflare/hero-preload.ts` et `maybePreloadHero()` déduisent l'URL à précharger de `banners.image_url`, en y appliquant la transformation `/cdn-cgi/image/width=…` et des `sizes` calculés pour la grille à deux colonnes (`44vw`, `40vw`). Une composition libre, elle, écrit son propre `<img src>` — URL différente, donc **préchargement gaspillé d'un côté et image réelle non préchargée de l'autre**. S'ajoute un effet de React 19, constaté au rendu : il émet un `<link rel="preload" as="image">` pour une `<img>` qu'il rend lui-même, mais pas pour une image à l'intérieur d'un `dangerouslySetInnerHTML`, qu'il ne voit pas. **Traité le 2026-10-04** en dérivant le préchargement du `content_html` : `premiereImageDuContenu()` (`lib/cloudflare/hero-preload-image.ts`) lit la première `<img src>` de la composition et on précharge cette adresse telle quelle ; à défaut seulement, `image_url` transformée comme avant. Les deux s'accordent alors par construction.
+
+Mesuré sur les quatre bannières actives, le 2026-10-02 **et de nouveau le 2026-10-04** : toutes portent `content_html` et `image_url`, aucune ne porte d'`<img>` dans son HTML. C'est ce qui a imposé une **transition** dans le rendu : une composition sans image, sur une bannière qui en a une, garde la grille à deux colonnes et son visuel. Livrer la toile libre sans cela retirait d'un coup la photo des quatre diapositives — l'élément LCP de la page d'accueil. La règle s'efface d'elle-même dès qu'une composition porte son image, et le rendu emploie la MÊME lecture que le préchargement pour que les deux ne divergent pas.
 
 La migration *contract* qui supprimera `tagline`, `highlights`, `feature_blocks`, `faq`, les cinq colonnes legacy de `banners` et la table `ai_config` est **hors périmètre** de ce lot. Elle devra porter le marqueur `-- migration-safety: acknowledged reason="..."` et n'être appliquée qu'après promotion à 100 % de la version qui cesse de lire ces colonnes.
 
@@ -244,6 +248,10 @@ Les imports de `lib/validations/product-story.ts` disparaissent ; le fichier est
 **Du HTML libre casse la mise en page mobile.** Le conteneur contraignant disparaît par conception. Le gabarit converti reste responsive puisqu'il reprend le balisage actuel, mais tout contenu rédigé ensuite engage son auteur. L'aperçu de l'éditeur admin est le point de contrôle.
 
 **Le preload LCP dépend d'`image_url`.** Il est préservé parce que l'image reste un champ structuré ; `refreshHeroPreload()` n'est pas modifié par ce lot.
+
+> **Faux depuis le 2026-10-04.** `refreshHeroPreload()` EST modifié : il précharge d'abord l'image que la composition désigne (`premiereImageDuContenu`), et ne retombe sur `image_url` transformée que si la composition n'en place aucune. Deux conséquences à connaître :
+> - le `<link rel="preload" imagesrcset>` du layout (`maybePreloadHero`, variantes par DPR) n'est émis QUE pour le chemin de repli, reconnu à la forme exacte `width=640,quality=75,format=auto/` (`cleDuPrechargementRepli`). Il n'a de sens que là : `next/image` produit le même `srcset`, donc la page demandera l'une de ces variantes. Une composition libre, elle, demande exactement l'URL de l'en-tête `Link` — lui ajouter un `imagesrcset` ferait télécharger une seconde image jamais demandée. Un motif plus lâche l'avait d'abord fait, et c'est la régression que la re-revue a trouvée ;
+> - l'URL tendue aux auteurs est DÉJÀ transformée. L'adresse brute d'un objet R2 pèse vingt fois plus (mesuré : 1 484 141 o contre 73 055 en `width=1280`), et c'est elle que le préchargement amplifierait en `fetchpriority=high`.
 
 ## Hors périmètre
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import useEmblaCarousel from "embla-carousel-react";
@@ -9,6 +9,7 @@ import type { BadgeColor, Banner, ProductCardData } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
 import { cn } from "@/lib/utils";
+import { premiereImageDuContenu } from "@/lib/cloudflare/hero-preload-image";
 
 interface Slide {
   /** Id de la bannière source, ou `null` pour le repli sur les produits en
@@ -26,6 +27,17 @@ interface Slide {
   bg_from: string;
   bg_to: string;
   content_html: string | null;
+  /**
+   * `true` quand la composition place elle-même une image — c'est ce qui
+   * décide de la toile libre.
+   *
+   * Calculé à la construction des diapositives, et mémoïsé par `HeroBanner`
+   * (`useMemo`) : sans cela la lecture serait relancée pour chaque
+   * diapositive à chaque défilement d'Embla. Même lecture que le
+   * préchargement (`premiereImageDuContenu`), pour que les deux ne puissent
+   * pas diverger sur ce qu'est « une composition qui porte son image ».
+   */
+  porte_son_image: boolean;
 }
 
 /** Reconstruit la classe de scope posée sur le conteneur du HTML libre d'une
@@ -60,6 +72,7 @@ export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData
       bg_from: b.bg_gradient_from || "#183C78",
       bg_to: b.bg_gradient_to || "#1E4A8F",
       content_html: b.content_html,
+      porte_son_image: premiereImageDuContenu(b.content_html) !== null,
     }));
   }
 
@@ -76,6 +89,7 @@ export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData
     bg_from: "#183C78",
     bg_to: "#1E4A8F",
     content_html: null,
+    porte_son_image: false,
   }));
 }
 
@@ -86,7 +100,12 @@ export function HeroBanner({
   banners: Banner[];
   fallbackProducts: ProductCardData[];
 }) {
-  const slides = buildSlides(banners, fallbackProducts);
+  // `useMemo` et non un appel nu : `HeroBanner` se re-rend à chaque
+  // défilement d'Embla (`setSelectedIndex`), et `buildSlides` lit le HTML de
+  // chaque bannière pour décider de `porte_son_image`. Sans mémo, cette
+  // lecture était relancée pour toutes les diapositives à chaque défilement
+  // — ce que le commentaire de `porte_son_image` prétendait déjà éviter.
+  const slides = useMemo(() => buildSlides(banners, fallbackProducts), [banners, fallbackProducts]);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, duration: 30 }, [
     Autoplay({ delay: 5000, stopOnInteraction: true }),
@@ -142,20 +161,58 @@ export function HeroBanner({
               <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#00FF9C]/10 blur-3xl" />
               <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
 
-              <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
-                {/* Text content with glass card */}
-                {slide.content_html ? (
-                  /* Contenu libre, assaini à l'écriture. `getActiveBanners()`
-                     (lib/db/storefront/banners.ts) ré-assainit ce HTML une étape
-                     plus haut, en défense en profondeur, avant qu'il n'atteigne ce
-                     composant — pas ici : faire tourner le sanitizer dans un
-                     composant client l'embarquerait dans le bundle pour rien. */
-                  <div
-                    className={buildBannerScopeClass(slide.id)}
-                    dangerouslySetInnerHTML={{ __html: slide.content_html }}
-                  />
-                ) : (
-                  /* Ce repli sert DEUX cas distincts, pas un seul :
+              {slide.content_html && (slide.porte_son_image || !slide.image_url) ? (
+                /* TOILE LIBRE : la composition occupe la diapositive ENTIÈRE.
+                   Aucune grille, aucune colonne, aucun emplacement — l'auteur
+                   compose, comme une description libre de fiche produit depuis
+                   le lot A. Le dégradé et les halos restent au-dessus : ce sont
+                   des propriétés de la SURFACE, pas du gabarit.
+
+                   `image_url` n'est volontairement PAS rendue ici : l'auteur
+                   place l'image lui-même (get_banner lui en donne l'URL
+                   publique), et la rendre aussi à côté la ferait apparaître
+                   deux fois. Elle reste une colonne et une donnée — lue par le
+                   préchargement LCP (lib/cloudflare/hero-preload.ts) et par le
+                   repli ci-dessous — elle cesse d'être un emplacement.
+
+                   Ce qui reste imposé, et seulement cela : la taille (h-full
+                   w-full, la surface) et une marge intérieure, pour que le
+                   contenu ne vienne pas buter contre le coin arrondi de la
+                   diapositive. Mêmes 16 px que l'aperçu admin
+                   (`buildSrcDoc`, components/admin/html-editor.tsx), afin que
+                   l'aperçu ne mente pas sur le rendu. `relative` donne à
+                   l'auteur un bloc conteneur pour un positionnement absolu.
+                   Pas de centrage vertical : il serait impossible à défaire
+                   depuis le <style> de l'auteur, dont les sélecteurs sont
+                   préfixés par cette classe de portée et ne peuvent donc pas
+                   viser ce conteneur.
+
+                   Contenu assaini à l'écriture. `getActiveBanners()`
+                   (lib/db/storefront/banners.ts) ré-assainit ce HTML une étape
+                   plus haut, en défense en profondeur, avant qu'il n'atteigne ce
+                   composant — pas ici : faire tourner le sanitizer dans un
+                   composant client l'embarquerait dans le bundle pour rien. */
+                <div
+                  className={cn("relative h-full w-full p-4 sm:p-6", buildBannerScopeClass(slide.id))}
+                  dangerouslySetInnerHTML={{ __html: slide.content_html }}
+                />
+              ) : (
+                /* TRANSITION, et non un gabarit qui résiste : une composition
+                   qui ne place AUCUNE image, sur une bannière qui en a une,
+                   garde la grille à deux colonnes — donc son visuel. Sans
+                   cela, livrer la toile libre retirait d'un coup la photo des
+                   quatre bannières en ligne (vérifié le 2026-10-04 : toutes
+                   portent un content_html, aucune ne porte d'<img>), c'est-à-dire
+                   l'élément LCP de la page d'accueil, pour une amélioration
+                   dont l'effet serait venu plus tard.
+                   Elle s'efface d'elle-même : dès que la composition contient
+                   une image, la toile libre reprend et rien n'est plus rendu à
+                   côté. Même lecture que le préchargement
+                   (`premiereImageDuContenu`), pour que les deux ne puissent pas
+                   diverger sur ce qu'est « une composition qui porte son image ».
+                   À retirer quand les quatre bannières auront été recomposées. */
+                <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
+                  {/* Ce repli sert DEUX cas distincts, pas un seul :
                      1. Les produits en vedette (buildSlides pose id: null) :
                         ce n'est pas du contenu éditorial mais notre propre
                         gabarit — il reste en React et le restera après la
@@ -168,7 +225,20 @@ export function HeroBanner({
                         modifiables depuis components/admin/banner-form.tsx et
                         visibles dans son aperçu, donc rendus ici tant que ce
                         cas existe. Seul CE cas disparaît quand la tâche 14
-                        est livrée. */
+                        est livrée.
+                     3. LA TRANSITION : une composition qui ne place aucune
+                        image, sur une bannière qui en a une. La colonne
+                        gauche rend alors la COMPOSITION, exactement comme
+                        avant la libération — sans cette branche, la
+                        transition gardait le visuel et perdait le texte
+                        éditorial des quatre bannières en ligne, ce qui est
+                        pire que ce qu'elle évitait. */}
+                  {slide.content_html ? (
+                    <div
+                      className={buildBannerScopeClass(slide.id)}
+                      dangerouslySetInnerHTML={{ __html: slide.content_html }}
+                    />
+                  ) : (
                   <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
                     {slide.badge_text && (
                       <span
@@ -201,24 +271,27 @@ export function HeroBanner({
                       {slide.cta_text}
                     </Link>
                   </div>
-                )}
+                  )}
 
-                {/* Image */}
-                {slide.image_url && (
-                  <div className="relative mx-auto h-[160px] w-full sm:aspect-square sm:h-[280px] lg:h-[360px]">
-                    <Image
-                      src={getImageUrl(slide.image_url)}
-                      alt={slide.title}
-                      fill
-                      className="object-contain"
-                      sizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
-                      {...(i === 0
-                        ? { priority: true, fetchPriority: "high" as const }
-                        : { loading: "lazy" as const })}
-                    />
-                  </div>
-                )}
-              </div>
+                  {/* Emplacement d'image DU REPLI seulement : la colonne de
+                      droite de son gabarit à deux colonnes. Une toile libre
+                      n'en a pas — voir la branche ci-dessus. */}
+                  {slide.image_url && (
+                    <div className="relative mx-auto h-[160px] w-full sm:aspect-square sm:h-[280px] lg:h-[360px]">
+                      <Image
+                        src={getImageUrl(slide.image_url)}
+                        alt={slide.title}
+                        fill
+                        className="object-contain"
+                        sizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
+                        {...(i === 0
+                          ? { priority: true, fetchPriority: "high" as const }
+                          : { loading: "lazy" as const })}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
