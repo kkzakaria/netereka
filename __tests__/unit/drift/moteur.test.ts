@@ -317,8 +317,8 @@ describe("rapport", () => {
   });
 
   /**
-   * Un avertissement nomme un écart réel que personne ne peut résoudre
-   * aujourd'hui — dix-huit clés primaires `TEXT` nullables qu'on ne
+   * Un avertissement nomme un écart réel que personne n'a décidé de payer
+   * maintenant — dix-huit clés primaires `TEXT` nullables qu'on ne
    * corrigerait qu'en reconstruisant dix-huit tables. Les compter comme un
    * échec rendait le travail nocturne rouge POUR TOUJOURS : mesuré en
    * production le 2026-10-04, zéro erreur, dix-neuf avertissements, et le
@@ -342,5 +342,57 @@ describe("rapport", () => {
         { domaine: "liaisons", categorie: "liaison", sens: "present_non_declare", gravite: "erreur", cible: "X", message: "" },
       ]).derive,
     ).toBe(true);
+  });
+});
+
+/**
+ * Le surplus de CHECK nommés face aux anonymes de la base.
+ *
+ * Le test d'excuse était une PRÉSENCE (`checksAnonymes > 0`), pas un compte :
+ * deux CHECK nommés déclarés face à UN anonyme en base donnaient deux
+ * avertissements, alors que l'un des deux désigne une contrainte réellement
+ * absente. Tant que les avertissements faisaient échouer, le défaut restait
+ * visible ; depuis qu'ils n'échouent plus, il serait passé au vert — une
+ * erreur rendue silencieuse par le correctif censé rendre le garde-fou
+ * utilisable.
+ */
+describe("CHECK : on n'excuse que autant de nommés que la base a d'anonymes", () => {
+  const table = (checksNommes: string[], checksAnonymes: number) => ({
+    nom: "reviews",
+    colonnes: [],
+    clePrimaire: [],
+    index: [],
+    unicites: [],
+    clesEtrangeres: [],
+    checksNommes,
+    checksAnonymes,
+  });
+
+  it("deux nommés, un seul anonyme : un avertissement ET une erreur", () => {
+    const ecarts = comparerBase(
+      { tables: [table(["a", "b"], 0)] },
+      { tables: [table([], 1)] },
+    ).filter((e) => e.categorie === "contrainte_check");
+
+    expect(ecarts.map((e) => e.gravite).sort()).toEqual(["avertissement", "erreur"]);
+    // Et le message de l'erreur DIT pourquoi : l'anonyme est déjà pris.
+    expect(ecarts.find((e) => e.gravite === "erreur")?.message).toMatch(/déjà attribué/);
+  });
+
+  it("autant d'anonymes que de nommés : que des avertissements", () => {
+    const ecarts = comparerBase(
+      { tables: [table(["a", "b"], 0)] },
+      { tables: [table([], 2)] },
+    ).filter((e) => e.categorie === "contrainte_check");
+    expect(ecarts.every((e) => e.gravite === "avertissement")).toBe(true);
+  });
+
+  it("aucun anonyme : que des erreurs, et le message le dit autrement", () => {
+    const ecarts = comparerBase(
+      { tables: [table(["a"], 0)] },
+      { tables: [table([], 0)] },
+    ).filter((e) => e.categorie === "contrainte_check");
+    expect(ecarts[0].gravite).toBe("erreur");
+    expect(ecarts[0].message).toMatch(/aucune contrainte anonyme/);
   });
 });

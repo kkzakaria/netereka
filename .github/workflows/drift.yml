@@ -54,7 +54,13 @@ on:
     - cron: "17 4 * * *"
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  # Pour ouvrir, mettre à jour et refermer L'ISSUE qui porte l'alerte.
+  # Sans elle, un travail planifié en échec n'envoie un courriel qu'à la
+  # dernière personne ayant modifié le cron, et n'apparaît que dans un onglet
+  # Actions que personne n'ouvre. Une alerte que personne ne reçoit n'est pas
+  # une alerte.
+  issues: write
 
 concurrency:
   group: derive-environnement
@@ -81,6 +87,7 @@ jobs:
       # ouvrir les journaux, ET sur la sortie standard pour rester dans les
       # journaux. `tee` préserve le code de sortie de npm grâce à pipefail.
       - name: Controle de derive
+        id: derive
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -112,6 +119,15 @@ jobs:
           #     on la laisse rouge en croyant savoir pourquoi.
           #
           # D'où une annotation distincte, et un titre de résumé qui le dit.
+          if [ "$code" != "0" ] && [ "$code" != "1" ]; then
+            # Tout ce qui n'est ni 0 ni 1 est une PANNE du garde-fou : la
+            # sortie 2 de son try/catch, mais aussi un `tsx` absent, un
+            # `npm ci` cassé, un import qui lève — tous sortent en 1 sans
+            # passer par `main()`. Dire « dérive détectée » dans ces cas
+            # ferait chercher un écart là où c'est l'outil qui est à terre.
+            code=2
+          fi
+
           if [ "$code" = "2" ]; then
             echo "::error title=Garde-fou en panne::Le controle de derive n'a pas pu s'executer. Ce n'est PAS une derive : la lecture de la realite a echoue."
             {
@@ -119,7 +135,71 @@ jobs:
               echo '> **Le garde-fou lui-meme est en panne** — la lecture de la realite a echoue.'
               echo '> Ce resultat ne dit RIEN sur la derive : il dit que personne ne la surveille.'
             } >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$code" != "0" ]; then
+          elif [ "$code" = "1" ]; then
             echo "::error title=Derive detectee::Le controle a tourne et a trouve au moins un ecart de gravite erreur."
           fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
           exit "$code"
+
+      # L'ALERTE QUI ATTEINT QUELQU'UN.
+      #
+      # Un travail planifié vert n'envoie rien, un travail rouge n'envoie un
+      # courriel qu'à la dernière personne ayant touché au cron, et GitHub
+      # DÉSACTIVE un workflow planifié après 60 jours sans activité du dépôt —
+      # le garde-fou peut donc s'arrêter sans un mot. Une issue, elle, reste
+      # ouverte, porte un responsable, et se referme d'elle-même quand le
+      # rapport redevient vert.
+      #
+      # `if: always()` : l'étape précédente échoue PAR CONCEPTION quand il y a
+      # dérive. Sans cela, ce pas ne tournerait jamais au moment où il sert.
+      - name: Ouvrir, mettre a jour ou refermer l'issue d'alerte
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE: ${{ steps.derive.outputs.code }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="${CODE:-2}"
+          # Idempotent, et `|| true` : l'etiquette existe deja sur ce depot,
+          # mais un fork ou un depot recree ne l'aurait pas, et l'alerte
+          # echouerait alors au moment precis ou elle sert.
+          gh label create derive --color B60205 --description "Ecart entre ce que le code suppose et ce qui existe" 2>/dev/null || true
+          numero=$(gh issue list --state open --label derive --json number --jq '.[0].number // empty')
+
+          if [ "$code" = "0" ]; then
+            if [ -n "$numero" ]; then
+              gh issue comment "$numero" --body "Le controle est repasse au vert : $RUN_URL"
+              gh issue close "$numero"
+            fi
+            exit 0
+          fi
+
+          corps=$(mktemp)
+          if [ "$code" = "1" ]; then
+            {
+              echo "Le controle de derive a trouve au moins un ecart de gravite **erreur**."
+              echo
+              echo "Chaque ecart se resout en TRANCHANT : soit declarer ce qui existe, soit retirer ce qui n'est pas declare."
+              echo "Ne pas le faire taire par une liste d'exceptions — c'est exactement ce qui a permis a la cle etrangere"
+              echo "d'\`audit_log\` de survivre un an."
+              echo
+              echo "Rapport complet : $RUN_URL"
+            } > "$corps"
+          else
+            {
+              echo "**Le garde-fou lui-meme est en panne** : le controle n'a pas pu s'executer."
+              echo
+              echo "Ce resultat ne dit RIEN sur la derive — il dit que personne ne la surveille."
+              echo "Jeton Cloudflare expire, sortie de \`wrangler\` qui a change de forme, dependance absente."
+              echo
+              echo "Journal : $RUN_URL"
+            } > "$corps"
+          fi
+
+          if [ -n "$numero" ]; then
+            gh issue comment "$numero" --body-file "$corps"
+          else
+            gh issue create --title "Derive entre le code et son environnement" --label derive --body-file "$corps"
+          fi

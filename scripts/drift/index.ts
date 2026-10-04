@@ -15,7 +15,7 @@
  *       ✗ et une panne silencieuse passe pour une dérive connue.
  *
  * Les `avertissement` sont IMPRIMÉS mais ne font pas échouer : ils nomment
- * des écarts que personne ne peut résoudre aujourd'hui (dix-huit clés
+ * des écarts que personne n'a décidé de payer maintenant (dix-huit clés
  * primaires nullables héritées de SQLite), et les compter rendait le travail
  * nocturne rouge pour toujours. Voir `bilan()`, lib/drift/rapport.ts. Les
  * `information` (une liaison déclarée OPTIONNELLE et absente) non plus : le

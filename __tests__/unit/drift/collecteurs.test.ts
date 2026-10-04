@@ -154,8 +154,16 @@ describe("validerSecrets — échouer bruyamment plutôt que regarder ailleurs",
     expect(() => validerSecrets([{ name: "XAI_API_KEY", type: "secret_text" }])).not.toThrow();
   });
 
-  it("accepte une liste vide : aucun secret est un état légitime", () => {
-    expect(() => validerSecrets([])).not.toThrow();
+  /**
+   * Une liste vide n'est PAS un état légitime : ce Worker ne démarre pas sans
+   * `BETTER_AUTH_SECRET`, et la vitrine répond. Zéro secret veut donc dire
+   * qu'on ne lit plus — et une lecture aveugle laisse passer tout le sens
+   * « présent dans la réalité, déclaré nulle part », qui est la raison d'être
+   * de ce contrôle. Le test précédent l'acceptait, ce qui en faisait le trou
+   * exact que `validerSecrets` existe pour fermer.
+   */
+  it("refuse une liste vide : ce n'est pas la réalité qui s'est vidée, c'est la lecture", () => {
+    expect(() => validerSecrets([])).toThrow(/AUCUN secret/);
   });
 
   it("refuse une sortie qui n'est pas une liste", () => {

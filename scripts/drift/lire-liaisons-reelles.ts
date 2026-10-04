@@ -5,7 +5,10 @@
  * Trois sources, parce qu'aucune n'est complète à elle seule :
  *
  *  - `wrangler versions view <id>` : la photo la plus fidèle de ce que le code
- *    déployé voit. Elle porte les D1/KV/R2/assets, les secrets ET les `vars`.
+ *    déployé voit — les liaisons de la version, telles que l'API les rend.
+ *    (Observé : D1/KV/R2/assets y figurent. Je n'ai pas vérifié que les
+ *    secrets et les `vars` y soient TOUJOURS : les deux sources suivantes les
+ *    couvrent de toute façon, et c'est pour cela qu'il y en a trois.)
  *  - `wrangler secret list` : l'état VIVANT des secrets. Un secret posé après
  *    le dernier déploiement y figure alors qu'il n'est pas encore dans la
  *    version. C'est précisément comme ça qu'un secret apparaît sans commit.
@@ -49,9 +52,24 @@ interface LiaisonVersion { name: string; type: string }
 export function versionLaPlusRecente(): Version {
   const versions = jsonDe<Version[]>(wrangler(["versions", "list", "--json"]));
   if (versions.length === 0) throw new Error("Aucune version de Worker listée.");
-  return [...versions].sort(
-    (a, b) => Date.parse(b.metadata?.created_on ?? "") - Date.parse(a.metadata?.created_on ?? ""),
-  )[0];
+
+  // Une date illisible fait LEVER, au lieu de se glisser dans le tri.
+  // `Date.parse("")` rend NaN, toute comparaison avec NaN rend false, et le
+  // tri laisse alors l'ordre d'origine — croissant — donc `[0]` serait la
+  // PLUS ANCIENNE version. On comparerait la réalité d'il y a des semaines
+  // en croyant lire celle d'aujourd'hui : le garde-fou mentirait sans
+  // trembler. C'est exactement le piège que « `.[0]` naïf » nous a déjà
+  // coûté une fois sur `deployments list` (voir CLAUDE.md).
+  const datees = versions.map((v) => {
+    const t = Date.parse(v.metadata?.created_on ?? "");
+    if (Number.isNaN(t)) {
+      throw new Error(
+        `[dérive] version ${v.id?.slice(0, 8) ?? "?"} sans date lisible (created_on = ${JSON.stringify(v.metadata?.created_on)}).`,
+      );
+    }
+    return { v, t };
+  });
+  return datees.sort((a, b) => b.t - a.t)[0].v;
 }
 
 /** `vars` déclarées dans `wrangler.jsonc`. JSONC : commentaires retirés avant analyse. */
@@ -80,6 +98,17 @@ export function varsDeWranglerJsonc(chemin: string): string[] {
 export function validerSecrets(secrets: unknown): asserts secrets is { name: string; type: string }[] {
   if (!Array.isArray(secrets)) {
     throw new Error("[dérive] `wrangler secret list` n'a pas rendu une liste — forme inattendue.");
+  }
+  // Une liste VIDE n'est pas un état légitime ici : ce Worker ne démarre pas
+  // sans `BETTER_AUTH_SECRET`, et la réponse est de toute façon en ligne.
+  // Zéro secret signifie donc qu'on ne LIT plus, pas qu'il n'y en a plus — et
+  // une lecture aveugle laisse passer tout le sens « présent dans la réalité,
+  // déclaré nulle part », qui est la raison d'être de ce contrôle.
+  if (secrets.length === 0) {
+    throw new Error(
+      "[dérive] `wrangler secret list` n'a rendu AUCUN secret. Le Worker en porte nécessairement " +
+        "(BETTER_AUTH_SECRET au minimum) : c'est la lecture qui a échoué, pas la réalité qui s'est vidée.",
+    );
   }
   for (const s of secrets) {
     if (!s || typeof (s as { name?: unknown }).name !== "string" || !(s as { name: string }).name) {

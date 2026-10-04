@@ -6,8 +6,10 @@
  * (`pragma_table_info(...)`), ce qui permet de tout collecter en cinq requêtes
  * au lieu d'une centaine. Vérifié contre la base distante.
  *
- * LECTURE SEULE. Toutes les requêtes commencent par SELECT, et
- * `lancerRequete` refuse d'exécuter autre chose.
+ * LECTURE SEULE. Les requêtes sont des CONSTANTES de ce fichier, et c'est ce
+ * qui le garantit. Le contrôle `^SELECT\b` de `lancerRequete` est un filet,
+ * pas une preuve : il laisserait passer un « SELECT 1; DROP TABLE x ». Ne lui
+ * confiez pas une requête construite à partir d'une entrée.
  */
 
 import { execFileSync } from "node:child_process";

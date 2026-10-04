@@ -36,10 +36,10 @@ export interface Bilan {
   /**
    * Vrai dès qu'il existe une ERREUR — et pas pour un avertissement.
    *
-   * Un avertissement nomme un écart réel que PERSONNE NE PEUT RÉSOUDRE
+   * Un avertissement nomme un écart réel que personne N'A DÉCIDÉ DE PAYER
    * aujourd'hui : dix-huit clés primaires `TEXT` nullables, héritées de la
-   * permissivité de SQLite, qu'on ne corrigerait qu'en reconstruisant dix-huit
-   * tables. Les compter comme un échec rendait le travail nocturne rouge POUR
+   * permissivité de SQLite, qu'on corrigerait en reconstruisant dix-huit tables — ce que
+   * personne n'a décidé de faire. Les compter comme un échec rendait le travail nocturne rouge POUR
    * TOUJOURS, quoi qu'on tranche par ailleurs — mesuré : la production est à
    * zéro erreur et dix-neuf avertissements, et le contrôle sortait quand même
    * en 1.

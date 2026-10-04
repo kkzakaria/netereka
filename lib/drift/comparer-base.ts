@@ -301,11 +301,19 @@ function comparerTable(d: FormeTable, r: FormeTable): Ecart[] {
   const ckR = new Set(r.checksNommes);
   const manquants = [...ckD].filter((n) => !ckR.has(n));
 
-  for (const n of manquants) {
+  manquants.forEach((n, index) => {
     // Une table créée par une migration écrite à la main porte des CHECK en
     // ligne, que SQLite stocke sans nom. Annoncer « contrainte absente »
     // alors qu'elle est là, juste anonyme, serait crier à tort.
-    const anonymeDisponible = r.checksAnonymes > 0;
+    //
+    // On n'en excuse QUE AUTANT que la base en porte d'anonymes. Le test
+    // était une présence (`checksAnonymes > 0`) et non un compte : deux CHECK
+    // nommés déclarés face à UN seul anonyme en base donnaient deux
+    // avertissements, alors que l'un des deux est une contrainte réellement
+    // absente. Depuis que les avertissements ne font plus échouer, ce
+    // surplus serait passé au vert — une erreur rendue silencieuse par le
+    // correctif qui devait rendre le garde-fou utilisable.
+    const anonymeDisponible = index < r.checksAnonymes;
     ecarts.push({
       domaine: "base",
       categorie: "contrainte_check",
@@ -314,9 +322,9 @@ function comparerTable(d: FormeTable, r: FormeTable): Ecart[] {
       cible: `${t}.${n}`,
       message: anonymeDisponible
         ? `Contrainte CHECK « ${n} » déclarée nommée sur « ${t} » ; la base porte ${r.checksAnonymes} CHECK sans nom sur cette table. Probablement la même contrainte, écrite en ligne par une migration manuelle. Le moteur ne compare pas les expressions : à vérifier à l'œil.`
-        : `Contrainte CHECK « ${n} » déclarée sur « ${t} », absente de la base — et aucune contrainte anonyme qui pourrait en tenir lieu. L'invariant n'est pas tenu.`,
+        : `Contrainte CHECK « ${n} » déclarée sur « ${t} », absente de la base — ${r.checksAnonymes === 0 ? "et aucune contrainte anonyme qui pourrait en tenir lieu" : `la base ne porte que ${r.checksAnonymes} CHECK anonyme(s), déjà attribué(s) à ${r.checksAnonymes} autre(s) contrainte(s) déclarée(s)`}. L'invariant n'est pas tenu.`,
     });
-  }
+  });
 
   for (const n of ckR) {
     if (ckD.has(n)) continue;
