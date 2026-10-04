@@ -89,3 +89,38 @@ describe("produitApresRevision : ce que l'application produirait", () => {
     }
   });
 });
+
+/**
+ * L'aperçu produit NE ré-assainit PAS, contrairement à celui des bannières :
+ * `descriptionToHtml` et `ProductDetails` le font déjà. Cet argument ne vaut
+ * que si c'est VRAI sur tous les chemins de `description_type` — une page
+ * d'administration authentifiée n'est pas un endroit où supposer.
+ *
+ * Mesuré ici plutôt que supposé : le jour où l'un de ces chemins perd sa
+ * garantie, c'est ce test qui rougit, et la décision de ne pas doubler
+ * l'assainissement est à revoir.
+ */
+describe("l'argument « une seule garantie » repose sur ceci", () => {
+  it("le chemin Lexical neutralise un lien javascript:", async () => {
+    const { descriptionToHtml } = await import("@/lib/utils/description-to-html");
+    const lexical = JSON.stringify({ root: { children: [{ type: "paragraph", children: [
+      { type: "link", url: "javascript:alert(1)", children: [{ type: "text", text: "clic" }] },
+    ] }] } });
+    const html = descriptionToHtml(lexical, "richtext", "p1");
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain("clic");
+  });
+
+  it("le chemin HTML ancien retire le href dangereux et le script", async () => {
+    const { descriptionToHtml } = await import("@/lib/utils/description-to-html");
+    const html = descriptionToHtml('<a href="javascript:alert(1)">x</a><script>v()</script>', "richtext", "p1");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("<script");
+  });
+
+  it("le chemin html assaini porte la portée du produit", async () => {
+    const { descriptionToHtml } = await import("@/lib/utils/description-to-html");
+    const html = descriptionToHtml('<style>.a{color:red}</style><div class="a">x</div>', "html", "p1");
+    expect(html).toContain(".desc-p1 .a");
+  });
+});

@@ -3,8 +3,10 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getRevision } from "@/lib/db/revisions";
 import { getBannerById } from "@/lib/db/banners";
-import { bannerClock, getActiveBanners, sanitizeBannerContent } from "@/lib/db/storefront/banners";
+import { bannerClock, getActiveBanners, raisonsDeNonAffichage, sanitizeBannerContent } from "@/lib/db/storefront/banners";
 import { banniereApresRevision, carrouselApresRevision } from "@/lib/revisions/apercu-banniere";
+import { avertissementsApercu } from "@/lib/revisions/apercu-avertissements";
+import { ApercuAvertissements } from "@/components/admin/apercu-avertissements";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import type { Banner } from "@/lib/db/types";
 
@@ -72,13 +74,34 @@ export default async function ApercuRevisionBanniere({ params }: Props) {
   // pas hors de son voisinage — son rang, ce qui la précède, ce qui la suit,
   // les puces. Et pour un retrait, c'est le carrousel AMPUTÉ qu'il faut voir
   // avant d'appliquer.
+  // UNE SEULE horloge pour les deux lectures. Deux appels séparés laissaient
+  // une fenêtre d'une seconde entre le filtre de `getActiveBanners` et celui
+  // de l'aperçu : inoffensif, mais deux instants pour une même question.
+  const maintenant = bannerClock();
   const affichees = await getActiveBanners();
-  const carrousel = carrouselApresRevision(affichees, apres, bannerClock());
+  const carrousel = carrouselApresRevision(affichees, apres, maintenant);
 
-  // Ré-assaini comme la vitrine le fait : les voisines le sont déjà par
-  // `getActiveBanners`, la révisée ne l'est pas encore.
+  // Un carrousel sans elle, sans un mot, se lit comme un bug. `HeroBanner`
+  // rend `null` quand la liste est vide : l'écran serait alors entièrement
+  // muet. On DIT la raison, que `raisonsDeNonAffichage` calcule déjà.
+  const avertissements = avertissementsApercu({
+    revision,
+    versionActuelle: courante.updated_at,
+    raisonsDeNonAffichage: raisonsDeNonAffichage(apres, maintenant),
+  });
+
+  // Ré-assaini comme la vitrine le fait. Les voisines le sont DÉJÀ par
+  // `getActiveBanners` et repassent donc une seconde fois : l'opération est
+  // idempotente, et distinguer la révisée des autres coûterait plus que ce
+  // double passage. Seule la révisée l'exige vraiment — elle sort de la
+  // fusion telle que le payload la portait.
   const assainies = sanitizeBannerContent(carrousel);
 
   // Pas de <main> ici : le gabarit de la vitrine en fournit déjà un.
-  return <HeroBanner banners={assainies} fallbackProducts={[]} />;
+  return (
+    <>
+      <ApercuAvertissements avertissements={avertissements} />
+      <HeroBanner banners={assainies} fallbackProducts={[]} />
+    </>
+  );
 }

@@ -48,9 +48,17 @@ const revision = (over: Record<string, unknown> = {}) => ({
 /** Le carrousel tel qu'il parvient au composant de la vitrine. */
 async function carrouselRendu(revisionId = "rev-1") {
   const el = await Page({ params: Promise.resolve({ revisionId }) });
-  // La page rend DIRECTEMENT le carrousel : le <main> vient du gabarit de la
-  // vitrine, dont elle hérite désormais.
-  return (el as unknown as { props: { banners: Record<string, unknown>[] } }).props.banners;
+  // <> <ApercuAvertissements/> <HeroBanner/> </> — le <main> vient du gabarit
+  // de la vitrine, dont la page hérite désormais.
+  const enfants = (el as unknown as { props: { children: { props: Record<string, unknown> }[] } }).props.children;
+  return enfants[1].props.banners as Record<string, unknown>[];
+}
+
+/** Les avertissements posés au-dessus du rendu. */
+async function avertissementsRendus(revisionId = "rev-1") {
+  const el = await Page({ params: Promise.resolve({ revisionId }) });
+  const enfants = (el as unknown as { props: { children: { props: { avertissements: { message: string; bloquant: boolean }[] } }[] } }).props.children;
+  return enfants[0].props.avertissements;
 }
 
 /** La bannière RÉVISÉE dans ce carrousel. */
@@ -149,6 +157,50 @@ describe("aperçu de révision : le carrousel, pas la diapositive seule", () => 
     mocks.getBannerById.mockResolvedValue({ ...BANNIERE, is_active: 0, display_order: 1 });
     mocks.getRevision.mockResolvedValue(revision({ kind: "create" }));
     expect((await carrouselRendu()).map((b) => b.id)).toEqual([3, 7, 9]);
+  });
+});
+
+describe("aperçu de révision : ce qu'il DIT, et pas seulement ce qu'il montre", () => {
+  /**
+   * `applyRevision` refuse une révision qui n'est plus `pending`. Sans cette
+   * lecture, l'écran rendait une révision REJETÉE exactement comme une
+   * applicable — et l'administrateur jugeait un rendu qui ne se produira
+   * jamais.
+   */
+  it("dit qu'une révision rejetée ne peut plus être appliquée", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ status: "rejected" }));
+    const a = await avertissementsRendus();
+    expect(a[0].message).toMatch(/rejetée/);
+    expect(a[0].bloquant).toBe(true);
+  });
+
+  /**
+   * Et le second refus de `applyRevision` : la cible a bougé depuis le dépôt.
+   * L'aperçu superpose alors la proposition à un état qu'elle n'a jamais vu,
+   * donc il montre un rendu que l'application REFUSERAIT de produire.
+   */
+  it("dit que la cible a bougé depuis le dépôt", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ base_version: "2020-01-01 00:00:00" }));
+    mocks.getBannerById.mockResolvedValue({ ...BANNIERE, updated_at: "2026-10-04 12:00:00" });
+    const a = await avertissementsRendus();
+    expect(a.some((x) => /conflit/.test(x.message) && x.bloquant)).toBe(true);
+  });
+
+  it("ne dit rien quand la révision est en attente et la cible inchangée", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ base_version: "2026-10-04 12:00:00" }));
+    mocks.getBannerById.mockResolvedValue({ ...BANNIERE, updated_at: "2026-10-04 12:00:00" });
+    expect(await avertissementsRendus()).toEqual([]);
+  });
+
+  /**
+   * LE cas qui se lisait comme un bug : la révisée sort du carrousel, et
+   * `HeroBanner` rend `null` quand la liste est vide. L'écran était alors
+   * entièrement muet.
+   */
+  it("dit POURQUOI la bannière ne s'afficherait pas, au lieu d'un écran muet", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ payload: { ends_at: "2020-01-01 00:00:00" } }));
+    const a = await avertissementsRendus();
+    expect(a.some((x) => x.message.includes("NE S'AFFICHERAIT PAS") && x.message.includes("terminée"))).toBe(true);
   });
 });
 

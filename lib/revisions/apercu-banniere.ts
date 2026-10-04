@@ -10,8 +10,12 @@ import type { Banner } from "@/lib/db/types";
  * d'administration en 624 × 240 avec sa propre copie du CSS. Ni l'un ni
  * l'autre ne répond à « à quoi ressemblera ce que je propose ».
  *
- * TROIS RÈGLES, reprises de `applyRevision` et non réinventées — c'est la
- * seule façon qu'un aperçu ne mente pas :
+ * TROIS RÈGLES, REPRODUITES de `applyRevision` — pas appelées, et c'est la
+ * faiblesse connue de ce module : rien ne lie cette copie à l'original. Une
+ * nature ajoutée demain ne fera pas échouer la compilation ici. Le remède
+ * serait d'extraire de `applyRevision` une fonction pure « colonnes écrites
+ * par (nature, cible, payload) » et de l'appeler des deux côtés ; c'est un
+ * chantier sur le chemin d'écriture, et il n'est pas fait ici. Les règles :
  *
  * 1. Seules les colonnes de `BANNER_WRITABLE_COLUMN_LIST` sont reprises du
  *    payload. Une clé hors liste est refusée au DÉPÔT (`assertValidPayload`)
