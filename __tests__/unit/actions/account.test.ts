@@ -69,13 +69,13 @@ describe("updateProfile", () => {
 describe("changePassword", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // `mockReset` et pas seulement `clearAllMocks` : le premier efface
-    // l'IMPLÉMENTATION, le second seulement l'historique des appels. Un test
-    // plus bas fait lever `cookieStoreSet` (le cas « cookies() hors contexte
-    // mutable ») et cette implémentation survivait au `beforeEach` : le test
-    // des deux cookies, s'il tombait APRÈS, n'en voyait qu'un seul poser et
-    // échouait en annonçant une régression qui n'existait pas. Mesuré par
-    // `--sequence.shuffle`, quatre tirages sur cinq.
+    // `mockReset` efface l'IMPLÉMENTATION ; `clearAllMocks` ne le fait pas,
+    // et l'historique des appels est de toute façon déjà remis à zéro entre
+    // deux tests par Vitest. Un test plus bas fait LEVER `cookieStoreSet`
+    // (le cas « cookies() hors contexte mutable »), et cette implémentation
+    // survivait : le test des deux cookies, s'il tombait après, n'en voyait
+    // poser qu'un et annonçait une régression qui n'existait pas. Mesuré par
+    // `--sequence.shuffle` : quatre échecs sur six tirages sans cette ligne.
     mocks.cookieStoreSet.mockReset();
     mocks.getSession.mockResolvedValue(mockCustomerSession);
     mocks.changePasswordApi.mockResolvedValue({

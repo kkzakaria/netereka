@@ -14,19 +14,29 @@ export default defineConfig({
        * par un autre. Un test qui passe pour cette raison ne prouve rien —
        * le jour où le code régresse, rien ne garantit qu'il rougira.
        *
-       * Les trois causes trouvées, toutes de la même famille :
-       *  - une valeur `…Once` NON CONSOMMÉE survit à `vi.clearAllMocks()` et
-       *    est mangée par le test suivant, avant ce que son `beforeEach`
-       *    vient de poser (mesuré — `clearAllMocks` n'efface ni les
-       *    implémentations ni la file des `Once` ; `mockReset` fait les
-       *    deux) ;
-       *  - une implémentation persistante posée par un test (ici un
-       *    `cookieStoreSet` qui lève) et jamais rétablie ;
-       *  - un test qui suppose un état installé par un test précédent.
+       * CE QUI EST REMIS À ZÉRO ENTRE DEUX TESTS, ET CE QUI NE L'EST PAS.
+       * Mesuré sur cette version de Vitest : l'HISTORIQUE DES APPELS d'un
+       * mock est effacé automatiquement (un `m.mock.calls` repart à zéro
+       * sans qu'aucun hook ne le demande). Ne le sont PAS : l'implémentation
+       * posée par `mockImplementation` / `mockResolvedValue` / `mockRejectedValue`,
+       * et la file des valeurs `…Once` non consommées. `vi.clearAllMocks()`
+       * n'y change rien non plus — seul `mockReset()` efface les deux.
        *
-       * Garder le tirage au sort est ce qui empêche la quatrième d'arriver
-       * sans qu'on la voie. Quand un tirage rougit, Vitest imprime sa graine
-       * (`--sequence.seed=<n>`) : l'échec est rejouable à l'identique.
+       * De là, trois causes distinctes, une par fichier corrigé, et une
+       * seule famille : un état hors du test que personne ne remet à zéro.
+       *  - `admin-orders` : une valeur `…Once` non consommée, mangée par le
+       *    test suivant avant ce que son `beforeEach` vient de poser ;
+       *  - `account` : une implémentation persistante (un `cookieStoreSet`
+       *    qui lève) jamais rétablie ;
+       *  - `local-jwks` : un état global hors mock — le drapeau
+       *    `Symbol.for(...)` posé sur `globalThis` par la première pose.
+       *
+       * Garder le tirage au sort est ce qui empêche la QUATRIÈME CAUSE
+       * d'arriver sans qu'on la voie. Quand un tirage rougit, Vitest imprime
+       * sa graine : l'échec se rejoue à l'identique avec
+       * `--sequence.seed=<n>`. Un rouge intermittent se REJOUE, il ne se
+       * relance pas — et la CI ne doit jamais acquérir de `retry`, qui
+       * transformerait ce signal en bruit.
        */
       shuffle: true,
     },

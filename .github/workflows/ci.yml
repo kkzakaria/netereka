@@ -39,7 +39,35 @@ jobs:
         run: npm run lint
 
       - name: Tests
-        run: npm test
+        # LA GRAINE DOIT ÊTRE LISIBLE SANS FOUILLER LES JOURNAUX.
+        #
+        # L'ordre des tests est tiré au sort (`sequence.shuffle`,
+        # vitest.config.ts) : un rouge peut n'apparaître qu'à un tirage sur
+        # dix, et il se REJOUE avec `--sequence.seed=<n>`. Si la graine n'est
+        # pas sous la main, le réflexe devient « je relance », et une
+        # dépendance d'ordre réelle passe pour un caprice. On la met donc
+        # dans le résumé du travail, avec la marche à suivre.
+        #
+        # Et surtout : PAS de `retry` ici, jamais. Il transformerait ce
+        # signal en bruit.
+        run: |
+          set -o pipefail
+          # `set +e` indispensable : GitHub lance `run:` avec `bash -e`, donc
+          # un test rouge sortirait AVANT l'écriture du résumé — au moment
+          # précis où la graine sert à quelque chose.
+          set +e
+          npm test 2>&1 | tee /tmp/vitest.log
+          code=$?
+          set -e
+          graine=$(grep -oE 'seed "[0-9]+"' /tmp/vitest.log | head -1 | grep -oE '[0-9]+' || true)
+          {
+            echo "## Tests"
+            echo
+            echo "Graine du tirage : \`${graine:-inconnue}\`"
+            echo
+            echo 'Pour rejouer cet ordre exact : `npx vitest run --sequence.seed='"${graine:-N}"'`'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
 
       - name: Migration safety lint
         run: node scripts/check-migration-safety.mjs
