@@ -200,6 +200,52 @@ describe("transition : une composition sans image garde le visuel de la bannièr
   });
 });
 
+/**
+ * Ce dont la transition DÉPEND sans le dire.
+ *
+ * Elle décide « cette composition porte son image » en cherchant un
+ * `<img src="http(s)…">`. Deux autres façons d'afficher une image existent en
+ * HTML — une data URI, et un `background-image` CSS — et ni l'une ni l'autre
+ * n'est vue : une composition qui les emploierait retomberait en grille, avec
+ * l'image de la bannière affichée en plus de la sienne.
+ *
+ * Mesuré : ces deux cas ne peuvent pas exister, parce que l'assainisseur les
+ * retire à l'écriture. La transition est donc correcte PAR CE FAIT, et non
+ * par chance. Ces tests l'épinglent : élargir `isSafeUri` au schéma `data:`
+ * ou rouvrir `url()` dans le CSS d'auteur rendrait l'angle mort réel, et
+ * c'est ici que cela doit rougir — pas sur la page d'accueil.
+ */
+describe("les angles morts de la transition n'existent pas, et voici pourquoi", () => {
+  it("une data URI ne survit pas à l'assainissement : pas d'image invisible au lecteur", async () => {
+    const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
+    const stocke = sanitizeDescriptionHtml(
+      '<div><img src="data:image/png;base64,iVBORw0KGgo=" alt="x"></div>', "banner-7",
+    );
+    expect(stocke).not.toContain("data:");
+    expect(stocke).not.toContain("src=");
+  });
+
+  it("un background-image d'auteur ne survit pas non plus, ni en <style> ni en attribut", async () => {
+    const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
+    const url = "https://r2.netereka.ci/banners/7.png";
+    expect(sanitizeDescriptionHtml(`<style>.f{background-image:url(${url})}</style><div class="f">x</div>`, "banner-7"))
+      .not.toContain(url);
+    expect(sanitizeDescriptionHtml(`<div style="background-image:url(${url})">x</div>`, "banner-7"))
+      .not.toContain(url);
+  });
+
+  // Le corollaire : la SEULE façon qu'une composition a d'afficher une image
+  // est celle que la transition sait lire.
+  it("un <img src=https> est la seule forme qui passe, et elle est lue", async () => {
+    const { sanitizeDescriptionHtml } = await import("@/lib/utils/sanitize-html");
+    const { premiereImageDuContenu } = await import("@/lib/cloudflare/hero-preload-image");
+    const url = "https://r2.netereka.ci/banners/7.png";
+    const stocke = sanitizeDescriptionHtml(`<div><img src="${url}" alt="x"></div>`, "banner-7");
+    expect(stocke).toContain(url);
+    expect(premiereImageDuContenu(stocke)).toBe(url);
+  });
+});
+
 describe("repli intact : aucun content_html", () => {
   // Le repli sert les produits en vedette (id: null), qui n'ont rien à voir
   // avec les bannières. Sa grille à deux colonnes et sa colonne d'image
