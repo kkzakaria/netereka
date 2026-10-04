@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { textOf } from "@/lib/mcp/result";
 import type { DatabaseSync } from "node:sqlite";
 import { createMigratedDb, sqliteD1 } from "../../../helpers/sqlite-d1";
 import type { McpContext } from "@/lib/mcp/context";
@@ -24,7 +25,7 @@ import { listPendingRevisionHandles } from "@/lib/db/revisions";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const listBannersTool = bannerTools.find((t) => t.name === "list_banners")!;
-const appel = async () => JSON.parse((await listBannersTool.handler(ctx, {} as never)).content[0].text);
+const appel = async () => JSON.parse(textOf(await listBannersTool.handler(ctx, {} as never)));
 
 let db: DatabaseSync;
 

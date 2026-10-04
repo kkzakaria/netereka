@@ -80,6 +80,13 @@ export function imageTypeFromKey(key: string): string | null {
   return Object.entries(EXT_BY_TYPE).find(([, e]) => e === ext)?.[0] ?? null;
 }
 
+/** Le téléchargement seul : les octets en main, rien d'écrit.
+ *  `Uint8Array<ArrayBuffer>` et non `Uint8Array` tout court : le second
+ *  autorise un `SharedArrayBuffer`, que `new File([...])` refuse. */
+export type FetchBytesResult =
+  | { ok: true; bytes: Uint8Array<ArrayBuffer>; contentType: string; size: number }
+  | Exclude<FetchImageResult, { ok: true } | { ok: false; reason: "upload_failed" }>;
+
 export type FetchImageResult =
   | { ok: true; key: string; contentType: string; size: number }
   | {
@@ -243,6 +250,32 @@ export async function fetchAndUploadImageTo(
   if (!/^[a-z0-9][a-z0-9/_-]*$/i.test(keyPrefix) || keyPrefix.includes("//") || keyPrefix.endsWith("/")) {
     throw new Error(`[fetch-image] préfixe de clé invalide : « ${keyPrefix} »`);
   }
+
+  const got = await fetchImageBytes(url);
+  if (!got.ok) return got;
+
+  const ext = extensionPour(got.contentType);
+  const key = `${keyPrefix}/${nanoid()}.${ext}`;
+  const file = new File([got.bytes], key, { type: got.contentType });
+  try {
+    await uploadToR2(file, key);
+  } catch (err) {
+    console.error("[fetch-image] R2 upload failed for key", key, err);
+    return { ok: false, reason: "upload_failed" };
+  }
+  return { ok: true, key, contentType: got.contentType, size: got.size };
+}
+
+/**
+ * Le téléchargement SEUL : mêmes gardes, rien d'écrit nulle part.
+ *
+ * Extrait de `fetchAndUploadImageTo` pour `view_image`, qui doit REGARDER une
+ * image sans la faire entrer dans le stockage de la boutique. Un second
+ * chemin de téléchargement écrit à côté aurait rouvert, pour un outil de
+ * lecture, la garde SSRF, le plafond de 5 Mo, le délai de 10 s, la liste des
+ * types et le second essai sur AVIF — cinq protections à maintenir en double.
+ */
+export async function fetchImageBytes(url: string): Promise<FetchBytesResult> {
   let parsed: URL;
   try { parsed = new URL(url); } catch { return { ok: false, reason: "ssrf" }; }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, reason: "ssrf" };
@@ -363,17 +396,7 @@ export async function fetchAndUploadImageTo(
     let offset = 0;
     for (const c of chunks) { buffer.set(c, offset); offset += c.byteLength; }
 
-    const ext = extensionPour(ct);
-    const key = `${keyPrefix}/${nanoid()}.${ext}`;
-    const file = new File([buffer], key, { type: ct });
-    try {
-      await uploadToR2(file, key);
-    } catch (err) {
-      console.error("[fetch-image] R2 upload failed for key", key, err);
-      return { ok: false, reason: "upload_failed" };
-    }
-
-    return { ok: true, key, contentType: ct, size: total };
+    return { ok: true, bytes: buffer, contentType: ct, size: total };
   } finally {
     clearTimeout(timer);
   }

@@ -18,11 +18,13 @@ import {
 } from "@/lib/db/product-drafts";
 import { RevisionError, createRevision } from "@/lib/db/revisions";
 import { searchImages, type ImageSearchResult } from "@/lib/media/image-search";
-import { fetchAndUploadImage } from "@/lib/storage/fetch-image";
+import { ALLOWED_IMAGE_TYPES, fetchAndUploadImage, fetchImageBytes, type FetchBytesResult } from "@/lib/storage/fetch-image";
 import { deleteFromR2, readFromR2 } from "@/lib/storage/images";
 import type { McpContext } from "@/lib/mcp/context";
-import { ok, fail, type McpErrorCode, type ToolResult } from "@/lib/mcp/result";
+import { ok, okWithImage, fail, type McpErrorCode, type ToolResult } from "@/lib/mcp/result";
 import { generateProductImageShape, searchProductImagesShape } from "@/lib/validations/mcp-image";
+import { estCleDeStockage, viewImageShape } from "@/lib/validations/mcp-view-image";
+import { FETCH_FAILURES } from "@/lib/mcp/fetch-failures";
 import { defineTool, type ToolDefinition } from "./types";
 
 /**
@@ -252,14 +254,131 @@ function toolError(toolName: string, err: unknown): ToolResult {
   return fail("internal_error", "Erreur interne, réessayez ou contactez un administrateur");
 }
 
+/**
+ * Plafond de ce qu'on met dans une réponse MCP.
+ *
+ * L'image y voyage en base64, soit 4/3 de sa taille : 3,5 Mio d'octets font
+ * environ 4,7 Mo de corps. Le seuil est choisi PAR PRUDENCE pour rester sous
+ * les 5 Mo par image que l'API accepte — je n'ai pas vérifié si cette limite
+ * porte sur la chaîne base64 ou sur les octets décodés, et viser la plus
+ * stricte des deux lectures ne coûte rien.
+ *
+ * Il est plus bas que le plafond d'ÉCRITURE, 5 Mio, partagé par les cinq
+ * chemins du dépôt (`IMAGE_MAX_BYTES` et les quatre formulaires
+ * d'administration — bannières, images produit, Story, images de
+ * description). Un objet stocké peut donc être trop lourd à MONTRER tout en
+ * restant parfaitement utilisable : d'où un refus qui dit sa taille, au lieu
+ * d'un corps que l'autre bout rejetterait sans expliquer.
+ *
+ * Mesuré le 2026-10-04 : les quatre bannières en production pèsent entre
+ * 642 Ko et 1,54 Mo, et douze images produits tirées au hasard entre 7,5 Ko
+ * et 1,4 Mo. Aucune n'approche le seuil.
+ *
+ * Binaire comme `IMAGE_MAX_BYTES`, et affiché en Mio : un plafond décimal
+ * annoncé « 3,5 Mo » dans la description et rendu « 3418 Ko » dans le refus
+ * est le même nombre sous deux unités, ce que personne ne devrait avoir à
+ * deviner.
+ */
+const VIEW_MAX_BYTES = 3.5 * 1024 * 1024;
+
+const enMio = (octets: number) => (octets / 1024 / 1024).toFixed(1);
+
+/** base64 par tranches : `String.fromCharCode(...bytes)` sur plusieurs Mo
+ *  dépasse la limite d'arguments du moteur et lève un RangeError. Même
+ *  découpage que `toBase64` de lib/ai/image-generation.ts, qui n'est pas
+ *  exporté. */
+function enBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000;
+  let out = "";
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    out += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(out);
+}
+
 export const imageTools: ToolDefinition[] = [
+  defineTool({
+    name: "view_image",
+    description:
+      "REGARDE une image et te la montre : c'est le seul outil qui te la fait voir. Emploie-le avant de juger " +
+      "d'une couleur, d'un cadrage ou de la lisibilité d'un texte sur une image — les autres outils ne " +
+      "rendent que des URL et des clés, et une description ne remplace pas de voir. " +
+      "image accepte deux formes : une URL http(s) publique (un résultat de search_product_images, par " +
+      "exemple) ou une clé du stockage de la boutique telle que la rendent get_product (images[].url) et " +
+      "set_banner_image (image_key). Ne télécharge rien dans la boutique et n'attache rien : regarder ne " +
+      "modifie pas la fiche. JPEG, PNG et WebP ; 3,5 Mio au maximum — au-delà, l'image reste utilisable " +
+      "par les autres outils, elle ne peut simplement pas t'être montrée.",
+    inputSchema: viewImageShape,
+    handler: async (_ctx, input): Promise<ToolResult> => {
+      try {
+        const source = input.image;
+        let bytes: Uint8Array;
+        let contentType: string;
+
+        if (/^https?:\/\//i.test(source)) {
+          const got: FetchBytesResult = await fetchImageBytes(source);
+          if (!got.ok) {
+            const { code, message } = FETCH_FAILURES[got.reason];
+            return fail(code, got.reason === "bad_status" && got.status ? `${message} (HTTP ${got.status})` : message);
+          }
+          ({ bytes, contentType } = got);
+        } else {
+          // Une ligne héritée porte `/images/<clé>` : la même image sous une
+          // autre écriture, pas une forme fautive.
+          const key = r2KeyFromImageUrl(source);
+          if (!estCleDeStockage(key)) {
+            return fail(
+              "validation_error",
+              "Ni une URL http(s), ni une clé de stockage. Donne l'URL complète d'une image publique, ou la " +
+                "clé que t'a rendue un autre outil (products/… ou banners/…).",
+            );
+          }
+          const objet = await readFromR2(key);
+          if (!objet) return fail("not_found", `Aucune image stockée sous « ${key} ».`);
+          bytes = objet.bytes;
+          contentType = (objet.contentType ?? "").split(";")[0].trim().toLowerCase();
+          if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+            return fail(
+              "validation_error",
+              `L'objet stocké sous « ${key} » n'est pas une image que je sais montrer` +
+                `${contentType ? ` (type « ${contentType} »)` : ""}.`,
+            );
+          }
+        }
+
+        if (bytes.byteLength > VIEW_MAX_BYTES) {
+          // Le recours DIFFÈRE selon la source, et le taire enverrait l'agent
+          // réessayer là où rien ne peut réussir : une URL a des remplaçantes,
+          // une image déjà stockée n'en a pas.
+          const recours = /^https?:\/\//i.test(source)
+            ? "Choisis une autre image."
+            : "Cette image-là ne peut pas t'être montrée ; elle reste utilisable par les autres outils, " +
+              "inutile de réessayer.";
+          return fail(
+            "limit_exceeded",
+            `Image trop lourde pour être montrée : ${enMio(bytes.byteLength)} Mio, plafond ` +
+              `${enMio(VIEW_MAX_BYTES)} Mio. ${recours}`,
+          );
+        }
+
+        return okWithImage(
+          { base64: enBase64(bytes), mimeType: contentType },
+          { source, content_type: contentType, size_bytes: bytes.byteLength },
+        );
+      } catch (err) {
+        return toolError("view_image", err);
+      }
+    },
+  }),
+
   defineTool({
     name: "search_product_images",
     description:
       "Recherche des images de référence sur le web (Brave Image Search) pour voir à quoi ressemble réellement un " +
       "produit avant d'en rédiger la fiche ou d'en composer un visuel. NE TÉLÉCHARGE RIEN et n'attache rien : " +
-      "la réponse donne des URL directes d'images avec leur domaine source, à toi de juger lesquelles montrent " +
-      "bien le produit (préfère le site du fabricant). Pour attacher une de ces images, appelle " +
+      "la réponse donne des URL directes d'images avec leur domaine source. Tu ne les VOIS pas ici : passe " +
+      "l'url qui t'intéresse à view_image pour la regarder avant de juger qu'elle montre bien le produit " +
+      "(préfère le site du fabricant). Pour attacher une de ces images, appelle " +
       "add_product_images avec son url ; pour composer un visuel autour d'une photo déjà attachée, " +
       "generate_product_image. Une liste vide signifie « aucune image trouvée » ; une clé absente ou refusée " +
       "est une erreur, pas une liste vide.",

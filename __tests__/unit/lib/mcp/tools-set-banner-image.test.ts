@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { textOf } from "@/lib/mcp/result";
 import type { DatabaseSync } from "node:sqlite";
 import { createMigratedDb, sqliteD1 } from "../../../helpers/sqlite-d1";
 import type { McpContext } from "@/lib/mcp/context";
@@ -30,7 +31,7 @@ const ctx: McpContext = { user: { id: "admin-1", name: "Admin" , role: "admin" }
 const tool = bannerTools.find((t) => t.name === "set_banner_image")!;
 const appel = async (input: Record<string, unknown>) => {
   const r = await tool.handler(ctx, input as never);
-  return { isError: r.isError, out: JSON.parse(r.content[0].text) };
+  return { isError: r.isError, out: JSON.parse(textOf(r)) };
 };
 
 const SOURCE = "https://images.example.test/visuel.png";
