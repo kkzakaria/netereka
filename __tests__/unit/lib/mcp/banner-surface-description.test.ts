@@ -154,17 +154,28 @@ describe("image_url : clé de stockage non inscriptible, mais URL publique plaç
     expect(updateBannerShape).not.toHaveProperty("image_url");
   });
 
-  // L'asymétrie est volontaire et vaut d'être gardée : la colonne RESTE
-  // inscriptible côté révision, pour le jour où un outil d'image de bannière
-  // déposera une clé R2 qu'il aura lui-même produite. C'est la porte d'entrée
-  // qui est fermée, pas la colonne.
+  // L'asymétrie est volontaire : la colonne RESTE inscriptible côté
+  // révision, et c'est par là que `set_banner_image` dépose la clé R2 qu'il a
+  // lui-même produite. C'est la porte d'ENTRÉE TEXTE qui est fermée, pas la
+  // colonne — un champ libre y laisserait poser n'importe quelle adresse.
   it("mais la colonne reste inscriptible côté révision", () => {
     expect(BANNER_WRITABLE_COLUMN_LIST).toContain("image_url");
   });
 
-  it("la description dit qu'il n'est pas modifiable et par où passer", () => {
-    expect(descriptions).toMatch(/image_url n'est PAS modifiable/);
-    expect(descriptions).toMatch(/\/banners/);
+  /**
+   * La description disait « pour changer l'image, un administrateur passe
+   * par /banners ». C'était vrai jusqu'à `set_banner_image` ; le laisser
+   * aurait dissuadé l'agent d'employer l'outil fait pour lui — exactement le
+   * blocage que cette branche existe pour lever.
+   */
+  it("la description nomme l'outil qui pose une image, et ne renvoie plus l'agent à l'écran d'administration", () => {
+    expect(descriptions).toContain("set_banner_image");
+    expect(descriptions).not.toMatch(/image_url n'est PAS modifiable/);
+    expect(descriptions).not.toMatch(/un administrateur passe par \/banners/);
+  });
+
+  it("et dit que view_image sert à la regarder avant d'en juger", () => {
+    expect(descriptions).toContain("view_image");
   });
 
   it("et renvoie vers image_public_url pour la placer soi-même", () => {

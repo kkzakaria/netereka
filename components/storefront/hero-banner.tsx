@@ -9,6 +9,7 @@ import type { BadgeColor, Banner, ProductCardData } from "@/lib/db/types";
 import { formatPrice } from "@/lib/utils/format";
 import { getImageUrl } from "@/lib/utils/images";
 import { cn } from "@/lib/utils";
+import { premiereImageDuContenu } from "@/lib/cloudflare/hero-preload-image";
 
 interface Slide {
   /** Id de la bannière source, ou `null` pour le repli sur les produits en
@@ -142,7 +143,7 @@ export function HeroBanner({
               <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#00FF9C]/10 blur-3xl" />
               <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
 
-              {slide.content_html ? (
+              {slide.content_html && (premiereImageDuContenu(slide.content_html) !== null || !slide.image_url) ? (
                 /* TOILE LIBRE : la composition occupe la diapositive ENTIÈRE.
                    Aucune grille, aucune colonne, aucun emplacement — l'auteur
                    compose, comme une description libre de fiche produit depuis
@@ -178,6 +179,20 @@ export function HeroBanner({
                   dangerouslySetInnerHTML={{ __html: slide.content_html }}
                 />
               ) : (
+                /* TRANSITION, et non un gabarit qui résiste : une composition
+                   qui ne place AUCUNE image, sur une bannière qui en a une,
+                   garde la grille à deux colonnes — donc son visuel. Sans
+                   cela, livrer la toile libre retirait d'un coup la photo des
+                   quatre bannières en ligne (vérifié le 2026-10-04 : toutes
+                   portent un content_html, aucune ne porte d'<img>), c'est-à-dire
+                   l'élément LCP de la page d'accueil, pour une amélioration
+                   dont l'effet serait venu plus tard.
+                   Elle s'efface d'elle-même : dès que la composition contient
+                   une image, la toile libre reprend et rien n'est plus rendu à
+                   côté. Même lecture que le préchargement
+                   (`premiereImageDuContenu`), pour que les deux ne puissent pas
+                   diverger sur ce qu'est « une composition qui porte son image ».
+                   À retirer quand les quatre bannières auront été recomposées. */
                 <div className="grid h-full grid-cols-2 items-center gap-3 px-4 py-5 sm:gap-6 sm:px-6 sm:py-12">
                   {/* Ce repli sert DEUX cas distincts, pas un seul :
                      1. Les produits en vedette (buildSlides pose id: null) :

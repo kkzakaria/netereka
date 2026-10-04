@@ -13,7 +13,6 @@ import {
 import { fetchAndUploadImageTo } from "@/lib/storage/fetch-image";
 import { FETCH_FAILURES } from "@/lib/mcp/fetch-failures";
 import { deleteFromR2 } from "@/lib/storage/images";
-import { getImageUrl } from "@/lib/utils/images";
 import { withdrawReasonSchema } from "@/lib/validations/mcp-common";
 import { getPublicImageUrl } from "@/lib/utils/images";
 import { defineTool, type ToolDefinition } from "./types";
@@ -77,7 +76,11 @@ const BANNER_SURFACE =
   "nk-cta (bouton), nk-media (image fluide), nk-split (deux blocs côte à côte, si TU en veux), nk-grid. " +
   "Tu peux aussi écrire ton propre <style> : ses sélecteurs sont automatiquement restreints à cette " +
   "bannière, donc sans effet sur le reste de la page. " +
-  "(4) IMAGE — rien n'est affiché à côté de ton HTML : si tu veux une image, c'est à toi de la poser. " +
+  "(4) IMAGE — rien n'est affiché à côté de ton HTML dès que ta composition porte une <img> : si tu veux " +
+  "une image, c'est à toi de la poser. TRANSITION, le temps que les bannières d'avant soient recomposées : " +
+  "une composition qui ne place AUCUNE image, sur une bannière qui en a une, garde l'ancienne mise en page " +
+  "à deux colonnes et son visuel à droite — sans quoi ces bannières-là auraient perdu leur photo. Ajoute " +
+  "une <img> et la toile libre reprend, entière. " +
   "get_banner rend image_public_url, l'URL publique déjà résolue de l'image de la bannière : place-la où " +
   "tu veux (<img class=\"nk-media\" src=\"…\" alt=\"…\">). Pour en mettre une AUTRE, set_banner_image " +
   "la télécharge depuis une URL publique et te rend son adresse ; update_banner, lui, n'accepte pas " +

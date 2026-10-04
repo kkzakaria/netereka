@@ -111,6 +111,53 @@ describe("toile libre : content_html occupe la diapositive entière", () => {
   });
 });
 
+/**
+ * La transition, et pourquoi elle existe. Vérifié en production le
+ * 2026-10-04 : les quatre bannières actives portent toutes un `content_html`
+ * et une `image_url`, et AUCUNE ne porte d'`<img>` dans son HTML. Livrer la
+ * toile libre sans cette règle retirait donc d'un coup la photo des quatre
+ * diapositives — l'élément LCP de la page d'accueil — pour une amélioration
+ * dont l'effet serait venu plus tard, à la recomposition.
+ *
+ * Elle s'efface d'elle-même : dès qu'une composition porte son image, la
+ * toile libre reprend.
+ */
+describe("transition : une composition sans image garde le visuel de la bannière", () => {
+  const SANS_IMAGE = "<div class=\"nk-banner\"><h2 class=\"nk-banner-title\">Promo</h2><p>Texte seul</p></div>";
+
+  it("rend encore image_url à côté d'une composition qui n'en place aucune", () => {
+    const html = render([banner({ content_html: SANS_IMAGE, image_url: "banners/7-a.jpg" })]);
+    expect(nextImages(html)).toHaveLength(1);
+    expect(html).toContain("grid-cols-2");
+  });
+
+  // La bascule est automatique : rien à désactiver, rien à migrer.
+  it("cesse dès que la composition place son image", () => {
+    const html = render([banner({ content_html: COMPOSITION, image_url: "banners/7-a.jpg" })]);
+    expect(nextImages(html)).toEqual([]);
+    expect(html).not.toContain("grid-cols-2");
+  });
+
+  // Sans image à perdre, il n'y a rien à ménager : la toile libre tout de suite.
+  it("une bannière sans image_url passe en toile libre même sans <img>", () => {
+    const html = render([banner({ content_html: SANS_IMAGE, image_url: null })]);
+    expect(html).not.toContain("grid-cols-2");
+    expect(html).toContain("Texte seul");
+  });
+
+  /**
+   * Le rendu et le préchargement doivent lire « une composition porte son
+   * image » de la MÊME façon : s'ils divergent, on précharge une adresse que
+   * la page ne demandera pas, ce que cette branche existe justement pour
+   * corriger.
+   */
+  it("emploie la même lecture que le préchargement", async () => {
+    const { premiereImageDuContenu } = await import("@/lib/cloudflare/hero-preload-image");
+    expect(premiereImageDuContenu(SANS_IMAGE)).toBeNull();
+    expect(premiereImageDuContenu(COMPOSITION)).toBe("https://r2.example/banners/7-a.jpg");
+  });
+});
+
 describe("repli intact : aucun content_html", () => {
   // Le repli sert les produits en vedette (id: null), qui n'ont rien à voir
   // avec les bannières. Sa grille à deux colonnes et sa colonne d'image
