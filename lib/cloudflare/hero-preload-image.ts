@@ -31,6 +31,16 @@
  * `getActiveBanners`), donc chaque `src` a passé `isSafeUri`. Cette fonction ne
  * rattrape pas la sécurité, elle lit.
  */
+/** Les cinq entités que l'assainisseur peut laisser dans un attribut. */
+function decodeEntites(valeur: string): string {
+  return valeur
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#(?:39|x27);/g, "'");
+}
+
 export function premiereImageDuContenu(html: string | null | undefined): string | null {
   if (!html) return null;
 
@@ -48,7 +58,13 @@ export function premiereImageDuContenu(html: string | null | undefined): string 
     // Une data URI est déjà dans le document : la précharger ne ferait que
     // dupliquer des octets déjà téléchargés avec le HTML.
     if (/^data:/i.test(src)) continue;
-    return src;
+    // Les entités d'un attribut HTML ne font pas partie de l'URL : un
+    // `src="…?a=1&amp;b=2"` est demandé par le navigateur comme `&`. Les
+    // laisser ferait précharger une adresse que la page ne demande jamais —
+    // un préchargement perdu, et la divergence que ce module existe pour
+    // fermer. Nos propres URL (/cdn-cgi/image/…) n'en portent pas ; celle
+    // d'un auteur, oui.
+    return decodeEntites(src);
   }
   return null;
 }

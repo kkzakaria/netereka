@@ -62,6 +62,18 @@ export async function refreshHeroPreload(): Promise<void> {
       return;
     }
 
+    // `href` vient d'un HTML d'auteur. Un `<` , un `>` , une espace ou un
+    // caractère de contrôle casseraient l'en-tête `Link` : `Headers.set`
+    // lèverait dans le middleware, qui perdrait le préchargement ET
+    // journalerait une erreur en production, pour une valeur qu'on aurait pu
+    // refuser ici une fois pour toutes. L'assainisseur a déjà validé le
+    // SCHÉMA de l'URL ; ce contrôle-ci porte sur ce qu'un en-tête accepte.
+    if (!/^[^<>\s"']+$/.test(href)) {
+      console.warn("[hero-preload] URL impropre à un en-tête Link, préchargement abandonné", { href });
+      await kv.delete(KV_HERO_PRELOAD_KEY);
+      return;
+    }
+
     // Use a simple preload without imagesrcset/imagesizes: Cloudflare Early Hints garbles
     // multi-value imagesrcset (commas inside the quoted string are misread as Link header
     // value separators), causing the browser to skip the preload entirely.

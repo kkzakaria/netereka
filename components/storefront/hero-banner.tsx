@@ -27,6 +27,17 @@ interface Slide {
   bg_from: string;
   bg_to: string;
   content_html: string | null;
+  /**
+   * `true` quand la composition place elle-même une image — c'est ce qui
+   * décide de la toile libre.
+   *
+   * Calculé UNE FOIS ici, et non dans le rendu : `HeroBanner` se re-rend à
+   * chaque défilement d'Embla, et la lecture serait relancée pour chaque
+   * diapositive à chaque fois. Même lecture que le préchargement
+   * (`premiereImageDuContenu`), appelée au même endroit que la construction
+   * des diapositives.
+   */
+  porte_son_image: boolean;
 }
 
 /** Reconstruit la classe de scope posée sur le conteneur du HTML libre d'une
@@ -61,6 +72,7 @@ export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData
       bg_from: b.bg_gradient_from || "#183C78",
       bg_to: b.bg_gradient_to || "#1E4A8F",
       content_html: b.content_html,
+      porte_son_image: premiereImageDuContenu(b.content_html) !== null,
     }));
   }
 
@@ -77,6 +89,7 @@ export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData
     bg_from: "#183C78",
     bg_to: "#1E4A8F",
     content_html: null,
+    porte_son_image: false,
   }));
 }
 
@@ -143,7 +156,7 @@ export function HeroBanner({
               <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#00FF9C]/10 blur-3xl" />
               <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
 
-              {slide.content_html && (premiereImageDuContenu(slide.content_html) !== null || !slide.image_url) ? (
+              {slide.content_html && (slide.porte_son_image || !slide.image_url) ? (
                 /* TOILE LIBRE : la composition occupe la diapositive ENTIÈRE.
                    Aucune grille, aucune colonne, aucun emplacement — l'auteur
                    compose, comme une description libre de fiche produit depuis
@@ -207,7 +220,20 @@ export function HeroBanner({
                         modifiables depuis components/admin/banner-form.tsx et
                         visibles dans son aperçu, donc rendus ici tant que ce
                         cas existe. Seul CE cas disparaît quand la tâche 14
-                        est livrée. */}
+                        est livrée.
+                     3. LA TRANSITION : une composition qui ne place aucune
+                        image, sur une bannière qui en a une. La colonne
+                        gauche rend alors la COMPOSITION, exactement comme
+                        avant la libération — sans cette branche, la
+                        transition gardait le visuel et perdait le texte
+                        éditorial des quatre bannières en ligne, ce qui est
+                        pire que ce qu'elle évitait. */}
+                  {slide.content_html ? (
+                    <div
+                      className={buildBannerScopeClass(slide.id)}
+                      dangerouslySetInnerHTML={{ __html: slide.content_html }}
+                    />
+                  ) : (
                   <div className="rounded-xl border border-white/20 bg-white/10 p-3 shadow-2xl backdrop-blur-xl sm:rounded-2xl sm:p-8">
                     {slide.badge_text && (
                       <span
@@ -240,6 +266,7 @@ export function HeroBanner({
                       {slide.cta_text}
                     </Link>
                   </div>
+                  )}
 
                   {/* Emplacement d'image DU REPLI seulement : la colonne de
                       droite de son gabarit à deux colonnes. Une toile libre

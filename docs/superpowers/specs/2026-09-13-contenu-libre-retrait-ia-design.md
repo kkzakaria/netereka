@@ -249,6 +249,10 @@ Les imports de `lib/validations/product-story.ts` disparaissent ; le fichier est
 
 **Le preload LCP dépend d'`image_url`.** Il est préservé parce que l'image reste un champ structuré ; `refreshHeroPreload()` n'est pas modifié par ce lot.
 
+> **Faux depuis le 2026-10-04.** `refreshHeroPreload()` EST modifié : il précharge d'abord l'image que la composition désigne (`premiereImageDuContenu`), et ne retombe sur `image_url` transformée que si la composition n'en place aucune. Deux conséquences à connaître :
+> - le `<link rel="preload" imagesrcset>` du layout (`maybePreloadHero`, variantes par DPR) n'est émis que si l'URL stockée correspond au motif `format=auto/https://r2.netereka.ci/<clé>` du middleware. C'est le cas de l'URL que `get_banner` tend aux auteurs (`getCompositionImageUrl`), pas d'une URL quelconque : une composition qui pointe ailleurs garde le seul en-tête `Link`, ce qui est une dégradation, pas une panne ;
+> - l'URL tendue aux auteurs est DÉJÀ transformée. L'adresse brute d'un objet R2 pèse vingt fois plus (mesuré : 1 484 141 o contre 73 055 en `width=1280`), et c'est elle que le préchargement amplifierait en `fetchpriority=high`.
+
 ## Hors périmètre
 
 - La généralisation du serveur MCP aux produits publiés et aux bannières, et la transmission du vocabulaire au client IA (lot B, § 2.3).

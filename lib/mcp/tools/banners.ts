@@ -65,7 +65,9 @@ const BANNER_SURFACE =
   "guise. Rien d'autre que ton HTML n'est affiché sur la diapositive. Ce qui reste vrai de la surface : " +
   "(1) DIMENSIONS — toute la largeur du carrousel, et une hauteur FIXE qui dépend de la largeur d'écran : " +
   "280 px de haut en dessous de 640 px de large, 400 px de haut de 640 à 1023 px, 480 px de haut à partir " +
-  "de 1024 px. Ce qui dépasse est COUPÉ : compose pour la plus petite des trois. " +
+  "de 1024 px. Une marge intérieure est imposée (16 px, 24 px à partir de 640 px), donc la hauteur " +
+  "RÉELLEMENT utilisable est 248, 352 et 432 px. Ce qui dépasse est COUPÉ : compose pour la plus petite " +
+  "des trois. " +
   "Ta composition commence en haut à gauche ; pour la centrer, pose ta propre enveloppe " +
   "(height:100%;display:flex;align-items:center) — la surface ne centre rien pour toi. " +
   "(2) FOND — un dégradé à 135° entre deux couleurs réglables (bg_gradient_from, bg_gradient_to ; navy " +
@@ -79,8 +81,10 @@ const BANNER_SURFACE =
   "(4) IMAGE — rien n'est affiché à côté de ton HTML dès que ta composition porte une <img> : si tu veux " +
   "une image, c'est à toi de la poser. TRANSITION, le temps que les bannières d'avant soient recomposées : " +
   "une composition qui ne place AUCUNE image, sur une bannière qui en a une, garde l'ancienne mise en page " +
-  "à deux colonnes et son visuel à droite — sans quoi ces bannières-là auraient perdu leur photo. Ajoute " +
-  "une <img> et la toile libre reprend, entière. " +
+  "à deux colonnes — ta composition à gauche, son visuel à droite — sans quoi ces bannières-là auraient " +
+  "perdu leur photo. Deux façons d'en sortir : ajoute une <img> dans ta composition, ou, si tu veux " +
+  "délibérément toute la surface SANS image, appelle set_banner_image avec url: null pour retirer celle de " +
+  "la bannière. " +
   "get_banner rend image_public_url, l'URL de l'image de la bannière DÉJÀ optimisée (redimensionnée et " +
   "réencodée) : place-la telle quelle (<img class=\"nk-media\" src=\"…\" alt=\"…\">) et ne la reconstruis " +
   "jamais à partir de la clé — l'adresse brute du stockage pèse une vingtaine de fois plus lourd, sur une " +

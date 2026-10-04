@@ -30,6 +30,13 @@ vi.mock("next/link", () => ({
     createElement("a", { href }, children as never),
 }));
 
+// Espionné, non remplacé : le vrai comportement est celui qu'on veut, mais
+// le rendu doit prouver qu'il passe PAR LUI (voir le test de couplage).
+vi.mock("@/lib/cloudflare/hero-preload-image", async (importOriginal) => {
+  const vrai = await importOriginal<typeof import("@/lib/cloudflare/hero-preload-image")>();
+  return { premiereImageDuContenu: vi.fn(vrai.premiereImageDuContenu) };
+});
+
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import type { Banner, ProductCardData } from "@/lib/db/types";
 
@@ -131,6 +138,32 @@ describe("transition : une composition sans image garde le visuel de la bannièr
     expect(html).toContain("grid-cols-2");
   });
 
+  /**
+   * LE test que la première version de cette transition n'avait pas, et le
+   * défaut qu'il a révélé : la grille rendait le GABARIT React
+   * (badge/titre/sous-titre/prix/bouton), pas la composition. La transition
+   * gardait donc le visuel et PERDAIT le texte éditorial des quatre
+   * bannières en ligne — pire que ce qu'elle évitait. Elle doit reproduire
+   * l'ancien rendu, pas un autre.
+   */
+  it("rend la COMPOSITION dans la colonne gauche, pas le gabarit React", () => {
+    const html = render([
+      banner({ content_html: SANS_IMAGE, image_url: "banners/7-a.jpg", badge_text: "Nouveau", subtitle: "Gabarit" }),
+    ]);
+    expect(html).toContain("Texte seul");
+    expect(html).toContain("nk-banner-title");
+    // Le gabarit React ne doit PAS s'y substituer.
+    expect(html).not.toContain("Nouveau");
+    expect(html).not.toContain("Gabarit");
+  });
+
+  // La portée CSS suit la composition partout où elle est rendue : sans elle,
+  // le <style> de l'auteur n'a aucun effet dans la transition.
+  it("garde la classe de portée dans la transition aussi", () => {
+    const html = render([banner({ id: 42, content_html: SANS_IMAGE, image_url: "banners/42-a.jpg" })]);
+    expect(html).toContain("desc-banner-42");
+  });
+
   // La bascule est automatique : rien à désactiver, rien à migrer.
   it("cesse dès que la composition place son image", () => {
     const html = render([banner({ content_html: COMPOSITION, image_url: "banners/7-a.jpg" })]);
@@ -146,15 +179,24 @@ describe("transition : une composition sans image garde le visuel de la bannièr
   });
 
   /**
-   * Le rendu et le préchargement doivent lire « une composition porte son
+   * Le rendu et le préchargement doivent lire « cette composition porte son
    * image » de la MÊME façon : s'ils divergent, on précharge une adresse que
-   * la page ne demandera pas, ce que cette branche existe justement pour
-   * corriger.
+   * la page ne demandera pas — le défaut même que cette branche corrige.
+   *
+   * La première version de ce test appelait `premiereImageDuContenu` deux
+   * fois et vérifiait ses retours : elle prouvait que la FONCTION marche,
+   * pas que le rendu l'emploie. Remplacer l'appel dans `hero-banner.tsx` par
+   * une autre lecture l'aurait laissée verte. Ici le module est espionné :
+   * le rendu doit l'appeler, avec le HTML de la bannière.
    */
-  it("emploie la même lecture que le préchargement", async () => {
+  it("décide par la lecture du préchargement, et pas par la sienne", async () => {
     const { premiereImageDuContenu } = await import("@/lib/cloudflare/hero-preload-image");
-    expect(premiereImageDuContenu(SANS_IMAGE)).toBeNull();
-    expect(premiereImageDuContenu(COMPOSITION)).toBe("https://r2.example/banners/7-a.jpg");
+    const espion = vi.mocked(premiereImageDuContenu);
+    espion.mockClear();
+
+    render([banner({ content_html: SANS_IMAGE, image_url: "banners/7-a.jpg" })]);
+
+    expect(espion).toHaveBeenCalledWith(SANS_IMAGE);
   });
 });
 

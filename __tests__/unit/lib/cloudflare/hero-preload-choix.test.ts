@@ -19,6 +19,7 @@ vi.mock("@/lib/cloudflare/context", () => ({
 }));
 
 import { refreshHeroPreload } from "@/lib/cloudflare/hero-preload";
+import { KV_HERO_PRELOAD_KEY } from "@/lib/cloudflare/hero-preload-key";
 
 let db: DatabaseSync;
 let puts: [string, string][];
@@ -133,5 +134,27 @@ describe("le préchargement décrit la PREMIÈRE diapositive", () => {
     await refreshHeroPreload();
 
     expect(prechargement()).toContain("active.webp");
+  });
+});
+
+/**
+ * `href` finit dans un en-tête HTTP `Link`, et il vient d'un HTML d'auteur.
+ * Une espace ou un chevron y feraient lever `Headers.set` dans le
+ * middleware : préchargement perdu ET erreur journalée en production, pour
+ * une valeur qu'on pouvait refuser ici une fois pour toutes.
+ */
+describe("une URL impropre à un en-tête n'est pas stockée", () => {
+  it("refuse une URL contenant une espace, et efface l'entrée", async () => {
+    banniere({ id: 1, ordre: 0, titre: "A", content_html: '<img src="https://x.test/une image.png">' });
+    await refreshHeroPreload();
+    expect(prechargement()).toBeNull();
+    expect(deletes).toContain(KV_HERO_PRELOAD_KEY);
+  });
+
+  it("accepte l'URL transformée que nous tendons aux auteurs", async () => {
+    const src = "/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7.png";
+    banniere({ id: 1, ordre: 0, titre: "A", content_html: `<img src="${src}">` });
+    await refreshHeroPreload();
+    expect(prechargement()).toBe(`<${src}>; rel=preload; as=image; fetchpriority=high`);
   });
 });

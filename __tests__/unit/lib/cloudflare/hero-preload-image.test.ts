@@ -67,3 +67,21 @@ describe("premiereImageDuContenu", () => {
     expect(premiereImageDuContenu('<IMG SRC="/a.webp">')).toBe("/a.webp");
   });
 });
+
+/**
+ * Les entités d'un attribut HTML ne font pas partie de l'URL : le navigateur
+ * demande `&`, pas `&amp;`. Précharger le littéral, c'est précharger une
+ * adresse que la page ne demandera jamais — exactement la divergence que ce
+ * module existe pour fermer, réintroduite par un détail d'encodage.
+ */
+describe("entités HTML dans le src", () => {
+  it("rend l'URL que le navigateur demandera, pas le littéral de l'attribut", () => {
+    expect(premiereImageDuContenu('<img src="https://x.test/a.png?w=1&amp;h=2">'))
+      .toBe("https://x.test/a.png?w=1&h=2");
+  });
+
+  it("laisse intacte une URL sans entité", () => {
+    expect(premiereImageDuContenu('<img src="/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7.png">'))
+      .toBe("/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7.png");
+  });
+});
