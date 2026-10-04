@@ -20,14 +20,22 @@ name: Derive environnement
 # déterministes qui tournent dans ci.yml et dans le hook de pré-commit : ce qui
 # a besoin du réseau ici, c'est la lecture de la réalité, pas la logique.
 #
-# CE TRAVAIL ÉCHOUE AUJOURD'HUI, ET C'EST VOULU. Au 2026-10-02 la production
-# porte sept écarts de gravité « erreur » : quatre secrets (ANTHROPIC_API_KEY,
-# GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_ENGINE_ID, OPENROUTER_API_KEY) qu'aucun
-# code de ce dépôt ne lit, et trois index (idx_promo_codes_code,
-# idx_session_token, idx_user_email) présents en base et absents de
-# lib/db/schema.ts. Chacun se résout en tranchant : soit le déclarer, soit le
-# retirer. Tant que ce n'est pas tranché, ce travail reste rouge — c'est son
-# rôle, pas une panne. Ne le neutralisez pas par une liste d'exceptions : c'est
+# CE TRAVAIL ÉCHOUE ENCORE AUJOURD'HUI, ET C'EST VOULU. Au 2026-10-02 la
+# production portait SEPT écarts de gravité « erreur ». Trois ont été tranchés
+# en les DÉCLARANT : les index idx_promo_codes_code, idx_session_token et
+# idx_user_email, hérités des migrations écrites à la main, que le schéma
+# Drizzle ignorait et qu'une reconstruction de table aurait perdus.
+#
+# Restent QUATRE, mesurés le 2026-10-04 : les secrets ANTHROPIC_API_KEY,
+# GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_ENGINE_ID et OPENROUTER_API_KEY, posés
+# sur le Worker et lus par AUCUN code de ce dépôt (vérifié : les seules
+# occurrences sont ce commentaire et une donnée de test). Les déclarer dans
+# env.d.ts serait mentir — rien ne les lit ; la résolution est de les révoquer
+# chez leur fournisseur puis de les retirer du Worker, et c'est une décision
+# sur des identifiants vivants, pas un correctif de code.
+#
+# Tant que ce n'est pas tranché, ce travail reste rouge — c'est son rôle, pas
+# une panne. Ne le neutralisez pas par une liste d'exceptions : c'est
 # exactement ce qui a permis à la clé étrangère d'audit_log de survivre un an.
 
 on:
