@@ -88,11 +88,17 @@ describe("set_banner_image : ce qui est déposé", () => {
    * `<img src="…">` s'il compose la bannière en HTML libre. Une clé R2 brute
    * n'y afficherait rien.
    */
-  it("rend une URL absolue, utilisable telle quelle dans du HTML", async () => {
+  it("rend une URL déjà optimisée, utilisable telle quelle dans du HTML", async () => {
+    vi.stubEnv("NODE_ENV", "production");
     banniere(7);
     const { out } = await appel({ id: 7, url: SOURCE });
     expect(out.image_key).toBe("banners/7/abc.png");
-    expect(out.image_src).toBe("https://r2.netereka.ci/banners/7/abc.png");
+    // Transformée, pas l'adresse brute : c'est cette URL que l'auteur pose
+    // dans son <img>, donc celle que le visiteur télécharge.
+    expect(out.image_src).toBe(
+      "/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7/abc.png",
+    );
+    vi.unstubAllEnvs();
   });
 
   /**

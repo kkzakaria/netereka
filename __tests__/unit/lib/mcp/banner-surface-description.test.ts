@@ -191,11 +191,25 @@ describe("couplage : get_banner renvoie bien l'URL publique qu'il promet", () =>
     return JSON.parse((res as { content: { text: string }[] }).content[0].text);
   };
 
-  it("résout la clé de stockage en URL utilisable dans un src", async () => {
+  /**
+   * L'URL rendue est DÉJÀ transformée, et ce n'est pas un détail : mesuré le
+   * 2026-10-04 sur une bannière de production, l'adresse brute du stockage
+   * sert 1 484 141 octets contre 73 055 en `width=1280,format=auto`. React
+   * passait déjà par cette transformation pour les images qu'il rend ; une
+   * composition libre écrit un `<img>` nu, donc c'est l'URL qu'on lui tend
+   * qui part en ligne.
+   */
+  it("résout la clé en URL DÉJÀ optimisée, pas en adresse brute du stockage", async () => {
+    vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_R2_URL", "https://r2.netereka.ci");
     mocks.getBannerById.mockResolvedValue({ id: 7, image_url: "banners/7-a.jpg" });
+
     const { banner } = await answer();
-    expect(banner.image_public_url).toBe("https://r2.netereka.ci/banners/7-a.jpg");
+
+    expect(banner.image_public_url).toBe(
+      "/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7-a.jpg",
+    );
+    expect(banner.image_public_url).not.toBe("https://r2.netereka.ci/banners/7-a.jpg");
     // Sans retirer la clé : c'est elle que porte la ligne en base.
     expect(banner.image_url).toBe("banners/7-a.jpg");
     vi.unstubAllEnvs();

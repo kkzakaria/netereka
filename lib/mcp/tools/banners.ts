@@ -14,7 +14,7 @@ import { fetchAndUploadImageTo } from "@/lib/storage/fetch-image";
 import { FETCH_FAILURES } from "@/lib/mcp/fetch-failures";
 import { deleteFromR2 } from "@/lib/storage/images";
 import { withdrawReasonSchema } from "@/lib/validations/mcp-common";
-import { getPublicImageUrl } from "@/lib/utils/images";
+import { getCompositionImageUrl } from "@/lib/utils/images";
 import { defineTool, type ToolDefinition } from "./types";
 
 /**
@@ -81,8 +81,10 @@ const BANNER_SURFACE =
   "une composition qui ne place AUCUNE image, sur une bannière qui en a une, garde l'ancienne mise en page " +
   "à deux colonnes et son visuel à droite — sans quoi ces bannières-là auraient perdu leur photo. Ajoute " +
   "une <img> et la toile libre reprend, entière. " +
-  "get_banner rend image_public_url, l'URL publique déjà résolue de l'image de la bannière : place-la où " +
-  "tu veux (<img class=\"nk-media\" src=\"…\" alt=\"…\">). Pour en mettre une AUTRE, set_banner_image " +
+  "get_banner rend image_public_url, l'URL de l'image de la bannière DÉJÀ optimisée (redimensionnée et " +
+  "réencodée) : place-la telle quelle (<img class=\"nk-media\" src=\"…\" alt=\"…\">) et ne la reconstruis " +
+  "jamais à partir de la clé — l'adresse brute du stockage pèse une vingtaine de fois plus lourd, sur une " +
+  "boutique où la donnée mobile se paie. Pour en mettre une AUTRE, set_banner_image " +
   "la télécharge depuis une URL publique et te rend son adresse ; update_banner, lui, n'accepte pas " +
   "image_url — c'est une clé de stockage, et un champ texte y laisserait poser n'importe quelle adresse. " +
   "Et avant de juger d'une couleur ou d'un cadrage, REGARDE l'image avec view_image.";
@@ -211,7 +213,7 @@ export const bannerTools: ToolDefinition[] = [
               `/revisions/${revisionId}.`,
             ),
             image_key: fetched.key,
-            image_src: getPublicImageUrl(fetched.key),
+            image_src: getCompositionImageUrl(fetched.key),
           });
         } catch (err) {
           // Le dépôt a échoué APRÈS le téléversement : sans ce nettoyage,
@@ -257,7 +259,7 @@ export const bannerTools: ToolDefinition[] = [
           // théorique, l'appelant ne pouvant pas adresser une clé R2 dans un
           // src. `getPublicImageUrl` rend null plutôt qu'un `/images/<clé>`
           // cassé quand NEXT_PUBLIC_R2_URL manque au build.
-          banner: { ...banner, image_public_url: getPublicImageUrl(banner.image_url) },
+          banner: { ...banner, image_public_url: getCompositionImageUrl(banner.image_url) },
           pending_revisions: pending.map((r) => ({ id: r.id, kind: r.kind, created_at: r.created_at })),
         });
       } catch (err) {
