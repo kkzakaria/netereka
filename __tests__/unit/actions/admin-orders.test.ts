@@ -69,6 +69,14 @@ const mockOrder = {
 describe("updateOrderStatus", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `mockReset` avant de ré-armer, et pas seulement `clearAllMocks` : une
+    // valeur `…Once` NON CONSOMMÉE survit au `clearAllMocks` et est mangée
+    // par le test suivant, AVANT ce que ce hook vient de poser. Mesuré. Ce
+    // fichier en pose quinze, dont certaines dans des tests qui n'appellent
+    // pas la fonction autant de fois qu'ils en ont armé — d'où deux tests
+    // qui rougissaient selon l'ordre d'exécution (`--sequence.shuffle`).
+    mocks.queryFirst.mockReset();
+    mocks.execute.mockReset();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.queryFirst
       .mockResolvedValueOnce(mockOrder)
@@ -251,6 +259,14 @@ describe("updateOrderStatus", () => {
 describe("cancelOrderAdmin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `mockReset` avant de ré-armer, et pas seulement `clearAllMocks` : une
+    // valeur `…Once` NON CONSOMMÉE survit au `clearAllMocks` et est mangée
+    // par le test suivant, AVANT ce que ce hook vient de poser. Mesuré. Ce
+    // fichier en pose quinze, dont certaines dans des tests qui n'appellent
+    // pas la fonction autant de fois qu'ils en ont armé — d'où deux tests
+    // qui rougissaient selon l'ordre d'exécution (`--sequence.shuffle`).
+    mocks.queryFirst.mockReset();
+    mocks.execute.mockReset();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.queryFirst
       .mockResolvedValueOnce(mockOrder)
@@ -315,6 +331,14 @@ describe("cancelOrderAdmin", () => {
 describe("processReturn", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `mockReset` avant de ré-armer, et pas seulement `clearAllMocks` : une
+    // valeur `…Once` NON CONSOMMÉE survit au `clearAllMocks` et est mangée
+    // par le test suivant, AVANT ce que ce hook vient de poser. Mesuré. Ce
+    // fichier en pose quinze, dont certaines dans des tests qui n'appellent
+    // pas la fonction autant de fois qu'ils en ont armé — d'où deux tests
+    // qui rougissaient selon l'ordre d'exécution (`--sequence.shuffle`).
+    mocks.queryFirst.mockReset();
+    mocks.execute.mockReset();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.queryFirst
       .mockResolvedValueOnce({ ...mockOrder, status: "delivered" })
@@ -357,6 +381,14 @@ describe("processReturn", () => {
 describe("exportOrdersCSV", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `mockReset` avant de ré-armer, et pas seulement `clearAllMocks` : une
+    // valeur `…Once` NON CONSOMMÉE survit au `clearAllMocks` et est mangée
+    // par le test suivant, AVANT ce que ce hook vient de poser. Mesuré. Ce
+    // fichier en pose quinze, dont certaines dans des tests qui n'appellent
+    // pas la fonction autant de fois qu'ils en ont armé — d'où deux tests
+    // qui rougissaient selon l'ordre d'exécution (`--sequence.shuffle`).
+    mocks.queryFirst.mockReset();
+    mocks.execute.mockReset();
     mocks.getSession.mockResolvedValue(mockAdminSession);
   });
 
@@ -387,6 +419,14 @@ describe("exportOrdersCSV", () => {
 describe("updateInternalNotes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `mockReset` avant de ré-armer, et pas seulement `clearAllMocks` : une
+    // valeur `…Once` NON CONSOMMÉE survit au `clearAllMocks` et est mangée
+    // par le test suivant, AVANT ce que ce hook vient de poser. Mesuré. Ce
+    // fichier en pose quinze, dont certaines dans des tests qui n'appellent
+    // pas la fonction autant de fois qu'ils en ont armé — d'où deux tests
+    // qui rougissaient selon l'ordre d'exécution (`--sequence.shuffle`).
+    mocks.queryFirst.mockReset();
+    mocks.execute.mockReset();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
   });
@@ -410,6 +450,14 @@ describe("updateInternalNotes", () => {
 describe("assignDeliveryPerson", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `mockReset` avant de ré-armer, et pas seulement `clearAllMocks` : une
+    // valeur `…Once` NON CONSOMMÉE survit au `clearAllMocks` et est mangée
+    // par le test suivant, AVANT ce que ce hook vient de poser. Mesuré. Ce
+    // fichier en pose quinze, dont certaines dans des tests qui n'appellent
+    // pas la fonction autant de fois qu'ils en ont armé — d'où deux tests
+    // qui rougissaient selon l'ordre d'exécution (`--sequence.shuffle`).
+    mocks.queryFirst.mockReset();
+    mocks.execute.mockReset();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
   });

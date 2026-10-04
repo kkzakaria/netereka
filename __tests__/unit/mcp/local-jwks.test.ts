@@ -25,6 +25,12 @@ describe("serveJwksLocally", () => {
   });
 
   it("n'empile pas l'enveloppe quand on redéclare une source", async () => {
+    // L'enveloppe est posée ICI, et pas supposée venir d'un test précédent.
+    // Sans cette première déclaration, `before` est le `fetch` simulé et la
+    // pose suivante le remplace légitimement : le test échouait dès qu'il
+    // tombait en tête d'exécution (`--sequence.shuffle`), en annonçant une
+    // régression qui n'existait pas.
+    serveJwksLocally(URL_JWKS, async () => ({ keys: [{ kid: "initiale" }] }));
     const before = globalThis.fetch;
     serveJwksLocally(URL_JWKS, async () => ({ keys: [] }));
     expect(globalThis.fetch).toBe(before);
