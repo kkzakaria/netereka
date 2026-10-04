@@ -307,7 +307,9 @@ export const imageTools: ToolDefinition[] = [
       "exemple) ou une clé du stockage de la boutique telle que la rendent get_product (images[].url) et " +
       "set_banner_image (image_key). Ne télécharge rien dans la boutique et n'attache rien : regarder ne " +
       "modifie pas la fiche. JPEG, PNG et WebP ; 3,5 Mio au maximum — au-delà, l'image reste utilisable " +
-      "par les autres outils, elle ne peut simplement pas t'être montrée.",
+      "par les autres outils, elle ne peut simplement pas t'être montrée. Un AVIF ne peut pas t'être montré " +
+      "non plus (48 images anciennes de la boutique en sont) : la boutique les affiche, mais elles ne " +
+      "traversent pas ce canal.",
     inputSchema: viewImageShape,
     handler: async (_ctx, input): Promise<ToolResult> => {
       try {
@@ -421,7 +423,10 @@ export const imageTools: ToolDefinition[] = [
       "n'apparaisse en boutique. Chaque image est FACTURÉE : la génération est bornée par un plafond mensuel et " +
       "par un quota de rafale, et un dépassement est un échec explicite qui dit l'usage et le plafond. Refusé " +
       "avant toute dépense si le produit atteindrait 12 images. prompt : ce qu'il faut composer (décor, " +
-      "lumière, cadrage), 10 à 1000 caractères.",
+      "lumière, cadrage), 10 à 1000 caractères. " +
+      "La photo SOURCE doit être un JPEG, un PNG ou un WebP : 48 images anciennes de la boutique sont en AVIF " +
+      "et seront refusées comme base d'édition — prends-en une autre du même produit. Le résultat, lui, " +
+      "redescend par le même chemin que add_product_images et suit les mêmes règles de format.",
     inputSchema: generateProductImageShape,
     handler: async (ctx, input): Promise<ToolResult> => {
       const productId = input.product_id;

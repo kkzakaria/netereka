@@ -240,8 +240,14 @@ export const productTools: ToolDefinition[] = [
   defineTool({
     name: "add_product_images",
     description:
-      "Télécharge 1 à 8 images depuis des URL http(s) (≤5 Mo chacune, 12 max par produit) vers le stockage de la " +
-      "boutique et les attache au produit. Sur un brouillon : attachées directement, la première devient l'image " +
+      "Télécharge 1 à 8 images depuis des URL http(s) (JPEG, PNG ou WebP ; ≤5 Mo chacune, 12 max par produit) " +
+      "vers le stockage de la boutique et les attache au produit. " +
+      "L'AVIF est REFUSÉ (reason bad_content_type) : le redimensionneur de la vitrine ne sait pas le lire, et " +
+      "l'image serait invisible en ligne — change d'URL, la convertir n'est pas de ton ressort. " +
+      "Le format est décidé par les OCTETS téléchargés, pas par l'extension de l'URL ni par ce que l'hôte " +
+      "déclare : une adresse en .png qui sert de l'AVIF est refusée comme telle. " +
+      "Regarde une image avec view_image avant de l'attacher — c'est le seul moyen de juger qu'elle montre " +
+      "bien le produit. Sur un brouillon : attachées directement, la première devient l'image " +
       "principale. Sur une fiche publiée : si le total (images déjà présentes + celles-ci) dépasserait 12, refusé " +
       "avant tout téléchargement (limit_exceeded) — retirez des images ou déposez-en moins. Sinon, les images sont " +
       "téléversées immédiatement (le résultat les porte comme sur un brouillon), puis une révision est déposée pour " +

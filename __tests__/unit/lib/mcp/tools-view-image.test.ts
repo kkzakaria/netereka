@@ -205,3 +205,41 @@ describe("view_image : l'image traverse vraiment un client MCP", () => {
     }
   });
 });
+
+/**
+ * Ce que les descriptions DOIVENT dire, et qu'elles ne disaient pas.
+ *
+ * Un assistant en service a vérifié les outils le 2026-10-04 et conclu :
+ * « les descriptions ne mentionnent aucune correction du format .avif, je ne
+ * sais donc pas si le problème est réglé » — puis a proposé de le TESTER en
+ * déposant une révision sur une fiche publiée. Une règle que l'appelant ne
+ * peut découvrir qu'en échouant, ou en expérimentant sur la boutique, n'est
+ * pas une règle annoncée.
+ */
+describe("les règles de format sont dites, pas seulement appliquées", () => {
+  it("add_product_images nomme les formats acceptés ET l'AVIF refusé", async () => {
+    const { productTools } = await import("@/lib/mcp/tools/products");
+    const d = productTools.find((t) => t.name === "add_product_images")!.description;
+    expect(d).toMatch(/JPEG, PNG ou WebP/);
+    expect(d).toMatch(/AVIF est REFUSÉ/);
+    // Et le MOTIF : sans lui, le modèle tente une conversion qui n'est pas
+    // de son ressort, ou cherche une autre URL du même fichier.
+    expect(d).toMatch(/redimensionneur/);
+    // Et la raison pour laquelle changer d'extension ne sert à rien.
+    expect(d).toMatch(/OCTETS/);
+  });
+
+  it("generate_product_image dit que la source AVIF sera refusée", async () => {
+    const { imageTools } = await import("@/lib/mcp/tools/images");
+    const d = imageTools.find((t) => t.name === "generate_product_image")!.description;
+    expect(d).toMatch(/JPEG, un PNG ou un WebP/);
+    expect(d).toMatch(/48 images anciennes/);
+  });
+
+  it("view_image dit qu'un AVIF ne peut pas être montré, et que la boutique l'affiche quand même", async () => {
+    const { imageTools } = await import("@/lib/mcp/tools/images");
+    const d = imageTools.find((t) => t.name === "view_image")!.description;
+    expect(d).toMatch(/AVIF ne peut pas t'être montré/);
+    expect(d).toMatch(/la boutique les affiche/);
+  });
+});
