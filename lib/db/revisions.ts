@@ -837,6 +837,32 @@ export async function listPendingRevisions(target?: RevisionTarget, targetId?: s
   return rows.map(toRevisionRecord);
 }
 
+/** Une révision en attente réduite à ce qu'une LISTE en montre. */
+export interface PendingRevisionHandle {
+  id: string;
+  target_id: string;
+  kind: RevisionKind;
+}
+
+/**
+ * Les mêmes révisions que `listPendingRevisions`, sans leur `payload`.
+ *
+ * Ce payload porte le `content_html` proposé — jusqu'à 512 Ko par révision, et
+ * leur nombre n'est borné par rien. `list_banners` n'en garde que l'id et le
+ * genre : les charger tous pour les jeter ferait grossir la réponse D1 et la
+ * mémoire du Worker avec la file d'attente.
+ */
+export async function listPendingRevisionHandles(target: RevisionTarget): Promise<PendingRevisionHandle[]> {
+  const db = await getDrizzle();
+  const rows = await db
+    .select({ id: contentRevisions.id, target_id: contentRevisions.target_id, kind: contentRevisions.kind })
+    .from(contentRevisions)
+    .where(and(eq(contentRevisions.status, "pending"), eq(contentRevisions.target_type, target)))
+    .orderBy(desc(contentRevisions.created_at))
+    .all();
+  return rows.map((r) => ({ ...r, kind: r.kind as RevisionKind }));
+}
+
 /** Une révision par id, quel que soit son statut, ou `null` si absente. */
 export async function getRevision(id: string): Promise<RevisionRecord | null> {
   const db = await getDrizzle();

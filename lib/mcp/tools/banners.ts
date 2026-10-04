@@ -1,6 +1,6 @@
 import { DraftError, type DraftAudit } from "@/lib/db/product-drafts";
-import { deleteBannerRow, getBannerById, insertInactiveBanner } from "@/lib/db/banners";
-import { RevisionError, createRevision, listPendingRevisions } from "@/lib/db/revisions";
+import { deleteBannerRow, getBannerById, insertInactiveBanner, listBanners } from "@/lib/db/banners";
+import { RevisionError, createRevision, listPendingRevisions, listPendingRevisionHandles } from "@/lib/db/revisions";
 import type { McpContext } from "@/lib/mcp/context";
 import { ok, fail, type ToolResult } from "@/lib/mcp/result";
 import {
@@ -50,6 +50,46 @@ function revisionAnswer(revisionId: string, status: string, message: string) {
 }
 
 export const bannerTools: ToolDefinition[] = [
+  defineTool({
+    name: "list_banners",
+    description:
+      "Liste TOUTES les bannières du hero, dans l'ordre du carrousel, avec leur identifiant. Commence par " +
+      "là quand tu ne connais pas le numéro d'une bannière : get_banner, update_banner et withdraw_banner " +
+      "en exigent un, et aucun outil de lecture ne le donne. " +
+      "carousel_position est le rang de la diapositive à partir de 1, pas l'identifiant : quand un " +
+      "administrateur parle de « la première bannière », traduis-le en carousel_position puis lis l'id sur " +
+      "la même ligne. Une bannière qui ne s'affiche pas a carousel_position à null et not_displayed_because " +
+      "donne TOUTES les raisons (désactivée, pas encore commencée, terminée) — il peut y en avoir deux, et " +
+      "lever la première ne suffit alors pas à la faire revenir. " +
+      "Le contenu HTML n'est pas renvoyé, seulement has_content_html : relis-le avec get_banner si tu en as " +
+      "besoin. pending_revisions liste les modifications DÉJÀ déposées sur cette bannière et pas encore " +
+      "tranchées par un administrateur : si elle n'est pas vide, vérifie avec get_banner qu'elle ne couvre " +
+      "pas déjà ce que tu allais proposer — plusieurs révisions peuvent coexister, c'est l'administrateur " +
+      "qui choisit celle qu'il applique. " +
+      "count compte toutes les bannières, displayed_count les seules affichées. Aucun argument.",
+    inputSchema: {},
+    handler: async () => {
+      try {
+        const [rows, pending] = await Promise.all([listBanners(), listPendingRevisionHandles("banner")]);
+        // Les révisions en attente par bannière : c'est ce qui dit à l'appelant
+        // qu'une modification est déjà déposée, avant d'en déposer une seconde.
+        const enAttente = new Map<string, { id: string; kind: string }[]>();
+        for (const r of pending) {
+          const liste = enAttente.get(r.target_id) ?? [];
+          liste.push({ id: r.id, kind: r.kind });
+          enAttente.set(r.target_id, liste);
+        }
+        return ok({
+          banners: rows.map((b) => ({ ...b, pending_revisions: enAttente.get(String(b.id)) ?? [] })),
+          count: rows.length,
+          displayed_count: rows.filter((b) => b.carousel_position !== null).length,
+        });
+      } catch (err) {
+        return toolError("list_banners", err);
+      }
+    },
+  }),
+
   defineTool({
     name: "get_banner",
     description:

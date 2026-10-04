@@ -54,8 +54,8 @@ beforeEach(() => {
 });
 
 describe("bannerTools", () => {
-  it("expose get_banner, update_banner, create_banner, withdraw_banner", () => {
-    expect(bannerTools.map((t) => t.name).sort()).toEqual(["create_banner", "get_banner", "update_banner", "withdraw_banner"]);
+  it("expose list_banners, get_banner, update_banner, create_banner, withdraw_banner", () => {
+    expect(bannerTools.map((t) => t.name).sort()).toEqual(["create_banner", "get_banner", "list_banners", "update_banner", "withdraw_banner"]);
   });
 
   it("get_banner : not_found si la bannière n'existe pas", async () => {
@@ -133,6 +133,23 @@ describe("bannerTools", () => {
     expect(r.isError).toBe(true);
     expect(parse(r).code).toBe("internal_error");
     expect(allStatements().some((s) => /^delete from "banners"/i.test(s.sql) && s.params.includes(7))).toBe(true);
+  });
+
+  /**
+   * Les assertions `some(isBannerRowWrite)).toBe(false)` ci-dessus ne valent
+   * que si le motif reconnaît VRAIMENT le SQL de Drizzle. Le DELETE est prouvé
+   * par le test précédent ; l'UPDATE ne l'était par rien — un jour où Drizzle
+   * change de guillemets, ces assertions deviendraient vides sans rougir.
+   * Ici le SQL est produit par Drizzle, pas écrit à la main.
+   */
+  it("le motif de non-écriture reconnaît l'UPDATE que Drizzle produirait", async () => {
+    const { drizzle } = await import("drizzle-orm/d1");
+    const { banners } = await import("@/lib/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const sql = drizzle(d1.current!.binding as never)
+      .update(banners).set({ title: "x" }).where(eq(banners.id, 42)).toSQL().sql;
+
+    expect(isBannerRowWrite({ sql, params: [] })).toBe(true);
   });
 
   it("refuse un lien non relatif", () => {
