@@ -8,7 +8,8 @@ import {
   lireArguments,
   resoudreVersion,
   valeurDeSurcharge,
-  verifierVersionServie,
+  deploiementCourant,
+  lireVerdict,
   type PartDeVersion,
   type VersionConnue,
 } from "@/lib/release/observation";
@@ -85,7 +86,10 @@ describe("valeurDeSurcharge", () => {
   });
 
   it("lève sur un nom de Worker qui pourrait casser le dictionnaire", () => {
-    for (const mauvais of ['nete"reka', "nete reka", "", "-netereka", "nete;reka"]) {
+    // La MAJUSCULE compte : les clés d'un dictionnaire RFC 8941 sont des
+    // `lcalpha`, donc une majuscule rend l'en-tête inanalysable et Cloudflare
+    // l'ignore — l'échec silencieux que cette validation existe pour fermer.
+    for (const mauvais of ['nete"reka', "nete reka", "", "-netereka", "nete;reka", "Netereka", "NETEREKA"]) {
       expect(() => valeurDeSurcharge(mauvais, A), mauvais).toThrow();
     }
   });
@@ -137,26 +141,59 @@ describe("commandeDeploiementAZero", () => {
   });
 });
 
-describe("verifierVersionServie", () => {
-  it("conforme quand la version servie est celle demandée", () => {
-    expect(verifierVersionServie(A, A)).toEqual({ conforme: true });
-    expect(verifierVersionServie(A, A.toUpperCase())).toEqual({ conforme: true });
+describe("lireVerdict", () => {
+  it("conforme quand l'endpoint le dit", () => {
+    expect(lireVerdict({ conforme: true })).toEqual({ conforme: true });
   });
 
-  it("nomme les DEUX versions quand la surcharge n'a pas pris", () => {
-    const v = verifierVersionServie(A, B);
+  it("dit que le canari a routé la requête quand l'endpoint infirme", () => {
+    const v = lireVerdict({ conforme: false });
     expect(v.conforme).toBe(false);
     if (!v.conforme) {
       expect(v.message).toContain("NON appliquée");
-      expect(v.message).toContain("22acd5bd");
-      expect(v.message).toContain("3cd3cc08");
+      expect(v.message).toContain("canari");
     }
   });
 
-  it("distingue « pas de version rendue » de « mauvaise version »", () => {
-    const v = verifierVersionServie(A, undefined);
-    expect(v.conforme).toBe(false);
-    if (!v.conforme) expect(v.message).toContain("CF_VERSION_METADATA");
+  // Une version antérieure à cette route ne rend pas `conforme`. Lire cette
+  // absence comme « non conforme » serait juste pour la mauvaise raison.
+  it("distingue « pas de verdict » de « mauvaise version »", () => {
+    for (const corps of [null, undefined, {}, { id: "x" }, { conforme: "true" }, "oui"]) {
+      const v = lireVerdict(corps);
+      expect(v.conforme, JSON.stringify(corps)).toBe(false);
+      if (!v.conforme) expect(v.message).toContain("ne connaît pas ce contrat");
+    }
+  });
+});
+
+describe("deploiementCourant", () => {
+  const parts = (id: string) => [{ versionId: id, pourcentage: 100 }];
+
+  // L'ordre rendu par `wrangler deployments list --json` est CROISSANT : un
+  // `[0]` naïf a déjà routé 90 % du trafic de ce site vers une version
+  // vieille de deux jours.
+  it("prend le PLUS RÉCENT, pas le premier de la liste", () => {
+    expect(
+      deploiementCourant([
+        { creeLe: "2026-10-01T00:00:00Z", parts: parts("vieux") },
+        { creeLe: "2026-10-04T15:24:08Z", parts: parts("recent") },
+      ]),
+    ).toEqual(parts("recent"));
+  });
+
+  // Date illisible : `Date.parse("")` rend NaN, toute comparaison avec NaN est
+  // fausse, et le tri rendrait l'ordre d'origine — croissant, donc le piège.
+  it("LÈVE sur une date illisible au lieu de retomber sur l'ordre croissant", () => {
+    expect(() =>
+      deploiementCourant([
+        { creeLe: "", parts: parts("vieux") },
+        { creeLe: "2026-10-04T15:24:08Z", parts: parts("recent") },
+      ]),
+    ).toThrow(/date lisible/);
+  });
+
+  it("lève sur une liste vide plutôt que de rendre undefined", () => {
+    expect(() => deploiementCourant([])).toThrow(/Aucun déploiement/);
   });
 });
 
@@ -180,16 +217,28 @@ describe("lireArguments", () => {
   // Deux drapeaux portant la même valeur : la valeur appartient au drapeau
   // qui la précède, jamais à la référence.
   it("ne confond pas deux valeurs de drapeau identiques avec une référence", () => {
-    expect(lire("--chemin", "/", "--base", "/")).toEqual({
+    expect(lire("--chemin", "/a", "--base", "https://a.test", "--chemin", "/a")).toEqual({
       ref: undefined,
-      chemin: "/",
-      base: "",
+      chemin: "/a",
+      base: "https://a.test",
       verifier: false,
     });
   });
 
   it("retire la barre finale de la base, pour ne pas construire « //chemin »", () => {
     expect(lire("--base", "https://netereka.ci///").base).toBe("https://netereka.ci");
+  });
+
+  // `--base /` rendait "" et la requête de vérification levait plus loin, sur
+  // une URL invalide — loin de la cause.
+  it("refuse une base qui n'est pas une origine absolue", () => {
+    for (const mauvais of ["/", "netereka.ci", "https://netereka.ci/a", "ftp://x.test"]) {
+      expect(() => lire("--base", mauvais), mauvais).toThrow(/origine absolue/);
+    }
+  });
+
+  it("refuse un chemin qui ne commence pas par une barre", () => {
+    expect(() => lire("--chemin", "apercu")).toThrow(/commencer/);
   });
 
   it("refuse un drapeau sans valeur au lieu d'avaler le suivant", () => {

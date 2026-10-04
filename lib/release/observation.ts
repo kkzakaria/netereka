@@ -58,8 +58,15 @@ export const CHEMIN_VERSION = "/api/version";
  */
 const FORME_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Noms de Worker acceptés par Cloudflare : lettres, chiffres, tirets. */
-const FORME_NOM_WORKER = /^[a-z0-9][a-z0-9-]*$/i;
+/**
+ * Noms de Worker acceptés : minuscules, chiffres, tirets.
+ *
+ * PAS de drapeau `i`. Les clés d'un dictionnaire RFC 8941 sont des `lcalpha` :
+ * une majuscule rend l'en-tête entier inanalysable, et Cloudflare ignore alors
+ * la surcharge — exactement l'échec silencieux que cette validation existe
+ * pour empêcher. Le drapeau `i` était un trou dans son propre garde-fou.
+ */
+const FORME_NOM_WORKER = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
  * Nombre maximal de versions qu'un déploiement peut servir à la fois.
@@ -67,6 +74,11 @@ const FORME_NOM_WORKER = /^[a-z0-9][a-z0-9-]*$/i;
  * tant qu'un canari est en vol : les deux places sont déjà prises.
  */
 export const VERSIONS_PAR_DEPLOIEMENT = 2;
+
+/** Un identifiant de version est-il bien formé ? Utilisé aussi par /api/version. */
+export function estUuidDeVersion(valeur: unknown): valeur is string {
+  return typeof valeur === "string" && FORME_UUID.test(valeur);
+}
 
 export interface VersionConnue {
   id: string;
@@ -93,6 +105,14 @@ export type Resolution =
  * une version » n'a de sens que si elle est désignée sans équivoque. Quatre
  * caractères au minimum — en deçà, un préfixe désigne presque toujours
  * plusieurs versions, et accepter la saisie reviendrait à tirer au sort.
+ *
+ * PORTÉE : `versions` est la liste qu'on lui donne, et
+ * `wrangler versions list --json` n'en rend que les DIX plus récentes. « Sans
+ * équivoque » vaut donc dans cette fenêtre, pas dans toute l'histoire du
+ * Worker. Une version plus ancienne sort en « aucune ne correspond », ce qui
+ * est bruyant et donc sans danger ; un préfixe unique dans la fenêtre mais
+ * ambigu au-delà passerait — à huit caractères hexadécimaux, on ne l'a jamais
+ * vu arriver.
  */
 export function resoudreVersion(ref: string, versions: readonly VersionConnue[]): Resolution {
   const voulu = ref.trim().toLowerCase();
@@ -161,7 +181,11 @@ export function applicabilite(
   versionId: string,
   deploiement: readonly PartDeVersion[],
 ): Applicabilite {
-  const part = deploiement.find((p) => p.versionId === versionId);
+  // Comparaison insensible à la casse, comme `verifierVersionServie` : les
+  // deux côtés viennent de l'API en minuscules, mais deux règles différentes
+  // pour la même question finissent toujours par diverger.
+  const voulu = versionId.toLowerCase();
+  const part = deploiement.find((p) => p.versionId.toLowerCase() === voulu);
   if (part) return { applicable: true, pourcentage: part.pourcentage };
   return {
     applicable: false,
@@ -194,30 +218,35 @@ export type Verdict =
   | { conforme: false; message: string };
 
 /**
- * Confronter la version DEMANDÉE à celle qui a RÉPONDU.
+ * Lire la réponse de `/api/version`.
  *
  * C'est la seule étape qui transforme « j'ai posé un en-tête » en « j'ai
- * observé cette version ». Sans elle, les trois façons d'être silencieusement
- * ignoré restent invisibles.
+ * observé cette version ». L'endpoint ne rend qu'un booléen — il ne publie
+ * pas l'identifiant servi, qui EST le sésame de l'en-tête de surcharge.
+ *
+ * La troisième branche n'est pas de la paranoïa : si une version ANTÉRIEURE à
+ * cette route répond, on n'obtient pas `conforme`, et interpréter l'absence
+ * comme « non conforme » serait presque juste pour la mauvaise raison. Le
+ * nommer permet de distinguer « la surcharge n'a pas pris » de « ce qui a
+ * répondu ne connaît pas ce contrat ».
  */
-export function verifierVersionServie(demandee: string, servie: string | undefined): Verdict {
-  if (!servie) {
+export function lireVerdict(corps: unknown): Verdict {
+  const conforme = (corps as { conforme?: unknown } | null)?.conforme;
+  if (conforme === true) return { conforme: true };
+  if (conforme === false) {
     return {
       conforme: false,
       message:
-        `${CHEMIN_VERSION} n'a pas nommé de version. La liaison CF_VERSION_METADATA ` +
-        "manque-t-elle sur la version servie ?",
+        "surcharge NON appliquée : une AUTRE version a répondu. La requête a été " +
+        "routée par le canari, et ce que vous observez n'est pas la version demandée.",
     };
   }
-  if (servie.toLowerCase() !== demandee.toLowerCase()) {
-    return {
-      conforme: false,
-      message:
-        `surcharge NON appliquée : ${servie.slice(0, 8)} a répondu, ${demandee.slice(0, 8)} était demandée. ` +
-        "La requête a été routée par le canari.",
-    };
-  }
-  return { conforme: true };
+  return {
+    conforme: false,
+    message:
+      `${CHEMIN_VERSION} n'a pas rendu de verdict (reçu ${JSON.stringify(corps)}). ` +
+      "Ce qui a répondu ne connaît pas ce contrat — probablement une version antérieure à cette route.",
+  };
 }
 
 export interface OptionsObservation {
@@ -254,8 +283,19 @@ export function lireArguments(
       if (valeur === undefined || valeur.startsWith("--")) {
         throw new Error(`${a} attend une valeur.`);
       }
-      if (a === "--chemin") options.chemin = valeur;
-      else options.base = valeur.replace(/\/+$/, "");
+      if (a === "--chemin") {
+        if (!valeur.startsWith("/")) throw new Error("--chemin doit commencer par « / ».");
+        options.chemin = valeur;
+      } else {
+        // `--base /` rendait "" : la requête de vérification levait ensuite sur
+        // une URL invalide, loin de la cause. On refuse ici, où l'on sait quoi
+        // dire.
+        const base = valeur.replace(/\/+$/, "");
+        if (!/^https?:\/\/[^/]+$/.test(base)) {
+          throw new Error(`--base attend une origine absolue (https://…), reçu « ${valeur} ».`);
+        }
+        options.base = base;
+      }
     } else if (a.startsWith("--")) {
       throw new Error(`Option inconnue : ${a}`);
     } else if (options.ref === undefined) {
@@ -265,4 +305,37 @@ export function lireArguments(
     }
   }
   return options;
+}
+
+export interface DeploiementConnu {
+  creeLe: string;
+  parts: readonly PartDeVersion[];
+}
+
+/**
+ * Le déploiement COURANT parmi ceux que rend `wrangler deployments list`.
+ *
+ * Cette fonction existe séparément pour UNE raison : c'est la logique qui a
+ * déjà coûté le plus cher à ce dépôt, et elle était jusqu'ici réécrite à
+ * chaque fois dans un script, sans test. `deployments list --json` rend
+ * l'ordre CROISSANT (le plus ancien d'abord) ; un `[0]` naïf avait routé 90 %
+ * du trafic vers une version vieille de deux jours.
+ *
+ * Une date illisible fait LEVER au lieu de se glisser dans le tri :
+ * `Date.parse("")` rend NaN, toute comparaison avec NaN est fausse, et le tri
+ * rendrait alors l'ordre d'origine — croissant — c'est-à-dire le piège
+ * lui-même, en silence.
+ */
+export function deploiementCourant(
+  deploiements: readonly DeploiementConnu[],
+): readonly PartDeVersion[] {
+  if (deploiements.length === 0) throw new Error("Aucun déploiement listé.");
+  const dates = deploiements.map((d) => {
+    const t = Date.parse(d.creeLe);
+    if (Number.isNaN(t)) {
+      throw new Error(`Déploiement sans date lisible : ${JSON.stringify(d.creeLe)}.`);
+    }
+    return { d, t };
+  });
+  return [...dates].sort((a, b) => b.t - a.t)[0].d.parts;
 }

@@ -364,8 +364,14 @@ Three distinct things, often conflated :
 
 `wrangler.jsonc` sets both flags **explicitly**, because since wrangler 4.44 `preview_urls` silently follows `workers_dev` when omitted — flipping one while leaving the other unstated would turn off both :
 
-- `workers_dev: false` — `netereka.koffiz2110.workers.dev` used to answer 200 with no `x-robots-tag: noindex`, a public copy of the shop off the zone (hence outside Transform Rules and any future WAF rule). Not an SEO incident : `<link rel="canonical">` and the sitemap only ever name `netereka.ci`. Closed because nothing used it.
+- `workers_dev: false` — `netereka.koffiz2110.workers.dev` answers 200 with no `x-robots-tag: noindex`, a public copy of the shop off the zone (hence outside Transform Rules and any future WAF rule). Not an SEO incident : `<link rel="canonical">` and the sitemap only ever name `netereka.ci`. Nothing in the repo references it.
 - `preview_urls: true` — keeps per-version URLs for non-visual checks.
+
+**These two values are an intention, not a fact, until `npm run cf:subdomain` runs.** The POST that toggles the subdomain lives in wrangler's `subdomainDeploy`, reached only from `wrangler deploy` and `wrangler triggers deploy` (verified in wrangler 4.146.0's source). This project's CD uses `versions upload` / `versions deploy` / `rollback` exclusively, none of which touch it — `versions upload` only *reads* the setting, to print the preview URL. So editing `wrangler.jsonc` alone changes nothing on the live Worker.
+
+`scripts/cf-subdomain.ts` applies what the file declares and **re-reads it afterwards** rather than trusting the write, which is the whole lesson here. It is idempotent, supports `--dry-run`, and needs `CLOUDFLARE_API_TOKEN` (Account → Workers Scripts → Edit) + `CLOUDFLARE_ACCOUNT_ID`. Same family as `npm run cf:version-affinity` : a Cloudflare setting the repo describes and no workflow applies.
+
+Never describe these values as the live state without re-reading it — `curl -sI https://netereka.koffiz2110.workers.dev/` settles it in one line. A false security posture is worse than the open door, because it stops anyone from looking again.
 
 Version URLs are **not generated for Workers that use Durable Objects**. This Worker does not (`open-next.config.ts` uses the R2 incremental cache only) — adding a Durable Object would silently remove them.
 

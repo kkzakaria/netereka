@@ -36,7 +36,8 @@
     "whatsapp:tail": "npx wrangler tail --config workers/whatsapp/wrangler.jsonc",
     "prepare": "husky",
     "postinstall": "node scripts/patch-opennext.mjs",
-    "cf:version-affinity": "node scripts/version-affinity.mjs"
+    "cf:version-affinity": "node scripts/version-affinity.mjs",
+    "cf:subdomain": "tsx scripts/cf-subdomain.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

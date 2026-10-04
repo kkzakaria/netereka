@@ -4,9 +4,24 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": ".open-next/worker.js",
 
-  // LA BOUTIQUE N'A QU'UNE PORTE : netereka.ci.
+  // LA BOUTIQUE NE DOIT AVOIR QU'UNE PORTE : netereka.ci.
   //
-  // `workers_dev: true` en ouvrait une seconde,
+  // CES DEUX RÉGLAGES NE S'APPLIQUENT PAS TOUT SEULS. Le POST qui allume ou
+  // éteint le sous-domaine vit dans `subdomainDeploy` de wrangler, appelé par
+  // `triggersDeploy`, lui-même appelé par exactement deux commandes :
+  // `wrangler deploy` et `wrangler triggers deploy` (vérifié dans la source de
+  // wrangler 4.146.0). Or `deploy.yml`, `promote.yml` et `rollback.yml`
+  // n'utilisent que `versions upload`, `versions deploy` et `rollback` —
+  // aucune des deux. `versions upload` se contente de LIRE l'état du
+  // sous-domaine pour imprimer l'URL d'aperçu.
+  //
+  // Ce qui est écrit ici est donc l'INTENTION ; `npm run cf:subdomain`
+  // l'applique et relit pour le vérifier. Même famille que
+  // `npm run cf:version-affinity`. Ne décrivez pas ces valeurs comme un fait
+  // sans avoir relu la réalité : une posture de sécurité fausse est pire que
+  // la porte ouverte, parce qu'elle arrête ceux qui auraient regardé.
+  //
+  // `workers_dev: true` ouvrait une seconde porte,
   // `netereka.koffiz2110.workers.dev`, qui répondait 200 sans
   // `x-robots-tag: noindex` (mesuré le 2026-10-04) — une copie publique du
   // site HORS DE LA ZONE, donc hors des règles de transformation et de toute

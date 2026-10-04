@@ -22,23 +22,36 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { nomDuWorker } from "../lib/config/wrangler-jsonc";
+import { nomDuWorker } from "@/lib/config/wrangler-jsonc";
 import {
   CHEMIN_VERSION,
   EN_TETE_SURCHARGE,
   applicabilite,
   commandeDeploiementAZero,
+  deploiementCourant,
   enTeteDeSurcharge,
   lireArguments,
+  lireVerdict,
   resoudreVersion,
   valeurDeSurcharge,
-  verifierVersionServie,
   type PartDeVersion,
   type VersionConnue,
-} from "../lib/release/observation";
+} from "@/lib/release/observation";
 
-/** Lu, jamais codé en dur : un nom divergent ferait ignorer la surcharge. */
-const NOM_DU_WORKER = nomDuWorker(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+/**
+ * Lu, jamais codé en dur : un nom divergent ferait ignorer la surcharge.
+ * Appelé DANS `main()`, pas au chargement du module : hors du try/catch,
+ * un `wrangler.jsonc` illisible rendrait une trace brute et un code 1, au
+ * lieu du « ✗ … » et du code 2 que ce fichier promet plus haut.
+ */
+function lireNomDuWorker(): string {
+  return nomDuWorker(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+}
+
+/** Un chemin dans une commande entre apostrophes que l'opérateur va coller. */
+function pourApostrophes(valeur: string): string {
+  return valeur.replace(/'/g, `'\\''`);
+}
 const BASE_PAR_DEFAUT = "https://netereka.ci";
 
 /** Sortie 2 = l'outil n'a pas pu faire son travail ; 1 = il l'a fait et dit non. */
@@ -81,27 +94,18 @@ function lireVersions(): VersionConnue[] {
 }
 
 /**
- * Le déploiement COURANT.
- *
- * `wrangler deployments list --json` rend l'ordre CROISSANT (le plus ancien
- * d'abord) : prendre `[0]` naïvement a déjà routé 90 % du trafic de ce site
- * vers une version vieille de deux jours. On trie, et une date illisible fait
- * lever plutôt que de se glisser dans la comparaison — `Date.parse("")` rend
- * NaN, toute comparaison avec NaN est fausse, et le tri rendrait alors
- * l'ordre d'origine, c'est-à-dire exactement le piège.
+ * Le déploiement COURANT. Le tri — et le refus d'une date illisible — vit
+ * dans `deploiementCourant`, pur et testé : c'est la logique qui a déjà
+ * coûté le plus cher à ce dépôt, et elle était jusqu'ici réécrite dans
+ * chaque script sans jamais être éprouvée.
  */
-function lireDeploiementCourant(): PartDeVersion[] {
-  const deploiements = jsonDe<DeploiementBrut[]>(wrangler(["deployments", "list", "--json"]));
-  if (deploiements.length === 0) throw new Error("Aucun déploiement listé.");
-  const dates = deploiements.map((d) => {
-    const t = Date.parse(d.created_on);
-    if (Number.isNaN(t)) {
-      throw new Error(`Déploiement sans date lisible : ${JSON.stringify(d.created_on)}.`);
-    }
-    return { d, t };
-  });
-  const courant = dates.sort((a, b) => b.t - a.t)[0].d;
-  return courant.versions.map((v) => ({ versionId: v.version_id, pourcentage: v.percentage }));
+function lireDeploiementCourant(): readonly PartDeVersion[] {
+  return deploiementCourant(
+    jsonDe<DeploiementBrut[]>(wrangler(["deployments", "list", "--json"])).map((d) => ({
+      creeLe: d.created_on,
+      parts: d.versions.map((v) => ({ versionId: v.version_id, pourcentage: v.percentage })),
+    })),
+  );
 }
 
 function etiquette(id: string, versions: readonly VersionConnue[]): string {
@@ -110,10 +114,12 @@ function etiquette(id: string, versions: readonly VersionConnue[]): string {
 }
 
 async function main(): Promise<number> {
+  const NOM_DU_WORKER = lireNomDuWorker();
   const { ref, chemin, base, verifier } = lireArguments(process.argv.slice(2), {
     chemin: "/",
     base: BASE_PAR_DEFAUT,
   });
+
 
   const versions = lireVersions();
   const deploiement = lireDeploiementCourant();
@@ -162,7 +168,7 @@ async function main(): Promise<number> {
   console.log(`Elle est dans le déploiement, à ${etat.pourcentage} % du trafic.`);
   console.log();
   console.log("Observer en ligne de commande :");
-  console.log(`  curl -sS '${base}${chemin}' \\`);
+  console.log(`  curl -sS '${base}${pourApostrophes(chemin)}' \\`);
   console.log(`    -H '${EN_TETE_SURCHARGE}: ${valeurDeSurcharge(NOM_DU_WORKER, cible.id)}'`);
   console.log();
   console.log("Observer dans un navigateur ou un capteur d'écran : posez cet en-tête");
@@ -176,23 +182,44 @@ async function main(): Promise<number> {
   }
 
   console.log();
-  const reponse = await fetch(`${base}${CHEMIN_VERSION}`, {
+  const reponse = await fetch(`${base}${CHEMIN_VERSION}?attendu=${cible.id}`, {
     headers: enTeteDeSurcharge(NOM_DU_WORKER, cible.id),
     cache: "no-store",
   });
-  if (!reponse.ok) {
-    throw new Error(
-      `${CHEMIN_VERSION} a répondu ${reponse.status}. Sur une version antérieure à cet outil, ` +
-        "cette route n'existe pas encore — la surcharge, elle, peut très bien fonctionner.",
+
+  // UN 404 VEUT D'ABORD DIRE « LA SURCHARGE N'A PAS PRIS ».
+  //
+  // La première écriture de ce message disait l'inverse — « la surcharge peut
+  // très bien fonctionner » — et c'était rassurer au pire moment. Le cas
+  // courant est d'observer une version RÉCENTE, celle qui porte cette route :
+  // si elle avait répondu, la route existerait. Un 404 signifie donc
+  // qu'autre chose a répondu, c'est-à-dire que la requête est repartie par le
+  // canari. Les deux lectures sont imprimées, la dangereuse en premier, et
+  // l'on sort en REFUS (1, « l'outil a fait son travail et dit non »), pas en
+  // PANNE (2, « l'outil est cassé »).
+  if (reponse.status === 404) {
+    console.error(
+      `✗ ${CHEMIN_VERSION} a répondu 404 — la surcharge n'a probablement PAS été appliquée,`,
     );
+    console.error("  et une autre version a servi la requête. N'observez rien sur cette base.");
+    console.error(
+      `  (Autre lecture, bien plus rare : la version visée, créée le ${cible.creeLe ?? "?"},`,
+    );
+    console.error("  est antérieure à cette route et ne la porte pas.)");
+    return REFUS;
   }
-  const servie = ((await reponse.json()) as { id?: string }).id;
-  const verdict = verifierVersionServie(cible.id, servie);
+  if (!reponse.ok) {
+    const detail = ((await reponse.json().catch(() => null)) as { erreur?: string } | null)?.erreur;
+    console.error(`✗ ${CHEMIN_VERSION} a répondu ${reponse.status}${detail ? ` : ${detail}` : "."}`);
+    return REFUS;
+  }
+
+  const verdict = lireVerdict(await reponse.json().catch(() => null));
   if (!verdict.conforme) {
     console.error(`✗ ${verdict.message}`);
     return REFUS;
   }
-  console.log(`✓ ${servie!.slice(0, 8)} a bien répondu : la surcharge s'applique.`);
+  console.log(`✓ ${cible.id.slice(0, 8)} a bien répondu : la surcharge s'applique.`);
   return 0;
 }
 
