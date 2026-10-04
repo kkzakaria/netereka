@@ -470,6 +470,32 @@ describe("uploadBannerImage", () => {
     expect(result.url).toBe("banners/1-mockuid8.png");
   });
 
+  /**
+   * L'ordre, et pas seulement le fait d'effacer. Avant correctif, l'ancienne
+   * image partait AVANT le téléversement : un échec du stockage laissait donc
+   * la bannière en ligne désigner une clé supprimée — un visuel manquant sur
+   * la page d'accueil, pour une opération qui avait échoué.
+   */
+  it("un téléversement en échec ne détruit pas l'image que la bannière affiche", async () => {
+    makeDrizzleMock({ image_url: "banners/1-en-ligne.jpg" });
+    mocks.uploadToR2.mockRejectedValue(new Error("R2 down"));
+
+    const result = await uploadBannerImage(1, makeFormData(makeFile()));
+
+    expect(result.success).toBe(false);
+    expect(mocks.deleteFromR2).not.toHaveBeenCalled();
+  });
+
+  it("une écriture en base en échec ne détruit pas davantage l'ancienne image", async () => {
+    const { setMock } = makeDrizzleMock({ image_url: "banners/1-en-ligne.jpg" });
+    setMock.mockImplementation(() => { throw new Error("D1 down"); });
+
+    const result = await uploadBannerImage(1, makeFormData(makeFile()));
+
+    expect(result.success).toBe(false);
+    expect(mocks.deleteFromR2).not.toHaveBeenCalled();
+  });
+
   it("continue si la suppression R2 de l'ancienne image échoue", async () => {
     makeDrizzleMock({ image_url: "banners/1-old.jpg" });
     mocks.deleteFromR2.mockRejectedValue(new Error("R2 delete failed"));
@@ -631,6 +657,32 @@ describe("setBannerImageUrl", () => {
 
     await setBannerImageUrl(1, "banners/new-key.png");
 
+    expect(mocks.deleteFromR2).not.toHaveBeenCalled();
+  });
+
+  /**
+   * L'ordre, et pas seulement le fait d'effacer. Avant correctif, l'ancienne
+   * image partait AVANT le téléversement : un échec du stockage laissait donc
+   * la bannière en ligne désigner une clé supprimée — un visuel manquant sur
+   * la page d'accueil, pour une opération qui avait échoué.
+   */
+  it("un téléversement en échec ne détruit pas l'image que la bannière affiche", async () => {
+    makeDrizzleMock({ image_url: "banners/1-en-ligne.jpg" });
+    mocks.uploadToR2.mockRejectedValue(new Error("R2 down"));
+
+    const result = await uploadBannerImage(1, makeFormData(makeFile()));
+
+    expect(result.success).toBe(false);
+    expect(mocks.deleteFromR2).not.toHaveBeenCalled();
+  });
+
+  it("une écriture en base en échec ne détruit pas davantage l'ancienne image", async () => {
+    const { setMock } = makeDrizzleMock({ image_url: "banners/1-en-ligne.jpg" });
+    setMock.mockImplementation(() => { throw new Error("D1 down"); });
+
+    const result = await uploadBannerImage(1, makeFormData(makeFile()));
+
+    expect(result.success).toBe(false);
     expect(mocks.deleteFromR2).not.toHaveBeenCalled();
   });
 

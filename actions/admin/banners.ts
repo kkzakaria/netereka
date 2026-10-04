@@ -189,6 +189,21 @@ export async function updateBanner(
   }
 }
 
+/**
+ * Efface l'image R2 qu'une bannière ne montre plus. Meilleur effort : le
+ * remplacement est déjà acté en base, et un échec ici ne doit pas le défaire
+ * — seulement laisser une trace pour retrouver l'objet.
+ */
+async function deleteOldBannerImage(previous: string | null, bannerId: number): Promise<void> {
+  if (!previous) return;
+  const oldKey = previous.replace(/^\/images\//, "");
+  try {
+    await deleteFromR2(oldKey);
+  } catch (deleteError) {
+    console.error(`[admin/banners] Failed to delete old R2 image key="${oldKey}" for banner=${bannerId}:`, deleteError);
+  }
+}
+
 export async function uploadBannerImage(
   bannerId: number,
   formData: FormData
@@ -227,15 +242,6 @@ export async function uploadBannerImage(
       return { success: false, error: "Bannière introuvable" };
     }
 
-    if (existing.image_url) {
-      const oldKey = existing.image_url.replace(/^\/images\//, "");
-      try {
-        await deleteFromR2(oldKey);
-      } catch (deleteError) {
-        console.error(`[admin/banners] Failed to delete old R2 image key="${oldKey}" for banner=${bannerId}:`, deleteError);
-      }
-    }
-
     const uid = nanoid(8);
     const key = `banners/${bannerId}-${uid}.${rawExt}`;
 
@@ -246,6 +252,14 @@ export async function uploadBannerImage(
       image_url: url,
       updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
     }).where(eq(banners.id, bannerId));
+
+    // L'ancienne image n'est effacée qu'APRÈS que la nouvelle est en place et
+    // que la ligne la désigne. L'ordre inverse — effacer d'abord — laissait la
+    // bannière pointer une clé supprimée dès que le téléversement ou l'écriture
+    // échouait : une bannière en ligne sans visuel, pour une opération qui
+    // avait échoué. Même ordre que le chemin révision (`applyRevision`,
+    // lib/db/revisions.ts), où l'effacement est un `afterCommit`.
+    await deleteOldBannerImage(existing.image_url, bannerId);
 
     revalidatePath("/banners");
     revalidatePath("/");
@@ -282,19 +296,14 @@ export async function setBannerImageUrl(
       return { success: false, error: "Bannière introuvable" };
     }
 
-    if (existing.image_url) {
-      const oldKey = existing.image_url.replace(/^\/images\//, "");
-      try {
-        await deleteFromR2(oldKey);
-      } catch (deleteError) {
-        console.error(`[admin/banners] Failed to delete old R2 image key="${oldKey}" for banner=${bannerId}:`, deleteError);
-      }
-    }
-
     await db.update(banners).set({
       image_url: imageKey,
       updated_at: new Date().toISOString().replace("T", " ").slice(0, 19),
     }).where(eq(banners.id, bannerId));
+
+    // Effacé après l'écriture, et jamais si c'est la MÊME clé : reposer
+    // l'image déjà en place effacerait celle que la ligne vient de confirmer.
+    if (existing.image_url !== imageKey) await deleteOldBannerImage(existing.image_url, bannerId);
 
     revalidatePath("/banners");
     revalidatePath("/");

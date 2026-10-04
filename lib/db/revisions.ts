@@ -1127,6 +1127,34 @@ export async function applyRevision(
 
   if (rev.kind === "update") {
     Object.assign(targetSet, rev.payload);
+
+    // Remplacer l'image d'une bannière laisse l'ancien objet sans personne
+    // pour le nommer. L'écran d'administration l'efface déjà
+    // (`uploadBannerImage`, actions/admin/banners.ts) ; ne pas le faire ici
+    // ferait du chemin révision le seul qui accumule.
+    //
+    // Lu AVANT le batch, effacé APRÈS : l'inverse effacerait l'image en ligne
+    // si l'écriture échouait ensuite. Et seulement si la clé change vraiment
+    // — un payload qui repose la clé déjà en place effacerait sinon l'image
+    // qu'il vient de confirmer.
+    if (rev.target_type === "banner" && "image_url" in (rev.payload as Record<string, unknown>)) {
+      const nouvelle = (rev.payload as { image_url?: unknown }).image_url;
+      const avant = await db
+        .select({ image_url: banners.image_url })
+        .from(banners)
+        .where(eq(banners.id, Number(rev.target_id)))
+        .get();
+      const ancienne = avant?.image_url;
+      if (ancienne && ancienne !== nouvelle) {
+        afterCommit = async () => {
+          try {
+            await deleteFromR2(ancienne);
+          } catch (err) {
+            console.warn("[revisions] ancienne image de bannière non effacée", ancienne, err);
+          }
+        };
+      }
+    }
   } else if (rev.kind === "publish") {
     // § 2.8 : publier rend visible, donc DEUX colonnes. Un brouillon MCP naît
     // `is_active = 0` et la vitrine filtre sur `is_active` : ne lever que
@@ -1453,14 +1481,28 @@ export async function applyRevision(
   // sans conséquence). Hors transaction, comme tout le nettoyage R2 de ce
   // fichier : un échec ici est journalisé, jamais renvoyé à l'appelant —
   // l'application a déjà réussi.
+  //
+  // Les révisions `update` d'une BANNIÈRE qui portent une image relèvent du
+  // même raisonnement : leur objet a été téléversé au dépôt par
+  // `set_banner_image`, et une sœur périmée ne sera plus jamais ni appliquée
+  // ni rejetée. Jamais la clé que CE batch vient d'installer : deux révisions
+  // peuvent proposer la même (une reprise, un redépôt), et l'effacer viderait
+  // l'image que l'administrateur vient d'approuver.
+  const poseeParCeLot = (rev.payload as { image_url?: unknown }).image_url;
   const supersededImageKeys = others
-    .filter((o) => o.kind === "add_images")
     .flatMap((o) => {
       try {
-        const payload = JSON.parse(o.payload) as { images?: { key: string }[] };
-        return (payload.images ?? []).map((img) => img.key);
+        if (o.kind === "add_images") {
+          const payload = JSON.parse(o.payload) as { images?: { key: string }[] };
+          return (payload.images ?? []).map((img) => img.key);
+        }
+        if (o.kind === "update" && rev.target_type === "banner") {
+          const key = (JSON.parse(o.payload) as { image_url?: unknown }).image_url;
+          return typeof key === "string" && key.length > 0 && key !== poseeParCeLot ? [key] : [];
+        }
+        return [];
       } catch (e) {
-        console.error("[revisions] payload add_images d'une révision sœur illisible au nettoyage R2", o.id, e);
+        console.error("[revisions] payload d'une révision sœur illisible au nettoyage R2", o.id, e);
         return [];
       }
     });
@@ -1601,6 +1643,31 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
   // orphelins pour toujours dans R2. Best-effort, comme tout le nettoyage R2
   // de ce fichier : un échec ici ne doit pas faire échouer un rejet déjà
   // acté en base — seulement laisser une trace pour qu'on retrouve l'objet.
+  // Même cycle de vie pour l'image d'une bannière : `set_banner_image` a
+  // téléversé l'objet AU DÉPÔT et la révision n'en porte que la clé. Rejetée,
+  // elle ne sera jamais appliquée : plus rien ne nommera cet objet.
+  //
+  // La garde n'est pas un ornement : si, par quelque chemin, le payload
+  // portait la clé que la bannière affiche DÉJÀ, l'effacer sur un rejet
+  // casserait l'image en ligne — un rejet, qui ne doit rien changer, aurait
+  // vidé la vitrine. On relit donc la ligne et on n'efface que ce qu'elle ne
+  // montre pas.
+  if (rev.kind === "update" && rev.target_type === "banner") {
+    const proposedKey = (rev.payload as { image_url?: unknown }).image_url;
+    if (typeof proposedKey === "string" && proposedKey.length > 0) {
+      try {
+        const live = await db
+          .select({ image_url: banners.image_url })
+          .from(banners)
+          .where(eq(banners.id, Number(rev.target_id)))
+          .get();
+        if (live?.image_url !== proposedKey) await deleteFromR2(proposedKey);
+      } catch (err) {
+        console.warn("[revisions] orphan R2 object after reject", proposedKey, err);
+      }
+    }
+  }
+
   if (rev.kind === "add_images" && rev.target_type === "product") {
     const images = (rev.payload as { images?: { key: string }[] }).images ?? [];
     const cleanup = await Promise.allSettled(images.map((img) => deleteFromR2(img.key)));

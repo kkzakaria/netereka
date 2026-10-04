@@ -2,13 +2,17 @@ import { DraftError, type DraftAudit } from "@/lib/db/product-drafts";
 import { deleteBannerRow, getBannerById, insertInactiveBanner, listBanners } from "@/lib/db/banners";
 import { RevisionError, createRevision, listPendingRevisions, listPendingRevisionHandles } from "@/lib/db/revisions";
 import type { McpContext } from "@/lib/mcp/context";
-import { ok, fail, type ToolResult } from "@/lib/mcp/result";
+import { ok, fail, type McpErrorCode, type ToolResult } from "@/lib/mcp/result";
 import {
   bannerIdSchema,
   checkBannerDates,
   createBannerShape,
+  setBannerImageShape,
   updateBannerShape,
 } from "@/lib/validations/mcp-banner";
+import { fetchAndUploadImageTo, type FetchImageResult } from "@/lib/storage/fetch-image";
+import { deleteFromR2 } from "@/lib/storage/images";
+import { getImageUrl } from "@/lib/utils/images";
 import { withdrawReasonSchema } from "@/lib/validations/mcp-common";
 import { defineTool, type ToolDefinition } from "./types";
 
@@ -44,6 +48,41 @@ function toolError(toolName: string, err: unknown): ToolResult {
 function auditFor(ctx: McpContext, tool: string): DraftAudit {
   return { actor: { id: ctx.user.id, name: ctx.user.name }, details: { via: "mcp", tool, client_id: ctx.clientId } };
 }
+
+type FetchFailure = Exclude<FetchImageResult, { ok: true }>["reason"];
+
+/**
+ * Chaque échec typé du téléchargement garde son identité jusqu'au client,
+ * comme `SEARCH_FAILURES` (lib/mcp/tools/images.ts). Replier les six sur
+ * « image inaccessible » enverrait le modèle chercher une autre URL quand la
+ * cause est un AVIF (changer d'URL n'y changera rien) ou une panne de notre
+ * stockage (rien de ce qu'il tentera n'aidera). Le `Record` est exhaustif par
+ * construction : une raison ajoutée à `FetchImageResult` casse la compilation
+ * au lieu de tomber dans un repli muet.
+ */
+const FETCH_FAILURES: Record<FetchFailure, { code: McpErrorCode; message: string }> = {
+  ssrf: {
+    code: "validation_error",
+    message: "Cette URL vise une adresse interne ou un protocole non http(s). Donnez une URL publique.",
+  },
+  bad_status: {
+    code: "validation_error",
+    message: "L'hôte a refusé de servir cette image. Vérifiez l'URL, ou prenez-en une autre.",
+  },
+  bad_content_type: {
+    code: "validation_error",
+    message:
+      "Nous n'acceptons que le JPEG, le PNG et le WebP. L'AVIF est refusé : le redimensionneur de la " +
+      "vitrine ne sait pas le lire, et l'image serait invisible une fois en ligne.",
+  },
+  too_large: { code: "validation_error", message: "Image trop lourde : 5 Mo au maximum." },
+  timeout: { code: "internal_error", message: "L'hôte n'a pas répondu en 10 secondes. Réessayez ou changez d'URL." },
+  fetch_failed: { code: "internal_error", message: "Téléchargement impossible depuis cette URL." },
+  upload_failed: {
+    code: "internal_error",
+    message: "L'image a été téléchargée mais le stockage de la boutique l'a refusée. Prévenez un administrateur.",
+  },
+};
 
 function revisionAnswer(revisionId: string, status: string, message: string) {
   return { applied: "revision" as const, revision: { id: revisionId, status }, message };
@@ -86,6 +125,101 @@ export const bannerTools: ToolDefinition[] = [
         });
       } catch (err) {
         return toolError("list_banners", err);
+      }
+    },
+  }),
+
+  defineTool({
+    name: "set_banner_image",
+    description:
+      "Pose l'image d'une bannière, ou la retire. Prends une URL http(s) PUBLIQUE de l'image source : elle est " +
+      "téléchargée (5 Mo au maximum, JPEG/PNG/WebP — pas d'AVIF) et déposée dans le stockage de la boutique, " +
+      "puis une révision est déposée pour l'attacher à la bannière ; l'administrateur l'applique depuis " +
+      "/revisions, et l'image n'apparaît qu'ensuite. url: null retire l'image (rien n'est téléchargé). " +
+      "La réponse porte image_key, la clé de stockage, et image_src, l'URL à employer telle quelle dans un " +
+      "<img src=\"…\"> si tu composes la bannière en HTML libre avec content_html (update_banner) — dans ce " +
+      "cas l'image posée ici sert de visuel du modèle classique, les deux peuvent coexister. " +
+      "reason (optionnel) : pourquoi cette image, lu par l'administrateur sur l'écran de validation.",
+    inputSchema: setBannerImageShape,
+    handler: async (ctx, input) => {
+      try {
+        const banner = await getBannerById(input.id);
+        if (!banner) return fail("not_found", "Bannière introuvable.");
+
+        if (input.url === null) {
+          const { revisionId, status } = await createRevision({
+            target: "banner",
+            targetId: String(input.id),
+            kind: "update",
+            payload: { image_url: null },
+            origin: "mcp",
+            actor: { id: ctx.user.id, name: ctx.user.name },
+            summary: input.reason,
+          });
+          return ok({
+            ...revisionAnswer(
+              revisionId,
+              status,
+              `Retrait de l'image déposé en révision (${revisionId}), en attente de validation sur ` +
+              `/revisions/${revisionId}.`,
+            ),
+            image_key: null,
+            image_src: null,
+          });
+        }
+
+        // Téléversement AU DÉPÔT, et la révision ne porte que la clé obtenue
+        // — jamais l'URL source. Même raison que `add_product_images`
+        // (lib/mcp/tools/products.ts) : différer le téléchargement à
+        // l'application ferait échouer « Appliquer » sur un lien mort ou un
+        // délai, longtemps après que le modèle a répondu « en attente » et que
+        // l'administrateur a approuvé. Corollaire : une révision REJETÉE
+        // laisse un objet que rien ne référencera jamais — `rejectRevision`
+        // l'efface (lib/db/revisions.ts).
+        const fetched = await fetchAndUploadImageTo(`banners/${input.id}`, input.url);
+        if (!fetched.ok) {
+          const { code, message } = FETCH_FAILURES[fetched.reason];
+          return fail(code, fetched.reason === "bad_status" && fetched.status
+            ? `${message} (HTTP ${fetched.status})`
+            : message);
+        }
+
+        try {
+          const { revisionId, status } = await createRevision({
+            target: "banner",
+            targetId: String(input.id),
+            kind: "update",
+            payload: { image_url: fetched.key },
+            origin: "mcp",
+            actor: { id: ctx.user.id, name: ctx.user.name },
+            summary: input.reason,
+          });
+          return ok({
+            ...revisionAnswer(
+              revisionId,
+              status,
+              `Image déposée en révision (${revisionId}), en attente de validation par un administrateur sur ` +
+              `/revisions/${revisionId}.`,
+            ),
+            image_key: fetched.key,
+            image_src: getImageUrl(fetched.key),
+          });
+        } catch (err) {
+          // Le dépôt a échoué APRÈS le téléversement : sans ce nettoyage,
+          // l'objet resterait dans R2 sans qu'aucune ligne ni aucune révision
+          // ne le nomme. try/catch et non `.catch()` — un échec SYNCHRONE du
+          // nettoyage (binding R2 absent) remplacerait sinon `err` par une
+          // TypeError, et l'appelant lirait « erreur interne » au lieu de la
+          // vraie cause.
+          try {
+            await deleteFromR2(fetched.key);
+          } catch (e) {
+            console.error("[mcp/set_banner_image] objet R2 orphelin", fetched.key, e);
+          }
+          throw err;
+        }
+      } catch (err) {
+        return toolError("set_banner_image", err);
       }
     },
   }),

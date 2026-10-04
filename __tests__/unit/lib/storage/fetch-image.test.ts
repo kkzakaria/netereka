@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const { uploadToR2Mock } = vi.hoisted(() => ({ uploadToR2Mock: vi.fn() }));
 vi.mock("@/lib/storage/images", () => ({ uploadToR2: uploadToR2Mock }));
 
-import { fetchAndUploadImage, isBlockedHost, IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES, extensionPour } from "@/lib/storage/fetch-image";
+import { fetchAndUploadImage, fetchAndUploadImageTo, isBlockedHost, IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES, extensionPour } from "@/lib/storage/fetch-image";
 
 function makeImageResponse(opts: {
   ok?: boolean;
@@ -444,5 +444,40 @@ describe("isBlockedHost", () => {
     "[2606:4700::1111]",
   ])("laisse passer l'hôte légitime %s", (host) => {
     expect(isBlockedHost(host)).toBe(false);
+  });
+});
+
+/**
+ * Le préfixe de clé vient du CODE (`banners/<id>`, `products/<id>`), jamais
+ * d'une entrée de modèle. Le contrôle vit DANS la fonction plutôt qu'à
+ * l'appel pour qu'un futur appelant ne puisse pas l'oublier : une barre de
+ * tête ou un `..` écriraient ailleurs dans le bucket.
+ */
+describe("fetchAndUploadImageTo : le préfixe de clé", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("compose la clé sous le préfixe demandé", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeImageResponse()));
+    const r = await fetchAndUploadImageTo("banners/7", "https://example.test/a.png");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.key).toMatch(/^banners\/7\/[A-Za-z0-9_-]+\.png$/);
+  });
+
+  it.each([["../secrets"], ["/absolu"], ["banners//7"], ["banners/7/"], [""]])(
+    "refuse le préfixe « %s » bruyamment, sans rien téléverser",
+    async (prefix) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeImageResponse()));
+      await expect(fetchAndUploadImageTo(prefix, "https://example.test/a.png")).rejects.toThrow(/préfixe/);
+      expect(uploadToR2Mock).not.toHaveBeenCalled();
+    },
+  );
+
+  // Le chemin historique reste exactement celui-ci : ses quatre appelants ne
+  // passent pas de préfixe.
+  it("fetchAndUploadImage dépose toujours sous products/<id>", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeImageResponse()));
+    const r = await fetchAndUploadImage("draft-1", "https://example.test/a.png");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.key).toMatch(/^products\/draft-1\//);
   });
 });
