@@ -1,5 +1,46 @@
 # Changelog
 
+## [3.0.0](https://github.com/kkzakaria/netereka/compare/v2.1.0...v3.0.0) (2026-10-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** les outils MCP refusent désormais tout champ qu'ils ne déclarent pas, à la racine comme dans leurs objets imbriqués, au lieu de l'ignorer en silence. Un appelant qui s'appuyait sur cet élagage reçoit un validation_error qui nomme la clé fautive, son niveau, et les champs acceptés à ce niveau. Aucun appel correct ne change de comportement.
+* **db:** les outils MCP `create_product_draft`, `update_product` et `update_product_draft` refusent désormais les champs `story`, `tagline`, `highlights`, `feature_blocks` et `faq`. Un appel qui en porte un reçoit une erreur d'outil (`isError: true`) nommant le champ et son remplaçant, là où il recevait auparavant un succès dont le champ avait été silencieusement jeté. Migration : l'accroche, les points forts et les blocs vont dans `description_html` (classes `nk-lead`, `nk-grid`/`nk-card`, `nk-split`), les questions dans `faq_html` (`<div class="nk-faq">`).
+
+### Features
+
+* **admin:** list_banners, pour cesser de deviner l'identifiant d'une bannière ([#380](https://github.com/kkzakaria/netereka/issues/380)) ([4f42150](https://github.com/kkzakaria/netereka/commit/4f421508228b0461a46acd522a495e41056e878f))
+* **admin:** set_banner_image, pour que l'agent pose enfin une image de bannière ([#382](https://github.com/kkzakaria/netereka/issues/382)) ([f93b391](https://github.com/kkzakaria/netereka/commit/f93b391f0e2af150bef309a4218b7c44bada207c))
+* **admin:** un champ inconnu est refusé, à la racine comme dans les objets imbriqués ([c9c190d](https://github.com/kkzakaria/netereka/commit/c9c190d2e173fa734f6d1bba3e0cd93bf894bda0))
+* **admin:** view_image, pour que l'agent REGARDE une image au lieu d'en lire la clé ([#384](https://github.com/kkzakaria/netereka/issues/384)) ([6a05f46](https://github.com/kkzakaria/netereka/commit/6a05f4692c3fbef8cefe8d927718da333eab8af0))
+* **admin:** voir une révision avant de l'appliquer — bannière et produit ([#402](https://github.com/kkzakaria/netereka/issues/402)) ([a232f5a](https://github.com/kkzakaria/netereka/commit/a232f5aa8ca527625c7f30f85f60c052094b1bf7))
+* **ci:** cf:subdomain emprunte le jeton de wrangler, et le renouvelle ([#406](https://github.com/kkzakaria/netereka/issues/406)) ([52ec795](https://github.com/kkzakaria/netereka/commit/52ec795cfd895d5e29b8599fe178c574d6d55521))
+* **ci:** date de compatibilite 2024-12-01 -&gt; 2026-03-24 ([#408](https://github.com/kkzakaria/netereka/issues/408)) ([21b0c93](https://github.com/kkzakaria/netereka/commit/21b0c93ea41f794a29cac22280f75ed63294ed92))
+* **ci:** observer une version avant qu'elle n'atteigne personne ([#404](https://github.com/kkzakaria/netereka/issues/404)) ([9ccc365](https://github.com/kkzakaria/netereka/commit/9ccc3651938fa386ec598257fa3db5b3a1280348))
+* **db:** un garde-fou de dérive entre ce que le code suppose et ce qui existe ([#389](https://github.com/kkzakaria/netereka/issues/389)) ([612d86a](https://github.com/kkzakaria/netereka/commit/612d86a70e128981b0a1e41d14e61b45f6b8ff6b))
+* **storefront:** la diapositive du hero accueille une composition libre ([#387](https://github.com/kkzakaria/netereka/issues/387)) ([f7f639a](https://github.com/kkzakaria/netereka/commit/f7f639a36a56ef9632e8f8c11ed80c9924d68c0c))
+
+
+### Bug Fixes
+
+* **admin:** l'AVIF cessait d'être stocké, servi et demandé ([#375](https://github.com/kkzakaria/netereka/issues/375)) ([c852f33](https://github.com/kkzakaria/netereka/commit/c852f33ff24dfbd7bdcc3092e2d5ba64606dc45f))
+* **admin:** les trois dernières portes qui acceptaient l'AVIF ([#390](https://github.com/kkzakaria/netereka/issues/390)) ([0cc2e7a](https://github.com/kkzakaria/netereka/commit/0cc2e7aed8ec09a5e0075a8f1055e9f93564c232))
+* **admin:** un 429 de xAI relaie sa cause au lieu de l'inventer ([#373](https://github.com/kkzakaria/netereka/issues/373)) ([2c0319c](https://github.com/kkzakaria/netereka/commit/2c0319ce37a2621fa81ab0c78f716dfafb112f93))
+* **db:** audit_log pointait sa clé étrangère vers une table vide ([#367](https://github.com/kkzakaria/netereka/issues/367)) ([582f6d9](https://github.com/kkzakaria/netereka/commit/582f6d9611e28e60edb62a8246da90c09c39eec0))
+* **deps:** fast-uri 3.1.7 → 3.1.8, la seule des quatorze alertes qui se corrige ([#395](https://github.com/kkzakaria/netereka/issues/395)) ([8e33b35](https://github.com/kkzakaria/netereka/commit/8e33b350387f5177319edb3514f98699fe7dc865))
+
+
+### Refactoring
+
+* **db:** les quatre colonnes Story quittent le code (contrat, 1/2) ([#358](https://github.com/kkzakaria/netereka/issues/358)) ([6eaa752](https://github.com/kkzakaria/netereka/commit/6eaa7524aaad8b064c65f99a5021a4830da959b8))
+* **db:** phase de contraction — quatre colonnes et trois tables partent ([#361](https://github.com/kkzakaria/netereka/issues/361)) ([6a0901d](https://github.com/kkzakaria/netereka/commit/6a0901d6d877cf56fbbaf8d07dd13021fdb15e97))
+
+
+### Documentation
+
+* **admin:** les outils d'images ANNONCENT leurs règles de format ([#398](https://github.com/kkzakaria/netereka/issues/398)) ([5319e29](https://github.com/kkzakaria/netereka/commit/5319e29ba0275c0740a5c5d4ae6cb7f900841f01))
+
 ## [2.1.0](https://github.com/kkzakaria/netereka/compare/v2.0.0...v2.1.0) (2026-10-02)
 
 
