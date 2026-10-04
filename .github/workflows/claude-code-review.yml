@@ -18,10 +18,30 @@ concurrency:
 
 jobs:
   claude-review:
-    # Les PR de release-please ne portent qu'un CHANGELOG et un numéro de
-    # version : rien à relire. (Pour filtrer par auteur humain, c'est ici :
+    # DEUX AUTEURS EXCLUS, POUR DEUX RAISONS DIFFÉRENTES.
+    #
+    # release-please (github-actions[bot]) : ses PR ne portent qu'un CHANGELOG
+    # et un numéro de version. Rien à relire.
+    #
+    # Dependabot : ses PR tournent avec un jeton RESTREINT qui n'a pas accès
+    # aux `secrets` du dépôt. Ce travail échouait donc à chaque montée de
+    # version — pas parce qu'il avait trouvé quelque chose, mais parce qu'il
+    # ne pouvait pas démarrer. Un contrôle rouge en permanence n'informe plus
+    # personne, il apprend à être ignoré : c'est le même raisonnement que
+    # pour le garde-fou de dérive, qu'on a tenu à livrer vert.
+    #
+    # Ce que cela NE veut pas dire : qu'une montée de version n'est pas
+    # relue. Lint, types, tests et CodeQL tournent toujours dessus, et
+    # `npm ci` + `npm run build` restent la vraie épreuve d'un changement de
+    # dépendance — ce qu'une relecture de `package-lock.json` ne donnerait
+    # pas. Pour demander la revue sur une PR Dependabot précise, @claude dans
+    # un commentaire, qui passe par claude.yml et son jeton complet.
+    #
+    # (Pour filtrer par auteur humain, c'est ici :
     # github.event.pull_request.author_association.)
-    if: github.event.pull_request.user.login != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.user.login != 'github-actions[bot]' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
