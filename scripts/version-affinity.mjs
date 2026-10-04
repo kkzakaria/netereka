@@ -41,7 +41,21 @@ const zoneName = zoneIdx !== -1 ? args[zoneIdx + 1] : "netereka.ci";
 const token = process.env.CLOUDFLARE_API_TOKEN;
 
 if (!token) {
-  console.error("CLOUDFLARE_API_TOKEN is required (Zone:Read + Transform Rules:Edit).");
+  // NO WRANGLER FALLBACK HERE, UNLIKE `npm run cf:subdomain`.
+  //
+  // That script borrows wrangler's own OAuth token (see
+  // scripts/lib/identifiants-cloudflare.ts) because it carries
+  // `workers_scripts:write`. This one cannot: wrangler's OAuth set has no
+  // zone-rules scope at all, and `zone:read` does not reach rulesets either —
+  // measured 2026-10-04, the ruleset entrypoint GET answers
+  // {"code":10000,"message":"Authentication error"} with that token, even for
+  // a read. So there is nothing to fall back to, not even for --dry-run.
+  console.error(
+    "CLOUDFLARE_API_TOKEN is required (Zone → Zone → Read + Zone → Transform Rules → Edit).\n" +
+      "Unlike `npm run cf:subdomain`, this script cannot borrow wrangler's OAuth token:\n" +
+      "that token has no zone-rules permission, and `zone:read` does not cover rulesets\n" +
+      "(measured 2026-10-04 — even a read answers \"Authentication error\").",
+  );
   process.exit(1);
 }
 
