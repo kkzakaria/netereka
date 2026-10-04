@@ -92,6 +92,53 @@ describe("rejet d'une image de bannière", () => {
   });
 });
 
+describe("rejet d'une CRÉATION de bannière", () => {
+  function creation(id: string, bannerId: number) {
+    db.prepare(
+      `INSERT INTO content_revisions (id, target_type, target_id, kind, payload, origin, actor_id, actor_name, status, base_version)
+       VALUES (?, 'banner', ?, 'create', '{"content_html":"<p>x</p>"}', 'mcp', 'admin-1', 'Admin', 'pending', ?)`,
+    ).run(id, String(bannerId), VERSION);
+  }
+  function banniereInactive(id: number) {
+    db.prepare(
+      `INSERT INTO banners (id, title, link_url, display_order, is_active, updated_at)
+       VALUES (?, 'Nouvelle', '/x', 0, 0, ?)`,
+    ).run(id, VERSION);
+  }
+
+  /**
+   * Rejeter une création supprime la ligne et PÉRIME les révisions sœurs.
+   * Une `superseded` ne sera plus jamais ni appliquée ni rejetée : l'image
+   * qu'une sœur avait fait téléverser n'aurait plus aucun chemin vers
+   * l'effacement. La bannière part avec la création, donc aucune de ces clés
+   * n'est affichée nulle part.
+   */
+  it("efface l'image des sœurs que le rejet périme", async () => {
+    banniereInactive(5);
+    creation("rev-create", 5);
+    revision("rev-image", 5, { image_url: "banners/5/jamais-vue.png" });
+
+    await rejectRevision("rev-create", ADMIN);
+
+    expect(db.prepare(`SELECT count(*) AS n FROM banners WHERE id = 5`).get()).toEqual({ n: 0 });
+    expect(storage.deleteFromR2).toHaveBeenCalledWith("banners/5/jamais-vue.png");
+  });
+
+  // Si la bannière a été activée entre-temps, elle survit et les sœurs
+  // restent `pending` : leurs images gardent leur chemin normal.
+  it("n'efface rien si la bannière survit au rejet", async () => {
+    banniereInactive(5);
+    db.prepare(`UPDATE banners SET is_active = 1 WHERE id = 5`).run();
+    creation("rev-create", 5);
+    revision("rev-image", 5, { image_url: "banners/5/encore-utile.png" });
+
+    await rejectRevision("rev-create", ADMIN);
+
+    expect(db.prepare(`SELECT count(*) AS n FROM banners WHERE id = 5`).get()).toEqual({ n: 1 });
+    expect(storage.deleteFromR2).not.toHaveBeenCalled();
+  });
+});
+
 describe("application d'une image de bannière", () => {
   it("pose la nouvelle clé et efface l'ancienne, après le commit", async () => {
     banniere(1, "banners/1/ancienne.png");

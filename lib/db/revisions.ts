@@ -1601,6 +1601,21 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
   // Meilleur effort, comme le nettoyage R2 : le rejet est déjà acté.
   let bannerRowRemoved: boolean | undefined;
   if (rev.kind === "create" && rev.target_type === "banner") {
+    // Lues AVANT le lot : ce sont exactement celles qu'il va périmer, et une
+    // révision `superseded` ne sera plus jamais ni appliquée ni rejetée — son
+    // image, téléversée au dépôt par `set_banner_image`, n'aurait plus aucun
+    // chemin vers l'effacement. La bannière part avec la création rejetée,
+    // donc aucune de ces clés n'est affichée nulle part.
+    const soeurs = await db
+      .select({ payload: contentRevisions.payload })
+      .from(contentRevisions)
+      .where(and(
+        eq(contentRevisions.target_type, "banner"),
+        eq(contentRevisions.target_id, rev.target_id),
+        eq(contentRevisions.status, "pending"),
+        ne(contentRevisions.id, rev.id),
+      ))
+      .all();
     try {
       const cleanup = await db.batch([
         db
@@ -1616,6 +1631,28 @@ export async function rejectRevision(revisionId: string, actor: RevisionActor): 
         deleteInactiveBannerStatement(db, rev.target_id),
       ] satisfies Batch);
       bannerRowRemoved = ((cleanup[1] as D1Result)?.meta?.changes ?? 0) > 0;
+
+      // Seulement si la ligne est VRAIMENT partie : c'est le même prédicat qui
+      // décide de la péremption. Quand la bannière survit, les sœurs restent
+      // `pending` et leurs images gardent leur chemin normal (application ou
+      // rejet) — les effacer ici les viderait de leur objet.
+      if (bannerRowRemoved) {
+        const cles = soeurs.flatMap((o) => {
+          try {
+            const key = (JSON.parse(o.payload) as { image_url?: unknown }).image_url;
+            return typeof key === "string" && key.length > 0 ? [key] : [];
+          } catch (e) {
+            console.error("[revisions] payload d'une sœur illisible au nettoyage R2", rev.id, e);
+            return [];
+          }
+        });
+        const efface = await Promise.allSettled(cles.map((key) => deleteFromR2(key)));
+        efface.forEach((c, i) => {
+          if (c.status === "rejected") {
+            console.warn("[revisions] orphan R2 object after create-reject supersede", cles[i], c.reason);
+          }
+        });
+      }
     } catch (err) {
       console.error("[revisions] rejet d'une création : suppression de la ligne de bannière échouée", { revisionId: rev.id }, err);
     }
