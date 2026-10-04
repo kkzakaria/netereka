@@ -29,7 +29,7 @@ vi.mock("@/lib/db/storefront/banners", async (importOriginal) => ({
   getActiveBanners: mocks.getActiveBanners,
 }));
 
-import Page from "@/app/(apercu)/apercu/banniere/[revisionId]/page";
+import Page from "@/app/(storefront)/apercu/banniere/[revisionId]/page";
 
 const BANNIERE = {
   id: 7, title: "Avant", subtitle: null, badge_text: null, badge_color: "mint",
@@ -48,8 +48,9 @@ const revision = (over: Record<string, unknown> = {}) => ({
 /** Le carrousel tel qu'il parvient au composant de la vitrine. */
 async function carrouselRendu(revisionId = "rev-1") {
   const el = await Page({ params: Promise.resolve({ revisionId }) });
-  const hero = (el as unknown as { props: { children: { props: { banners: Record<string, unknown>[] } } } }).props.children;
-  return hero.props.banners;
+  // La page rend DIRECTEMENT le carrousel : le <main> vient du gabarit de la
+  // vitrine, dont elle hérite désormais.
+  return (el as unknown as { props: { banners: Record<string, unknown>[] } }).props.banners;
 }
 
 /** La bannière RÉVISÉE dans ce carrousel. */

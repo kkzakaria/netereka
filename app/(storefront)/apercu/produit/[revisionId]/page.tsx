@@ -57,11 +57,13 @@ export default async function ApercuRevisionProduit({ params }: Props) {
 
   const apres = produitApresRevision(courant, revision);
 
+  // Pas de <main> ici : le gabarit de la vitrine en fournit déjà un. La
+  // largeur reprend celle de la vraie fiche produit (max-w-7xl px-4), pour
+  // que la description soit jugée à la mesure où elle sera lue.
   return (
-    <main className="min-h-dvh bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-6">
-        <h1 className="text-2xl font-bold">{apres.name}</h1>
-        <ProductDetails
+    <div className="mx-auto max-w-7xl px-4 py-6">
+      <h1 className="text-2xl font-bold">{apres.name}</h1>
+      <ProductDetails
           description={apres.description}
           descriptionType={apres.description_type}
           faqHtml={apres.faq_html}
@@ -69,8 +71,7 @@ export default async function ApercuRevisionProduit({ params }: Props) {
           attributes={apres.attributes}
           hasReviews={false}
           reviews={null}
-        />
-      </div>
-    </main>
+      />
+    </div>
   );
 }

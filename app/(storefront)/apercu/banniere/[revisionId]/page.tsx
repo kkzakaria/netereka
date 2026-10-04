@@ -30,9 +30,16 @@ import type { Banner } from "@/lib/db/types";
  *    voir le mobile, on rétrécit la fenêtre — ou on demande la capture au
  *    viewport voulu.
  *
- * Elle ne porte RIEN d'autre que la diapositive : ni en-tête, ni pied de page,
- * ni habillage d'administration (d'où le groupe de routes `(apercu)`, sans
- * mise en page propre). Ce qui est à l'écran est ce qui sera capturé.
+ * ELLE VIT DANS LE GROUPE `(storefront)`, et c'est un choix : elle hérite
+ * ainsi du VRAI gabarit de la vitrine — en-tête collant, pied de page,
+ * fournisseur WhatsApp, tiroir du panier. Une bannière se juge sous son
+ * en-tête, pas dans le vide : le haut de la diapositive passe sous une barre
+ * collante, et c'est précisément ce qu'on veut voir. Reproduire ce gabarit
+ * dans une page isolée aurait créé une seconde composition, vouée à dériver
+ * de la première.
+ *
+ * Ce qu'on y perd, et qui est assumé : les futures captures porteront
+ * l'en-tête et le bandeau de cookies. C'est aussi ce que voit le visiteur.
  */
 export const dynamic = "force-dynamic";
 
@@ -72,9 +79,6 @@ export default async function ApercuRevisionBanniere({ params }: Props) {
   // `getActiveBanners`, la révisée ne l'est pas encore.
   const assainies = sanitizeBannerContent(carrousel);
 
-  return (
-    <main className="min-h-dvh bg-background">
-      <HeroBanner banners={assainies} fallbackProducts={[]} />
-    </main>
-  );
+  // Pas de <main> ici : le gabarit de la vitrine en fournit déjà un.
+  return <HeroBanner banners={assainies} fallbackProducts={[]} />;
 }
