@@ -77,7 +77,7 @@ describe("view_image : ce qu'il refuse", () => {
    * c'est la FORME qui est fautive, et renverrait le modèle chercher une
    * image qui existe pourtant.
    */
-  it.each([["pas une url"], ["../../secrets/cle.png"], ["autre/dossier/x.png"], ["products//x.png"]])(
+  it.each([["pas une url"], ["../../secrets/cle.png"], ["autre/dossier/x.png"], ["products//x.png"], ["products/x/"]])(
     "« %s » n'est ni une URL ni une clé, et le refus le dit",
     async (entree) => {
       const r = await voir(entree);
@@ -88,6 +88,18 @@ describe("view_image : ce qu'il refuse", () => {
       expect(r2.readFromR2).not.toHaveBeenCalled();
     },
   );
+
+  /**
+   * Un point double n'est pas une traversée : R2 est un espace PLAT, et
+   * `photo..jpg` est un nom de fichier légitime. L'interdire refusait une
+   * clé héritée pour un motif de sécurité qui n'en est pas un.
+   */
+  it("un nom de fichier à point double est une clé valide", async () => {
+    r2.readFromR2.mockResolvedValue({ bytes: PNG, contentType: "image/png" });
+    const r = await voir("banners/photo..jpg");
+    expect(r.isError).toBeUndefined();
+    expect(r2.readFromR2).toHaveBeenCalledWith("banners/photo..jpg");
+  });
 
   it("une clé bien formée mais absente du stockage : not_found, pas une erreur de forme", async () => {
     r2.readFromR2.mockResolvedValue(null);
@@ -109,15 +121,33 @@ describe("view_image : ce qu'il refuse", () => {
    * ce que l'autre bout accepte : mieux vaut un refus qui DIT la taille
    * qu'un corps rejeté sans explication.
    */
-  it("une image trop lourde est refusée en disant son poids, et reste utilisable ailleurs", async () => {
+  it("une image stockée trop lourde dit son poids, la même unité que le plafond, et qu'il n'y a rien à retenter", async () => {
     r2.readFromR2.mockResolvedValue({ bytes: new Uint8Array(4_000_000), contentType: "image/png" });
 
     const out = JSON.parse(textOf(await voir("banners/7-lourde.png")));
 
     expect(out.code).toBe("limit_exceeded");
-    expect(out.message).toMatch(/3906 Ko/);
-    expect(out.message).toMatch(/plafond 3418 Ko/);
-    expect(out.message).toMatch(/utilisable par les autres outils/);
+    // Les deux nombres dans la MÊME unité : « 3,5 Mo » dans la description et
+    // « 3418 Ko » dans le refus sont le même plafond, et personne ne devrait
+    // avoir à le deviner.
+    expect(out.message).toMatch(/3\.8 Mio/);
+    expect(out.message).toMatch(/plafond 3\.5 Mio/);
+    // Rien à tenter sur une image déjà stockée : le taire enverrait l'agent
+    // réessayer là où aucune tentative ne peut réussir.
+    expect(out.message).toMatch(/inutile de réessayer/);
+  });
+
+  // Pour une URL, le recours existe : une autre candidate.
+  it("une URL trop lourde invite à en choisir une autre", async () => {
+    net.fetchImageBytes.mockResolvedValue({
+      ok: true, bytes: new Uint8Array(4_000_000), contentType: "image/png", size: 4_000_000,
+    });
+
+    const out = JSON.parse(textOf(await voir("https://x.test/enorme.png")));
+
+    expect(out.code).toBe("limit_exceeded");
+    expect(out.message).toMatch(/Choisis une autre image/);
+    expect(out.message).not.toMatch(/inutile de réessayer/);
   });
 
   // Les six échecs du téléchargement gardent leur identité, comme partout

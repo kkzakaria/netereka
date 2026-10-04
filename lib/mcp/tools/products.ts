@@ -168,7 +168,10 @@ export const productTools: ToolDefinition[] = [
   defineTool({
     name: "get_product",
     description:
-      "Relit une fiche produit complète, brouillon ou publiée : champs, attributs, images (URL publiques), variantes. " +
+      "Relit une fiche produit complète, brouillon ou publiée : champs, attributs, images, variantes. " +
+      "images[].url est une CLÉ de stockage, pas une URL publique (vérifié le 2026-10-04 : les 2977 images de production " +
+      "sont des clés « products/… ») — passe-la à view_image pour REGARDER la photo, elle ne s'ouvre pas " +
+      "telle quelle dans un navigateur. " +
       "La réponse porte is_draft : true → une prochaine écriture s'applique directement ; false → elle sera déposée " +
       "en révision et devra être validée par un administrateur depuis /revisions.",
     inputSchema: { id: idSchema },

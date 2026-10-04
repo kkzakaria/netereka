@@ -23,9 +23,13 @@ export const FETCH_FAILURES: Record<FetchFailure, { code: McpErrorCode; message:
   },
   bad_content_type: {
     code: "validation_error",
+    // Partagée par un outil d'ÉCRITURE (set_banner_image) et un outil de
+    // LECTURE (view_image) : la raison donnée doit être vraie des deux.
+    // « Serait invisible une fois en ligne » ne l'est pas pour qui regarde
+    // sans rien publier — c'est la LISTE qui est la nôtre, et son motif.
     message:
-      "Nous n'acceptons que le JPEG, le PNG et le WebP. L'AVIF est refusé : le redimensionneur de la " +
-      "vitrine ne sait pas le lire, et une image AVIF mise en ligne serait invisible.",
+      "Nous n'acceptons que le JPEG, le PNG et le WebP. L'AVIF est hors de cette liste parce que le " +
+      "redimensionneur de la vitrine ne sait pas le lire.",
   },
   too_large: { code: "validation_error", message: "Image trop lourde : 5 Mo au maximum." },
   timeout: { code: "internal_error", message: "L'hôte n'a pas répondu en 10 secondes. Réessayez ou changez d'URL." },

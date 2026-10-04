@@ -21,8 +21,11 @@ export function ok(data: unknown): ToolResult {
 /**
  * Une image que le modèle voit, suivie du texte qui dit ce qu'il regarde.
  *
- * ORDRE : l'image d'abord. Les métadonnées en tête repoussent l'image hors du
- * premier bloc, et plusieurs clients n'affichent que celui-là.
+ * ORDRE : l'image d'abord, par PRÉCAUTION. La spécification MCP n'impose
+ * aucun ordre et un client conforme rend tous les blocs ; je n'ai observé
+ * aucun client qui n'en rendrait qu'un. Mais si l'un le faisait, c'est
+ * l'image qu'il montrerait, et non des métadonnées. Le test par vrai client
+ * (`tools-view-image.test.ts`) fixe cet ordre.
  */
 export function okWithImage(image: { base64: string; mimeType: string }, data: unknown): ToolResult {
   return {
@@ -42,7 +45,9 @@ export function okWithImage(image: { base64: string; mimeType: string }, data: u
  */
 export function textOf(result: ToolResult): string {
   const bloc = result.content.find((c): c is Extract<ToolContent, { type: "text" }> => c.type === "text");
-  if (!bloc) throw new Error("[mcp] résultat sans bloc texte");
+  if (!bloc) {
+    throw new Error(`[mcp] résultat sans bloc texte (blocs : ${result.content.map((c) => c.type).join(", ") || "aucun"})`);
+  }
   return bloc.text;
 }
 
