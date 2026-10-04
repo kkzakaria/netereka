@@ -7,9 +7,12 @@ import { changeReasonSchema } from "@/lib/validations/mcp-common";
  * (actions/admin/banners.ts) : le MCP ne doit pas pouvoir écrire une
  * bannière que l'interface refuserait.
  *
- * `image_url` est absent à dessein : c'est une clé R2, et un outil qui
- * accepterait une chaîne libre y poserait une URL quelconque. Les images de
- * bannière relèvent de la phase images.
+ * `image_url` reste absent de `updateBannerShape` à dessein : c'est une clé
+ * R2, et un outil qui accepterait une chaîne libre y poserait n'importe quoi
+ * — une URL d'un autre site que la vitrine servirait telle quelle. L'image
+ * d'une bannière passe par `set_banner_image`, qui prend une URL SOURCE
+ * http(s), télécharge l'octet (garde SSRF, 5 Mo, 10 s) et fabrique la clé
+ * lui-même.
  */
 
 /** Borne haute alignée sur MAX_INPUT_LENGTH de sanitizeDescriptionHtml. */
@@ -40,6 +43,19 @@ function datesInOrder(d: { starts_at?: string | null; ends_at?: string | null })
 const DATES_MESSAGE = "La date de fin doit être postérieure à la date de début";
 
 export const bannerIdSchema = z.number().int().positive();
+
+/** `set_banner_image` : une URL source à télécharger, ou `null` pour retirer
+ *  l'image de la bannière. Jamais une clé R2 — voir l'en-tête du fichier. */
+export const setBannerImageShape = {
+  id: bannerIdSchema,
+  url: z
+    .string()
+    .trim()
+    .max(2048)
+    .refine((u) => /^https?:\/\//i.test(u), "URL http(s) requise")
+    .nullable(),
+  reason: changeReasonSchema.optional(),
+};
 
 /** Champs modifiables d'une bannière existante, tous optionnels ; `null`
  *  efface les champs qui l'admettent. `is_active` n'en fait plus partie

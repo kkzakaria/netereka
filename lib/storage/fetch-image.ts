@@ -217,10 +217,32 @@ async function fetchWithSsrfSafeRedirects(
   return { ok: false, reason: "fetch_failed" }; // redirect loop / cap exceeded
 }
 
-export async function fetchAndUploadImage(
-  draftId: string,
+/**
+ * Télécharge une image et la dépose en R2 sous `products/<id>/`.
+ *
+ * Conserve la signature historique de ses quatre appelants ; tout le travail
+ * est dans `fetchAndUploadImageTo`, qui ne présume pas du préfixe.
+ */
+export async function fetchAndUploadImage(draftId: string, url: string): Promise<FetchImageResult> {
+  return fetchAndUploadImageTo(`products/${draftId}`, url);
+}
+
+/**
+ * Même téléchargement, préfixe de clé choisi par l'appelant — `banners/<id>`
+ * pour une image de bannière, `products/<id>` pour une fiche.
+ *
+ * Le préfixe vient du CODE, jamais d'une entrée de modèle : `..` ou une barre
+ * de tête y écriraient hors de l'arborescence attendue, ou ailleurs dans le
+ * bucket. Le contrôle est ici plutôt qu'à l'appel pour qu'un futur appelant ne
+ * puisse pas l'oublier.
+ */
+export async function fetchAndUploadImageTo(
+  keyPrefix: string,
   url: string,
 ): Promise<FetchImageResult> {
+  if (!/^[a-z0-9][a-z0-9/_-]*$/i.test(keyPrefix) || keyPrefix.includes("//") || keyPrefix.endsWith("/")) {
+    throw new Error(`[fetch-image] préfixe de clé invalide : « ${keyPrefix} »`);
+  }
   let parsed: URL;
   try { parsed = new URL(url); } catch { return { ok: false, reason: "ssrf" }; }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, reason: "ssrf" };
@@ -342,7 +364,7 @@ export async function fetchAndUploadImage(
     for (const c of chunks) { buffer.set(c, offset); offset += c.byteLength; }
 
     const ext = extensionPour(ct);
-    const key = `products/${draftId}/${nanoid()}.${ext}`;
+    const key = `${keyPrefix}/${nanoid()}.${ext}`;
     const file = new File([buffer], key, { type: ct });
     try {
       await uploadToR2(file, key);
