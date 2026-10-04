@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { textOf, type ToolResult } from "@/lib/mcp/result";
 import { RETIRED_STORY_FIELD_NAMES } from "@/lib/validations/mcp-product";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import type { McpContext } from "@/lib/mcp/context";
@@ -38,7 +39,7 @@ import { createMcpServer } from "@/lib/mcp/server";
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 // productTools is typed ToolDefinition[] (base shape), so handler accepts any object literal here.
 const tool = (name: string) => productTools.find((t) => t.name === name)!;
-const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
+const parse = (r: ToolResult) => JSON.parse(textOf(r));
 /** What every write must hand to product-drafts, which commits it with the mutation. */
 const auditFor = (tool: string) => ({ actor: { id: "admin-1", name: "Admin" }, details: { via: "mcp", tool, client_id: "client-1" } });
 

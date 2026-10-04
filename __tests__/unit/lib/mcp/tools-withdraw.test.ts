@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { textOf, type ToolResult } from "@/lib/mcp/result";
 import type { DatabaseSync } from "node:sqlite";
 import { createMigratedDb, sqliteD1 } from "../../../helpers/sqlite-d1";
 import type { McpContext } from "@/lib/mcp/context";
@@ -17,7 +18,7 @@ import { createRevision } from "@/lib/db/revisions";
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const product = (n: string) => productTools.find((t) => t.name === n)!;
 const banner = (n: string) => bannerTools.find((t) => t.name === n)!;
-const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
+const parse = (r: ToolResult) => JSON.parse(textOf(r));
 
 let db: DatabaseSync;
 beforeEach(() => {

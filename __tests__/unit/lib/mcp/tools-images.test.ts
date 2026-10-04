@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { textOf, type ToolResult } from "@/lib/mcp/result";
 import type { DatabaseSync } from "node:sqlite";
 import { createMigratedDb, sqliteD1 } from "../../../helpers/sqlite-d1";
 import type { McpContext } from "@/lib/mcp/context";
@@ -61,7 +62,7 @@ import { imageTools } from "@/lib/mcp/tools/images";
 
 const ctx: McpContext = { user: { id: "admin-1", name: "Admin", role: "admin" }, clientId: "client-1" };
 const tool = (name: string) => imageTools.find((t) => t.name === name)!;
-const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
+const parse = (r: ToolResult) => JSON.parse(textOf(r));
 const auditFor = (tool: string) => ({ actor: { id: "admin-1", name: "Admin" }, details: { via: "mcp", tool, client_id: "client-1" } });
 
 /** KV en mémoire, avec la contrainte de TTL du vrai KV. */

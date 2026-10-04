@@ -2,7 +2,7 @@ import { DraftError, type DraftAudit } from "@/lib/db/product-drafts";
 import { deleteBannerRow, getBannerById, insertInactiveBanner, listBanners } from "@/lib/db/banners";
 import { RevisionError, createRevision, listPendingRevisions, listPendingRevisionHandles } from "@/lib/db/revisions";
 import type { McpContext } from "@/lib/mcp/context";
-import { ok, fail, type McpErrorCode, type ToolResult } from "@/lib/mcp/result";
+import { ok, fail, type ToolResult } from "@/lib/mcp/result";
 import {
   bannerIdSchema,
   checkBannerDates,
@@ -10,7 +10,8 @@ import {
   setBannerImageShape,
   updateBannerShape,
 } from "@/lib/validations/mcp-banner";
-import { fetchAndUploadImageTo, type FetchImageResult } from "@/lib/storage/fetch-image";
+import { fetchAndUploadImageTo } from "@/lib/storage/fetch-image";
+import { FETCH_FAILURES } from "@/lib/mcp/fetch-failures";
 import { deleteFromR2 } from "@/lib/storage/images";
 import { getImageUrl } from "@/lib/utils/images";
 import { withdrawReasonSchema } from "@/lib/validations/mcp-common";
@@ -48,41 +49,6 @@ function toolError(toolName: string, err: unknown): ToolResult {
 function auditFor(ctx: McpContext, tool: string): DraftAudit {
   return { actor: { id: ctx.user.id, name: ctx.user.name }, details: { via: "mcp", tool, client_id: ctx.clientId } };
 }
-
-type FetchFailure = Exclude<FetchImageResult, { ok: true }>["reason"];
-
-/**
- * Chaque échec typé du téléchargement garde son identité jusqu'au client,
- * comme `SEARCH_FAILURES` (lib/mcp/tools/images.ts). Replier les six sur
- * « image inaccessible » enverrait le modèle chercher une autre URL quand la
- * cause est un AVIF (changer d'URL n'y changera rien) ou une panne de notre
- * stockage (rien de ce qu'il tentera n'aidera). Le `Record` est exhaustif par
- * construction : une raison ajoutée à `FetchImageResult` casse la compilation
- * au lieu de tomber dans un repli muet.
- */
-const FETCH_FAILURES: Record<FetchFailure, { code: McpErrorCode; message: string }> = {
-  ssrf: {
-    code: "validation_error",
-    message: "Cette URL vise une adresse interne ou un protocole non http(s). Donnez une URL publique.",
-  },
-  bad_status: {
-    code: "validation_error",
-    message: "L'hôte a refusé de servir cette image. Vérifiez l'URL, ou prenez-en une autre.",
-  },
-  bad_content_type: {
-    code: "validation_error",
-    message:
-      "Nous n'acceptons que le JPEG, le PNG et le WebP. L'AVIF est refusé : le redimensionneur de la " +
-      "vitrine ne sait pas le lire, et l'image serait invisible une fois en ligne.",
-  },
-  too_large: { code: "validation_error", message: "Image trop lourde : 5 Mo au maximum." },
-  timeout: { code: "internal_error", message: "L'hôte n'a pas répondu en 10 secondes. Réessayez ou changez d'URL." },
-  fetch_failed: { code: "internal_error", message: "Téléchargement impossible depuis cette URL." },
-  upload_failed: {
-    code: "internal_error",
-    message: "L'image a été téléchargée mais le stockage de la boutique l'a refusée. Prévenez un administrateur.",
-  },
-};
 
 /**
  * L'URL publique d'un objet, ou `null` quand on ne peut pas la former.
@@ -154,6 +120,7 @@ export const bannerTools: ToolDefinition[] = [
       "/revisions, et l'image n'apparaît qu'ensuite. url: null retire l'image (rien n'est téléchargé). " +
       "La réponse porte image_key, la clé de stockage, et image_src, l'URL absolue à employer telle quelle " +
       "dans un <img src=\"…\"> si tu composes la bannière en HTML libre avec content_html (update_banner). " +
+      "Pour regarder l'image avant de la poser, passe son url à view_image. " +
       "image_src peut être null si le serveur ne connaît pas l'adresse publique de son stockage : n'invente " +
       "alors pas d'URL à partir de image_key, elle ne s'afficherait pas. " +
       "reason (optionnel) : pourquoi cette image, lu par l'administrateur sur l'écran de validation.",
@@ -245,7 +212,8 @@ export const bannerTools: ToolDefinition[] = [
     name: "get_banner",
     description:
       "Relit une bannière du hero : champs, contenu HTML (content_html, déjà assaini), état d'activation et " +
-      "révisions en attente sur cette bannière. Toute modification d'une bannière est déposée en révision " +
+      "révisions en attente. Pour VOIR son image plutôt que d'en lire la clé, passe image_url à view_image. " +
+      "Toute modification d'une bannière est déposée en révision " +
       "et validée par un administrateur depuis /revisions.",
     inputSchema: { id: bannerIdSchema },
     handler: async (_ctx, input) => {
