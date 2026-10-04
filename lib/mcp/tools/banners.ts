@@ -84,7 +84,9 @@ const BANNER_SURFACE =
   "à deux colonnes — ta composition à gauche, son visuel à droite — sans quoi ces bannières-là auraient " +
   "perdu leur photo. Deux façons d'en sortir : ajoute une <img> dans ta composition, ou, si tu veux " +
   "délibérément toute la surface SANS image, appelle set_banner_image avec url: null pour retirer celle de " +
-  "la bannière. " +
+  "la bannière — c'est une RÉVISION comme les autres : la bannière garde sa mise en page à deux colonnes " +
+  "tant qu'un administrateur ne l'a pas appliquée, et ta révision de contenu et celle du retrait sont " +
+  "indépendantes l'une de l'autre (aucun ordre n'est imposé, appliquer l'une sans l'autre est possible). " +
   "get_banner rend image_public_url, l'URL de l'image de la bannière DÉJÀ optimisée (redimensionnée et " +
   "réencodée) : place-la telle quelle (<img class=\"nk-media\" src=\"…\" alt=\"…\">) et ne la reconstruis " +
   "jamais à partir de la clé — l'adresse brute du stockage pèse une vingtaine de fois plus lourd, sur une " +

@@ -207,7 +207,7 @@ describe("couplage : get_banner renvoie bien l'URL publique qu'il promet", () =>
     const { banner } = await answer();
 
     expect(banner.image_public_url).toBe(
-      "/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7-a.jpg",
+      "/cdn-cgi/image/width=1280,quality=75,format=auto/https://r2.netereka.ci/banners/7-a.jpg",
     );
     expect(banner.image_public_url).not.toBe("https://r2.netereka.ci/banners/7-a.jpg");
     // Sans retirer la clé : c'est elle que porte la ligne en base.

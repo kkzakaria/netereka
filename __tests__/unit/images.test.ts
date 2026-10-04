@@ -90,7 +90,7 @@ describe("getPublicImageUrl", () => {
  *
  * Mesuré le 2026-10-04 sur une bannière de production
  * (`banners/7-eMbgtwky.png`) : 1 484 141 octets servis bruts, 73 055 en
- * `width=1280,quality=80,format=auto`, 23 046 en `width=640`. React passait
+ * `width=1280,quality=75,format=auto`, 23 046 en `width=640`. React passait
  * déjà par cette transformation pour les images qu'il rend ; une composition
  * libre écrit un `<img>` nu, donc l'URL qu'on lui tend est celle que le
  * visiteur télécharge.
@@ -104,7 +104,7 @@ describe("getCompositionImageUrl", () => {
 
   it("transforme la clé plutôt que de rendre l'adresse brute", () => {
     expect(getCompositionImageUrl("banners/7-a.png")).toBe(
-      "/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7-a.png",
+      "/cdn-cgi/image/width=1280,quality=75,format=auto/https://r2.netereka.ci/banners/7-a.png",
     );
   });
 

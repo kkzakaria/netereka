@@ -152,7 +152,7 @@ describe("une URL impropre à un en-tête n'est pas stockée", () => {
   });
 
   it("accepte l'URL transformée que nous tendons aux auteurs", async () => {
-    const src = "/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7.png";
+    const src = "/cdn-cgi/image/width=1280,quality=75,format=auto/https://r2.netereka.ci/banners/7.png";
     banniere({ id: 1, ordre: 0, titre: "A", content_html: `<img src="${src}">` });
     await refreshHeroPreload();
     expect(prechargement()).toBe(`<${src}>; rel=preload; as=image; fetchpriority=high`);

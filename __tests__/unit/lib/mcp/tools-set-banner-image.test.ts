@@ -96,7 +96,7 @@ describe("set_banner_image : ce qui est déposé", () => {
     // Transformée, pas l'adresse brute : c'est cette URL que l'auteur pose
     // dans son <img>, donc celle que le visiteur télécharge.
     expect(out.image_src).toBe(
-      "/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7/abc.png",
+      "/cdn-cgi/image/width=1280,quality=75,format=auto/https://r2.netereka.ci/banners/7/abc.png",
     );
     vi.unstubAllEnvs();
   });

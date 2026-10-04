@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import useEmblaCarousel from "embla-carousel-react";
@@ -31,11 +31,11 @@ interface Slide {
    * `true` quand la composition place elle-même une image — c'est ce qui
    * décide de la toile libre.
    *
-   * Calculé UNE FOIS ici, et non dans le rendu : `HeroBanner` se re-rend à
-   * chaque défilement d'Embla, et la lecture serait relancée pour chaque
-   * diapositive à chaque fois. Même lecture que le préchargement
-   * (`premiereImageDuContenu`), appelée au même endroit que la construction
-   * des diapositives.
+   * Calculé à la construction des diapositives, et mémoïsé par `HeroBanner`
+   * (`useMemo`) : sans cela la lecture serait relancée pour chaque
+   * diapositive à chaque défilement d'Embla. Même lecture que le
+   * préchargement (`premiereImageDuContenu`), pour que les deux ne puissent
+   * pas diverger sur ce qu'est « une composition qui porte son image ».
    */
   porte_son_image: boolean;
 }
@@ -100,7 +100,12 @@ export function HeroBanner({
   banners: Banner[];
   fallbackProducts: ProductCardData[];
 }) {
-  const slides = buildSlides(banners, fallbackProducts);
+  // `useMemo` et non un appel nu : `HeroBanner` se re-rend à chaque
+  // défilement d'Embla (`setSelectedIndex`), et `buildSlides` lit le HTML de
+  // chaque bannière pour décider de `porte_son_image`. Sans mémo, cette
+  // lecture était relancée pour toutes les diapositives à chaque défilement
+  // — ce que le commentaire de `porte_son_image` prétendait déjà éviter.
+  const slides = useMemo(() => buildSlides(banners, fallbackProducts), [banners, fallbackProducts]);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, duration: 30 }, [
     Autoplay({ delay: 5000, stopOnInteraction: true }),

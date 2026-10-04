@@ -19,9 +19,19 @@ export function getPublicImageUrl(path: string | null | undefined): string | nul
 }
 
 /**
- * Largeur de transformation par défaut d'une image destinée à une composition
- * libre : la diapositive du hero fait au plus ~1280 px de large, et l'auteur
- * peut y placer l'image à n'importe quelle taille.
+ * Largeur de transformation par défaut d'une image de composition libre.
+ *
+ * Elle vient de la LARGEUR de la diapositive, pas de sa hauteur : le hero
+ * occupe toute la largeur du carrousel (au plus ~1280 px), et une composition
+ * peut y poser une image pleine largeur. Une image placée dans un `nk-split`
+ * n'en occupe que la moitié et se contenterait de 828 px — l'appelant peut
+ * passer sa propre largeur, mais aucun outil MCP ne l'expose aujourd'hui.
+ *
+ * Le préchargement n'a pas de `srcset` (voir `refreshHeroPreload`, limite des
+ * Early Hints de Cloudflare) : c'est donc UNE adresse pour tous les écrans, et
+ * un mobile télécharge la variante large. Mesuré, l'écart reste modeste —
+ * 67 111 octets en 1280 contre 23 046 en 640, là où l'adresse brute en coûte
+ * 1 484 141.
  */
 const COMPOSITION_WIDTH = 1280;
 
@@ -31,9 +41,9 @@ const COMPOSITION_WIDTH = 1280;
  * `getPublicImageUrl` rend l'adresse BRUTE de l'objet R2. Elle est correcte
  * et ruineuse : mesuré le 2026-10-04 sur une bannière de production,
  * `banners/7-eMbgtwky.png` pèse **1 484 141 octets** servie telle quelle,
- * contre **73 055** en `width=1280,quality=80,format=auto` et 23 046 en
- * `width=640`. Vingt fois plus lourd pour la même image, sur une boutique
- * mobile-first où la donnée se paie.
+ * contre **67 111** en `width=1280,quality=75,format=auto` et 23 046 en
+ * `width=640`. Vingt-deux fois plus lourd pour la même image, sur une
+ * boutique mobile-first où la donnée se paie.
  *
  * React passait déjà par cette transformation (`cloudflareImageLoader`) pour
  * les images qu'il rend. Une composition libre, elle, écrit un `<img>` nu :
@@ -56,7 +66,10 @@ export function getCompositionImageUrl(
   if (/\.avif(\?|#|$)/i.test(url)) return url;
   if (process.env.NODE_ENV === "development") return url;
   const sansSlash = url.startsWith("/") ? url.slice(1) : url;
-  return `/cdn-cgi/image/width=${width},quality=80,format=auto/${sansSlash}`;
+  // `quality=75` comme `cloudflareImageLoader` et comme le repli du
+  // préchargement : une seconde valeur n'aurait servi qu'à faire deux
+  // variantes de la même image là où une suffit.
+  return `/cdn-cgi/image/width=${width},quality=75,format=auto/${sansSlash}`;
 }
 
 export function getImageUrl(path: string | null | undefined): string {
