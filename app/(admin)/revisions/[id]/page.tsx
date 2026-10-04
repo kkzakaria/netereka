@@ -106,6 +106,24 @@ export default async function RevisionDetailPage({ params }: Props) {
         {revision.summary && (
           <p className="mt-3 rounded-lg border bg-muted/40 p-3 text-sm">{revision.summary}</p>
         )}
+        {/* L'aperçu ne vaut que s'il est TROUVABLE depuis l'écran où la
+            décision se prend. Il monte le vrai composant de la vitrine avec
+            le contenu proposé : c'est la seule façon de voir une révision
+            avant de l'appliquer — le diff montre des champs, pas un rendu.
+            Nouvel onglet, pour ne pas perdre l'écran de validation. */}
+        <p className="mt-3 text-sm">
+          <Link
+            href={`/apercu/${revision.target_type === "banner" ? "banniere" : "produit"}/${revision.id}`}
+            target="_blank"
+            rel="noopener"
+            className="font-medium underline underline-offset-4"
+          >
+            {revision.target_type === "banner"
+              ? "Voir le rendu de cette révision dans le carrousel"
+              : "Voir le rendu de cette révision sur la fiche"}
+          </Link>
+          <span className="text-muted-foreground"> — rétrécissez la fenêtre pour juger du mobile.</span>
+        </p>
       </AdminPageHeader>
 
       <RevisionDiff
