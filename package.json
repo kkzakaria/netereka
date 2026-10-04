@@ -19,6 +19,7 @@
     "versions:list": "wrangler versions list",
     "check:migrations": "node scripts/check-migration-safety.mjs",
     "check:drift": "tsx scripts/drift/index.ts",
+    "observe": "tsx scripts/observer-version.ts",
     "content:convert": "tsx scripts/convert-content-to-html.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -35,7 +36,8 @@
     "whatsapp:tail": "npx wrangler tail --config workers/whatsapp/wrangler.jsonc",
     "prepare": "husky",
     "postinstall": "node scripts/patch-opennext.mjs",
-    "cf:version-affinity": "node scripts/version-affinity.mjs"
+    "cf:version-affinity": "node scripts/version-affinity.mjs",
+    "cf:subdomain": "tsx scripts/cf-subdomain.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

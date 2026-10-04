@@ -3,7 +3,52 @@
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": ".open-next/worker.js",
-  "workers_dev": true,
+
+  // LA BOUTIQUE NE DOIT AVOIR QU'UNE PORTE : netereka.ci.
+  //
+  // CES DEUX RÉGLAGES NE S'APPLIQUENT PAS TOUT SEULS. Le POST qui allume ou
+  // éteint le sous-domaine vit dans `subdomainDeploy` de wrangler, appelé par
+  // `triggersDeploy`, lui-même appelé par exactement deux commandes :
+  // `wrangler deploy` et `wrangler triggers deploy` (vérifié dans la source de
+  // wrangler 4.146.0). Or `deploy.yml`, `promote.yml` et `rollback.yml`
+  // n'utilisent que `versions upload`, `versions deploy` et `rollback` —
+  // aucune des deux. `versions upload` se contente de LIRE l'état du
+  // sous-domaine pour imprimer l'URL d'aperçu.
+  //
+  // Ce qui est écrit ici est donc l'INTENTION ; `npm run cf:subdomain`
+  // l'applique et relit pour le vérifier. Même famille que
+  // `npm run cf:version-affinity`. Ne décrivez pas ces valeurs comme un fait
+  // sans avoir relu la réalité : une posture de sécurité fausse est pire que
+  // la porte ouverte, parce qu'elle arrête ceux qui auraient regardé.
+  //
+  // `workers_dev: true` ouvrait une seconde porte,
+  // `netereka.koffiz2110.workers.dev`, qui répondait 200 sans
+  // `x-robots-tag: noindex` (mesuré le 2026-10-04) — une copie publique du
+  // site HORS DE LA ZONE, donc hors des règles de transformation et de toute
+  // future règle WAF. Pas d'incident SEO : le `<link rel="canonical">` et le
+  // sitemap ne nomment que netereka.ci. Mais une porte dont personne ne se
+  // sert et que personne ne surveille finit par être celle qu'on oublie.
+  //
+  // `preview_urls` reste VRAI, et séparément : les URL de version
+  // (`<préfixe>-netereka.<sous-domaine>.workers.dev`) servent aux contrôles
+  // NON VISUELS d'une version — codes de réponse, en-têtes, routes. Pas au
+  // reste : hors zone, `/cdn-cgi/image/` n'existe pas et la page d'accueil y
+  // perd ses 471 images. Pour juger l'apparence, c'est la surcharge de
+  // version sur netereka.ci (`npm run observe`).
+  //
+  // Les deux réglages sont écrits EXPLICITEMENT parce que leur défaut est
+  // couplé : depuis wrangler 4.44, `preview_urls` suit `workers_dev` quand il
+  // est tu. Passer l'un à faux en taisant l'autre éteindrait les deux.
+  "workers_dev": false,
+  "preview_urls": true,
+
+  // Permet au Worker de dire QUELLE version a répondu (app/api/version).
+  // Sans cela, une surcharge de version qui ne s'applique pas est
+  // indiscernable d'une qui s'applique : les deux rendent un 200 normal.
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+
   "routes": [
     { "pattern": "netereka.ci/*", "zone_name": "netereka.ci" },
     { "pattern": "www.netereka.ci/*", "zone_name": "netereka.ci" }

@@ -23,6 +23,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { LiaisonReelle } from "@/lib/drift/types";
+import { varsDeclarees } from "@/lib/config/wrangler-jsonc";
 
 function wrangler(args: string[]): string {
   return execFileSync("npx", ["wrangler", ...args], {
@@ -72,15 +73,16 @@ export function versionLaPlusRecente(): Version {
   return datees.sort((a, b) => b.t - a.t)[0].v;
 }
 
-/** `vars` déclarées dans `wrangler.jsonc`. JSONC : commentaires retirés avant analyse. */
+/**
+ * `vars` déclarées dans `wrangler.jsonc`.
+ *
+ * Le retrait des commentaires vit dans `lib/config/wrangler-jsonc.ts` depuis
+ * que `scripts/observer-version.ts` lit le même fichier pour le nom du
+ * Worker : deux copies d'un tel retrait, c'est deux occasions d'en avoir une
+ * qui mange une chaîne.
+ */
 export function varsDeWranglerJsonc(chemin: string): string[] {
-  const brut = readFileSync(chemin, "utf8");
-  const sansCommentaires = brut
-    // Les littéraux de chaîne sont préservés : on ne retire un // ou un /* que
-    // hors chaîne. Suffisant ici, et vérifié par un test sur le vrai fichier.
-    .replace(/"(?:[^"\\]|\\.)*"|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (m) => (m.startsWith('"') ? m : ""));
-  const conf = JSON.parse(sansCommentaires) as { vars?: Record<string, unknown> };
-  return Object.keys(conf.vars ?? {}).sort();
+  return varsDeclarees(readFileSync(chemin, "utf8"));
 }
 
 /**

@@ -16,6 +16,7 @@ Complete reference for how code reaches production at NETEREKA. Covers the deplo
   - [C. Cut an official release (SemVer)](#c-cut-an-official-release-semver)
   - [D. Safe destructive migration (expand/contract)](#d-safe-destructive-migration-expandcontract)
   - [E. Deploy only the WhatsApp Worker](#e-deploy-only-the-whatsapp-worker)
+  - [F. Observe a version before it reaches anyone](#f-observe-a-version-before-it-reaches-anyone)
 - [Migration Safety](#migration-safety)
 - [Conventional Commits](#conventional-commits)
 - [Local Wrappers](#local-wrappers)
@@ -197,6 +198,36 @@ Split destructive changes into **2 or 3 PRs** :
 npx wrangler rollback --config workers/whatsapp/wrangler.jsonc
 ```
 
+### F. Observe a version before it reaches anyone
+
+Runbook A puts a new version in front of **10% of real customers before anyone has looked at it**. That order is backwards for anything visual. This runbook inverts it : the version is uploaded, placed in the deployment at **0%**, observed deliberately, and only then given traffic.
+
+```text
+1. Upload without deploying (or let deploy.yml's canary exist and skip to 3)
+   npx wrangler versions upload
+2. Put it in the current deployment with NO traffic
+   npm run observe -- <sha>          # prints the exact command when it is missing
+   npx wrangler versions deploy <baseline>@100% <new>@0% --yes
+3. Look at it, on the real domain
+   npm run observe -- <sha> --chemin /p/some-product --verifier
+4. Promote (Actions → "Promote to 100%") or drop the 0% version and move on
+```
+
+**How it works.** `Cloudflare-Workers-Version-Overrides: netereka="<uuid>"` on a request to `netereka.ci` routes that one request to that one version. You stay on the zone, so image transformations, sessions, Turnstile and every zone rule behave exactly as in production.
+
+**Why not a Version URL.** Cloudflare mints one per version (`<prefix>-netereka.<subdomain>.workers.dev`) and they work — but they live **off the zone**, and `/cdn-cgi/image/` is a zone feature. Measured 2026-10-04 : the homepage loses all **471** of its images there (404, 17 bytes, `text/plain`) where the same URL returns 200 and 9 662 bytes on `netereka.ci`. They remain useful for **non-visual** checks (status codes, headers, route existence), which is why `preview_urls` stays `true` in `wrangler.jsonc` even though `workers_dev` is now `false`.
+
+**The trap this runbook exists to close.** An override that does not apply is **not an error** — it is ignored, and the request is routed by the canary percentages. You get a perfectly normal 200 rendered by a different version than the one you believe you are looking at. Three ways in : the version is not in the current deployment ; the header value is not a valid RFC 8941 dictionary (a typo in the UUID is enough) ; the Worker name does not match. So :
+
+- `npm run observe` refuses an ambiguous reference, refuses a version that is not in the deployment, and refuses to print a header it cannot prove well-formed (a UUID *prefix* is accepted by curl and ignored by Cloudflare — the worst possible input) ;
+- `--verifier` fetches `GET /api/version` **through the override** and compares the version that answered to the one requested. That endpoint reads the `CF_VERSION_METADATA` binding and is the only thing that turns "I set a header" into "I observed this version". It returns the Cloudflare UUID and the upload timestamp, never the `workers/tag` git sha — the UUID is what the comparison needs, the sha would be a build fingerprint handed to the public.
+
+**A browser cannot do this from the address bar.** The header has to be set by the client : an extension, `curl`, or a screenshot capturer (Browser Run's `setExtraHTTPHeaders`). `npm run observe` prints the header as JSON for exactly that purpose.
+
+**Only two versions fit in one deployment.** A canary in flight already occupies both slots, so observing a third requires promoting or rolling back first — which the "promote before the next merge" rule already demands for another reason.
+
+---
+
 ---
 
 ## Migration Safety
@@ -320,6 +351,29 @@ Mitigation : a zone **Transform Rule** (phase `http_request_late_transform`) set
 - Keyed on client IP, not session cookie : anonymous visitors must be covered too, and an empty cookie would collapse all of them onto a single key.
 - Trade-off : the canary's 10% is now 10% of client IPs, not of requests. Users behind one NAT share a version. A user whose IP changes mid-session (mobile) can still skew, but that is rare compared to per-request randomness.
 - This does **not** remove the rule "promote or rollback before the next merge" — it makes a forgotten canary harmless for users, not correct.
+
+### Version overrides, Version URLs, and the workers.dev door
+
+Three distinct things, often conflated :
+
+| | Host | Zone features (`/cdn-cgi/image/`, rules) | Picks a version |
+|---|---|---|---|
+| Production route | `netereka.ci` | yes | no — canary percentages decide |
+| **Version override** | `netereka.ci` | **yes** | **yes, by header** |
+| Version URL | `<prefix>-netereka.<subdomain>.workers.dev` | no | yes, by hostname |
+
+`wrangler.jsonc` sets both flags **explicitly**, because since wrangler 4.44 `preview_urls` silently follows `workers_dev` when omitted — flipping one while leaving the other unstated would turn off both :
+
+- `workers_dev: false` — `netereka.koffiz2110.workers.dev` answers 200 with no `x-robots-tag: noindex`, a public copy of the shop off the zone (hence outside Transform Rules and any future WAF rule). Not an SEO incident : `<link rel="canonical">` and the sitemap only ever name `netereka.ci`. Nothing in the repo references it.
+- `preview_urls: true` — keeps per-version URLs for non-visual checks.
+
+**These two values are an intention, not a fact, until `npm run cf:subdomain` runs.** The POST that toggles the subdomain lives in wrangler's `subdomainDeploy`, reached only from `wrangler deploy` and `wrangler triggers deploy` (verified in wrangler 4.146.0's source). This project's CD uses `versions upload` / `versions deploy` / `rollback` exclusively, none of which touch it — `versions upload` only *reads* the setting, to print the preview URL. So editing `wrangler.jsonc` alone changes nothing on the live Worker.
+
+`scripts/cf-subdomain.ts` applies what the file declares and **re-reads it afterwards** rather than trusting the write, which is the whole lesson here. It is idempotent, supports `--dry-run`, and needs `CLOUDFLARE_API_TOKEN` (Account → Workers Scripts → Edit) + `CLOUDFLARE_ACCOUNT_ID`. Same family as `npm run cf:version-affinity` : a Cloudflare setting the repo describes and no workflow applies.
+
+Never describe these values as the live state without re-reading it — `curl -sI https://netereka.koffiz2110.workers.dev/` settles it in one line. A false security posture is worse than the open door, because it stops anyone from looking again.
+
+Version URLs are **not generated for Workers that use Durable Objects**. This Worker does not (`open-next.config.ts` uses the R2 incremental cache only) — adding a Durable Object would silently remove them.
 
 ### Retention
 

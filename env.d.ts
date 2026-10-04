@@ -5,6 +5,14 @@ interface CloudflareEnv {
   NEXT_INC_CACHE_R2_BUCKET: R2Bucket;
   ASSETS: Fetcher;
 
+  // Identifiant, étiquette et date de la version du Worker qui sert la
+  // requête. Lue par app/api/version, qui est ce qui permet de VÉRIFIER
+  // qu'une surcharge de version s'est appliquée au lieu de l'espérer.
+  // Déclarée par `version_metadata` dans wrangler.jsonc, donc toujours
+  // présente : ce n'est ni un secret ni une variable, rien ne peut l'effacer
+  // depuis le tableau de bord.
+  CF_VERSION_METADATA: WorkerVersionMetadata;
+
   // Auth (Better Auth)
   BETTER_AUTH_SECRET: string;
   GOOGLE_CLIENT_ID: string;

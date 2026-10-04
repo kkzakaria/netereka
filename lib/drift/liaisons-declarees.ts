@@ -24,6 +24,7 @@ export const LIAISONS_DECLAREES: readonly LiaisonDeclaree[] = [
   { nom: "R2", requise: true },
   { nom: "NEXT_INC_CACHE_R2_BUCKET", requise: true },
   { nom: "ASSETS", requise: true },
+  { nom: "CF_VERSION_METADATA", requise: true },
   { nom: "BETTER_AUTH_SECRET", requise: true },
   { nom: "GOOGLE_CLIENT_ID", requise: true },
   { nom: "GOOGLE_CLIENT_SECRET", requise: true },
