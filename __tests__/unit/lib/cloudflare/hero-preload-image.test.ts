@@ -85,3 +85,29 @@ describe("entités HTML dans le src", () => {
       .toBe("/cdn-cgi/image/width=1280,quality=80,format=auto/https://r2.netereka.ci/banners/7.png");
   });
 });
+
+/**
+ * Le décodage se fait en UN passage, et ce test dit pourquoi.
+ *
+ * Décoder `&amp;` avant les autres décode deux fois : `&amp;lt;` — la façon
+ * correcte d'écrire le texte « &lt; » — deviendrait `&lt;` puis `<`. On
+ * fabriquerait un chevron que l'auteur n'a pas écrit, dans une valeur qui
+ * part ensuite dans un en-tête `Link`. CodeQL appelle cela
+ * `js/double-escaping` et l'a signalé sur la première version.
+ */
+describe("décodage en un seul passage", () => {
+  it("ne décode pas deux fois une entité échappée", () => {
+    expect(premiereImageDuContenu('<img src="https://x.test/a.png?t=&amp;lt;b&amp;gt;">'))
+      .toBe("https://x.test/a.png?t=&lt;b&gt;");
+  });
+
+  it("décode chaque entité une fois", () => {
+    expect(premiereImageDuContenu('<img src="https://x.test/a?a=1&amp;b=2&#39;c">'))
+      .toBe("https://x.test/a?a=1&b=2'c");
+  });
+
+  it("laisse intacte une entité inconnue", () => {
+    expect(premiereImageDuContenu('<img src="https://x.test/a?x=&nbsp;">'))
+      .toBe("https://x.test/a?x=&nbsp;");
+  });
+});

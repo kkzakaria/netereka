@@ -31,14 +31,24 @@
  * `getActiveBanners`), donc chaque `src` a passé `isSafeUri`. Cette fonction ne
  * rattrape pas la sécurité, elle lit.
  */
-/** Les cinq entités que l'assainisseur peut laisser dans un attribut. */
+/**
+ * Les entités qu'un attribut peut porter, décodées en UN SEUL passage.
+ *
+ * Le passage unique n'est pas une élégance : une suite de `.replace()` qui
+ * traite `&amp;` en premier décode deux fois. `&amp;lt;` — la façon correcte
+ * d'écrire le texte « &lt; » — devient `&lt;` au premier remplacement, puis
+ * `<` au suivant : on fabrique un chevron que l'auteur n'avait pas écrit.
+ * CodeQL le nomme `js/double-escaping`, et c'est ainsi que des caractères
+ * neutralisés redeviennent actifs. Ici le résultat part dans un en-tête
+ * `Link` et dans une comparaison d'URL, donc un chevron inventé est au mieux
+ * un préchargement perdu.
+ */
+const ENTITES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: "\"", "#39": "'", "#x27": "'",
+};
+
 function decodeEntites(valeur: string): string {
-  return valeur
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#(?:39|x27);/g, "'");
+  return valeur.replace(/&(amp|lt|gt|quot|#39|#x27);/gi, (entier, nom: string) => ENTITES[nom.toLowerCase()] ?? entier);
 }
 
 export function premiereImageDuContenu(html: string | null | undefined): string | null {
