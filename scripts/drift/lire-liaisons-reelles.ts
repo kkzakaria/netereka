@@ -65,6 +65,31 @@ export function varsDeWranglerJsonc(chemin: string): string[] {
   return Object.keys(conf.vars ?? {}).sort();
 }
 
+/**
+ * La FORME de `wrangler secret list`, vérifiée — parce que c'est ici que le
+ * garde-fou peut devenir VERT À TORT.
+ *
+ * Le sens qui vaut le coup, « présent dans la réalité, déclaré nulle part »,
+ * ne se voit que si l'énumération est complète. Une sortie dont le champ
+ * `name` serait renommé donnerait des entrées `undefined` : les secrets en
+ * trop disparaîtraient du rapport, les liaisons REQUISES resteraient
+ * satisfaites par la version déployée, et le contrôle passerait au vert en
+ * ayant cessé de regarder. Une panne bruyante (sortie 2) vaut mieux qu'un
+ * silence rassurant.
+ */
+export function validerSecrets(secrets: unknown): asserts secrets is { name: string; type: string }[] {
+  if (!Array.isArray(secrets)) {
+    throw new Error("[dérive] `wrangler secret list` n'a pas rendu une liste — forme inattendue.");
+  }
+  for (const s of secrets) {
+    if (!s || typeof (s as { name?: unknown }).name !== "string" || !(s as { name: string }).name) {
+      throw new Error(
+        `[dérive] une entrée de \`wrangler secret list\` ne porte pas de \`name\` lisible : ${JSON.stringify(s)}`,
+      );
+    }
+  }
+}
+
 export interface LiaisonsReelles {
   liaisons: LiaisonReelle[];
   versionId: string;
@@ -83,6 +108,8 @@ export function lireLiaisonsReelles(cheminWranglerJsonc: string): LiaisonsReelle
   }
 
   const secrets = jsonDe<{ name: string; type: string }[]>(wrangler(["secret", "list"]));
+  validerSecrets(secrets);
+
   for (const s of secrets) {
     const existante = parNom.get(s.name);
     if (existante) {

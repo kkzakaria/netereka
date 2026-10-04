@@ -33,7 +33,23 @@ export interface Bilan {
   erreurs: number;
   avertissements: number;
   informations: number;
-  /** Vrai dès qu'il existe une erreur ou un avertissement. */
+  /**
+   * Vrai dès qu'il existe une ERREUR — et pas pour un avertissement.
+   *
+   * Un avertissement nomme un écart réel que PERSONNE NE PEUT RÉSOUDRE
+   * aujourd'hui : dix-huit clés primaires `TEXT` nullables, héritées de la
+   * permissivité de SQLite, qu'on ne corrigerait qu'en reconstruisant dix-huit
+   * tables. Les compter comme un échec rendait le travail nocturne rouge POUR
+   * TOUJOURS, quoi qu'on tranche par ailleurs — mesuré : la production est à
+   * zéro erreur et dix-neuf avertissements, et le contrôle sortait quand même
+   * en 1.
+   *
+   * Un garde-fou rouge en permanence n'alerte plus personne : il apprend à
+   * être ignoré, et c'est exactement ce qui a laissé la clé étrangère
+   * d'`audit_log` survivre un an. Les avertissements restent IMPRIMÉS, en
+   * toutes lettres, dans chaque rapport — ils ne disparaissent pas, ils
+   * cessent seulement de crier.
+   */
   derive: boolean;
 }
 
@@ -41,7 +57,7 @@ export function bilan(ecarts: readonly Ecart[]): Bilan {
   const erreurs = ecarts.filter((e) => e.gravite === "erreur").length;
   const avertissements = ecarts.filter((e) => e.gravite === "avertissement").length;
   const informations = ecarts.filter((e) => e.gravite === "information").length;
-  return { erreurs, avertissements, informations, derive: erreurs + avertissements > 0 };
+  return { erreurs, avertissements, informations, derive: erreurs > 0 };
 }
 
 export interface OptionsRapport {
@@ -115,7 +131,7 @@ export function formaterSection(ecarts: readonly Ecart[], options: OptionsRappor
 }
 
 export function formaterBilan(b: Bilan): string {
-  if (!b.derive && b.informations === 0) return "Bilan : aucun écart.";
+  if (!b.derive && b.avertissements === 0 && b.informations === 0) return "Bilan : aucun écart.";
   const parts = [`${b.erreurs} erreur(s)`, `${b.avertissements} avertissement(s)`];
   const suffixe = b.informations > 0 ? `, ${b.informations} information(s) (non comptée(s) comme écart)` : "";
   return `Bilan : ${parts.join(", ")}${suffixe}.`;

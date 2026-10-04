@@ -13,7 +13,7 @@ import { LIAISONS_DECLAREES } from "@/lib/drift/liaisons-declarees";
 import { lireLiaisonsDeclarees } from "../../../scripts/drift/lire-env-dts";
 import { lireSchemaDeclare } from "../../../scripts/drift/lire-schema-drizzle";
 import { analyserChecks } from "../../../scripts/drift/lire-base-reelle";
-import { varsDeWranglerJsonc } from "../../../scripts/drift/lire-liaisons-reelles";
+import { varsDeWranglerJsonc, validerSecrets } from "../../../scripts/drift/lire-liaisons-reelles";
 import { cheminEnvDts, racineDepot } from "../../../scripts/drift/racine";
 
 describe("lire-env-dts — lecture d'env.d.ts par l'API du compilateur TypeScript", () => {
@@ -135,5 +135,41 @@ describe("varsDeWranglerJsonc — lecture du JSONC réel du dépôt", () => {
     // wrangler.jsonc contient des URL et des chemins ; si le retrait des
     // commentaires mangeait une chaîne, l'analyse JSON lèverait.
     expect(() => varsDeWranglerJsonc(path.join(racineDepot(), "wrangler.jsonc"))).not.toThrow();
+  });
+});
+
+/**
+ * `validerSecrets` — le seul endroit où ce garde-fou peut devenir VERT À TORT.
+ *
+ * Le sens qui vaut le coup ici, « présent dans la réalité, déclaré nulle
+ * part », ne se voit que si l'énumération des secrets est COMPLÈTE. Si
+ * `wrangler secret list` changeait la forme de sa sortie, les entrées
+ * deviendraient `undefined` : les secrets en trop disparaîtraient du rapport,
+ * les liaisons requises resteraient satisfaites par la version déployée, et
+ * le contrôle passerait au vert en ayant cessé de regarder. C'est pire que
+ * pas de garde-fou, parce que cela rassure.
+ */
+describe("validerSecrets — échouer bruyamment plutôt que regarder ailleurs", () => {
+  it("accepte la forme actuelle de wrangler", () => {
+    expect(() => validerSecrets([{ name: "XAI_API_KEY", type: "secret_text" }])).not.toThrow();
+  });
+
+  it("accepte une liste vide : aucun secret est un état légitime", () => {
+    expect(() => validerSecrets([])).not.toThrow();
+  });
+
+  it("refuse une sortie qui n'est pas une liste", () => {
+    expect(() => validerSecrets({ secrets: [] })).toThrow(/forme inattendue/);
+    expect(() => validerSecrets(null)).toThrow(/forme inattendue/);
+  });
+
+  // LE cas : un champ renommé. Sans ce contrôle, l'entrée passait et son nom
+  // valait `undefined`.
+  it("refuse une entrée dont le champ name a été renommé", () => {
+    expect(() => validerSecrets([{ secretName: "XAI_API_KEY", type: "secret_text" }])).toThrow(/name` lisible/);
+  });
+
+  it("refuse un nom vide", () => {
+    expect(() => validerSecrets([{ name: "", type: "secret_text" }])).toThrow(/name` lisible/);
   });
 });

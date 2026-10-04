@@ -6,9 +6,20 @@
  *   npm run check:drift -- --liaisons-seules
  *   npm run check:drift -- --base-seule
  *
- * Code de sortie : 1 dès qu'il existe un écart de gravité `erreur` ou
- * `avertissement`. Les `information` (une liaison déclarée OPTIONNELLE et
- * absente) ne font jamais échouer : le code a explicitement prévu ce cas.
+ * Codes de sortie, et ils ne disent pas la même chose :
+ *   0 — le contrôle a tourné, aucune ERREUR.
+ *   1 — le contrôle a tourné et a trouvé au moins une erreur.
+ *   2 — le contrôle N'A PAS PU tourner. Le garde-fou est en panne, ce qui est
+ *       plus grave qu'une dérive : personne ne surveille plus rien. Le
+ *       workflow les annote différemment, sans quoi les deux donnent le même
+ *       ✗ et une panne silencieuse passe pour une dérive connue.
+ *
+ * Les `avertissement` sont IMPRIMÉS mais ne font pas échouer : ils nomment
+ * des écarts que personne ne peut résoudre aujourd'hui (dix-huit clés
+ * primaires nullables héritées de SQLite), et les compter rendait le travail
+ * nocturne rouge pour toujours. Voir `bilan()`, lib/drift/rapport.ts. Les
+ * `information` (une liaison déclarée OPTIONNELLE et absente) non plus : le
+ * code a explicitement prévu ce cas.
  *
  * LECTURE SEULE de bout en bout. Aucune écriture, ni en base, ni sur le Worker.
  */

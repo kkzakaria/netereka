@@ -136,3 +136,41 @@ describe("verifierLiaisonsUneFois", () => {
     expect(String(erreurs[0][0])).not.toContain("TURNSTILE_SECRET_KEY");
   });
 });
+
+/**
+ * « Ne lève jamais » doit être vrai même quand c'est la POSE DU DRAPEAU qui
+ * échoue.
+ *
+ * Il était posé AVANT le `try` : une levée à cet endroit sortait de la
+ * fonction, donc `getDB()`, `getKV()` et `getR2()` échouaient tous — et comme
+ * le drapeau n'était alors pas posé, cela recommençait à CHAQUE requête. Un
+ * garde-fou qui met le site à terre est pire que pas de garde-fou.
+ *
+ * Le cas est reproduit à l'identique : la propriété de `globalThis` est
+ * rendue non inscriptible, ce qui fait lever l'affectation en module ESM
+ * (mode strict). C'est la forme qu'aurait un `globalThis` gelé.
+ */
+describe("la promesse « ne lève jamais » tient même quand le drapeau résiste", () => {
+  const CLE = Symbol.for("netereka.derive.liaisonsVerifiees");
+
+  it("ne propage pas une levée venue de la pose du drapeau", () => {
+    Object.defineProperty(globalThis, CLE, { value: undefined, writable: false, configurable: true });
+    try {
+      expect(() => verifierLiaisonsUneFois({ DB: {}, KV: {} })).not.toThrow();
+    } finally {
+      delete (globalThis as Record<symbol, unknown>)[CLE];
+    }
+  });
+
+  // Le corollaire : une fois le drapeau posable, la vérification reprend. Le
+  // correctif ne doit pas avoir rendu la fonction muette pour toujours.
+  it("et reprend normalement dès que le drapeau est posable", () => {
+    const erreurs = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      verifierLiaisonsUneFois({});
+      expect(erreurs).toHaveBeenCalled();
+    } finally {
+      erreurs.mockRestore();
+    }
+  });
+});

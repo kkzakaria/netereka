@@ -20,23 +20,32 @@ name: Derive environnement
 # déterministes qui tournent dans ci.yml et dans le hook de pré-commit : ce qui
 # a besoin du réseau ici, c'est la lecture de la réalité, pas la logique.
 #
-# CE TRAVAIL ÉCHOUE ENCORE AUJOURD'HUI, ET C'EST VOULU. Au 2026-10-02 la
-# production portait SEPT écarts de gravité « erreur ». Trois ont été tranchés
-# en les DÉCLARANT : les index idx_promo_codes_code, idx_session_token et
-# idx_user_email, hérités des migrations écrites à la main, que le schéma
-# Drizzle ignorait et qu'une reconstruction de table aurait perdus.
+# CE TRAVAIL EST VERT AU JOUR DE SA LIVRAISON, ET C'ÉTAIT LA CONDITION.
 #
-# Restent QUATRE, mesurés le 2026-10-04 : les secrets ANTHROPIC_API_KEY,
-# GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_ENGINE_ID et OPENROUTER_API_KEY, posés
-# sur le Worker et lus par AUCUN code de ce dépôt (vérifié : les seules
-# occurrences sont ce commentaire et une donnée de test). Les déclarer dans
-# env.d.ts serait mentir — rien ne les lit ; la résolution est de les révoquer
-# chez leur fournisseur puis de les retirer du Worker, et c'est une décision
-# sur des identifiants vivants, pas un correctif de code.
+# Au 2026-10-02 la production portait SEPT écarts de gravité « erreur ». Tous
+# ont été tranchés AVANT de livrer, dans les deux sens que ce contrôle
+# distingue :
+#   - trois index (idx_promo_codes_code, idx_session_token, idx_user_email),
+#     hérités des migrations écrites à la main et ignorés du schéma Drizzle,
+#     ont été DÉCLARÉS : ils servent, et une reconstruction de table les
+#     aurait perdus ;
+#   - quatre secrets (ANTHROPIC_API_KEY, GOOGLE_SEARCH_API_KEY,
+#     GOOGLE_SEARCH_ENGINE_ID, OPENROUTER_API_KEY), qu'aucun code de ce dépôt
+#     ne lisait, ont été RETIRÉS du Worker le 2026-10-04.
 #
-# Tant que ce n'est pas tranché, ce travail reste rouge — c'est son rôle, pas
-# une panne. Ne le neutralisez pas par une liste d'exceptions : c'est
-# exactement ce qui a permis à la clé étrangère d'audit_log de survivre un an.
+# L'ordre n'est pas un détail. Un garde-fou rouge dès son premier jour est un
+# garde-fou qu'on apprend à ignorer : la première alerte doit être une vraie
+# information, pas du bruit connu. Mesuré après coup : 0 erreur.
+#
+# Les AVERTISSEMENTS, eux, ne font pas échouer (voir `bilan()`,
+# lib/drift/rapport.ts) : ils nomment des écarts que personne ne peut résoudre
+# aujourd'hui — dix-huit clés primaires TEXT nullables héritées de SQLite — et
+# les compter aurait rendu ce travail rouge pour toujours, quoi qu'on tranche.
+# Ils restent imprimés dans chaque rapport.
+#
+# Quand il redeviendra rouge, ce sera neuf. Ne le neutralisez pas par une
+# liste d'exceptions : c'est exactement ce qui a permis à la clé étrangère
+# d'audit_log de survivre un an.
 
 on:
   schedule:
@@ -92,4 +101,25 @@ jobs:
           code=$?
           set -e
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          # DEUX ÉCHECS DE NATURES OPPOSÉES, ET LE MÊME ✗ DANS L'INTERFACE.
+          #
+          # 1 = le contrôle a tourné et a TROUVÉ une dérive : information.
+          # 2 = le contrôle N'A PAS PU tourner (jeton expiré, wrangler qui
+          #     change de forme, JSON illisible) : le garde-fou lui-même est
+          #     en panne, et c'est plus grave — tant qu'on ne le distingue
+          #     pas, une panne silencieuse ressemble à une dérive connue, et
+          #     on la laisse rouge en croyant savoir pourquoi.
+          #
+          # D'où une annotation distincte, et un titre de résumé qui le dit.
+          if [ "$code" = "2" ]; then
+            echo "::error title=Garde-fou en panne::Le controle de derive n'a pas pu s'executer. Ce n'est PAS une derive : la lecture de la realite a echoue."
+            {
+              echo
+              echo '> **Le garde-fou lui-meme est en panne** — la lecture de la realite a echoue.'
+              echo '> Ce resultat ne dit RIEN sur la derive : il dit que personne ne la surveille.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$code" != "0" ]; then
+            echo "::error title=Derive detectee::Le controle a tourne et a trouve au moins un ecart de gravite erreur."
+          fi
           exit "$code"

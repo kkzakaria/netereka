@@ -62,11 +62,17 @@ function typeDeLiaison(valeur: unknown): string {
  * @param env l'objet `env` de `getCloudflareContext()`
  */
 export function verifierLiaisonsUneFois(env: unknown): void {
-  const g = globalThis as GlobalMarque;
-  if (g[DEJA_FAIT]) return;
-  g[DEJA_FAIT] = true;
-
+  // Le drapeau est posé DANS le try, et c'est ce qui rend vraie la promesse
+  // « ne lève jamais ». Au-dehors, une levée de `globalThis` — un objet gelé,
+  // un proxy hostile — sortait de cette fonction : `getDB()`, `getKV()` et
+  // `getR2()` échouaient tous, et comme le drapeau n'était alors pas posé,
+  // cela recommençait à CHAQUE requête. Un garde-fou qui met le site à terre
+  // est pire que pas de garde-fou.
   try {
+    const g = globalThis as GlobalMarque;
+    if (g[DEJA_FAIT]) return;
+    g[DEJA_FAIT] = true;
+
     const reelles = liaisonsDeLIsolat(env);
     // Un `env` vide ne veut pas dire « tout manque » : il veut dire qu'on ne
     // voit rien. Comparer dans ce cas produirait un mur d'écarts faux, qui est

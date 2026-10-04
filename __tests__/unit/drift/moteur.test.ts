@@ -316,10 +316,30 @@ describe("rapport", () => {
     expect(formaterBilan(b)).toContain("1 information(s)");
   });
 
-  it("un avertissement suffit à faire dérive", () => {
+  /**
+   * Un avertissement nomme un écart réel que personne ne peut résoudre
+   * aujourd'hui — dix-huit clés primaires `TEXT` nullables qu'on ne
+   * corrigerait qu'en reconstruisant dix-huit tables. Les compter comme un
+   * échec rendait le travail nocturne rouge POUR TOUJOURS : mesuré en
+   * production le 2026-10-04, zéro erreur, dix-neuf avertissements, et le
+   * contrôle sortait quand même en 1.
+   *
+   * Un garde-fou rouge en permanence n'alerte plus personne. Les
+   * avertissements restent imprimés ; ils cessent seulement de crier.
+   */
+  it("un avertissement NE fait PAS échouer : il serait rouge pour toujours", () => {
+    const b = bilan([
+      { domaine: "base", categorie: "contrainte_check", sens: "divergent", gravite: "avertissement", cible: "t.c", message: "" },
+    ]);
+    expect(b).toMatchObject({ erreurs: 0, avertissements: 1, derive: false });
+    // Mais il est COMPTÉ et dit : taire un écart n'est pas l'objectif.
+    expect(formaterBilan(b)).toContain("1 avertissement(s)");
+  });
+
+  it("une erreur, elle, fait échouer", () => {
     expect(
       bilan([
-        { domaine: "base", categorie: "contrainte_check", sens: "divergent", gravite: "avertissement", cible: "t.c", message: "" },
+        { domaine: "liaisons", categorie: "liaison", sens: "present_non_declare", gravite: "erreur", cible: "X", message: "" },
       ]).derive,
     ).toBe(true);
   });
