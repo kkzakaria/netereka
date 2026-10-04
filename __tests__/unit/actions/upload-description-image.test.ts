@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { octetsDe } from "../../helpers/octets-image";
 
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
@@ -17,8 +18,9 @@ function makeFormData(file: File | null): FormData {
   return fd;
 }
 
-function imageFile(name: string, type = "image/jpeg", size = 1024): File {
-  return new File([new Uint8Array(size)], name, { type });
+/** Les octets comptent : `octetsDeType` les fait diverger du type déclaré. */
+function imageFile(name: string, type = "image/jpeg", size = 1024, octetsDeType: string = type): File {
+  return new File([octetsDe(octetsDeType, size)], name, { type });
 }
 
 describe("uploadDescriptionImage", () => {
@@ -95,6 +97,14 @@ describe("uploadDescriptionImage", () => {
 
   // Zéro GIF en production au 2026-10-04 : l'aligner sur la liste de la
   // maison ne retire donc aucune capacité en service.
+  // Un AVIF renommé, tel qu'un navigateur le présente.
+  it("refuse un AVIF renommé .png : les octets le disent", async () => {
+    const result = await uploadDescriptionImage(makeFormData(imageFile("photo.png", "image/png", 1024, "image/avif")));
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toMatch(/AVIF/);
+    expect(mocks.uploadToR2).not.toHaveBeenCalled();
+  });
+
   it("refuse un GIF, comme les autres portes", async () => {
     const result = await uploadDescriptionImage(makeFormData(imageFile("anim.gif", "image/gif")));
     expect(result.success).toBe(false);

@@ -3,7 +3,7 @@
 import { nanoid } from "nanoid";
 import { requireAdmin } from "@/lib/auth/guards";
 import { uploadToR2 } from "@/lib/storage/images";
-import { ALLOWED_IMAGE_TYPES, extensionPour } from "@/lib/storage/fetch-image";
+import { verifierImageTeleversee } from "@/lib/storage/verifier-image";
 
 export type UploadDescriptionImageResult =
   | { success: true; key: string }
@@ -30,20 +30,15 @@ export async function uploadDescriptionImage(
 
   // Le message invitait à déposer de l'AVIF, que le redimensionneur de la
   // vitrine ne sait pas lire sur ce plan, et contredisait frontalement celui
-  // de `images.ts`, dans le même répertoire. Le GIF part avec : la liste est
-  // désormais celle de toute la maison, et la production n'en comptait aucun
+  // de `images.ts`, dans le même répertoire. Le GIF part avec — y compris le
+  // GIF ANIMÉ, qui n'est donc plus pris en charge dans les descriptions : la
+  // liste est celle de toute la maison, et la production n'en comptait aucun
   // (vérifié le 2026-10-04 : zéro `.gif` et zéro `.avif` dans les
   // descriptions, et aucune image de description en service).
-  if (!ALLOWED_IMAGE_TYPES.has(file.type.toLowerCase())) {
-    return {
-      success: false,
-      error:
-        `Format non pris en charge (${file.type || "inconnu"}). Nous n'acceptons que le JPEG, le PNG et le ` +
-        "WebP. Convertissez l'image avant de la déposer.",
-    };
-  }
+  const verif = await verifierImageTeleversee(file);
+  if (!verif.ok) return { success: false, error: verif.erreur };
 
-  const key = `description-images/${nanoid()}.${extensionPour(file.type)}`;
+  const key = `description-images/${nanoid()}.${verif.extension}`;
 
   try {
     await uploadToR2(file, key);
