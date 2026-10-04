@@ -111,19 +111,19 @@ export default async function RevisionDetailPage({ params }: Props) {
             le contenu proposé : c'est la seule façon de voir une révision
             avant de l'appliquer — le diff montre des champs, pas un rendu.
             Nouvel onglet, pour ne pas perdre l'écran de validation. */}
-        {revision.target_type === "banner" && (
-          <p className="mt-3 text-sm">
-            <Link
-              href={`/apercu/banniere/${revision.id}`}
-              target="_blank"
-              rel="noopener"
-              className="font-medium underline underline-offset-4"
-            >
-              Voir le rendu de cette révision dans le hero
-            </Link>
-            <span className="text-muted-foreground"> — rétrécissez la fenêtre pour juger du mobile.</span>
-          </p>
-        )}
+        <p className="mt-3 text-sm">
+          <Link
+            href={`/apercu/${revision.target_type === "banner" ? "banniere" : "produit"}/${revision.id}`}
+            target="_blank"
+            rel="noopener"
+            className="font-medium underline underline-offset-4"
+          >
+            {revision.target_type === "banner"
+              ? "Voir le rendu de cette révision dans le carrousel"
+              : "Voir le rendu de cette révision sur la fiche"}
+          </Link>
+          <span className="text-muted-foreground"> — rétrécissez la fenêtre pour juger du mobile.</span>
+        </p>
       </AdminPageHeader>
 
       <RevisionDiff
