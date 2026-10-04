@@ -1,6 +1,42 @@
 {
   "name": "netereka",
-  "compatibility_date": "2024-12-01",
+  // DATE DE COMPATIBILITÉ : 2026-03-24, ET PAS PLUS.
+  //
+  // Elle a sauté de 2024-12-01 pour une raison précise : `env.BROWSER.quickAction()`
+  // exige 2026-03-24 au minimum. On s'arrête EXACTEMENT là, et pas à la date du
+  // jour, parce qu'à partir du 2026-08-04 `nodejs_compat_v2` s'active aussi —
+  // un changement d'une autre ampleur, qui mérite sa propre décision et son
+  // propre canari. Le plus petit écart qui atteint le but.
+  //
+  // Ce n'est pas une dérive en avant : OpenNext génère les nouveaux projets
+  // avec la date la plus récente et AVERTIT à chaque build dès que la vôtre a
+  // plus de six mois (`dist/cli/build/build.js`). La nôtre en avait vingt-deux.
+  //
+  // CET AVERTISSEMENT SUBSISTE, ET C'EST VOULU. Au 2026-10-04, 2026-03-24 a
+  // déjà six mois et un peu : le build dit encore « consider updating ». Le
+  // faire taire en avançant la date ferait franchir le 2026-08-04 et
+  // activerait `nodejs_compat_v2` sans que personne ne l'ait décidé. Un
+  // avertissement qu'on a lu et tranché vaut mieux qu'un drapeau qu'on
+  // n'a pas vu passer.
+  //
+  // CE QUE LE SAUT ACTIVE, ET QU'IL FAUT SURVEILLER. Trois changements sont
+  // observables, le reste n'ajoute que des modules stubs :
+  //   - `process.env` auto-peuplé depuis les liaisons (2025-04-01). Ce dépôt
+  //     lit l'environnement par `getCloudflareContext()`, mais Next et ses
+  //     bibliothèques lisent `process.env` ;
+  //   - `node:fs`, `node:os`, `process` v2, puis `node:http`/`node:https`
+  //     réellement disponibles (2025-08-15 → 2025-09-15). Des bibliothèques
+  //     DÉTECTENT ces modules et changent de chemin de code quand ils
+  //     existent — c'est le risque le moins visible du lot ;
+  //   - `enable_fast_jsg_struct` (2025-12-03) : les champs optionnels des
+  //     objets d'API valent désormais `undefined` au lieu d'être absents, donc
+  //     `"cle" in objet` et `Object.hasOwn` ne répondent plus pareil.
+  //     Préférez `objet.cle !== undefined`.
+  //
+  // On n'a pas raisonné là-dessus : on l'a observé. Le canari de cette
+  // modification a été regardé version par version avec `npm run observe`
+  // avant d'être promu — c'est précisément ce pour quoi cet outil existe.
+  "compatibility_date": "2026-03-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": ".open-next/worker.js",
 
