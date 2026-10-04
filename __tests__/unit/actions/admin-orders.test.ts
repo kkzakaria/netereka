@@ -66,9 +66,32 @@ const mockOrder = {
   delivery_person_name: null,
 };
 
+/**
+ * Remet à zéro ce que `clearAllMocks` ne touche pas.
+ *
+ * L'historique des appels est effacé entre deux tests par Vitest lui-même ;
+ * la file des valeurs `…Once` NON CONSOMMÉES, non. Ce fichier en arme
+ * quinze, et certaines le sont dans des tests qui n'appellent pas la
+ * fonction autant de fois — la valeur restante était alors mangée par le
+ * test suivant, avant ce que son `beforeEach` venait de poser. Deux tests
+ * rougissaient ainsi selon l'ordre d'exécution : « traite un retour sur
+ * commande livrée » et « rejette si le livreur n'existe pas ». Mesuré à
+ * 8 échecs sur 25 tirages sans cette remise à zéro, 0 sur 25 avec.
+ *
+ * Appelée par TOUS les hooks, y compris ceux dont aucun test n'arme de
+ * `…Once` aujourd'hui : c'est une précaution, et elle ne masque rien — aucun
+ * test de ce fichier n'arme volontairement une valeur pour son successeur,
+ * ce qui serait précisément l'anti-motif visé.
+ */
+function remettreAZero(): void {
+  mocks.queryFirst.mockReset();
+  mocks.execute.mockReset();
+}
+
 describe("updateOrderStatus", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    remettreAZero();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.queryFirst
       .mockResolvedValueOnce(mockOrder)
@@ -251,6 +274,7 @@ describe("updateOrderStatus", () => {
 describe("cancelOrderAdmin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    remettreAZero();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.queryFirst
       .mockResolvedValueOnce(mockOrder)
@@ -315,6 +339,7 @@ describe("cancelOrderAdmin", () => {
 describe("processReturn", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    remettreAZero();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.queryFirst
       .mockResolvedValueOnce({ ...mockOrder, status: "delivered" })
@@ -357,6 +382,7 @@ describe("processReturn", () => {
 describe("exportOrdersCSV", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    remettreAZero();
     mocks.getSession.mockResolvedValue(mockAdminSession);
   });
 
@@ -387,6 +413,7 @@ describe("exportOrdersCSV", () => {
 describe("updateInternalNotes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    remettreAZero();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
   });
@@ -410,6 +437,7 @@ describe("updateInternalNotes", () => {
 describe("assignDeliveryPerson", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    remettreAZero();
     mocks.getSession.mockResolvedValue(mockAdminSession);
     mocks.execute.mockResolvedValue({ meta: { changes: 1 } });
   });

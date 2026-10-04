@@ -519,9 +519,9 @@ describe("uploadBannerImage", () => {
    */
   it("un téléversement en échec ne détruit pas l'image que la bannière affiche", async () => {
     makeDrizzleMock({ image_url: "banners/1-en-ligne.jpg" });
-    // `Once`, et pas la forme persistante : mesuré, un `mockRejectedValue`
-    // posé ici survit au `vi.clearAllMocks()` du beforeEach suivant, et le
-    // test d'après voyait son téléversement échouer sans rien demander.
+    // `Once` : une implémentation persistante n'est effacée ni par
+    // `vi.clearAllMocks()` ni par le passage au test suivant — seul
+    // `mockReset()` l'efface. Ici le rejet ne vaut que pour cet appel.
     mocks.uploadToR2.mockRejectedValueOnce(new Error("R2 down"));
 
     const result = await uploadBannerImage(1, makeFormData(makeFile()));
@@ -726,56 +726,6 @@ describe("setBannerImageUrl", () => {
     expect(mocks.deleteFromR2).not.toHaveBeenCalled();
   });
 
-  /**
-   * L'ordre, et pas seulement le fait d'effacer. Avant correctif, l'ancienne
-   * image partait AVANT le téléversement : un échec du stockage laissait donc
-   * la bannière en ligne désigner une clé supprimée — un visuel manquant sur
-   * la page d'accueil, pour une opération qui avait échoué.
-   */
-  it("un téléversement en échec ne détruit pas l'image que la bannière affiche", async () => {
-    makeDrizzleMock({ image_url: "banners/1-en-ligne.jpg" });
-    // `Once`, et pas la forme persistante : mesuré, un `mockRejectedValue`
-    // posé ici survit au `vi.clearAllMocks()` du beforeEach suivant, et le
-    // test d'après voyait son téléversement échouer sans rien demander.
-    mocks.uploadToR2.mockRejectedValueOnce(new Error("R2 down"));
-
-    const result = await uploadBannerImage(1, makeFormData(makeFile()));
-
-    expect(result.success).toBe(false);
-    expect(mocks.deleteFromR2).not.toHaveBeenCalled();
-  });
-
-  /**
-   * Une écriture en échec laisse l'ancienne image EN PLACE — c'est elle que
-   * la bannière affiche encore — et emporte la NOUVELLE, déjà téléversée :
-   * sans cela, plus rien ne la nommerait.
-   */
-  it("une écriture en base en échec garde l'ancienne image et libère la nouvelle", async () => {
-    const { setMock } = makeDrizzleMock({ image_url: "banners/1-en-ligne.jpg" });
-    setMock.mockImplementation(() => { throw new Error("D1 down"); });
-
-    const result = await uploadBannerImage(1, makeFormData(makeFile()));
-
-    expect(result.success).toBe(false);
-    expect(mocks.deleteFromR2).not.toHaveBeenCalledWith("banners/1-en-ligne.jpg");
-    expect(mocks.deleteFromR2).toHaveBeenCalledWith("banners/1-mockuid8.jpg");
-  });
-
-  /**
-   * Une écriture qui ne touche AUCUNE ligne (bannière supprimée entre la
-   * lecture et l'écriture) ne lève pas. L'action rendait donc `success` pour
-   * une opération sans effet : le visuel semblait posé, la bannière était
-   * inchangée, et l'objet téléversé restait.
-   */
-  it("une écriture sans effet est un échec, pas un succès silencieux", async () => {
-    const { whereMock } = makeDrizzleMock({ image_url: null });
-    whereMock.mockResolvedValue({ meta: { changes: 0 } });
-
-    const result = await uploadBannerImage(1, makeFormData(makeFile()));
-
-    expect(result.success).toBe(false);
-    expect(mocks.deleteFromR2).toHaveBeenCalledWith("banners/1-mockuid8.jpg");
-  });
 
   it("continue si la suppression R2 de l'ancienne image échoue", async () => {
     makeDrizzleMock({ image_url: "banners/old.jpg" });

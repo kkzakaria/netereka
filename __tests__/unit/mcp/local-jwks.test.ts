@@ -25,6 +25,17 @@ describe("serveJwksLocally", () => {
   });
 
   it("n'empile pas l'enveloppe quand on redéclare une source", async () => {
+    // L'enveloppe est posée ICI, et pas supposée venir d'un test précédent.
+    // Sans cette première déclaration, `before` est le `fetch` simulé et la
+    // pose suivante le remplace légitimement : le test échouait dès qu'il
+    // tombait en tête d'exécution (`--sequence.shuffle`), en annonçant une
+    // régression qui n'existait pas. Deux échecs sur huit tirages.
+    //
+    // L'état qui fuyait n'est PAS un mock : c'est le drapeau
+    // `Symbol.for(...)` que `serveJwksLocally` pose sur `globalThis` pour
+    // n'envelopper qu'une fois par isolat. Aucune remise à zéro de mock ne
+    // l'aurait atteint — ce que le test suppose, il doit l'établir.
+    serveJwksLocally(URL_JWKS, async () => ({ keys: [{ kid: "initiale" }] }));
     const before = globalThis.fetch;
     serveJwksLocally(URL_JWKS, async () => ({ keys: [] }));
     expect(globalThis.fetch).toBe(before);
