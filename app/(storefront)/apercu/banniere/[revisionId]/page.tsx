@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth/guards";
+import { autoriserApercu } from "@/lib/apercu/autorisation";
 import { getRevision } from "@/lib/db/revisions";
 import { getBannerById } from "@/lib/db/banners";
 import { bannerClock, getActiveBanners, raisonsDeNonAffichage, sanitizeBannerContent } from "@/lib/db/storefront/banners";
@@ -57,9 +57,11 @@ interface Props {
 }
 
 export default async function ApercuRevisionBanniere({ params }: Props) {
-  await requireAdmin();
-
   const { revisionId } = await params;
+  // Un administrateur connecté, OU un capteur d'écran muni d'un laissez-passer
+  // pour cette révision précise. La vérification a lieu ici, pas dans le
+  // middleware : voir `lib/apercu/autorisation.ts`.
+  await autoriserApercu("banniere", revisionId);
   const revision = await getRevision(revisionId);
   if (!revision || revision.target_type !== "banner") notFound();
 

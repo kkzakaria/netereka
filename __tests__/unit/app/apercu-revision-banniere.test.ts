@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * le fait que ce soit bien l'état APRÈS révision qui parte au composant.
  */
 const mocks = vi.hoisted(() => ({
-  requireAdmin: vi.fn(),
+  autoriserApercu: vi.fn(),
   getRevision: vi.fn(),
   getBannerById: vi.fn(),
   getActiveBanners: vi.fn(),
@@ -18,7 +18,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("@/lib/auth/guards", () => ({ requireAdmin: mocks.requireAdmin }));
+vi.mock("@/lib/apercu/autorisation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/apercu/autorisation")>()),
+  autoriserApercu: mocks.autoriserApercu,
+}));
 vi.mock("@/lib/db/revisions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/db/revisions")>()),
   getRevision: mocks.getRevision,
@@ -68,7 +71,7 @@ async function banniereRendue(revisionId = "rev-1") {
 }
 
 beforeEach(() => {
-  mocks.requireAdmin.mockReset().mockResolvedValue(undefined);
+  mocks.autoriserApercu.mockReset().mockResolvedValue(undefined);
   mocks.getRevision.mockReset().mockResolvedValue(revision());
   mocks.getBannerById.mockReset().mockResolvedValue(BANNIERE);
   mocks.getActiveBanners.mockReset().mockResolvedValue([
@@ -110,8 +113,8 @@ describe("aperçu de révision : ce qui est rendu", () => {
     expect((await banniereRendue()).content_html).toContain(".desc-banner-7 .a");
   });
 
-  it("l'administration est exigée AVANT toute lecture", async () => {
-    mocks.requireAdmin.mockRejectedValue(new Error("NEXT_REDIRECT"));
+  it("l'autorisation est exigée AVANT toute lecture", async () => {
+    mocks.autoriserApercu.mockRejectedValue(new Error("NEXT_REDIRECT"));
     await expect(banniereRendue()).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.getRevision).not.toHaveBeenCalled();
   });

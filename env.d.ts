@@ -13,6 +13,16 @@ interface CloudflareEnv {
   // depuis le tableau de bord.
   CF_VERSION_METADATA: WorkerVersionMetadata;
 
+  // Browser Run, lu par l'outil MCP `apercu_revision` pour photographier une
+  // page d'aperçu. Déclarée par `browser` dans wrangler.jsonc, donc toujours
+  // présente — ce n'est ni un secret ni une variable.
+  //
+  // `Fetcher` et non un type dédié : `@cloudflare/workers-types` ne publie pas
+  // encore d'interface pour `quickAction()`. Le type précis vit dans
+  // `lib/apercu/capture.ts`, au plus près de l'unique appel, plutôt qu'en
+  // affirmation globale sur une forme qu'on n'a pas vérifiée.
+  BROWSER: Fetcher;
+
   // Auth (Better Auth)
   BETTER_AUTH_SECRET: string;
   GOOGLE_CLIENT_ID: string;

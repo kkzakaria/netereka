@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth/guards";
+import { autoriserApercu } from "@/lib/apercu/autorisation";
 import { getRevision } from "@/lib/db/revisions";
 import { getAdminProductById } from "@/lib/db/admin/products";
 import { produitApresRevision, champsNonRendus } from "@/lib/revisions/apercu-produit";
@@ -50,9 +50,11 @@ interface Props {
 }
 
 export default async function ApercuRevisionProduit({ params }: Props) {
-  await requireAdmin();
-
   const { revisionId } = await params;
+  // Un administrateur connecté, OU un capteur d'écran muni d'un laissez-passer
+  // pour cette révision précise. La vérification a lieu ici, pas dans le
+  // middleware : voir `lib/apercu/autorisation.ts`.
+  await autoriserApercu("produit", revisionId);
   const revision = await getRevision(revisionId);
   if (!revision || revision.target_type !== "product") notFound();
 

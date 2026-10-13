@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { McpContext } from "@/lib/mcp/context";
+import { apercuTools } from "@/lib/mcp/tools/apercu";
 import { bannerTools } from "@/lib/mcp/tools/banners";
 import { categoryTools } from "@/lib/mcp/tools/categories";
 import { imageTools } from "@/lib/mcp/tools/images";
@@ -10,7 +11,7 @@ import type { ToolDefinition } from "@/lib/mcp/tools/types";
 export const MCP_SERVER_NAME = "netereka-admin";
 export const MCP_SERVER_VERSION = "1.0.0";
 
-export const ALL_TOOLS: ToolDefinition[] = [...categoryTools, ...productTools, ...bannerTools, ...imageTools];
+export const ALL_TOOLS: ToolDefinition[] = [...categoryTools, ...productTools, ...bannerTools, ...imageTools, ...apercuTools];
 
 /**
  * One server per request (stateless transport) bound to the admin who owns

@@ -78,6 +78,23 @@
   "workers_dev": false,
   "preview_urls": true,
 
+  // Browser Run, pour l'outil MCP `apercu_revision` : l'assistant compose du
+  // HTML libre (bannières, descriptions produit) et n'avait aucun moyen de
+  // REGARDER le résultat. C'est ce que la revue des quatre bannières avait
+  // révélé — des défauts d'affichage qu'aucune relecture de code ne voit.
+  //
+  // `remote: true` concerne le développement local : `quickAction()` n'est pas
+  // implémenté par miniflare, et sans ce drapeau `npx wrangler dev` répond
+  // « The RPC receiver does not implement the method "quickAction" ». Avec, la
+  // liaison sort vers la vraie infrastructure, même en local.
+  //
+  // Quotas inclus au plan Workers Paid : 10 heures-navigateur par mois et 10
+  // navigateurs simultanés. Une capture dure quelques secondes.
+  "browser": {
+    "binding": "BROWSER",
+    "remote": true
+  },
+
   // Permet au Worker de dire QUELLE version a répondu (app/api/version).
   // Sans cela, une surcharge de version qui ne s'applique pas est
   // indiscernable d'une qui s'applique : les deux rendent un 200 normal.
