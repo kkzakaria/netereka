@@ -32,10 +32,14 @@ export interface OptionsCapture {
    *
    * C'est la seule chose qui distingue « j'ai photographié l'aperçu » de
    * « j'ai photographié une page ». Si le laissez-passer est refusé, la page
-   * redirige vers la connexion, Browser Run SUIT la redirection et rend un
-   * JPEG parfaitement valide — de la page de connexion, ou de l'accueil, qui
-   * affiche les bannières EN LIGNE. Le contrôle de taille ne voit rien :
-   * l'image est bien formée, non vide, crédible, et fausse.
+   * redirige vers la connexion et Browser Run suit la redirection : il rend
+   * alors le JPEG de la page de connexion. Le contrôle de taille ne voit rien
+   * — l'image est bien formée, non vide, crédible, et fausse.
+   *
+   * Que Browser Run SUIVE la redirection est le comportement attendu d'une
+   * navigation de navigateur ; je ne l'ai pas mesuré, et le marqueur rend la
+   * question sans objet : toute page qui n'est pas l'aperçu demandé fait
+   * échouer l'appel.
    *
    * La documentation de Cloudflare range le dépassement du délai d'attente
    * d'ÉLÉMENT parmi les causes de 422 : un sélecteur qui n'apparaît jamais

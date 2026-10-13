@@ -203,9 +203,8 @@ describe("apercu_revision : le laissez-passer", () => {
    * LE MARQUEUR, SANS LEQUEL TOUT LE RESTE EST SILENCIEUX.
    *
    * Si le laissez-passer est refusé, la page redirige vers la connexion,
-   * Browser Run suit la redirection et rend un JPEG valide — de la page de
-   * connexion, ou de l'accueil, qui affiche les bannières EN LIGNE. Le modèle
-   * approuverait sa révision en regardant la production.
+   * Browser Run suit la redirection et rend un JPEG valide — celui de la page
+   * de connexion. Le modèle croirait regarder sa révision.
    */
   it("exige le marqueur de CETTE révision", async () => {
     await appeler();

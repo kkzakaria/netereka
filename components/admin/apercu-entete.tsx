@@ -13,12 +13,17 @@
  *     faire, et `apercu_revision` exige sa présence par `waitForSelector`.
  *
  * Le troisième rôle ferme un trou que rien d'autre ne fermait : si le
- * laissez-passer de capture est refusé, la page redirige vers la connexion,
- * Browser Run SUIT la redirection, et rend un JPEG parfaitement valide — de
- * la page de connexion, ou de l'accueil, qui affiche les bannières EN LIGNE.
- * Le modèle aurait approuvé sa révision en regardant la production. Avec ce
- * marqueur, l'élément n'apparaît jamais et Browser Run échoue sur son délai
- * d'attente d'élément (422) au lieu de rendre une image crédible et fausse.
+ * laissez-passer de capture est refusé, la page redirige vers la connexion et
+ * Browser Run suit la redirection : il rend alors un JPEG parfaitement valide,
+ * non vide, CRÉDIBLE — celui de la page de connexion — que rien dans la taille
+ * ni la forme ne distingue d'un aperçu. Avec ce marqueur, l'élément n'apparaît
+ * jamais et Browser Run échoue sur son délai d'attente d'élément (422) au lieu
+ * de rendre une image fausse.
+ *
+ * (Une relecture avait écrit « ou de l'accueil, qui affiche les bannières en
+ * ligne ». Vérifié : non. `requireAdmin()` ne redirige vers `/` que si une
+ * SESSION existe — bannie ou de mauvais rôle — et un capteur n'en a jamais.
+ * La page de connexion suffit largement au problème.)
  *
  * Il doit donc rester VISIBLE et de hauteur non nulle : une vérification de
  * visibilité côté navigateur rejette une boîte vide, et le marqueur ne serait

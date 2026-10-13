@@ -140,8 +140,8 @@ describe("capturer", () => {
    *
    * Sans lui, un laissez-passer refusé fait rediriger la page vers la
    * connexion, Browser Run suit la redirection, et rend un JPEG valide et
-   * crédible — de la page de connexion, ou de l'accueil, qui affiche les
-   * bannières EN LIGNE. Aucun contrôle de taille ne voit cela.
+   * crédible — celui de la page de connexion. Aucun contrôle de taille ne
+   * voit cela.
    */
   it("exige le marqueur de la page d'aperçu", async () => {
     const nav = navigateur(new Response(JPEG));
