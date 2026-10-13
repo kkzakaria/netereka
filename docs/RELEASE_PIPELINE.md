@@ -377,6 +377,28 @@ Never describe these values as the live state without re-reading it — `curl -s
 
 Version URLs are **not generated for Workers that use Durable Objects**. This Worker does not (`open-next.config.ts` uses the R2 incremental cache only) — adding a Durable Object would silently remove them.
 
+### Keeping `/api/mcp` warm
+
+`.github/workflows/chauffer-mcp.yml` POSTs to `https://netereka.ci/api/mcp` every 5 minutes. It is not a feature; it stops a measured failure.
+
+Measured 2026-10-13 with `wrangler tail` across three connection attempts (19 requests, all `outcome: ok`):
+
+| MCP method | CPU | wall | isolate |
+| --- | --- | --- | --- |
+| `server/discover` | 81 ms | 365 ms | warm |
+| `tools/list` | 129 ms | 404 ms | warm |
+| `server/discover` | 933 ms | 3092 ms | **cold** |
+| `tools/list` | 956 ms | 3310 ms | **cold** |
+| `initialize` | 1020 ms | 3228 ms | **cold** |
+
+CPU time rises tenfold, so this is module evaluation plus `initAuth()`, not the network. Nine of nineteen requests exceeded 2 s against the client's **5 s** timeout, producing `Version negotiation probe timed out after 5000ms` and `Connected · tools fetch failed — Request timed out`.
+
+**The dangerous part is the fallback.** On a timed-out probe the client does not report an unreachable server — it keeps its **cached tool list**. A tool deployed minutes ago is simply absent, with no error anywhere. Diagnose with `claude mcp list`, twice, because it is intermittent.
+
+An unauthenticated POST is enough to warm it: `app/api/mcp/route.ts` calls `initAuth()`, `getMcpResource()` and reads `auth.$context` *before* any authorization check, so a 401 has already paid everything the real probe pays. No secret needed.
+
+Two honest limits. Warmth is **per-colo**, so the ping only helps because every observed connector request carried `cf-ipcountry: US` with agent `Claude-User`, and GitHub runners are US as well — measured, not assumed. And GitHub's scheduler is best-effort: "every 5 minutes" is a ceiling. The workflow fails on any status other than 401 (404 = route gone, 5xx = `initAuth()` throwing, 000 = nothing answered) and warns without failing past 2 s, so the history shows whether the warm-up still earns its place.
+
 ### Retention
 
 Cloudflare retains versions for **at least 2 months** on the current plan (verified against actual data — versions from February 2026 still visible in April 2026). `rollback.yml` is a reliable safety net within that window.
