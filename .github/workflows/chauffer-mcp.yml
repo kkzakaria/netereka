@@ -1,0 +1,120 @@
+name: Garder /api/mcp chaud
+
+# POURQUOI CE TRAVAIL EXISTE, ET CE QU'IL NE FAIT PAS.
+#
+# Le connecteur MCP de claude.ai échouait par intermittence, avec deux
+# messages distincts : « Version negotiation probe timed out after 5000ms »
+# et « Connected · tools fetch failed — Request timed out ». Le pire n'est pas
+# l'échec : quand la sonde expire, le client ne dit pas « serveur injoignable »,
+# il sert SILENCIEUSEMENT sa liste d'outils en cache. Un agent qui vient
+# d'obtenir un nouvel outil ne le voit pas, et rien ne lui dit pourquoi — on a
+# cherché une heure un « cache client » en croyant le serveur en faute.
+#
+# MESURÉ le 2026-10-13 par `wrangler tail` pendant trois tentatives de
+# connexion (19 requêtes sur /api/mcp, toutes `outcome: ok`) :
+#
+#   méthode MCP        temps CPU   temps total
+#   server/discover        81 ms       365 ms   ← isolat chaud
+#   tools/list            129 ms       404 ms
+#   server/discover       933 ms      3092 ms   ← isolat froid
+#   tools/list            956 ms      3310 ms
+#   initialize           1020 ms      3228 ms
+#
+# Le temps CPU lui-même est multiplié par dix : ce n'est pas du réseau, c'est
+# l'évaluation du module plus `initAuth()`. Neuf requêtes sur dix-neuf
+# dépassaient 2 s, pour un délai client de 5 s. (Les `subscriptions/listen`
+# à 31 et 35 s sont des longues attentes normales, pas des lenteurs.)
+#
+# CE N'EST PAS UN CORRECTIF, c'est une réduction de fréquence. Le coût du
+# démarrage à froid reste le même ; on paie seulement moins souvent. Le vrai
+# correctif serait d'alléger ce démarrage, et personne ne sait aujourd'hui
+# alléger l'évaluation d'un bundle Next.
+#
+# POURQUOI GITHUB ET PAS UN CRON TRIGGER CLOUDFLARE : `@opennextjs/cloudflare`
+# n'expose pas de handler `scheduled` à côté du worker Next (même raison que
+# pour `reap-pending-orders.yml`). Et pourquoi un runner GitHub convient : la
+# chaleur d'un isolat est locale à un centre de données, donc pinguer depuis
+# n'importe où ne servirait à rien — or les 19 requêtes observées portaient
+# toutes `cf-ipcountry: US` et l'agent `Claude-User`. Le connecteur part des
+# États-Unis, les runners GitHub aussi. C'est mesuré, pas supposé ; le jour où
+# ce ping ne servira plus à rien, ce sera parce que cette hypothèse a changé.
+#
+# Les minutes sont gratuites : ce dépôt est PUBLIC. Sur un dépôt privé, 288
+# exécutions par jour dépasseraient le quota mensuel — ne recopiez pas cette
+# fréquence ailleurs sans le vérifier.
+#
+# GitHub DÉSACTIVE un workflow planifié après 60 jours sans activité du dépôt,
+# et sa planification est « au mieux » : « toutes les 5 minutes » est un
+# plafond, pas une garantie.
+
+on:
+  schedule:
+    # Décalé de 2 minutes : l'heure pile est encombrée chez GitHub, et
+    # `reap-pending-orders` y tourne déjà.
+    - cron: "2-59/5 * * * *"
+  workflow_dispatch:
+
+# Aucun accès à l'API GitHub n'est nécessaire : ce travail ne fait qu'un appel
+# HTTP sortant, sans secret.
+permissions: {}
+
+concurrency:
+  group: chauffer-mcp
+  # Annulable, contrairement aux autres crons de ce dépôt : un réchauffement
+  # manqué n'a aucune conséquence, et empiler les exécutions en retard
+  # réchaufferait moins bien qu'une seule à l'heure.
+  cancel-in-progress: true
+
+jobs:
+  chauffer:
+    name: Reveiller l-isolat
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Appeler POST /api/mcp sans jeton
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          # SANS JETON, ET CELA SUFFIT : `app/api/mcp/route.ts` appelle
+          # `initAuth()`, `getMcpResource()` et lit `auth.$context` AVANT toute
+          # vérification d'autorisation. Un 401 a donc déjà payé tout ce que la
+          # vraie sonde paie. Pas de secret à poser, rien à faire tourner.
+          reponse=$(curl -sS -o /dev/null \
+            -w '%{http_code} %{time_total}' \
+            --max-time 20 \
+            -X POST https://netereka.ci/api/mcp \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"github-warmup","version":"1"}}}' \
+            || echo "000 0")
+
+          code=${reponse% *}
+          duree=${reponse#* }
+
+          {
+            echo "## Reveil de /api/mcp"
+            echo
+            echo "| code | duree |"
+            echo "| --- | --- |"
+            echo "| \`$code\` | ${duree}s |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 401 EST LE SUCCÈS. On n'envoie pas de jeton, donc toute autre
+          # réponse est une information : 404 dit que la route a disparu, 5xx
+          # que `initAuth()` lève (un SCHEMA_MISMATCH, par exemple), 000 que
+          # rien n'a répondu. Chacune de ces trois casse le connecteur, et
+          # aucune ne se verrait si l'on se contentait de « ne pas échouer ».
+          if [ "$code" != "401" ]; then
+            echo "::error title=Reveil anormal::POST /api/mcp a repondu $code au lieu de 401."
+            echo "> **Reponse inattendue : \`$code\`** — 401 est attendu (aucun jeton envoye)." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Lent SANS échouer : une lenteur isolée n'est pas un incident, mais
+          # elle doit rester lisible dans l'historique des exécutions — c'est
+          # ce qui dira, dans un mois, si ce réchauffement sert encore.
+          if awk "BEGIN{exit !($duree > 2.0)}"; then
+            echo "::warning title=Demarrage a froid::POST /api/mcp a pris ${duree}s (chaud : ~0,4 s)."
+            echo "> Pris **${duree}s** — l'isolat etait froid malgre le reveil." >> "$GITHUB_STEP_SUMMARY"
+          fi
