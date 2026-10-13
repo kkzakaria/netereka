@@ -7,6 +7,7 @@ import { bannerClock, getActiveBanners, raisonsDeNonAffichage, sanitizeBannerCon
 import { banniereApresRevision, carrouselApresRevision } from "@/lib/revisions/apercu-banniere";
 import { avertissementsApercu } from "@/lib/revisions/apercu-avertissements";
 import { ApercuAvertissements } from "@/components/admin/apercu-avertissements";
+import { ApercuEntete } from "@/components/admin/apercu-entete";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import type { Banner } from "@/lib/db/types";
 
@@ -102,6 +103,10 @@ export default async function ApercuRevisionBanniere({ params }: Props) {
   // Pas de <main> ici : le gabarit de la vitrine en fournit déjà un.
   return (
     <>
+      {/* Porte `data-apercu-revision`, qu'`apercu_revision` exige par
+          `waitForSelector` : sans lui, un laissez-passer refusé rendrait la
+          photo de la page de connexion comme si c'était la révision. */}
+      <ApercuEntete revisionId={revisionId} type="banniere" />
       <ApercuAvertissements avertissements={avertissements} />
       <HeroBanner banners={assainies} fallbackProducts={[]} />
     </>

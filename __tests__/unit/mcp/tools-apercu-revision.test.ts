@@ -120,8 +120,97 @@ describe("apercu_revision : le laissez-passer", () => {
     const biscuit = biscuitPose();
     expect(biscuit.path).toBe("/apercu/banniere/rev-1");
     expect(biscuit.domain).toBe("netereka.ci");
-    for (const autre of ["/banners/7/img.webp", "/cdn-cgi/image/width=640/x", "/_next/static/a.js"]) {
-      expect(autre.startsWith(biscuit.path), autre).toBe(false);
+  });
+
+  /**
+   * LA RÈGLE DE CORRESPONDANCE DE CHEMIN, CELLE DE LA RFC 6265.
+   *
+   * Un `startsWith` nu ne la décrit pas : la correspondance exige une
+   * frontière `/`. C'est ce qui fait que `/apercu/banniere/rev-10` ne reçoit
+   * PAS le cookie émis pour `rev-1` — alors qu'un préfixe nu dirait le
+   * contraire. (La version précédente de ce test comparait des littéraux
+   * avec `startsWith`, ce qui ne testait que `startsWith`.)
+   */
+  it("la portée du cookie suit la frontière « / », pas un simple préfixe", async () => {
+    await appeler();
+    const { path } = biscuitPose();
+    const correspond = (cible: string) =>
+      cible === path || (cible.startsWith(path) && cible[path.length] === "/");
+
+    expect(correspond("/apercu/banniere/rev-1")).toBe(true);
+    // Les requêtes que la page émet par ailleurs : aucune ne correspond.
+    for (const autre of [
+      "/banners/7/img.webp",
+      "/cdn-cgi/image/width=640,quality=75/x",
+      "/_next/static/chunks/a.js",
+      "/apercu/banniere/rev-10",
+      "/apercu/produit/rev-1",
+      "/",
+    ]) {
+      expect(correspond(autre), autre).toBe(false);
+    }
+  });
+
+  // La page rend du HTML d'auteur : un défaut d'assainissement lirait
+  // `document.cookie`. Refermer la fuite vers les tiers par un cookie pour la
+  // ré-ouvrir vers le contenu prévisualisé n'aurait aucun sens.
+  it("le cookie est httpOnly et secure", async () => {
+    await appeler();
+    expect(biscuitPose()).toMatchObject({ httpOnly: true, secure: true });
+  });
+
+  /**
+   * UN JETON PAR CAPTURE, ET CE QUE ÇA VEUT DIRE EXACTEMENT.
+   *
+   * Un seul jeton pour les deux écrans couplait la seconde capture à la DURÉE
+   * de la première : avec `networkidle0` et un délai de 30 s, le deuxième
+   * document pouvait partir à plus de 40 s d'une fenêtre de 60.
+   *
+   * La propriété n'est donc PAS que les deux jetons diffèrent — émis dans la
+   * même milliseconde ils sont légitimement identiques, et c'est ce que ma
+   * première version de ce test exigeait à tort. C'est que l'expiration de
+   * chacun soit calculée à SON instant : on fait donc avancer l'horloge de
+   * 30 s par capture, et l'on exige que le second jeton soit encore valide
+   * alors que le premier ne l'est plus.
+   */
+  it("émet un laissez-passer dont l'expiration suit SA propre capture", async () => {
+    const T0 = 1_760_000_000_000;
+    let horloge = T0;
+    vi.spyOn(Date, "now").mockImplementation(() => horloge);
+    mocks.quickAction.mockImplementation(async () => {
+      horloge += 30_000; // ce que coûte une navigation `networkidle0` au pire
+      return new Response(JPEG);
+    });
+
+    await appeler();
+    const valeurs = mocks.quickAction.mock.calls.map(
+      (c) => c[1].cookies.find((b: { name: string }) => b.name === NOM_COOKIE_CAPTURE).value,
+    );
+    expect(valeurs).toHaveLength(2);
+
+    const sujet = sujetApercu("banniere", "rev-1");
+    // À l'instant du SECOND document (T0 + 30 s), le premier jeton est encore
+    // bon — mais c'est le second qui sert, et il tient jusqu'à T0 + 90 s,
+    // où le premier a expiré depuis longtemps.
+    expect((await verifierJetonDeCapture(SECRET, sujet, valeurs[1], T0 + 80_000)).valide).toBe(true);
+    expect((await verifierJetonDeCapture(SECRET, sujet, valeurs[0], T0 + 80_000)).valide).toBe(
+      false,
+    );
+    vi.mocked(Date.now).mockRestore();
+  });
+
+  /**
+   * LE MARQUEUR, SANS LEQUEL TOUT LE RESTE EST SILENCIEUX.
+   *
+   * Si le laissez-passer est refusé, la page redirige vers la connexion,
+   * Browser Run suit la redirection et rend un JPEG valide — de la page de
+   * connexion, ou de l'accueil, qui affiche les bannières EN LIGNE. Le modèle
+   * approuverait sa révision en regardant la production.
+   */
+  it("exige le marqueur de CETTE révision", async () => {
+    await appeler();
+    for (const appel of mocks.quickAction.mock.calls) {
+      expect(appel[1].waitForSelector).toBe('[data-apercu-revision="rev-1"]');
     }
   });
 
@@ -154,6 +243,16 @@ describe("apercu_revision : pleine page", () => {
     await appeler();
     expect(mocks.quickAction.mock.calls[0][1].screenshotOptions.fullPage).toBe(true);
     expect(mocks.quickAction.mock.calls[0][1].url).toContain("/apercu/produit/");
+
+    // LE SUJET SIGNÉ, pas seulement l'URL : sans cette assertion, figer le
+    // type à « banniere » laissait la suite verte et cassait silencieusement
+    // toute capture de produit — qui se serait manifestée, par la grâce du
+    // marqueur, en échec plutôt qu'en photo de la page de connexion.
+    const biscuit = mocks.quickAction.mock.calls[0][1].cookies[0];
+    expect(
+      await verifierJetonDeCapture(SECRET, sujetApercu("produit", "rev-1"), biscuit.value),
+    ).toEqual({ valide: true });
+    expect(biscuit.path).toBe("/apercu/produit/rev-1");
   });
 
   it("laisse l'appelant trancher", async () => {
@@ -163,6 +262,19 @@ describe("apercu_revision : pleine page", () => {
 });
 
 describe("apercu_revision : ce qu'il refuse", () => {
+  // L'identifiant part dans une URL ET dans un sélecteur CSS d'attribut :
+  // un guillemet y casserait le sélecteur, et un sélecteur cassé ferait
+  // échouer la capture pour une raison incompréhensible.
+  it("un identifiant qui casserait le sélecteur ou l'URL", async () => {
+    for (const mauvais of ['rev"1', "rev 1", "rev/1", "../admin", "a".repeat(65), "rev]1"]) {
+      const res = await appeler({ revision_id: mauvais });
+      expect(res.isError, mauvais).toBe(true);
+      expect(JSON.parse(textOf(res)), mauvais).toMatchObject({ code: "validation_error" });
+    }
+    expect(mocks.getRevision).not.toHaveBeenCalled();
+    expect(mocks.quickAction).not.toHaveBeenCalled();
+  });
+
   it("révision inconnue", async () => {
     mocks.getRevision.mockResolvedValue(null);
     const res = await appeler({ revision_id: "fantome" });

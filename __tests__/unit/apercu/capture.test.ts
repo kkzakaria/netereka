@@ -66,7 +66,7 @@ describe("capturer", () => {
 
   it("demande le bon écran, en JPEG, et pose le cookie de laissez-passer", async () => {
     const nav = navigateur(new Response(JPEG));
-    await capturer(nav, "https://netereka.ci/apercu/banniere/rev-1", "mobile", [biscuit], false);
+    await capturer(nav, "https://netereka.ci/apercu/banniere/rev-1", "mobile", [biscuit], false, "[data-apercu-revision=\"rev-1\"]");
     const options = vi.mocked(nav.quickAction).mock.calls[0][1];
     expect(options.viewport).toEqual({ ...ECRANS.mobile, deviceScaleFactor: 1 });
     expect(options.screenshotOptions?.type).toBe("jpeg");
@@ -86,7 +86,7 @@ describe("capturer", () => {
    */
   it("n'envoie JAMAIS le laissez-passer en en-tête", async () => {
     const nav = navigateur(new Response(JPEG));
-    await capturer(nav, "https://netereka.ci/apercu/banniere/rev-1", "mobile", [biscuit], false);
+    await capturer(nav, "https://netereka.ci/apercu/banniere/rev-1", "mobile", [biscuit], false, "[data-apercu-revision=\"rev-1\"]");
     const options = vi.mocked(nav.quickAction).mock.calls[0][1] as unknown as Record<string, unknown>;
     expect(options.setExtraHTTPHeaders).toBeUndefined();
     expect(JSON.stringify(options)).not.toContain("x-netereka-apercu");
@@ -97,12 +97,12 @@ describe("capturer", () => {
   // justement regarder.
   it("attend le silence réseau, pas le simple chargement", async () => {
     const nav = navigateur(new Response(JPEG));
-    await capturer(nav, "https://x.test/a", "bureau", [], false);
+    await capturer(nav, "https://x.test/a", "bureau", [], false, "[data-x]");
     expect(vi.mocked(nav.quickAction).mock.calls[0][1].gotoOptions?.waitUntil).toBe("networkidle0");
   });
 
   it("rend les dimensions de l'écran demandé", async () => {
-    const c = await capturer(navigateur(new Response(JPEG)), "https://x.test/a", "bureau", [], true);
+    const c = await capturer(navigateur(new Response(JPEG)), "https://x.test/a", "bureau", [], true, "[data-x]");
     expect(c).toMatchObject({ ecran: "bureau", largeur: 1440, hauteur: 900 });
     expect(c.octets).toEqual(JPEG);
   });
@@ -111,22 +111,43 @@ describe("capturer", () => {
   // décrirait un écran noir comme s'il l'avait vu.
   it("refuse une image vide", async () => {
     await expect(
-      capturer(navigateur(new Response(new Uint8Array())), "https://x.test/a", "mobile", [], false),
+      capturer(navigateur(new Response(new Uint8Array())), "https://x.test/a", "mobile", [], false, "[data-x]"),
     ).rejects.toThrow(EchecDeCapture);
   });
 
   it("refuse une capture au-delà du plafond, en nommant le recours", async () => {
     const trop = new Uint8Array(CAPTURE_MAX_OCTETS + 1);
     await expect(
-      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", [], true),
+      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", [], true, "[data-x]"),
     ).rejects.toThrow(/pleine_page/);
     await expect(
-      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", [], false),
+      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", [], false, "[data-x]"),
     ).rejects.toThrow(/à la main/);
   });
 
-  it("les deux écrans sont ceux sur lesquels on juge vraiment", () => {
-    expect(ECRANS.mobile.width).toBeLessThan(ECRANS.bureau.width);
+  /**
+   * L'ORDRE DES CLÉS EST PORTEUR : la liste d'écrans par défaut de
+   * `apercu_revision` vient de `Object.keys(ECRANS)`, donc le mobile d'abord.
+   * (La version précédente de ce test comparait aussi les deux largeurs —
+   * une assertion creuse, qui ne faisait que relire les constantes.)
+   */
+  it("l'ordre des écrans est mobile puis bureau", () => {
     expect(Object.keys(ECRANS)).toEqual(["mobile", "bureau"]);
+  });
+
+  /**
+   * LE MARQUEUR EST LA SEULE CHOSE QUI DISTINGUE L'APERÇU D'UNE AUTRE PAGE.
+   *
+   * Sans lui, un laissez-passer refusé fait rediriger la page vers la
+   * connexion, Browser Run suit la redirection, et rend un JPEG valide et
+   * crédible — de la page de connexion, ou de l'accueil, qui affiche les
+   * bannières EN LIGNE. Aucun contrôle de taille ne voit cela.
+   */
+  it("exige le marqueur de la page d'aperçu", async () => {
+    const nav = navigateur(new Response(JPEG));
+    await capturer(nav, "https://x.test/a", "mobile", [], false, '[data-apercu-revision="rev-9"]');
+    expect(vi.mocked(nav.quickAction).mock.calls[0][1].waitForSelector).toBe(
+      '[data-apercu-revision="rev-9"]',
+    );
   });
 });

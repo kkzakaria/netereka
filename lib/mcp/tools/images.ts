@@ -25,6 +25,7 @@ import { ok, okWithImage, fail, type McpErrorCode, type ToolResult } from "@/lib
 import { generateProductImageShape, searchProductImagesShape } from "@/lib/validations/mcp-image";
 import { estCleDeStockage, viewImageShape } from "@/lib/validations/mcp-view-image";
 import { FETCH_FAILURES } from "@/lib/mcp/fetch-failures";
+import { enBase64 } from "@/lib/mcp/base64";
 import { defineTool, type ToolDefinition } from "./types";
 
 /**
@@ -282,19 +283,6 @@ function toolError(toolName: string, err: unknown): ToolResult {
 const VIEW_MAX_BYTES = 3.5 * 1024 * 1024;
 
 const enMio = (octets: number) => (octets / 1024 / 1024).toFixed(1);
-
-/** base64 par tranches : `String.fromCharCode(...bytes)` sur plusieurs Mo
- *  dépasse la limite d'arguments du moteur et lève un RangeError. Même
- *  découpage que `toBase64` de lib/ai/image-generation.ts, qui n'est pas
- *  exporté. */
-function enBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000;
-  let out = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    out += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(out);
-}
 
 export const imageTools: ToolDefinition[] = [
   defineTool({

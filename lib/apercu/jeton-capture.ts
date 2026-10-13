@@ -43,6 +43,15 @@
  * domaine ne le reçoit jamais. C'est le mécanisme conçu pour ce problème,
  * plutôt qu'un en-tête qu'il faudrait filtrer à la main.
  *
+ * REJOUABLE PENDANT SA FENÊTRE, ET C'EST ASSUMÉ. Il n'y a ni nonce ni usage
+ * unique : qui obtient un jeton valide peut le rejouer pendant les secondes
+ * qui restent. Le marché est tenable — une page, une minute, en lecture seule,
+ * et un contenu que son détenteur a de toute façon composé lui-même — et le
+ * rendre à usage unique exigerait un état partagé (KV) sur un chemin qui doit
+ * rester une vérification locale. Mais c'est une propriété du schéma, pas un
+ * oubli : elle est écrite ici pour qu'on la retrouve plutôt que de la
+ * redécouvrir.
+ *
  * PAS DE NOUVEAU SECRET À POSER. La clé est DÉRIVÉE de `BETTER_AUTH_SECRET`
  * par un HMAC sur une étiquette fixe. Une clé dérivée avec séparation de
  * domaine ne permet pas de forger une signature de session, et réciproquement
@@ -174,7 +183,7 @@ export async function verifierJetonDeCapture(
   jeton: string | null | undefined,
   maintenantMs: number = Date.now(),
 ): Promise<VerdictCapture> {
-  if (!jeton) return { valide: false, raison: "en-tête absent" };
+  if (!jeton) return { valide: false, raison: "cookie absent" };
 
   const separateur = jeton.indexOf(".");
   if (separateur <= 0) return { valide: false, raison: "forme invalide" };

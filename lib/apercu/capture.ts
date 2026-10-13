@@ -27,6 +27,21 @@ export interface OptionsCapture {
   viewport: { width: number; height: number; deviceScaleFactor?: number };
   screenshotOptions?: { fullPage?: boolean; type?: "png" | "jpeg"; quality?: number };
   gotoOptions?: { waitUntil?: "load" | "networkidle0" | "networkidle2"; timeout?: number };
+  /**
+   * Sélecteur CSS dont l'absence FAIT ÉCHOUER la capture.
+   *
+   * C'est la seule chose qui distingue « j'ai photographié l'aperçu » de
+   * « j'ai photographié une page ». Si le laissez-passer est refusé, la page
+   * redirige vers la connexion, Browser Run SUIT la redirection et rend un
+   * JPEG parfaitement valide — de la page de connexion, ou de l'accueil, qui
+   * affiche les bannières EN LIGNE. Le contrôle de taille ne voit rien :
+   * l'image est bien formée, non vide, crédible, et fausse.
+   *
+   * La documentation de Cloudflare range le dépassement du délai d'attente
+   * d'ÉLÉMENT parmi les causes de 422 : un sélecteur qui n'apparaît jamais
+   * fait donc échouer l'appel au lieu de rendre une image. Fail-closed.
+   */
+  waitForSelector?: string;
   cookies?: readonly CookieDeCapture[];
 }
 
@@ -42,6 +57,16 @@ export interface CookieDeCapture {
   value: string;
   domain: string;
   path: string;
+  /**
+   * `httpOnly` n'est pas décoratif ici : la page d'aperçu REND du HTML
+   * d'auteur, composé par le modèle, et l'assainissement est la seule chose
+   * entre ce HTML et l'exécution d'un script. Un oubli d'assainissement
+   * donnerait `document.cookie`, donc le laissez-passer vivant — et refermer
+   * la fuite vers les tiers par un cookie pour la ré-ouvrir vers le contenu
+   * prévisualisé n'aurait aucun sens.
+   */
+  httpOnly?: boolean;
+  secure?: boolean;
 }
 
 /** Les deux écrans sur lesquels une bannière se joue vraiment. */
@@ -124,6 +149,7 @@ export async function capturer(
   ecran: NomDEcran,
   biscuits: readonly CookieDeCapture[],
   pleinePage: boolean,
+  selecteurExige: string,
 ): Promise<Capture> {
   const { width, height } = ECRANS[ecran];
   const resultat = await navigateur.quickAction("screenshot", {
@@ -131,6 +157,7 @@ export async function capturer(
     viewport: { width, height, deviceScaleFactor: 1 },
     screenshotOptions: { fullPage: pleinePage, type: "jpeg", quality: QUALITE_JPEG },
     gotoOptions: { waitUntil: "networkidle0", timeout: 30_000 },
+    waitForSelector: selecteurExige,
     cookies: biscuits,
   });
 

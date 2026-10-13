@@ -73,7 +73,7 @@ export async function middleware(request: NextRequest) {
   // (voir `lib/apercu/jeton-capture.ts`).
   //
   // CE N'EST PAS UNE AUTORISATION, et la nuance est le cœur de la conception :
-  // on ne regarde ici que la PRÉSENCE de l'en-tête, jamais sa validité. La
+  // on ne regarde ici que la PRÉSENCE du cookie, jamais sa validité. La
   // signature est vérifiée par la page elle-même
   // (`lib/apercu/autorisation.ts`), qui est ce qui rend le contenu. Si cette
   // ligne se trompe, on arrive à la page et c'est refusé — alors que vérifier

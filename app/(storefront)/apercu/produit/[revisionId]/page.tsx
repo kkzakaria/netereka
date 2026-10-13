@@ -6,6 +6,7 @@ import { getAdminProductById } from "@/lib/db/admin/products";
 import { produitApresRevision, champsNonRendus } from "@/lib/revisions/apercu-produit";
 import { avertissementsApercu } from "@/lib/revisions/apercu-avertissements";
 import { ApercuAvertissements } from "@/components/admin/apercu-avertissements";
+import { ApercuEntete } from "@/components/admin/apercu-entete";
 import { ProductDetails } from "@/components/storefront/product-details";
 
 /**
@@ -75,6 +76,10 @@ export default async function ApercuRevisionProduit({ params }: Props) {
   // que la description soit jugée à la mesure où elle sera lue.
   return (
     <>
+      {/* Porte `data-apercu-revision`, qu'`apercu_revision` exige par
+          `waitForSelector` : sans lui, un laissez-passer refusé rendrait la
+          photo de la page de connexion comme si c'était la révision. */}
+      <ApercuEntete revisionId={revisionId} type="produit" />
       <ApercuAvertissements avertissements={avertissements} />
       <div className="mx-auto max-w-7xl px-4 py-6">
         <h1 className="text-2xl font-bold">{apres.name}</h1>

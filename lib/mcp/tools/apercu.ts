@@ -12,6 +12,7 @@ import {
   type LiaisonNavigateur,
   type NomDEcran,
 } from "@/lib/apercu/capture";
+import { enBase64 } from "@/lib/mcp/base64";
 import { fail, okWithImages } from "@/lib/mcp/result";
 import { defineTool, type ToolDefinition } from "./types";
 
@@ -79,6 +80,18 @@ export const apercuTools: ToolDefinition[] = [
       "de produit — la page ne les rend pas.",
     inputSchema: apercuShape,
     handler: async (_ctx, input) => {
+      // L'identifiant part dans une URL ET dans un sélecteur CSS d'attribut.
+      // On le valide AVANT tout, plutôt que d'échapper deux fois : une
+      // apostrophe ou un guillemet casserait le sélecteur, et un sélecteur
+      // cassé ferait échouer la capture pour une raison incompréhensible.
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(input.revision_id)) {
+        return fail(
+          "validation_error",
+          "`revision_id` doit être un identifiant simple (lettres, chiffres, tiret, " +
+            "souligné ; 64 caractères au plus).",
+        );
+      }
+
       const revision = await getRevision(input.revision_id);
       if (!revision) {
         return fail("not_found", `Aucune révision « ${input.revision_id} ».`);
@@ -101,7 +114,7 @@ export const apercuTools: ToolDefinition[] = [
       // (« un Worker ne doit pas récupérer sa propre URL publique ») ne
       // s'applique donc pas ici ; seul un déploiement réel le confirme.
       const base = SITE_URL || EN_LIGNE;
-      const chemin = `/apercu/${type}/${revision.id}`;
+      const chemin = `/apercu/${type}/${encodeURIComponent(revision.id)}`;
       const url = `${base.replace(/\/+$/, "")}${chemin}`;
 
       // Le laissez-passer ne vaut QUE pour cette révision et QUE pour une
@@ -109,19 +122,29 @@ export const apercuTools: ToolDefinition[] = [
       // en-tête supplémentaire part avec TOUTES les requêtes de la page —
       // images sur r2.netereka.ci, et Google Tag Manager dès qu'un identifiant
       // GA sera configuré. Le `path` du cookie le réserve au seul document de
-      // l'aperçu.
-      const jeton = await emettreJetonDeCapture(
-        BETTER_AUTH_SECRET,
-        sujetApercu(type, revision.id),
-      );
-      const biscuits: CookieDeCapture[] = [
+      // l'aperçu, et `httpOnly` au seul navigateur : la page rend du HTML
+      // d'auteur, dont un défaut d'assainissement lirait `document.cookie`.
+      //
+      // ÉMIS PAR CAPTURE, pas une fois pour les deux. Un seul jeton couplait
+      // la seconde capture à la durée de la première : avec `networkidle0` et
+      // un délai de 30 s, le deuxième document pouvait partir à plus de 40 s
+      // d'une fenêtre de 60. Deux HMAC coûtent moins qu'un échec qui dépend
+      // du temps qu'a pris l'écran précédent.
+      const biscuitsPour = async (): Promise<CookieDeCapture[]> => [
         {
           name: NOM_COOKIE_CAPTURE,
-          value: jeton,
+          value: await emettreJetonDeCapture(BETTER_AUTH_SECRET, sujetApercu(type, revision.id)),
           domain: new URL(url).hostname,
           path: chemin,
+          httpOnly: true,
+          secure: new URL(url).protocol === "https:",
         },
       ];
+
+      // Le marqueur que SEULE une page d'aperçu porte, et pour CETTE révision.
+      // Son absence fait échouer la capture au lieu de rendre l'image d'une
+      // autre page — voir `ApercuEntete` et `waitForSelector`.
+      const selecteurExige = `[data-apercu-revision="${revision.id}"]`;
 
       const ecrans: NomDEcran[] = input.ecrans ?? (Object.keys(ECRANS) as NomDEcran[]);
       const pleinePage = input.pleine_page ?? type === "produit";
@@ -129,10 +152,20 @@ export const apercuTools: ToolDefinition[] = [
       const captures: Capture[] = [];
       for (const ecran of ecrans) {
         try {
-          // En série, pas en parallèle : le laissez-passer dure une minute et
-          // deux captures tiennent largement dedans, tandis que deux
-          // navigateurs simultanés mordent sur un quota de dix.
-          captures.push(await capturer(BROWSER as unknown as LiaisonNavigateur, url, ecran, biscuits, pleinePage));
+          // En série, pas en parallèle. Non pas pour un quota — les limites
+          // réelles du plan Workers Paid sont 200 navigateurs simultanés et
+          // 30 Quick Actions par seconde, loin devant deux captures ; les
+          // « 10 » sont l'allocation MENSUELLE incluse, que mettre en série
+          // n'économise pas. Simplement : rien n'exige le parallélisme, et une
+          // erreur en série se rapporte à un écran nommé.
+          captures.push(await capturer(
+            BROWSER as unknown as LiaisonNavigateur,
+            url,
+            ecran,
+            await biscuitsPour(),
+            pleinePage,
+            selecteurExige,
+          ));
         } catch (e) {
           if (e instanceof EchecDeCapture) {
             return fail("internal_error", `Capture ${ecran} impossible : ${e.message}`);
@@ -171,15 +204,3 @@ export const apercuTools: ToolDefinition[] = [
     },
   }),
 ];
-
-/** base64 par tranches : `String.fromCharCode(...bytes)` sur plusieurs
- *  centaines de kilo-octets dépasse la limite d'arguments du moteur et lève un
- *  RangeError. Même découpage que dans `lib/mcp/tools/images.ts`. */
-function enBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000;
-  let out = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    out += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(out);
-}

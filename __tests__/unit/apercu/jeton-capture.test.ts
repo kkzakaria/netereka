@@ -135,7 +135,7 @@ describe("entrées hostiles", () => {
 
   it("nomme toujours un motif, pour qu'un refus se journalise", async () => {
     const v = await verifierJetonDeCapture(SECRET, CHEMIN, null, T0);
-    expect(v).toEqual({ valide: false, raison: "en-tête absent" });
+    expect(v).toEqual({ valide: false, raison: "cookie absent" });
   });
 
   // Un nom de cookie ne doit porter aucun des caractères interdits par la
