@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth/guards";
+import { autoriserApercu } from "@/lib/apercu/autorisation";
 import { getRevision } from "@/lib/db/revisions";
 import { getAdminProductById } from "@/lib/db/admin/products";
 import { produitApresRevision, champsNonRendus } from "@/lib/revisions/apercu-produit";
 import { avertissementsApercu } from "@/lib/revisions/apercu-avertissements";
 import { ApercuAvertissements } from "@/components/admin/apercu-avertissements";
+import { ApercuEntete } from "@/components/admin/apercu-entete";
 import { ProductDetails } from "@/components/storefront/product-details";
 
 /**
@@ -50,9 +51,11 @@ interface Props {
 }
 
 export default async function ApercuRevisionProduit({ params }: Props) {
-  await requireAdmin();
-
   const { revisionId } = await params;
+  // Un administrateur connecté, OU un capteur d'écran muni d'un laissez-passer
+  // pour cette révision précise. La vérification a lieu ici, pas dans le
+  // middleware : voir `lib/apercu/autorisation.ts`.
+  await autoriserApercu("produit", revisionId);
   const revision = await getRevision(revisionId);
   if (!revision || revision.target_type !== "product") notFound();
 
@@ -73,6 +76,10 @@ export default async function ApercuRevisionProduit({ params }: Props) {
   // que la description soit jugée à la mesure où elle sera lue.
   return (
     <>
+      {/* Porte `data-apercu-revision`, qu'`apercu_revision` exige par
+          `waitForSelector` : sans lui, un laissez-passer refusé rendrait la
+          photo de la page de connexion comme si c'était la révision. */}
+      <ApercuEntete revisionId={revisionId} type="produit" />
       <ApercuAvertissements avertissements={avertissements} />
       <div className="mx-auto max-w-7xl px-4 py-6">
         <h1 className="text-2xl font-bold">{apres.name}</h1>

@@ -37,6 +37,30 @@ export function okWithImage(image: { base64: string; mimeType: string }, data: u
 }
 
 /**
+ * PLUSIEURS images, puis le texte qui dit ce qu'on regarde.
+ *
+ * `apercu_revision` en rend deux — mobile et bureau — et les deux ensemble
+ * sont le propos : un défaut de mise en page n'apparaît le plus souvent que
+ * sur un seul des deux écrans, et c'est la COMPARAISON qui le montre. Les
+ * rendre en deux appels laisserait au modèle le soin de se souvenir du
+ * premier.
+ *
+ * Même ordre que `okWithImage`, et pour la même raison : si un client ne
+ * rendait qu'un bloc, ce serait une image et non des métadonnées.
+ */
+export function okWithImages(
+  images: readonly { base64: string; mimeType: string }[],
+  data: unknown,
+): ToolResult {
+  return {
+    content: [
+      ...images.map((i) => ({ type: "image" as const, data: i.base64, mimeType: i.mimeType })),
+      { type: "text" as const, text: JSON.stringify(data) },
+    ],
+  };
+}
+
+/**
  * Le premier bloc TEXTE d'un résultat, quel que soit son rang.
  *
  * Depuis `view_image`, le premier bloc peut être une image : lire

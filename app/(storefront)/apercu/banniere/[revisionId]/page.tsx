@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth/guards";
+import { autoriserApercu } from "@/lib/apercu/autorisation";
 import { getRevision } from "@/lib/db/revisions";
 import { getBannerById } from "@/lib/db/banners";
 import { bannerClock, getActiveBanners, raisonsDeNonAffichage, sanitizeBannerContent } from "@/lib/db/storefront/banners";
 import { banniereApresRevision, carrouselApresRevision } from "@/lib/revisions/apercu-banniere";
 import { avertissementsApercu } from "@/lib/revisions/apercu-avertissements";
 import { ApercuAvertissements } from "@/components/admin/apercu-avertissements";
+import { ApercuEntete } from "@/components/admin/apercu-entete";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import type { Banner } from "@/lib/db/types";
 
@@ -57,9 +58,11 @@ interface Props {
 }
 
 export default async function ApercuRevisionBanniere({ params }: Props) {
-  await requireAdmin();
-
   const { revisionId } = await params;
+  // Un administrateur connecté, OU un capteur d'écran muni d'un laissez-passer
+  // pour cette révision précise. La vérification a lieu ici, pas dans le
+  // middleware : voir `lib/apercu/autorisation.ts`.
+  await autoriserApercu("banniere", revisionId);
   const revision = await getRevision(revisionId);
   if (!revision || revision.target_type !== "banner") notFound();
 
@@ -100,6 +103,10 @@ export default async function ApercuRevisionBanniere({ params }: Props) {
   // Pas de <main> ici : le gabarit de la vitrine en fournit déjà un.
   return (
     <>
+      {/* Porte `data-apercu-revision`, qu'`apercu_revision` exige par
+          `waitForSelector` : sans lui, un laissez-passer refusé rendrait la
+          photo de la page de connexion comme si c'était la révision. */}
+      <ApercuEntete revisionId={revisionId} type="banniere" />
       <ApercuAvertissements avertissements={avertissements} />
       <HeroBanner banners={assainies} fallbackProducts={[]} />
     </>

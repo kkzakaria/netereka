@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { KV_HERO_PRELOAD_KEY, cleDuPrechargementRepli } from "@/lib/cloudflare/hero-preload-key";
+import { NOM_COOKIE_CAPTURE } from "@/lib/apercu/jeton-capture";
 
 // `/apercu` y figure bien qu'il vive dans le groupe `(storefront)` : la page
 // appelle `requireAdmin()`, mais `(storefront)/loading.tsx` la place sous un
@@ -10,7 +11,7 @@ import { KV_HERO_PRELOAD_KEY, cleDuPrechargementRepli } from "@/lib/cloudflare/h
 // instant l'en-tête et un squelette, et l'administrateur déconnecté perdait
 // le lien de l'aperçu, `requireAdmin()` ne gardant aucun retour. Ici, c'est
 // un 307 avant tout rendu, avec le chemin d'origine.
-const PROTECTED_PATHS = ["/account", "/apercu", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
+export const PROTECTED_PATHS = ["/account", "/apercu", "/checkout", "/dashboard", "/products", "/orders", "/customers", "/users", "/categories", "/audit-log"];
 const SESSION_COOKIE = "better-auth.session_token";
 const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 
@@ -61,6 +62,29 @@ export async function middleware(request: NextRequest) {
 
   const hasCookie = request.cookies.has(SESSION_COOKIE) || request.cookies.has(SECURE_SESSION_COOKIE);
 
+  // UN CAPTEUR D'ÉCRAN NE PORTE PAS DE COOKIE.
+  //
+  // L'outil MCP `apercu_revision` photographie `/apercu/...` par Browser Run,
+  // donc depuis l'infrastructure de Cloudflare : la requête n'a pas de session,
+  // et la redirection ci-dessous lui ramènerait la photo de la page de
+  // connexion. On la laisse donc passer quand le cookie de laissez-passer est
+  // présent — un cookie à portée de chemin, et non un en-tête, qui serait
+  // envoyé à toutes les requêtes de la page y compris vers des tiers
+  // (voir `lib/apercu/jeton-capture.ts`).
+  //
+  // CE N'EST PAS UNE AUTORISATION, et la nuance est le cœur de la conception :
+  // on ne regarde ici que la PRÉSENCE du cookie, jamais sa validité. La
+  // signature est vérifiée par la page elle-même
+  // (`lib/apercu/autorisation.ts`), qui est ce qui rend le contenu. Si cette
+  // ligne se trompe, on arrive à la page et c'est refusé — alors que vérifier
+  // ici et transmettre un « c'est bon » rendrait la page sûre uniquement tant
+  // que ce middleware tourne. Il tournait sur `/apercu` par ACCIDENT jusqu'à
+  // ce commit (voir `config.matcher` plus bas), ce qui dit assez ce que vaut
+  // une telle garantie.
+  if (pathname.startsWith("/apercu") && request.cookies.has(NOM_COOKIE_CAPTURE)) {
+    return NextResponse.next();
+  }
+
   // No cookie on protected page → redirect to sign-in
   if (!hasCookie) {
     const signInUrl = new URL("/auth/sign-in", request.url);
@@ -75,6 +99,16 @@ export const config = {
   matcher: [
     "/",
     "/account/:path*",
+    // `/apercu` MANQUAIT ICI depuis son ajout à `PROTECTED_PATHS`, et la garde
+    // fonctionnait quand même : l'entrée fourre-tout `"/(.*)"` ci-dessous,
+    // pourtant filtrée sur l'hôte `www`, faisait tourner le middleware sur
+    // tous les chemins (mesuré le 2026-10-13 — `/apercu/banniere/test` rendait
+    // bien le 307 signé `?redirect=`, alors que ce chemin n'était listé
+    // nulle part). Le jour où ce filtre d'hôte serait honoré à la couche de
+    // routage, `/apercu` aurait perdu sa garde EN SILENCE, et la page serait
+    // retombée sur `requireAdmin()` derrière le `<Suspense>` du gabarit —
+    // précisément le trou refermé en #402.
+    "/apercu/:path*",
     "/checkout/:path*",
     "/dashboard/:path*",
     "/products/:path*",

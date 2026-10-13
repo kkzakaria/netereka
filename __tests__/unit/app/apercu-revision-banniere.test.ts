@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * le fait que ce soit bien l'état APRÈS révision qui parte au composant.
  */
 const mocks = vi.hoisted(() => ({
-  requireAdmin: vi.fn(),
+  autoriserApercu: vi.fn(),
   getRevision: vi.fn(),
   getBannerById: vi.fn(),
   getActiveBanners: vi.fn(),
@@ -18,7 +18,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("@/lib/auth/guards", () => ({ requireAdmin: mocks.requireAdmin }));
+vi.mock("@/lib/apercu/autorisation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/apercu/autorisation")>()),
+  autoriserApercu: mocks.autoriserApercu,
+}));
 vi.mock("@/lib/db/revisions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/db/revisions")>()),
   getRevision: mocks.getRevision,
@@ -45,20 +48,38 @@ const revision = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/**
+ * Les enfants du fragment, cherchés PAR LEUR PROPRIÉTÉ et non par position.
+ *
+ * La première version indexait `children[0]` et `children[1]`. Ajouter
+ * `<ApercuEntete/>` en tête a décalé les deux et fait tomber onze tests d'un
+ * coup — pour une raison qui n'avait rien à voir avec ce qu'ils vérifient.
+ * Chercher la propriété attendue dit ce qu'on veut et survit à l'insertion
+ * d'un voisin.
+ */
+async function enfantPortant<T>(revisionId: string, propriete: string): Promise<T> {
+  const el = await Page({ params: Promise.resolve({ revisionId }) });
+  const enfants = (el as unknown as { props: { children: { props?: Record<string, unknown> }[] } })
+    .props.children;
+  const trouve = enfants.find((e) => e?.props && propriete in e.props);
+  if (!trouve) {
+    throw new Error(
+      `aucun enfant ne porte « ${propriete} » (vus : ${enfants
+        .map((e) => Object.keys(e?.props ?? {}).join("+") || "sans props")
+        .join(", ")})`,
+    );
+  }
+  return trouve.props![propriete] as T;
+}
+
 /** Le carrousel tel qu'il parvient au composant de la vitrine. */
 async function carrouselRendu(revisionId = "rev-1") {
-  const el = await Page({ params: Promise.resolve({ revisionId }) });
-  // <> <ApercuAvertissements/> <HeroBanner/> </> — le <main> vient du gabarit
-  // de la vitrine, dont la page hérite désormais.
-  const enfants = (el as unknown as { props: { children: { props: Record<string, unknown> }[] } }).props.children;
-  return enfants[1].props.banners as Record<string, unknown>[];
+  return enfantPortant<Record<string, unknown>[]>(revisionId, "banners");
 }
 
 /** Les avertissements posés au-dessus du rendu. */
 async function avertissementsRendus(revisionId = "rev-1") {
-  const el = await Page({ params: Promise.resolve({ revisionId }) });
-  const enfants = (el as unknown as { props: { children: { props: { avertissements: { message: string; bloquant: boolean }[] } }[] } }).props.children;
-  return enfants[0].props.avertissements;
+  return enfantPortant<{ message: string; bloquant: boolean }[]>(revisionId, "avertissements");
 }
 
 /** La bannière RÉVISÉE dans ce carrousel. */
@@ -68,7 +89,7 @@ async function banniereRendue(revisionId = "rev-1") {
 }
 
 beforeEach(() => {
-  mocks.requireAdmin.mockReset().mockResolvedValue(undefined);
+  mocks.autoriserApercu.mockReset().mockResolvedValue(undefined);
   mocks.getRevision.mockReset().mockResolvedValue(revision());
   mocks.getBannerById.mockReset().mockResolvedValue(BANNIERE);
   mocks.getActiveBanners.mockReset().mockResolvedValue([
@@ -110,8 +131,8 @@ describe("aperçu de révision : ce qui est rendu", () => {
     expect((await banniereRendue()).content_html).toContain(".desc-banner-7 .a");
   });
 
-  it("l'administration est exigée AVANT toute lecture", async () => {
-    mocks.requireAdmin.mockRejectedValue(new Error("NEXT_REDIRECT"));
+  it("l'autorisation est exigée AVANT toute lecture", async () => {
+    mocks.autoriserApercu.mockRejectedValue(new Error("NEXT_REDIRECT"));
     await expect(banniereRendue()).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.getRevision).not.toHaveBeenCalled();
   });
