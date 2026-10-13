@@ -19,7 +19,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 }));
 
 import { middleware, PROTECTED_PATHS } from "@/middleware";
-import { EN_TETE_CAPTURE } from "@/lib/apercu/jeton-capture";
+import { NOM_COOKIE_CAPTURE } from "@/lib/apercu/jeton-capture";
 
 const requete = (chemin: string, avecSession = false) => {
   const r = new NextRequest(new URL(`https://netereka.ci${chemin}`));
@@ -60,7 +60,7 @@ describe("middleware : les chemins qui exigent une session", () => {
 describe("middleware : le laissez-passer d'un capteur d'écran", () => {
   const avecJeton = (chemin: string, jeton = "peu-importe") => {
     const r = new NextRequest(new URL(`https://netereka.ci${chemin}`));
-    r.headers.set(EN_TETE_CAPTURE, jeton);
+    r.cookies.set(NOM_COOKIE_CAPTURE, jeton);
     return r;
   };
 
@@ -77,7 +77,7 @@ describe("middleware : le laissez-passer d'un capteur d'écran", () => {
    * Ces tests fixent donc un comportement qui a l'air laxiste et qui ne l'est
    * pas : un jeton bidon passe ICI et est refusé À LA PAGE.
    */
-  it("ne redirige pas une requête porteuse de l'en-tête, même sans session", async () => {
+  it("ne redirige pas une requête porteuse du cookie, même sans session", async () => {
     for (const chemin of ["/apercu/banniere/rev-1", "/apercu/produit/rev-1"]) {
       expect((await middleware(avecJeton(chemin))).status, chemin).toBe(200);
     }

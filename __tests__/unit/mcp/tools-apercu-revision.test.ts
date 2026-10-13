@@ -14,7 +14,7 @@ vi.mock("@/lib/cloudflare/context", () => ({ getEnv: mocks.getEnv }));
 
 import { apercuTools } from "@/lib/mcp/tools/apercu";
 import { textOf } from "@/lib/mcp/result";
-import { EN_TETE_CAPTURE, verifierJetonDeCapture } from "@/lib/apercu/jeton-capture";
+import { NOM_COOKIE_CAPTURE, verifierJetonDeCapture } from "@/lib/apercu/jeton-capture";
 import { sujetApercu } from "@/lib/apercu/autorisation";
 import type { McpContext } from "@/lib/mcp/context";
 
@@ -89,22 +89,55 @@ describe("apercu_revision : ce qu'il rend", () => {
 });
 
 describe("apercu_revision : le laissez-passer", () => {
-  it("pose un jeton valide POUR CETTE révision, en en-tête et jamais dans l'URL", async () => {
+  const biscuitPose = () => {
+    const biscuits = mocks.quickAction.mock.calls[0][1].cookies;
+    return biscuits.find((b: { name: string }) => b.name === NOM_COOKIE_CAPTURE);
+  };
+
+  it("pose un jeton valide POUR CETTE révision, en cookie et jamais dans l'URL", async () => {
+    await appeler();
+    const biscuit = biscuitPose();
+    expect(biscuit.value).toBeTruthy();
+    expect(mocks.quickAction.mock.calls[0][1].url).not.toContain(biscuit.value);
+    expect(mocks.quickAction.mock.calls[0][1].url).not.toContain("jeton");
+    expect(
+      await verifierJetonDeCapture(SECRET, sujetApercu("banniere", "rev-1"), biscuit.value),
+    ).toEqual({ valide: true });
+  });
+
+  /**
+   * LA PORTÉE DU COOKIE EST CE QUI EMPÊCHE LA FUITE.
+   *
+   * La page d'aperçu hérite du gabarit vitrine : elle demande ses images à
+   * `r2.netereka.ci` et chargerait Google Tag Manager dès qu'un identifiant GA
+   * serait configuré. Un en-tête serait parti avec toutes ces requêtes. Le
+   * `path` du cookie, lui, ne correspond ni à `/banners/…`, ni à
+   * `/cdn-cgi/image/…`, ni à `/_next/static/…` — donc le laissez-passer ne
+   * part qu'avec le document de l'aperçu.
+   */
+  it("limite le cookie au chemin exact de l'aperçu, et à notre domaine", async () => {
+    await appeler();
+    const biscuit = biscuitPose();
+    expect(biscuit.path).toBe("/apercu/banniere/rev-1");
+    expect(biscuit.domain).toBe("netereka.ci");
+    for (const autre of ["/banners/7/img.webp", "/cdn-cgi/image/width=640/x", "/_next/static/a.js"]) {
+      expect(autre.startsWith(biscuit.path), autre).toBe(false);
+    }
+  });
+
+  it("n'envoie rien en en-tête", async () => {
     await appeler();
     const options = mocks.quickAction.mock.calls[0][1];
-    const jeton = options.setExtraHTTPHeaders[EN_TETE_CAPTURE];
-    expect(jeton).toBeTruthy();
-    expect(options.url).not.toContain(jeton);
-    expect(options.url).not.toContain("jeton");
-    expect(
-      await verifierJetonDeCapture(SECRET, sujetApercu("banniere", "rev-1"), jeton),
-    ).toEqual({ valide: true });
+    expect(options.setExtraHTTPHeaders).toBeUndefined();
   });
 
   it("le jeton posé ne vaut pas pour une autre révision", async () => {
     await appeler();
-    const jeton = mocks.quickAction.mock.calls[0][1].setExtraHTTPHeaders[EN_TETE_CAPTURE];
-    const v = await verifierJetonDeCapture(SECRET, sujetApercu("banniere", "rev-2"), jeton);
+    const v = await verifierJetonDeCapture(
+      SECRET,
+      sujetApercu("banniere", "rev-2"),
+      biscuitPose().value,
+    );
     expect(v.valide).toBe(false);
   });
 });

@@ -22,11 +22,26 @@
  *    durablement du contenu non publié à quiconque apprend un identifiant,
  *    sans expiration ni portée.
  *
- * CE QUI EST FAIT. Un en-tête, posé par `setExtraHTTPHeaders` de Browser Run,
- * portant une signature HMAC-SHA256 qui couvre LE CHEMIN EXACT et une date
- * d'expiration. Le jeton ne vaut donc que pour la page pour laquelle il a été
- * émis : il ne se promène pas d'une révision à l'autre, et encore moins vers
- * `/admin`.
+ * CE QUI EST FAIT. Un COOKIE à portée de chemin, posé par Browser Run avant la
+ * navigation, portant une signature HMAC-SHA256 qui couvre le sujet exact et
+ * une date d'expiration. Le jeton ne vaut donc que pour la révision pour
+ * laquelle il a été émis : il ne se promène pas d'une révision à l'autre, et
+ * encore moins vers `/admin`.
+ *
+ * UN COOKIE ET PAS UN EN-TÊTE, ET CE N'EST PAS UN DÉTAIL. La première version
+ * posait `setExtraHTTPHeaders` — et un en-tête supplémentaire est envoyé par
+ * le navigateur à TOUTES les requêtes de la page, pas au seul document. La
+ * page d'aperçu hérite du gabarit vitrine : elle demande ses images à
+ * `r2.netereka.ci` (vérifié dans le HTML servi) et chargerait Google Tag
+ * Manager dès qu'un identifiant GA serait configuré (`components/providers.tsx`
+ * monte déjà le composant). Le laissez-passer serait donc parti chez un tiers.
+ *
+ * Un cookie, lui, est porté par la portée pour laquelle il a été émis :
+ * `path` = le chemin exact de l'aperçu. Les images (`/banners/…`), les
+ * transformations (`/cdn-cgi/image/…`) et les actifs (`/_next/static/…`) ne
+ * correspondent pas à ce chemin, donc ne le reçoivent pas — et un autre
+ * domaine ne le reçoit jamais. C'est le mécanisme conçu pour ce problème,
+ * plutôt qu'un en-tête qu'il faudrait filtrer à la main.
  *
  * PAS DE NOUVEAU SECRET À POSER. La clé est DÉRIVÉE de `BETTER_AUTH_SECRET`
  * par un HMAC sur une étiquette fixe. Une clé dérivée avec séparation de
@@ -39,8 +54,15 @@
 /** Étiquette de séparation de domaine. La changer invalide tous les jetons. */
 const ETIQUETTE = "netereka/apercu-capture/v1";
 
-/** Nom de l'en-tête qui porte le jeton. */
-export const EN_TETE_CAPTURE = "x-netereka-apercu";
+/**
+ * Nom du cookie qui porte le jeton.
+ *
+ * Sans préfixe `__Host-` : celui-ci interdit l'attribut `Path` autre que `/`,
+ * or la portée de chemin est précisément ce qui empêche la fuite vers les
+ * images et les actifs. On échange une garantie d'origine — que l'on n'a pas
+ * besoin ici, le jeton étant signé et vérifié — contre la seule qui compte.
+ */
+export const NOM_COOKIE_CAPTURE = "netereka_apercu";
 
 /** Durée de vie à l'émission. Une capture prend quelques secondes. */
 export const DUREE_DE_VIE_MS = 60_000;

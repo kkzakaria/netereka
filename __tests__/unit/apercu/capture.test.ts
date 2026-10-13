@@ -57,14 +57,39 @@ describe("capturer", () => {
     quickAction: vi.fn().mockResolvedValue(resultat),
   });
 
-  it("demande le bon écran, en JPEG, et pose l'en-tête de laissez-passer", async () => {
+  const biscuit = {
+    name: "netereka_apercu",
+    value: "v",
+    domain: "netereka.ci",
+    path: "/apercu/banniere/rev-1",
+  };
+
+  it("demande le bon écran, en JPEG, et pose le cookie de laissez-passer", async () => {
     const nav = navigateur(new Response(JPEG));
-    await capturer(nav, "https://netereka.ci/apercu/banniere/rev-1", "mobile", { "x-a": "b" }, false);
+    await capturer(nav, "https://netereka.ci/apercu/banniere/rev-1", "mobile", [biscuit], false);
     const options = vi.mocked(nav.quickAction).mock.calls[0][1];
     expect(options.viewport).toEqual({ ...ECRANS.mobile, deviceScaleFactor: 1 });
     expect(options.screenshotOptions?.type).toBe("jpeg");
-    expect(options.setExtraHTTPHeaders).toEqual({ "x-a": "b" });
+    expect(options.cookies).toEqual([biscuit]);
     expect(options.url).toContain("/apercu/banniere/rev-1");
+  });
+
+  /**
+   * UN COOKIE, ET PAS UN EN-TÊTE.
+   *
+   * La première version posait `setExtraHTTPHeaders` — et un en-tête
+   * supplémentaire part avec TOUTES les requêtes de la page, pas au seul
+   * document. La page d'aperçu hérite du gabarit vitrine : elle demande ses
+   * images à `r2.netereka.ci`, et chargerait Google Tag Manager dès qu'un
+   * identifiant GA serait configuré. Le laissez-passer serait parti chez un
+   * tiers. Ce test interdit le retour en arrière.
+   */
+  it("n'envoie JAMAIS le laissez-passer en en-tête", async () => {
+    const nav = navigateur(new Response(JPEG));
+    await capturer(nav, "https://netereka.ci/apercu/banniere/rev-1", "mobile", [biscuit], false);
+    const options = vi.mocked(nav.quickAction).mock.calls[0][1] as unknown as Record<string, unknown>;
+    expect(options.setExtraHTTPHeaders).toBeUndefined();
+    expect(JSON.stringify(options)).not.toContain("x-netereka-apercu");
   });
 
   // `load` partirait avant les images : la vitrine les charge par
@@ -72,12 +97,12 @@ describe("capturer", () => {
   // justement regarder.
   it("attend le silence réseau, pas le simple chargement", async () => {
     const nav = navigateur(new Response(JPEG));
-    await capturer(nav, "https://x.test/a", "bureau", {}, false);
+    await capturer(nav, "https://x.test/a", "bureau", [], false);
     expect(vi.mocked(nav.quickAction).mock.calls[0][1].gotoOptions?.waitUntil).toBe("networkidle0");
   });
 
   it("rend les dimensions de l'écran demandé", async () => {
-    const c = await capturer(navigateur(new Response(JPEG)), "https://x.test/a", "bureau", {}, true);
+    const c = await capturer(navigateur(new Response(JPEG)), "https://x.test/a", "bureau", [], true);
     expect(c).toMatchObject({ ecran: "bureau", largeur: 1440, hauteur: 900 });
     expect(c.octets).toEqual(JPEG);
   });
@@ -86,17 +111,17 @@ describe("capturer", () => {
   // décrirait un écran noir comme s'il l'avait vu.
   it("refuse une image vide", async () => {
     await expect(
-      capturer(navigateur(new Response(new Uint8Array())), "https://x.test/a", "mobile", {}, false),
+      capturer(navigateur(new Response(new Uint8Array())), "https://x.test/a", "mobile", [], false),
     ).rejects.toThrow(EchecDeCapture);
   });
 
   it("refuse une capture au-delà du plafond, en nommant le recours", async () => {
     const trop = new Uint8Array(CAPTURE_MAX_OCTETS + 1);
     await expect(
-      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", {}, true),
+      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", [], true),
     ).rejects.toThrow(/pleine_page/);
     await expect(
-      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", {}, false),
+      capturer(navigateur(new Response(trop)), "https://x.test/a", "bureau", [], false),
     ).rejects.toThrow(/à la main/);
   });
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { KV_HERO_PRELOAD_KEY, cleDuPrechargementRepli } from "@/lib/cloudflare/hero-preload-key";
-import { EN_TETE_CAPTURE } from "@/lib/apercu/jeton-capture";
+import { NOM_COOKIE_CAPTURE } from "@/lib/apercu/jeton-capture";
 
 // `/apercu` y figure bien qu'il vive dans le groupe `(storefront)` : la page
 // appelle `requireAdmin()`, mais `(storefront)/loading.tsx` la place sous un
@@ -65,10 +65,12 @@ export async function middleware(request: NextRequest) {
   // UN CAPTEUR D'ÉCRAN NE PORTE PAS DE COOKIE.
   //
   // L'outil MCP `apercu_revision` photographie `/apercu/...` par Browser Run,
-  // donc depuis l'infrastructure de Cloudflare : la requête n'a ni session ni
-  // cookie, et la redirection ci-dessous lui ramènerait la photo de la page de
-  // connexion. On la laisse donc passer quand l'en-tête de laissez-passer est
-  // présent.
+  // donc depuis l'infrastructure de Cloudflare : la requête n'a pas de session,
+  // et la redirection ci-dessous lui ramènerait la photo de la page de
+  // connexion. On la laisse donc passer quand le cookie de laissez-passer est
+  // présent — un cookie à portée de chemin, et non un en-tête, qui serait
+  // envoyé à toutes les requêtes de la page y compris vers des tiers
+  // (voir `lib/apercu/jeton-capture.ts`).
   //
   // CE N'EST PAS UNE AUTORISATION, et la nuance est le cœur de la conception :
   // on ne regarde ici que la PRÉSENCE de l'en-tête, jamais sa validité. La
@@ -79,7 +81,7 @@ export async function middleware(request: NextRequest) {
   // que ce middleware tourne. Il tournait sur `/apercu` par ACCIDENT jusqu'à
   // ce commit (voir `config.matcher` plus bas), ce qui dit assez ce que vaut
   // une telle garantie.
-  if (pathname.startsWith("/apercu") && request.headers.has(EN_TETE_CAPTURE)) {
+  if (pathname.startsWith("/apercu") && request.cookies.has(NOM_COOKIE_CAPTURE)) {
     return NextResponse.next();
   }
 

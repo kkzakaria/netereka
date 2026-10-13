@@ -1,27 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  headers: vi.fn(),
+  cookies: vi.fn(),
   getEnv: vi.fn(),
   requireAdmin: vi.fn(),
 }));
 
-vi.mock("next/headers", () => ({ headers: mocks.headers }));
+vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/cloudflare/context", () => ({ getEnv: mocks.getEnv }));
 vi.mock("@/lib/auth/guards", () => ({ requireAdmin: mocks.requireAdmin }));
 
 import { autoriserApercu, sujetApercu } from "@/lib/apercu/autorisation";
-import { EN_TETE_CAPTURE, emettreJetonDeCapture } from "@/lib/apercu/jeton-capture";
+import { emettreJetonDeCapture } from "@/lib/apercu/jeton-capture";
 
 const SECRET = "secret-de-test-pour-l-autorisation-d-apercu";
 
 const avecEnTete = (valeur: string | null) =>
-  mocks.headers.mockResolvedValue(new Headers(valeur ? { [EN_TETE_CAPTURE]: valeur } : {}));
+  mocks.cookies.mockResolvedValue({ get: () => (valeur === null ? undefined : { value: valeur }) });
 
 beforeEach(() => {
   // mockReset, pas clearAllMocks : l'ordre des tests est tiré au sort et seule
   // la réinitialisation efface AUSSI l'implémentation.
-  mocks.headers.mockReset();
+  mocks.cookies.mockReset();
   mocks.getEnv.mockReset().mockResolvedValue({ BETTER_AUTH_SECRET: SECRET });
   mocks.requireAdmin.mockReset().mockResolvedValue(undefined);
 });
@@ -58,7 +58,7 @@ describe("autoriserApercu", () => {
     }
   });
 
-  it("retombe sur la session quand il n'y a pas d'en-tête du tout", async () => {
+  it("retombe sur la session quand il n'y a pas de cookie du tout", async () => {
     avecEnTete(null);
     await autoriserApercu("banniere", "rev-1");
     expect(mocks.requireAdmin).toHaveBeenCalledOnce();

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DUREE_DE_VIE_MAX_MS,
   DUREE_DE_VIE_MS,
-  EN_TETE_CAPTURE,
+  NOM_COOKIE_CAPTURE,
   emettreJetonDeCapture,
   messageSigne,
   verifierJetonDeCapture,
@@ -138,8 +138,14 @@ describe("entrées hostiles", () => {
     expect(v).toEqual({ valide: false, raison: "en-tête absent" });
   });
 
-  it("le nom de l'en-tête est en minuscules, comme les en-têtes HTTP/2", () => {
-    expect(EN_TETE_CAPTURE).toBe(EN_TETE_CAPTURE.toLowerCase());
+  // Un nom de cookie ne doit porter aucun des caractères interdits par la
+  // grammaire du cookie, sinon il est posé sans bruit et jamais relu.
+  it("le nom du cookie est un jeton HTTP valide", () => {
+    expect(NOM_COOKIE_CAPTURE).toMatch(/^[A-Za-z0-9_-]+$/);
+    // Pas de `__Host-` : ce préfixe interdit tout `Path` autre que `/`, or la
+    // portée de chemin est exactement ce qui empêche la fuite du jeton vers
+    // les images et les actifs de la page.
+    expect(NOM_COOKIE_CAPTURE.startsWith("__Host-")).toBe(false);
   });
 });
 

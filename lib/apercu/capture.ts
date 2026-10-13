@@ -27,7 +27,21 @@ export interface OptionsCapture {
   viewport: { width: number; height: number; deviceScaleFactor?: number };
   screenshotOptions?: { fullPage?: boolean; type?: "png" | "jpeg"; quality?: number };
   gotoOptions?: { waitUntil?: "load" | "networkidle0" | "networkidle2"; timeout?: number };
-  setExtraHTTPHeaders?: Record<string, string>;
+  cookies?: readonly CookieDeCapture[];
+}
+
+/**
+ * Un cookie posé par Browser Run avant la navigation.
+ *
+ * `path` est ce qui empêche le laissez-passer de partir avec les images et les
+ * actifs de la page — et jamais vers un autre domaine. C'est la raison d'être
+ * du cookie plutôt que d'un en-tête ; voir `lib/apercu/jeton-capture.ts`.
+ */
+export interface CookieDeCapture {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
 }
 
 /** Les deux écrans sur lesquels une bannière se joue vraiment. */
@@ -108,7 +122,7 @@ export async function capturer(
   navigateur: LiaisonNavigateur,
   url: string,
   ecran: NomDEcran,
-  enTetes: Record<string, string>,
+  biscuits: readonly CookieDeCapture[],
   pleinePage: boolean,
 ): Promise<Capture> {
   const { width, height } = ECRANS[ecran];
@@ -117,7 +131,7 @@ export async function capturer(
     viewport: { width, height, deviceScaleFactor: 1 },
     screenshotOptions: { fullPage: pleinePage, type: "jpeg", quality: QUALITE_JPEG },
     gotoOptions: { waitUntil: "networkidle0", timeout: 30_000 },
-    setExtraHTTPHeaders: enTetes,
+    cookies: biscuits,
   });
 
   const octets = await octetsDeLaCapture(resultat);

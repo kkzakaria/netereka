@@ -1,7 +1,7 @@
-import { headers } from "next/headers";
+import { cookies } from "next/headers";
 import { getEnv } from "@/lib/cloudflare/context";
 import { requireAdmin } from "@/lib/auth/guards";
-import { EN_TETE_CAPTURE, verifierJetonDeCapture } from "./jeton-capture";
+import { NOM_COOKIE_CAPTURE, verifierJetonDeCapture } from "./jeton-capture";
 
 /**
  * Qui a le droit de voir un aperçu de révision : un administrateur connecté,
@@ -46,8 +46,7 @@ export function sujetApercu(type: TypeApercu, revisionId: string): string {
  * construction, aucune session à présenter.
  */
 export async function autoriserApercu(type: TypeApercu, revisionId: string): Promise<void> {
-  const enTetes = await headers();
-  const jeton = enTetes.get(EN_TETE_CAPTURE);
+  const jeton = (await cookies()).get(NOM_COOKIE_CAPTURE)?.value;
 
   if (jeton) {
     const { BETTER_AUTH_SECRET } = await getEnv();

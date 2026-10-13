@@ -2,12 +2,13 @@ import { z } from "zod";
 import { getEnv } from "@/lib/cloudflare/context";
 import { getRevision } from "@/lib/db/revisions";
 import { sujetApercu, type TypeApercu } from "@/lib/apercu/autorisation";
-import { emettreJetonDeCapture, EN_TETE_CAPTURE } from "@/lib/apercu/jeton-capture";
+import { emettreJetonDeCapture, NOM_COOKIE_CAPTURE } from "@/lib/apercu/jeton-capture";
 import {
   capturer,
   EchecDeCapture,
   ECRANS,
   type Capture,
+  type CookieDeCapture,
   type LiaisonNavigateur,
   type NomDEcran,
 } from "@/lib/apercu/capture";
@@ -100,15 +101,27 @@ export const apercuTools: ToolDefinition[] = [
       // (« un Worker ne doit pas récupérer sa propre URL publique ») ne
       // s'applique donc pas ici ; seul un déploiement réel le confirme.
       const base = SITE_URL || EN_LIGNE;
-      const url = `${base.replace(/\/+$/, "")}/apercu/${type}/${revision.id}`;
+      const chemin = `/apercu/${type}/${revision.id}`;
+      const url = `${base.replace(/\/+$/, "")}${chemin}`;
 
       // Le laissez-passer ne vaut QUE pour cette révision et QUE pour une
-      // minute. Il est posé en en-tête, jamais dans l'URL.
+      // minute. Il voyage en COOKIE, jamais dans l'URL ni en en-tête : un
+      // en-tête supplémentaire part avec TOUTES les requêtes de la page —
+      // images sur r2.netereka.ci, et Google Tag Manager dès qu'un identifiant
+      // GA sera configuré. Le `path` du cookie le réserve au seul document de
+      // l'aperçu.
       const jeton = await emettreJetonDeCapture(
         BETTER_AUTH_SECRET,
         sujetApercu(type, revision.id),
       );
-      const enTetes = { [EN_TETE_CAPTURE]: jeton };
+      const biscuits: CookieDeCapture[] = [
+        {
+          name: NOM_COOKIE_CAPTURE,
+          value: jeton,
+          domain: new URL(url).hostname,
+          path: chemin,
+        },
+      ];
 
       const ecrans: NomDEcran[] = input.ecrans ?? (Object.keys(ECRANS) as NomDEcran[]);
       const pleinePage = input.pleine_page ?? type === "produit";
@@ -119,7 +132,7 @@ export const apercuTools: ToolDefinition[] = [
           // En série, pas en parallèle : le laissez-passer dure une minute et
           // deux captures tiennent largement dedans, tandis que deux
           // navigateurs simultanés mordent sur un quota de dix.
-          captures.push(await capturer(BROWSER as unknown as LiaisonNavigateur, url, ecran, enTetes, pleinePage));
+          captures.push(await capturer(BROWSER as unknown as LiaisonNavigateur, url, ecran, biscuits, pleinePage));
         } catch (e) {
           if (e instanceof EchecDeCapture) {
             return fail("internal_error", `Capture ${ecran} impossible : ${e.message}`);
