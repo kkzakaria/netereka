@@ -43,6 +43,39 @@ describe("octetsDeLaCapture", () => {
     );
   });
 
+  /**
+   * LE CORPS EST LA SEULE CHOSE QUI DIT *QUOI* EST REFUSÉ.
+   *
+   * Un « Browser Run a répondu 400 » nu a coûté une enquête entière, alors
+   * que le service nommait le champ fautif dans un corps que ce code jetait.
+   */
+  it("rapporte le motif du refus, pas seulement le code", async () => {
+    await expect(
+      octetsDeLaCapture(
+        new Response('{"errors":[{"message":"waitForSelector must be an object"}]}', {
+          status: 400,
+        }),
+      ),
+    ).rejects.toThrow(/waitForSelector must be an object/);
+  });
+
+  it("tronque un corps bavard sans perdre le code", async () => {
+    const bavard = "x".repeat(5_000);
+    await expect(octetsDeLaCapture(new Response(bavard, { status: 400 }))).rejects.toThrow(
+      /^Browser Run a répondu 400 : x{400}…\.$/,
+    );
+  });
+
+  /**
+   * Un corps illisible ne doit pas remplacer le code d'état par une erreur de
+   * lecture : on perdrait la seule information dont on était sûr.
+   */
+  it("garde le code quand le corps est illisible", async () => {
+    const reponse = new Response("peu importe", { status: 403 });
+    await reponse.text(); // corps déjà consommé
+    await expect(octetsDeLaCapture(reponse)).rejects.toThrow(/403/);
+  });
+
   it("LÈVE en décrivant une forme qu'on ne sait pas lire", async () => {
     for (const inattendu of [null, undefined, 42, "data:image/jpeg;base64,AAA", { url: "x" }]) {
       await expect(octetsDeLaCapture(inattendu), String(inattendu)).rejects.toThrow(
@@ -146,8 +179,31 @@ describe("capturer", () => {
   it("exige le marqueur de la page d'aperçu", async () => {
     const nav = navigateur(new Response(JPEG));
     await capturer(nav, "https://x.test/a", "mobile", [], false, '[data-apercu-revision="rev-9"]');
-    expect(vi.mocked(nav.quickAction).mock.calls[0][1].waitForSelector).toBe(
+    expect(vi.mocked(nav.quickAction).mock.calls[0][1].waitForSelector?.selector).toBe(
       '[data-apercu-revision="rev-9"]',
     );
+  });
+
+  /**
+   * LA FORME DU CHAMP, ET NON SEULEMENT SA VALEUR.
+   *
+   * Ce test existe parce que son absence a coûté une version entière : le
+   * code passait ici une simple CHAÎNE, le service a répondu 400 à chaque
+   * appel, et l'outil n'a jamais rendu une image. L'ancien test affirmait la
+   * chaîne — il encodait l'erreur et restait vert.
+   *
+   * Aucun test local ne peut prouver que le service ACCEPTE cette forme :
+   * seul un appel réel le dit, et il l'a dit. Ce que ce test empêche, c'est
+   * le retour en arrière.
+   */
+  it("passe le sélecteur en OBJET, avec son propre délai", async () => {
+    const nav = navigateur(new Response(JPEG));
+    await capturer(nav, "https://x.test/a", "mobile", [], false, "[data-x]");
+    const attendu = vi.mocked(nav.quickAction).mock.calls[0][1].waitForSelector;
+    expect(typeof attendu).toBe("object");
+    expect(attendu).toEqual({ selector: "[data-x]", timeout: expect.any(Number) });
+    // Il s'ajoute au délai de navigation : sous le plafond de 60 s du service.
+    expect(attendu?.timeout).toBeGreaterThan(0);
+    expect(attendu?.timeout).toBeLessThanOrEqual(60_000);
   });
 });

@@ -22,6 +22,32 @@ export interface LiaisonNavigateur {
   quickAction(action: "screenshot", options: OptionsCapture): Promise<unknown>;
 }
 
+/**
+ * Le sélecteur attendu, tel que Browser Run l'accepte : un OBJET.
+ *
+ * MESURÉ, APRÈS S'ÊTRE TROMPÉ. La première version passait ici une simple
+ * chaîne, et le service a répondu **400** sur chaque appel — l'outil n'a
+ * jamais rendu une seule image. La documentation du point d'entrée nomme bien
+ * `waitForSelector` parmi les paramètres de premier niveau, mais sans en
+ * donner la forme ; le seul exemple littéral de Cloudflare la donne, dans le
+ * guide de pré-rendu :
+ *
+ *     waitForSelector: { selector: "[data-prerender-ready='true']", timeout: 30000 }
+ *
+ * et le tableau des délais le corrobore en rangeant `waitForSelector` parmi
+ * les MINUTEURS (défaut `null`, plafond 60 s) — un minuteur n'a de sens que
+ * si le champ porte son propre `timeout`.
+ *
+ * Les tests, eux, exigeaient la chaîne : ils encodaient l'erreur et sont
+ * restés verts tout du long. Aucun test local ne pouvait trancher cela, seul
+ * un appel réel au service. D'où le corps de la réponse désormais rapporté
+ * par `octetsDeLaCapture` : la prochaine forme refusée se nommera elle-même.
+ */
+export interface SelecteurAttendu {
+  selector: string;
+  timeout?: number;
+}
+
 export interface OptionsCapture {
   url: string;
   viewport: { width: number; height: number; deviceScaleFactor?: number };
@@ -45,7 +71,7 @@ export interface OptionsCapture {
    * d'ÉLÉMENT parmi les causes de 422 : un sélecteur qui n'apparaît jamais
    * fait donc échouer l'appel au lieu de rendre une image. Fail-closed.
    */
-  waitForSelector?: string;
+  waitForSelector?: SelecteurAttendu;
   cookies?: readonly CookieDeCapture[];
 }
 
@@ -90,6 +116,17 @@ export type NomDEcran = keyof typeof ECRANS;
 const QUALITE_JPEG = 85;
 
 /**
+ * Délai d'attente du marqueur, en millisecondes.
+ *
+ * Il s'ajoute à celui de la navigation (30 s) et non s'y substitue, d'où une
+ * valeur franchement plus courte : le marqueur est rendu par le serveur, il
+ * est donc dans le HTML initial — s'il n'est pas là au bout de quinze
+ * secondes, il n'y sera jamais, et attendre la minute entière ne ferait que
+ * retarder un échec. Le plafond du service est 60 s.
+ */
+const DELAI_SELECTEUR_MS = 15_000;
+
+/**
  * Plafond par image, en octets DÉCODÉS.
  *
  * Aligné sur `view_image` (3,5 Mio) et pour la même raison : le bloc image
@@ -108,10 +145,40 @@ export class EchecDeCapture extends Error {}
  * un `ArrayBuffer`, ou une vue d'octets. Tout le reste lève en décrivant ce
  * qu'on a reçu.
  */
+/** Longueur au-delà de laquelle le motif du refus est tronqué. */
+const MOTIF_MAX = 400;
+
+/**
+ * Lire le corps d'un refus sans jamais faire échouer la lecture elle-même.
+ *
+ * Un corps illisible (déjà consommé, flux coupé) ne doit pas remplacer le
+ * code d'état par une erreur de lecture : on perdrait la seule information
+ * dont on était sûr.
+ */
+async function corpsLisible(reponse: Response): Promise<string> {
+  try {
+    return (await reponse.text()).replace(/\s+/g, " ").trim();
+  } catch {
+    return "";
+  }
+}
+
+function detailDuRefus(motif: string): string {
+  if (!motif) return "";
+  const court = motif.length > MOTIF_MAX ? `${motif.slice(0, MOTIF_MAX)}…` : motif;
+  return ` : ${court}`;
+}
+
 export async function octetsDeLaCapture(resultat: unknown): Promise<Uint8Array> {
   if (resultat instanceof Response) {
     if (!resultat.ok) {
-      throw new EchecDeCapture(`Browser Run a répondu ${resultat.status}.`);
+      // Le CORPS, pas seulement le code. Un 400 nu a coûté une enquête
+      // entière : le service refusait la forme de `waitForSelector` et le
+      // disait, dans un corps que ce code jetait. Un motif tronqué qui nomme
+      // le champ fautif vaut toutes les suppositions.
+      throw new EchecDeCapture(
+        `Browser Run a répondu ${resultat.status}${detailDuRefus(await corpsLisible(resultat))}.`,
+      );
     }
     return new Uint8Array(await resultat.arrayBuffer());
   }
@@ -161,7 +228,7 @@ export async function capturer(
     viewport: { width, height, deviceScaleFactor: 1 },
     screenshotOptions: { fullPage: pleinePage, type: "jpeg", quality: QUALITE_JPEG },
     gotoOptions: { waitUntil: "networkidle0", timeout: 30_000 },
-    waitForSelector: selecteurExige,
+    waitForSelector: { selector: selecteurExige, timeout: DELAI_SELECTEUR_MS },
     cookies: biscuits,
   });
 

@@ -209,7 +209,7 @@ describe("apercu_revision : le laissez-passer", () => {
   it("exige le marqueur de CETTE révision", async () => {
     await appeler();
     for (const appel of mocks.quickAction.mock.calls) {
-      expect(appel[1].waitForSelector).toBe('[data-apercu-revision="rev-1"]');
+      expect(appel[1].waitForSelector.selector).toBe('[data-apercu-revision="rev-1"]');
     }
   });
 
