@@ -96,9 +96,53 @@ export function buildSlides(banners: Banner[], fallbackProducts: ProductCardData
 export function HeroBanner({
   banners,
   fallbackProducts,
+  epinglerSur,
 }: {
   banners: Banner[];
   fallbackProducts: ProductCardData[];
+  /**
+   * Identifiant de la bannière sur laquelle IMMOBILISER le carrousel — pour
+   * l'aperçu d'une révision, et pour rien d'autre.
+   *
+   * POURQUOI, ET CE QUI L'A RÉVÉLÉ. `apercu_revision` photographie cette page
+   * pour qu'on juge une bannière. Mais le carrousel défile tout seul toutes
+   * les cinq secondes, et `networkidle0` attend la fin du RÉSEAU, pas celle
+   * d'une animation : deux captures de la MÊME révision, prises à quelques
+   * secondes d'intervalle le 2026-10-14, ont rendu deux diapositives
+   * différentes — l'une saisie en pleine transition, bouton d'appel à
+   * l'action coupé par le bord de l'écran. J'ai failli rapporter là un défaut
+   * de mise en page qui n'existait pas. Une photo qui montre une autre
+   * bannière que celle qu'on révise est pire qu'une absence de photo : elle
+   * invite à conclure.
+   *
+   * CE QUE CELA FAIT : le défilement automatique n'est pas DÉMARRÉ (le
+   * greffon n'est pas enregistré du tout, plutôt qu'arrêté après coup — un
+   * arrêt après le montage laisse une fenêtre où une transition est déjà en
+   * cours), et le carrousel s'ouvre sur la diapositive demandée.
+   *
+   * CE QUE CELA NE FAIT PAS : si la bannière révisée n'est pas DANS le
+   * carrousel — désactivée, pas encore commencée, terminée — il n'y a aucune
+   * diapositive à épingler. Le carrousel s'ouvre alors sur la première, et
+   * reste immobile : la photo reste reproductible, et l'avertissement en haut
+   * de la page dit déjà pourquoi la bannière n'y figure pas.
+   *
+   * CE QUE CELA NE FERME PAS, ET QUI RESTE À MESURER. Embla n'applique
+   * `startIndex` qu'APRÈS l'hydratation ; le HTML envoyé par le serveur, lui,
+   * montre toujours la première diapositive. Une capture prise entre les deux
+   * photographierait donc la première au lieu de l'épinglée — silencieusement,
+   * encore. Le risque est faible (`networkidle0` implique que les scripts sont
+   * déjà téléchargés, l'hydratation suit de peu) mais il n'est PAS nul, et il
+   * n'est pas mesuré. La façon de trancher est une série de captures de la
+   * même révision après déploiement : si l'une d'elles rend la première
+   * diapositive alors qu'une autre était demandée, il faudra un marqueur émis
+   * une fois le carrousel posé, et le faire attendre par `waitForSelector` —
+   * exactement comme `data-apercu-revision` prouve déjà que la photo est celle
+   * de l'aperçu. On ne construit pas cette machinerie pour une course qu'on
+   * n'a pas observée.
+   *
+   * La vitrine ne passe JAMAIS cette propriété : son carrousel défile.
+   */
+  epinglerSur?: number | null;
 }) {
   // `useMemo` et non un appel nu : `HeroBanner` se re-rend à chaque
   // défilement d'Embla (`setSelectedIndex`), et `buildSlides` lit le HTML de
@@ -107,9 +151,26 @@ export function HeroBanner({
   // — ce que le commentaire de `porte_son_image` prétendait déjà éviter.
   const slides = useMemo(() => buildSlides(banners, fallbackProducts), [banners, fallbackProducts]);
 
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, duration: 30 }, [
-    Autoplay({ delay: 5000, stopOnInteraction: true }),
-  ]);
+  // `epinglerSur` donne un identifiant de BANNIÈRE ; Embla veut un INDEX de
+  // diapositive. La traduction passe par `slides`, qui est la seule liste à
+  // connaître l'ordre réellement rendu. Une bannière absente de cette liste
+  // (désactivée, hors fenêtre de dates) n'a pas d'index : on retombe sur la
+  // première diapositive, toujours immobile.
+  const immobile = epinglerSur != null;
+  const indexEpingle = useMemo(() => {
+    if (epinglerSur == null) return 0;
+    const i = slides.findIndex((s) => s.id === epinglerSur);
+    return i >= 0 ? i : 0;
+  }, [slides, epinglerSur]);
+
+  const [emblaRef, emblaApi] = useEmblaCarousel(
+    { loop: true, duration: 30, startIndex: indexEpingle },
+    // Le greffon n'est pas ENREGISTRÉ quand on immobilise, plutôt qu'arrêté
+    // après le montage : un arrêt après coup laisse une fenêtre pendant
+    // laquelle une transition a déjà commencé — et c'est exactement une de
+    // ces transitions qu'une capture a photographiée.
+    immobile ? [] : [Autoplay({ delay: 5000, stopOnInteraction: true })],
+  );
 
   const [selectedIndex, setSelectedIndex] = useState(0);
 

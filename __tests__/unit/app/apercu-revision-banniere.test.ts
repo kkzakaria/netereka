@@ -244,3 +244,43 @@ describe("aperçu de révision : ce qu'il refuse", () => {
     await expect(banniereRendue()).rejects.toThrow("NEXT_NOT_FOUND");
   });
 });
+
+/**
+ * LE CARROUSEL DOIT ÊTRE IMMOBILE, ET SUR LA BONNE DIAPOSITIVE.
+ *
+ * Deux captures successives de la même révision, le 2026-10-14, ont rendu
+ * deux diapositives différentes : le carrousel défile toutes les cinq
+ * secondes et `networkidle0` n'attend pas la fin d'une animation. Une photo
+ * qui montre une AUTRE bannière que celle qu'on révise invite à conclure —
+ * j'ai failli y rapporter un défaut de mise en page inexistant.
+ *
+ * C'est la page qui sait quelle bannière est révisée ; `HeroBanner` ne fait
+ * qu'obéir. Ce test tient la moitié « page » du contrat, l'autre étant dans
+ * `hero-banner-epinglage.test.ts`.
+ */
+describe("aperçu de révision : le carrousel est épinglé", () => {
+  it("épingle le carrousel sur la bannière révisée", async () => {
+    expect(await enfantPortant<number>("rev-1", "epinglerSur")).toBe(7);
+  });
+
+  /**
+   * L'identifiant vient de la CIBLE de la révision, pas d'une constante : une
+   * révision sur une autre bannière doit épingler cette autre bannière.
+   */
+  it("suit la cible de la révision", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ target_id: "3" }));
+    mocks.getBannerById.mockResolvedValue({ ...BANNIERE, id: 3 });
+    expect(await enfantPortant<number>("rev-1", "epinglerSur")).toBe(3);
+  });
+
+  /**
+   * Un retrait sort la bannière du carrousel : il n'y a plus de diapositive à
+   * épingler, mais l'identifiant est passé quand même et `HeroBanner` retombe
+   * sur la première — immobile. Ce qui compte ici est qu'aucune branche ne
+   * cesse de l'épingler, car c'est l'immobilité qui est en jeu.
+   */
+  it("épingle encore sur un retrait", async () => {
+    mocks.getRevision.mockResolvedValue(revision({ kind: "withdraw", payload: {} }));
+    expect(await enfantPortant<number>("rev-1", "epinglerSur")).toBe(7);
+  });
+});
