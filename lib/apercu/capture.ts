@@ -123,6 +123,16 @@ const QUALITE_JPEG = 85;
  * est donc dans le HTML initial — s'il n'est pas là au bout de quinze
  * secondes, il n'y sera jamais, et attendre la minute entière ne ferait que
  * retarder un échec. Le plafond du service est 60 s.
+ *
+ * CE QUE CE DÉLAI NE DIRA PAS. Un 422 « délai d'élément dépassé » recouvre
+ * trois causes qu'il ne distingue pas : un laissez-passer refusé (la page
+ * redirige, le marqueur n'apparaît jamais), un marqueur disparu
+ * d'`ApercuEntete`, ou un identifiant qui ne correspond pas. La vraie raison
+ * EXISTE — `autoriserApercu` journalise `[apercu] laissez-passer refusé
+ * (<raison>)` — mais elle est émise dans une AUTRE requête du Worker, celle
+ * qui rend la page, donc elle ne peut structurellement pas remonter dans la
+ * réponse MCP. Devant un 422, c'est dans les journaux du Worker qu'il faut
+ * aller chercher cette ligne.
  */
 const DELAI_SELECTEUR_MS = 15_000;
 
@@ -138,46 +148,59 @@ export const CAPTURE_MAX_OCTETS = 1.5 * 1024 * 1024;
 
 export class EchecDeCapture extends Error {}
 
-/**
- * Ramener les octets, quelle que soit la forme rendue par la liaison.
- *
- * Trois formes acceptées : une `Response` (ce que la documentation suggère),
- * un `ArrayBuffer`, ou une vue d'octets. Tout le reste lève en décrivant ce
- * qu'on a reçu.
- */
 /** Longueur au-delà de laquelle le motif du refus est tronqué. */
 const MOTIF_MAX = 400;
 
 /**
- * Lire le corps d'un refus sans jamais faire échouer la lecture elle-même.
+ * Le motif d'un refus, en une ligne lisible — ou rien.
  *
- * Un corps illisible (déjà consommé, flux coupé) ne doit pas remplacer le
- * code d'état par une erreur de lecture : on perdrait la seule information
- * dont on était sûr.
+ * POURQUOI LIRE LE CORPS. Un « Browser Run a répondu 400. » nu a coûté une
+ * enquête entière : le service refusait la FORME de `waitForSelector` et le
+ * disait, dans un corps que ce code jetait.
+ *
+ * POURQUOI PAS UN CORPS HTML. Un corps HTML n'est pas un motif, c'est une
+ * page — le cas que `CLAUDE.md` nomme explicitement est la page de défi
+ * anti-robot que Browser Run photographierait si Bot Fight Mode était activé
+ * sur la zone. Ses quatre cents premiers caractères sont un `<!DOCTYPE>`, un
+ * `<title>` et des `<meta>` : zéro information, et le peu d'utile coupé. On
+ * NOMME donc la page au lieu de la déverser — « une page HTML » est un
+ * signal, quatre cents caractères de balisage sont du bruit.
+ *
+ * Le repliement des blancs se fait AVANT la troncature, pour que les quatre
+ * cents caractères retenus en soient quatre cents d'utiles.
  */
-async function corpsLisible(reponse: Response): Promise<string> {
+async function motifDuRefus(reponse: Response): Promise<string> {
+  const type = reponse.headers.get("content-type") ?? "";
+  if (/\b(?:ht|x)ml\b/i.test(type)) {
+    return "le corps est une page HTML, pas un motif (page de défi anti-robot ?)";
+  }
+  // Un corps illisible (déjà consommé, flux coupé) ne doit pas remplacer le
+  // code d'état par une erreur de lecture : on perdrait la seule information
+  // dont on était sûr.
+  let motif: string;
   try {
-    return (await reponse.text()).replace(/\s+/g, " ").trim();
+    motif = (await reponse.text()).replace(/\s+/g, " ").trim();
   } catch {
     return "";
   }
+  return motif.length > MOTIF_MAX ? `${motif.slice(0, MOTIF_MAX)}…` : motif;
 }
 
-function detailDuRefus(motif: string): string {
-  if (!motif) return "";
-  const court = motif.length > MOTIF_MAX ? `${motif.slice(0, MOTIF_MAX)}…` : motif;
-  return ` : ${court}`;
-}
-
+/**
+ * Ramener les octets, quelle que soit la forme rendue par la liaison.
+ *
+ * Trois formes acceptées : une `Response` (ce que la documentation suggère —
+ * et ce que le premier appel réel a confirmé, par son 400), un `ArrayBuffer`,
+ * ou une vue d'octets. Tout le reste lève en décrivant ce qu'on a reçu.
+ */
 export async function octetsDeLaCapture(resultat: unknown): Promise<Uint8Array> {
   if (resultat instanceof Response) {
     if (!resultat.ok) {
-      // Le CORPS, pas seulement le code. Un 400 nu a coûté une enquête
-      // entière : le service refusait la forme de `waitForSelector` et le
-      // disait, dans un corps que ce code jetait. Un motif tronqué qui nomme
-      // le champ fautif vaut toutes les suppositions.
+      const motif = await motifDuRefus(resultat);
       throw new EchecDeCapture(
-        `Browser Run a répondu ${resultat.status}${detailDuRefus(await corpsLisible(resultat))}.`,
+        motif
+          ? `Browser Run a répondu ${resultat.status} : ${motif}`
+          : `Browser Run a répondu ${resultat.status}.`,
       );
     }
     return new Uint8Array(await resultat.arrayBuffer());
@@ -208,6 +231,35 @@ export interface Capture {
 }
 
 /**
+ * Retirer du message TOUTE valeur de laissez-passer, avant qu'il ne remonte.
+ *
+ * C'EST UN INVARIANT DU DÉPÔT, PAS UNE PRÉCAUTION NEUVE. `jeton-capture.ts`
+ * a REFUSÉ de mettre le laissez-passer dans l'URL parce qu'« une URL se
+ * retrouve dans les journaux, les en-têtes Referer et l'historique du
+ * capteur » ; un corps d'erreur rendu au client MCP est la même classe de
+ * fuite, et le modèle conserve ce qu'on lui rend. Rapporter le corps du refus
+ * sans caviarder aurait relâché cet invariant au moment même où on le citait.
+ *
+ * Que Browser Run recopie la valeur reçue dans un refus de validation n'est
+ * PAS mesuré — les enveloppes d'erreur de l'API Cloudflare le font souvent,
+ * et c'est un comportement du service, qui peut changer sans nous. Le coût de
+ * la fermeture est nul ; celui d'un jeton encore valide une cinquantaine de
+ * secondes, rendu au client et journalisé chez lui, ne l'est pas.
+ *
+ * On ne caviarde QUE `EchecDeCapture`, la seule classe dont le message est
+ * rendu au client : tout le reste part dans les journaux du Worker, qui sont
+ * les nôtres.
+ */
+function caviarder(e: unknown, biscuits: readonly CookieDeCapture[]): unknown {
+  if (!(e instanceof EchecDeCapture)) return e;
+  let message = e.message;
+  for (const biscuit of biscuits) {
+    if (biscuit.value) message = message.replaceAll(biscuit.value, "«laissez-passer caviardé»");
+  }
+  return message === e.message ? e : new EchecDeCapture(message);
+}
+
+/**
  * Une capture, sur un écran.
  *
  * `networkidle0` et non `load` : la vitrine charge ses images par
@@ -223,16 +275,24 @@ export async function capturer(
   selecteurExige: string,
 ): Promise<Capture> {
   const { width, height } = ECRANS[ecran];
-  const resultat = await navigateur.quickAction("screenshot", {
-    url,
-    viewport: { width, height, deviceScaleFactor: 1 },
-    screenshotOptions: { fullPage: pleinePage, type: "jpeg", quality: QUALITE_JPEG },
-    gotoOptions: { waitUntil: "networkidle0", timeout: 30_000 },
-    waitForSelector: { selector: selecteurExige, timeout: DELAI_SELECTEUR_MS },
-    cookies: biscuits,
-  });
 
-  const octets = await octetsDeLaCapture(resultat);
+  // Le laissez-passer est DANS la charge envoyée : tout message d'échec né de
+  // cet appel peut le recopier. D'où le caviardage, posé à la frontière la
+  // plus étroite qui connaisse à la fois les biscuits et l'erreur.
+  let octets: Uint8Array;
+  try {
+    const resultat = await navigateur.quickAction("screenshot", {
+      url,
+      viewport: { width, height, deviceScaleFactor: 1 },
+      screenshotOptions: { fullPage: pleinePage, type: "jpeg", quality: QUALITE_JPEG },
+      gotoOptions: { waitUntil: "networkidle0", timeout: 30_000 },
+      waitForSelector: { selector: selecteurExige, timeout: DELAI_SELECTEUR_MS },
+      cookies: biscuits,
+    });
+    octets = await octetsDeLaCapture(resultat);
+  } catch (e) {
+    throw caviarder(e, biscuits);
+  }
   if (octets.byteLength === 0) {
     throw new EchecDeCapture("Browser Run a rendu une image vide.");
   }

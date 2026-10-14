@@ -11,6 +11,24 @@ import {
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 
 /**
+ * L'erreur levée par une promesse, pour pouvoir affirmer sur son MESSAGE.
+ *
+ * `rejects.toThrow(/.../)` ne sait dire qu'une présence ; plusieurs de ces
+ * tests doivent affirmer une ABSENCE — que le laissez-passer n'y est pas, que
+ * le balisage n'y est pas. D'où la lecture directe du message. Et si rien
+ * n'est levé, cet utilitaire échoue de lui-même plutôt que de rendre une
+ * erreur fantôme sur laquelle les assertions suivantes passeraient.
+ */
+async function erreurDe(promesse: Promise<unknown>): Promise<Error> {
+  try {
+    await promesse;
+  } catch (e) {
+    return e as Error;
+  }
+  throw new Error("aucune erreur levée, alors que ce test en attend une");
+}
+
+/**
  * LA FORME RENDUE PAR LA LIAISON N'EST PAS DOCUMENTÉE.
  *
  * `@cloudflare/workers-types` ne publie pas d'interface pour `quickAction()`,
@@ -62,8 +80,32 @@ describe("octetsDeLaCapture", () => {
   it("tronque un corps bavard sans perdre le code", async () => {
     const bavard = "x".repeat(5_000);
     await expect(octetsDeLaCapture(new Response(bavard, { status: 400 }))).rejects.toThrow(
-      /^Browser Run a répondu 400 : x{400}…\.$/,
+      /^Browser Run a répondu 400 : x{400}…$/,
     );
+  });
+
+  /**
+   * UN CORPS HTML N'EST PAS UN MOTIF, C'EST UNE PAGE.
+   *
+   * Le cas nommé dans `CLAUDE.md` : Bot Fight Mode activé sur la zone, et
+   * Browser Run photographie une page de défi. Ses quatre cents premiers
+   * caractères sont un `<!DOCTYPE>`, un `<title>` et des `<meta>` — on
+   * donnerait au modèle du bruit là où le code seul était au moins honnête.
+   */
+  it("nomme un corps HTML au lieu de le déverser", async () => {
+    const defi = `<!DOCTYPE html><html lang="en-US"><head><title>Un instant…</title>${
+      '<meta name="x" content="y">'.repeat(100)
+    }`;
+    const erreur = await erreurDe(
+      octetsDeLaCapture(
+        new Response(defi, { status: 403, headers: { "content-type": "text/html; charset=UTF-8" } }),
+      ),
+    );
+    expect(erreur).toBeInstanceOf(EchecDeCapture);
+    expect(erreur.message).toContain("403");
+    expect(erreur.message).toMatch(/page HTML/);
+    expect(erreur.message).not.toContain("DOCTYPE");
+    expect(erreur.message).not.toContain("<meta");
   });
 
   /**
@@ -185,6 +227,49 @@ describe("capturer", () => {
   });
 
   /**
+   * LE LAISSEZ-PASSER NE DOIT JAMAIS REMONTER DANS UN MOTIF DE REFUS.
+   *
+   * Rapporter le corps du refus a rouvert, pour un instant, exactement la
+   * fuite contre laquelle `jeton-capture.ts` avait refusé de mettre le jeton
+   * dans l'URL. Le jeton vit une minute : rendu au client MCP, il y est
+   * conservé, encore valide.
+   *
+   * Ce test exige les DEUX choses à la fois : la valeur disparaît, et le
+   * motif utile survit. Un correctif paresseux — cesser de rapporter le corps
+   * — échouerait sur la seconde.
+   */
+  it("caviarde la valeur du laissez-passer, sans perdre le motif", async () => {
+    const JETON = "1760000000000.sIgNaTuRe-fAcTiCe_AAAA";
+    const biscuit = {
+      name: "netereka_apercu",
+      value: JETON,
+      domain: "x.test",
+      path: "/apercu/banniere/rev-9",
+      httpOnly: true,
+      secure: true,
+    };
+    const refus = new Response(
+      `{"success":false,"errors":[{"code":1001,"message":"cookies[0].value invalid: ${JETON}"}]}`,
+      { status: 400 },
+    );
+    const erreur = await erreurDe(
+      capturer(
+        navigateur(refus),
+        "https://x.test/apercu/banniere/rev-9",
+        "mobile",
+        [biscuit],
+        false,
+        "[data-x]",
+      ),
+    );
+
+    expect(erreur).toBeInstanceOf(EchecDeCapture);
+    expect(erreur.message).not.toContain(JETON);
+    expect(erreur.message).toContain("cookies[0].value invalid");
+    expect(erreur.message).toContain("400");
+  });
+
+  /**
    * LA FORME DU CHAMP, ET NON SEULEMENT SA VALEUR.
    *
    * Ce test existe parce que son absence a coûté une version entière : le
@@ -200,7 +285,6 @@ describe("capturer", () => {
     const nav = navigateur(new Response(JPEG));
     await capturer(nav, "https://x.test/a", "mobile", [], false, "[data-x]");
     const attendu = vi.mocked(nav.quickAction).mock.calls[0][1].waitForSelector;
-    expect(typeof attendu).toBe("object");
     expect(attendu).toEqual({ selector: "[data-x]", timeout: expect.any(Number) });
     // Il s'ajoute au délai de navigation : sous le plafond de 60 s du service.
     expect(attendu?.timeout).toBeGreaterThan(0);
