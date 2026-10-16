@@ -339,13 +339,31 @@ export function HeroBanner({
                       n'en a pas — voir la branche ci-dessus. */}
                   {slide.image_url && (
                     <div className="relative mx-auto h-[160px] w-full sm:aspect-square sm:h-[280px] lg:h-[360px]">
+                      {/* L'image empressée suit la diapositive ÉPINGLÉE, et
+                          non la première. Sur la vitrine `indexEpingle` vaut
+                          0 : le rendu est identique au précédent, à l'octet
+                          près. Mais dans un aperçu épinglé sur la diapositive
+                          1 ou 2, `i === 0` donnait `loading="lazy"` à l'image
+                          que l'on vient justement juger. Hors du cadre tant
+                          que le carrousel n'est pas hydraté, sa requête
+                          n'était alors PAS partie au moment où `networkidle0`
+                          déclare le réseau au repos — `networkidle0` n'attend
+                          que les requêtes déjà parties, et `waitForSelector`
+                          n'y change rien puisque `data-apercu-revision` est
+                          rendu par le serveur. La photo aurait montré la
+                          bonne bannière avec un emplacement d'image VIDE, ce
+                          qui se lit comme un oubli de l'auteur : encore une
+                          photo silencieusement fausse, le défaut même que
+                          `epinglerSur` existe pour tuer. Empressée, sa
+                          requête part dès l'analyse du document et tombe donc
+                          sous `networkidle0` par construction. */}
                       <Image
                         src={getImageUrl(slide.image_url)}
                         alt={slide.title}
                         fill
                         className="object-contain"
                         sizes="(max-width: 640px) 44vw, (max-width: 1024px) 45vw, 40vw"
-                        {...(i === 0
+                        {...(i === indexEpingle
                           ? { priority: true, fetchPriority: "high" as const }
                           : { loading: "lazy" as const })}
                       />

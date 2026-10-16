@@ -29,13 +29,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 const mocks = vi.hoisted(() => ({
   useEmblaCarousel: vi.fn(() => [() => {}, undefined] as const),
   autoplay: vi.fn(() => ({ name: "autoplay" })),
+  /** Ce que `next/image` a reçu, dans l'ordre des diapositives rendues. */
+  imagesRendues: [] as Array<{ alt: string; priority?: boolean; loading?: string }>,
 }));
 
 vi.mock("embla-carousel-react", () => ({ default: mocks.useEmblaCarousel }));
 vi.mock("embla-carousel-autoplay", () => ({ default: mocks.autoplay }));
 vi.mock("next/image", () => ({
-  default: ({ src, alt }: { src: string; alt: string }) =>
-    createElement("img", { src, alt }),
+  default: (props: { src: string; alt: string; priority?: boolean; loading?: string }) => {
+    mocks.imagesRendues.push({
+      alt: props.alt,
+      priority: props.priority,
+      loading: props.loading,
+    });
+    return createElement("img", { src: props.src, alt: props.alt });
+  },
 }));
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children?: unknown }) =>
@@ -62,6 +70,21 @@ const CARROUSEL = [
   banner({ id: 6, title: "Galaxy Z Fold 8", display_order: 2 }),
 ];
 
+/**
+ * Les mêmes, mais portant chacune une image. Leur `content_html` ne place
+ * aucune image, donc elles prennent la branche à deux colonnes — la seule qui
+ * rende un `next/image`, et donc la seule où le choix empressé/paresseux existe.
+ */
+const AVEC_IMAGES = CARROUSEL.map((b) => ({ ...b, image_url: `/b/${b.id}.webp` }));
+
+/** Rend le composant et rapporte ce que `next/image` a reçu, diapositive par diapositive. */
+function imagesDe(props: { epinglerSur?: number | null } = {}) {
+  renderToStaticMarkup(
+    createElement(HeroBanner, { banners: AVEC_IMAGES, fallbackProducts: [], ...props }),
+  );
+  return mocks.imagesRendues;
+}
+
 /** Rend le composant et rapporte ce qui a été passé à Embla. */
 function optionsEmbla(props: { epinglerSur?: number | null } = {}) {
   renderToStaticMarkup(
@@ -79,6 +102,7 @@ function optionsEmbla(props: { epinglerSur?: number | null } = {}) {
 beforeEach(() => {
   mocks.useEmblaCarousel.mockClear();
   mocks.autoplay.mockClear();
+  mocks.imagesRendues.length = 0;
 });
 
 describe("HeroBanner : le carrousel de la vitrine", () => {
@@ -139,5 +163,64 @@ describe("HeroBanner : épinglé pour un aperçu", () => {
    */
   it("traduit un identifiant de bannière, et ne le prend pas pour un index", () => {
     expect(optionsEmbla({ epinglerSur: 6 }).options.startIndex).toBe(2);
+  });
+
+  /**
+   * ÉPINGLER SUR L'IDENTIFIANT 0, ce n'est pas « ne rien épingler ». La garde
+   * est `!= null`, pas la véracité : `Boolean(epinglerSur)` laisserait le
+   * carrousel défiler, et la photo redeviendrait non reproductible sans qu'un
+   * seul test ne rougisse. Aucune bannière ne porte 0 aujourd'hui — les
+   * identifiants sont auto-incrémentés — mais c'est la propriété que ce
+   * fichier défend, et elle coûte une ligne.
+   */
+  it("immobilise aussi sur l'identifiant 0", () => {
+    expect(optionsEmbla({ epinglerSur: 0 }).greffons).toEqual([]);
+  });
+});
+
+/**
+ * QUELLE IMAGE PART TOUT DE SUITE — et pourquoi ce n'est pas un détail de
+ * performance ici.
+ *
+ * `i === 0` était juste tant que la capture photographiait toujours la
+ * première diapositive. En épinglant, on déplace la diapositive photographiée
+ * sans déplacer l'image empressée : celle qu'on vient juger se retrouvait en
+ * `loading="lazy"`, hors du cadre tant que le carrousel n'est pas hydraté.
+ * Sa requête n'était donc PAS partie quand `networkidle0` déclare le réseau au
+ * repos — il n'attend que les requêtes déjà parties. La photo aurait montré la
+ * bonne bannière avec un emplacement d'image vide : encore une photo
+ * silencieusement fausse, exactement ce que l'épinglage existe pour tuer.
+ */
+describe("HeroBanner : l'image qui part dès l'analyse du document", () => {
+  it("sur la vitrine, c'est celle de la première diapositive", () => {
+    const images = imagesDe();
+    expect(images.map((im) => im.alt)).toEqual([
+      "iPhone Duo",
+      "iPhone 18 Pro Max",
+      "Galaxy Z Fold 8",
+    ]);
+    expect(images[0].priority).toBe(true);
+    expect(images[1].loading).toBe("lazy");
+    expect(images[2].loading).toBe("lazy");
+  });
+
+  it("dans un aperçu, c'est celle de la diapositive épinglée", () => {
+    const images = imagesDe({ epinglerSur: 6 });
+    expect(images[2].priority).toBe(true);
+    expect(images[2].loading).toBeUndefined();
+    expect(images[0].loading).toBe("lazy");
+    expect(images[1].loading).toBe("lazy");
+  });
+
+  /**
+   * Une bannière absente du carrousel n'épingle rien : on retombe sur la
+   * première diapositive, et l'image empressée doit suivre ce repli — sinon
+   * AUCUNE image ne serait empressée et la photo perdrait les trois.
+   */
+  it("suit le repli quand la bannière révisée n'est pas dans le carrousel", () => {
+    const images = imagesDe({ epinglerSur: 4 });
+    expect(images[0].priority).toBe(true);
+    expect(images[1].loading).toBe("lazy");
+    expect(images[2].loading).toBe("lazy");
   });
 });
