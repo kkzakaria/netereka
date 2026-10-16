@@ -7,10 +7,23 @@ on:
     # créerait un canari à promouvoir pour rien, et un canari non promu devient
     # orphelin à la fusion suivante. Aucun .md n'est une entrée de build ici —
     # le projet n'utilise pas MDX.
+    #
+    # `.github/**` relève du MÊME principe, et son absence a coûté un canari :
+    # la fusion de #412, purement workflow, a déclenché un déploiement qu'il a
+    # fallu promouvoir pour rien (2026-10-13). Un fichier de workflow ne peut
+    # pas entrer dans le build du Worker — `.github/` ne contient que
+    # `dependabot.yml` et les workflows, et aucun chemin `.github` n'est
+    # référencé depuis `next.config`, `open-next.config`, `wrangler.jsonc` ni
+    # le code de l'application.
+    #
+    # ASSUMÉ : une modification de CE fichier est donc ignorée elle aussi.
+    # C'est correct — elle prend effet au déploiement suivant de toute façon,
+    # et `workflow_dispatch` ci-dessous permet de l'éprouver tout de suite.
     paths-ignore:
       - "docs/**"
       - "**.md"
       - ".release-please-manifest.json"
+      - ".github/**"
 
   # Filet pour un événement `push` que GitHub ne délivre pas. Vu le 2026-10-01 :
   # la fusion de #349 a bien posé fbae77f sur `main` (horodatage côté GitHub),
