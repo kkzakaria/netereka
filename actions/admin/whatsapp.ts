@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getDB } from "@/lib/cloudflare/context";
+import {
+  whatsappConfigSchema,
+  type WhatsAppConfigInput,
+} from "@/lib/validations/whatsapp-config";
 import type { ActionResult } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -97,53 +101,34 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
 }
 
 export async function saveWhatsAppConfig(
-  formData: FormData
+  input: WhatsAppConfigInput
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  const phone_number_id_raw = String(formData.get("phone_number_id") ?? "").trim();
+  // Field formats, admin_phones JSON shape and the "API fields required when the
+  // bot is activated" rule all live in the schema — see lib/validations/whatsapp-config.ts.
+  // Note the activation rule can be checked on the raw submission: an API field's
+  // effective value is non-null exactly when its submitted value is non-empty
+  // (a submitted mask preserves a stored — therefore non-null — secret).
+  const parsed = whatsappConfigSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  const {
+    display_phone_number: display_phone_number_normalized,
+    phone_number_id: phone_number_id_raw,
+    business_account_id: business_account_id_raw,
+    access_token: access_token_raw,
+    verify_token: verify_token_raw,
+    webhook_secret: webhook_secret_raw,
+    admin_phones,
+  } = parsed.data;
+
   const phone_number_id = phone_number_id_raw || null;
-
-  const display_phone_number_raw = String(formData.get("display_phone_number") ?? "").trim();
-  // Normalize: keep digits only (strips +, spaces, dashes, dots)
-  const display_phone_number_normalized = display_phone_number_raw.replace(/\D/g, "");
   const display_phone_number = display_phone_number_normalized || null;
-
-  // Validate E.164-ish format: 8-15 digits (ITU-T E.164 max is 15)
-  if (display_phone_number && !/^\d{8,15}$/.test(display_phone_number)) {
-    return {
-      success: false,
-      error: "Le numéro public doit contenir entre 8 et 15 chiffres (format international, ex: 2250700000001).",
-    };
-  }
-
-  const access_token_raw = String(formData.get("access_token") ?? "").trim();
-  const verify_token_raw = String(formData.get("verify_token") ?? "").trim();
-  const webhook_secret_raw = String(formData.get("webhook_secret") ?? "").trim();
-  const business_account_id_raw = String(formData.get("business_account_id") ?? "").trim();
   const business_account_id = business_account_id_raw || null;
-  const admin_phones_raw = String(formData.get("admin_phones") ?? "").trim();
-  const is_active = formData.get("is_active") === "1" ? 1 : 0;
-
-  // Validate admin_phones is a valid JSON array (if provided)
-  let admin_phones = "[]";
-  if (admin_phones_raw) {
-    try {
-      const parsed = JSON.parse(admin_phones_raw);
-      if (!Array.isArray(parsed)) {
-        return {
-          success: false,
-          error: "admin_phones doit être un tableau JSON valide.",
-        };
-      }
-      admin_phones = JSON.stringify(parsed);
-    } catch {
-      return {
-        success: false,
-        error: "admin_phones doit être un tableau JSON valide.",
-      };
-    }
-  }
+  const is_active = parsed.data.is_active ? 1 : 0;
 
   try {
     const db = await getDB();
@@ -165,20 +150,6 @@ export async function saveWhatsAppConfig(
     const access_token = accessTokenMasked ? undefined : (access_token_raw || null);
     const verify_token = verify_token_raw || null;
     const webhook_secret = webhookSecretMasked ? undefined : (webhook_secret_raw || null);
-
-    // If bot is being activated, require full API credentials (check effective values against DB).
-    if (is_active === 1) {
-      const effectiveAccessToken = accessTokenMasked ? existingRow?.access_token ?? null : access_token;
-      const effectiveWebhookSecret = webhookSecretMasked ? existingRow?.webhook_secret ?? null : webhook_secret;
-
-      if (!phone_number_id || !effectiveAccessToken || !verify_token || !effectiveWebhookSecret || !business_account_id) {
-        return {
-          success: false,
-          error:
-            "Pour activer le bot, renseignez phone_number_id, access_token, verify_token, webhook_secret et business_account_id.",
-        };
-      }
-    }
 
     const existing = existingRow ? { id: existingRow.id } : null;
 
