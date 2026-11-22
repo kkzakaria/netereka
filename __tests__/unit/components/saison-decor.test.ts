@@ -25,6 +25,11 @@ describe("BandeauFetes", () => {
     expect(html).toMatch(/<button[^>]*class="[^"]*\bsize-11\b/);
   });
 
+  it("centre son message, le bouton de fermeture hors du flux pour ne pas le décaler", () => {
+    expect(html).toMatch(/<p[^>]*class="[^"]*\btext-center\b/);
+    expect(html).toMatch(/<div[^>]*class="[^"]*\babsolute\b[^"]*"[^>]*><button[^>]*aria-label="Fermer/);
+  });
+
   it("ne se signale comme aperçu que pour l'aperçu", () => {
     expect(html).not.toContain("Aperçu — invisible pour les clients");
     expect(rendre(createElement(BandeauFetes, { apercu: true }))).toContain(
