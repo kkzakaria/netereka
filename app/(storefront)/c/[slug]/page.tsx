@@ -26,6 +26,8 @@ import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 import { getCategorySeoContent } from "@/lib/seo/category-content";
+import { categoryCanonical, listingPageHref, parsePage } from "@/lib/seo/pagination";
+import { getPublicImageUrl } from "@/lib/utils/images";
 
 export const revalidate = 300;
 
@@ -44,9 +46,15 @@ interface Props {
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const { sort } = await searchParams;
+  const sp = await searchParams;
   const category = await getCategoryCached(slug);
-  if (!category) return {};
+  // The page will call notFound(); without this, the layout's `index, follow`
+  // is rendered next to Next's injected `noindex`.
+  if (!category) return { robots: { index: false, follow: true } };
+
+  const page = parsePage(sp.page);
+  const canonical = categoryCanonical(slug, sp);
+  const pageSuffix = page > 1 ? ` – Page ${page}` : "";
 
   const description =
     getCategorySeoContent(slug)?.metaDescription ??
@@ -54,20 +62,23 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     `Découvrez notre sélection de ${category.name} en Côte d'Ivoire. Livraison rapide à Abidjan. Paiement à la livraison.`;
 
   return {
-    title: `${category.name} - Acheter en Côte d'Ivoire`,
+    title: `${category.name} - Acheter en Côte d'Ivoire${pageSuffix}`,
     description,
     openGraph: {
       title: `${category.name} | ${SITE_NAME}`,
       description,
-      url: `${SITE_URL}/c/${slug}`,
+      url: `${SITE_URL}${canonical}`,
       siteName: SITE_NAME,
       locale: "fr_CI",
       type: "website",
+      // A page-level openGraph REPLACES the layout's, images included: without
+      // this, a category shared on WhatsApp/Facebook had no preview image.
+      images: [getPublicImageUrl(category.image_url) ?? "/og-image.jpg"],
     },
     alternates: {
-      canonical: `/c/${slug}`,
+      canonical,
     },
-    ...(sort && {
+    ...(sp.sort && {
       robots: { index: false, follow: true },
     }),
   };
@@ -80,7 +91,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   if (!category) notFound();
 
   const seoContent = getCategorySeoContent(slug);
-  const currentPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
+  const currentPage = parsePage(sp.page);
   const limit = 20;
 
   const [ancestors, descendantIds, childCategories, siblingSource] = await Promise.all([
@@ -113,6 +124,9 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     getBrandsInCategory(allCategoryIds),
     getPriceRangeInCategory(allCategoryIds),
   ]);
+
+  // A page past the end is not an empty page to index: it does not exist.
+  if (currentPage > 1 && products.length === 0) notFound();
 
   const hasMore = (currentPage - 1) * limit + products.length < total;
   const searchOpts: SearchOptions = {
@@ -206,6 +220,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
           {/* Results */}
           <div className="min-w-0 flex-1">
+            {currentPage > 1 && (
+              <Link
+                href={listingPageHref(`/c/${slug}`, sp, currentPage - 1)}
+                className="mb-4 inline-flex min-h-11 items-center text-sm text-muted-foreground hover:text-foreground"
+              >
+                ← Produits précédents
+              </Link>
+            )}
             <ProductListWithMore
               key={listKey}
               initialProducts={products}
@@ -213,6 +235,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
               searchOpts={searchOpts}
               limit={limit}
               initialNextOffset={currentPage * limit}
+              pagination={{ basePath: `/c/${slug}`, params: sp }}
             />
           </div>
         </div>

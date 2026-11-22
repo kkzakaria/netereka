@@ -1,6 +1,7 @@
 import { getDrizzle } from "@/lib/db/drizzle";
 import { stores } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { cache } from "react";
 
 export interface ActiveStore {
   id: string;
@@ -10,7 +11,9 @@ export interface ActiveStore {
   phone: string | null;
 }
 
-export async function getActiveStores(): Promise<ActiveStore[]> {
+// React-cached: the storefront header and the home page's store JSON-LD both
+// read it in the same request — one D1 query, not two.
+export const getActiveStores = cache(async function getActiveStores(): Promise<ActiveStore[]> {
   const db = await getDrizzle();
   return db
     .select({
@@ -23,4 +26,4 @@ export async function getActiveStores(): Promise<ActiveStore[]> {
     .from(stores)
     .where(eq(stores.is_active, 1))
     .orderBy(asc(stores.sort_order)) as unknown as ActiveStore[];
-}
+});
