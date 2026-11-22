@@ -28,7 +28,7 @@ const footerLinks = {
   },
 };
 
-export function Footer() {
+export function Footer({ festif }: { festif: boolean }) {
   return (
     <footer className="border-t bg-muted/30">
       <div className="mx-auto max-w-7xl px-4 py-10">
@@ -72,6 +72,12 @@ export function Footer() {
 
         {/* Bottom bar */}
         <div className="mt-8 border-t pt-6 text-center text-xs text-muted-foreground">
+          {festif && (
+            <p className="mb-3 text-sm font-medium text-foreground">
+              <span aria-hidden="true" className="mr-1.5 text-festif-or">✦</span>
+              Toute l&apos;équipe NETEREKA vous souhaite de belles fêtes
+            </p>
+          )}
           <p>
             &copy; {new Date().getFullYear()} {SITE_NAME}. Tous droits
             réservés. Paiement à la livraison uniquement.

@@ -38,6 +38,10 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-festif-or: var(--festif-or);
+  --color-festif-rouge: var(--festif-rouge);
+  --color-festif-bandeau: var(--festif-bandeau);
+  --color-festif-bandeau-foreground: var(--festif-bandeau-foreground);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -127,6 +131,31 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Saison des fêtes (lib/saison/) — tokens scopés sous l'attribut posé par le
+ * layout de la boutique. Hors saison, ils n'existent pas : rien ne change.
+ * Les couleurs de la marque (--primary, …) ne sont jamais redéfinies ici.
+ * ------------------------------------------------------------------------- */
+[data-saison="fetes"] {
+  /* Or sombre en mode clair : ≥ 3:1 sur fond blanc (WCAG 1.4.11), vérifié
+   * par __tests__/unit/saison-contraste.test.ts. */
+  --festif-or: oklch(0.64 0.13 75);
+  --festif-rouge: oklch(0.55 0.20 27);
+  --festif-bandeau: oklch(0.33 0.10 262);
+  --festif-bandeau-foreground: oklch(0.98 0 0);
+}
+.dark [data-saison="fetes"] {
+  --festif-or: oklch(0.85 0.13 88);
+  --festif-rouge: oklch(0.68 0.18 25);
+  --festif-bandeau: oklch(0.26 0.07 262);
+}
+[data-saison="fetes"] [data-slot="section-title"] {
+  text-decoration: underline;
+  text-decoration-color: var(--festif-or);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 6px;
 }
 
 @layer base {
