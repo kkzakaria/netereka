@@ -139,7 +139,9 @@
  * Les couleurs de la marque (--primary, …) ne sont jamais redéfinies ici.
  * ------------------------------------------------------------------------- */
 [data-saison="fetes"] {
-  --festif-or: oklch(0.80 0.14 85);
+  /* Or sombre en mode clair : ≥ 3:1 sur fond blanc (WCAG 1.4.11), vérifié
+   * par __tests__/unit/saison-contraste.test.ts. */
+  --festif-or: oklch(0.64 0.13 75);
   --festif-rouge: oklch(0.55 0.20 27);
   --festif-bandeau: oklch(0.33 0.10 262);
   --festif-bandeau-foreground: oklch(0.98 0 0);
