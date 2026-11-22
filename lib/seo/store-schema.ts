@@ -43,8 +43,9 @@ export function buildStoreSchemas(
       parentOrganization: { "@id": `${siteUrl}/#organization` },
       address: {
         "@type": "PostalAddress",
+        // No addressLocality: the `stores` table has no city column, and
+        // writing "Abidjan" would be wrong for any store opened elsewhere.
         streetAddress: store.address.trim(),
-        addressLocality: "Abidjan",
         addressCountry: "CI",
       },
       ...(store.phone && { telephone: store.phone.trim() }),

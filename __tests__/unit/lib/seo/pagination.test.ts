@@ -1,5 +1,40 @@
 import { describe, it, expect } from "vitest";
-import { categoryCanonical, listingPageHref, parsePage } from "@/lib/seo/pagination";
+import {
+  categoryCanonical,
+  isCrawlableListing,
+  listingPageHref,
+  normalizeListingParams,
+  parsePage,
+} from "@/lib/seo/pagination";
+
+describe("normalizeListingParams", () => {
+  it("garde la première valeur d'une clé répétée", () => {
+    expect(normalizeListingParams({ brand: ["apple", "samsung"], page: ["2", "3"] })).toEqual({
+      brand: "apple",
+      page: "2",
+    });
+  });
+
+  it("ignore les clés inconnues et les valeurs vides", () => {
+    expect(normalizeListingParams({ utm_source: "fb", brand: "", sort: "price_asc" })).toEqual({
+      sort: "price_asc",
+    });
+  });
+});
+
+describe("isCrawlableListing", () => {
+  it("liste nue ou simplement paginée → liens suivables", () => {
+    expect(isCrawlableListing({})).toBe(true);
+    expect(isCrawlableListing({ page: "3" })).toBe(true);
+  });
+
+  it.each([{ brand: "apple" }, { min_price: "1000" }, { sort: "price_asc" }])(
+    "filtrée ou triée (%o) → pas de liens à explorer",
+    (params) => {
+      expect(isCrawlableListing(params)).toBe(false);
+    },
+  );
+});
 
 describe("parsePage", () => {
   it.each([

@@ -3,13 +3,10 @@ import Image from "next/image";
 import type { Metadata } from "next";
 import { SITE_NAME } from "@/lib/utils/constants";
 
-// Next injects its own `noindex` on a 404, but the root layout's
-// `robots: { index: true }` was rendered alongside it, so the page carried two
-// contradictory robots tags (plus `googlebot: index`). Google keeps the most
-// restrictive, yet one tag that says one thing is the only unambiguous form.
+// Next injects the `noindex` itself on a 404 (and the root layout no longer
+// says `index`), so only the title needs setting here.
 export const metadata: Metadata = {
   title: "Page introuvable",
-  robots: { index: false, follow: true, googleBot: { index: false, follow: true } },
 };
 
 export default function NotFound() {

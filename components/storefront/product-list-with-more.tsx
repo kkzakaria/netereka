@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useCallback, useRef } from "react";
+import { useState, useTransition, useCallback, type MouseEvent } from "react";
 import type { ProductCardData, SearchOptions } from "@/lib/db/types";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { loadMoreSearchProducts } from "@/actions/search";
@@ -20,6 +20,16 @@ interface Props {
   pagination?: { basePath: string; params: ListingParams };
 }
 
+/**
+ * A plain left click is loaded in place; Ctrl/Cmd/Shift/Alt-click and the
+ * middle button keep the browser's behaviour (open ?page=N in a new tab).
+ */
+export function isPlainLeftClick(
+  e: Pick<MouseEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "button">,
+): boolean {
+  return !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0);
+}
+
 const buttonClass =
   "rounded-xl border px-6 py-2.5 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50";
 
@@ -34,13 +44,12 @@ export function ProductListWithMore({
   const [products, setProducts] = useState<ProductCardData[]>(initialProducts);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [isPending, startTransition] = useTransition();
-  const nextOffsetRef = useRef(initialNextOffset);
-  // Mirrors nextOffsetRef for rendering: the link must point at the page that
-  // the next click would load, not at the one the server rendered.
+  // Offset of the next batch. Also drives the link's href, which must point
+  // at the page the next click would load, not at the one the server rendered.
   const [nextOffset, setNextOffset] = useState(initialNextOffset);
 
   const loadMore = useCallback(() => {
-    const offset = nextOffsetRef.current;
+    const offset = nextOffset;
     startTransition(async () => {
       const { products: newProducts, hasMore: newHasMore } = await loadMoreSearchProducts({
         ...searchOpts,
@@ -49,10 +58,9 @@ export function ProductListWithMore({
       });
       setProducts(curr => [...curr, ...newProducts]);
       setHasMore(newHasMore);
-      nextOffsetRef.current = offset + limit;
       setNextOffset(offset + limit);
     });
-  }, [searchOpts, limit]);
+  }, [searchOpts, limit, nextOffset]);
 
   return (
     <>
@@ -67,8 +75,7 @@ export function ProductListWithMore({
                 Math.floor(nextOffset / limit) + 1,
               )}
               onClick={(e) => {
-                // Ctrl/Cmd-clic, clic milieu : laisser le navigateur ouvrir la page.
-                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                if (!isPlainLeftClick(e)) return;
                 e.preventDefault();
                 if (!isPending) loadMore();
               }}

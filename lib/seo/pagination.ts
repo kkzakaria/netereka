@@ -22,6 +22,32 @@ export interface ListingParams {
   page?: string;
 }
 
+/**
+ * Les `searchParams` de Next valent `string[]` quand une clé est répétée
+ * (`?brand=a&brand=b`) : sans normalisation, `sp.brand.split` levait une
+ * erreur (500) et les liens recopiaient « a,b ». On garde la première valeur
+ * de chaque clé connue, et on ignore tout le reste (utm_*, fbclid…).
+ */
+export function normalizeListingParams(raw: Record<string, unknown>): ListingParams {
+  const out: ListingParams = {};
+  for (const k of [...FILTER_PARAMS, "sort", "page"] as const) {
+    const v = raw[k];
+    const first = Array.isArray(v) ? v[0] : v;
+    if (typeof first === "string" && first !== "") out[k] = first;
+  }
+  return out;
+}
+
+/**
+ * Une liste sans filtre ni tri est la seule dont les pages suivantes méritent
+ * des liens suivables par les robots. Sur une liste filtrée ou triée, chaque
+ * combinaison marque × prix × tri × page serait une URL de plus à explorer,
+ * sans rien apporter à l'index (canonical vers la catégorie nue, ou noindex).
+ */
+export function isCrawlableListing(params: ListingParams): boolean {
+  return !hasFilters(params) && !params.sort;
+}
+
 /** Numéro de page normalisé : entier ≥ 1, toute valeur invalide → 1. */
 export function parsePage(raw: string | undefined): number {
   const n = parseInt(raw ?? "1", 10);

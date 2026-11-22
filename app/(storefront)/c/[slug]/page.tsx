@@ -26,33 +26,61 @@ import { BreadcrumbSchema } from "@/components/seo/breadcrumb-schema";
 import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_NAME, SITE_URL } from "@/lib/utils/constants";
 import { getCategorySeoContent } from "@/lib/seo/category-content";
-import { categoryCanonical, listingPageHref, parsePage } from "@/lib/seo/pagination";
+import {
+  categoryCanonical,
+  isCrawlableListing,
+  listingPageHref,
+  normalizeListingParams,
+  parsePage,
+  type ListingParams,
+} from "@/lib/seo/pagination";
 import { getPublicImageUrl } from "@/lib/utils/images";
 
 export const revalidate = 300;
 
 const getCategoryCached = cache(getCategoryBySlug);
 
+/** Current category + all its descendants; shared by metadata and page. */
+const getListingCategoryIds = cache(async (categoryId: string) => [
+  categoryId,
+  ...(await getCategoryDescendantIds(categoryId)),
+]);
+
+const PAGE_SIZE = 20;
+
+/** The filters/sort a listing URL applies, as SearchOptions. */
+function listingFilters(sp: ListingParams): Pick<SearchOptions, "brands" | "minPrice" | "maxPrice" | "sort"> {
+  return {
+    brands: sp.brand ? sp.brand.split(",").filter(Boolean) : undefined,
+    minPrice: sp.min_price ? parseInt(sp.min_price, 10) : undefined,
+    maxPrice: sp.max_price ? parseInt(sp.max_price, 10) : undefined,
+    sort: (sp.sort as SearchOptions["sort"]) || "relevance",
+  };
+}
+
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{
-    brand?: string;
-    min_price?: string;
-    max_price?: string;
-    sort?: string;
-    page?: string;
-  }>;
+  // Next gives string[] for a repeated key: normalised before any use.
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const sp = await searchParams;
+  const sp = normalizeListingParams(await searchParams);
   const category = await getCategoryCached(slug);
-  // The page will call notFound(); without this, the layout's `index, follow`
-  // is rendered next to Next's injected `noindex`.
-  if (!category) return { robots: { index: false, follow: true } };
+  if (!category) return {};
 
   const page = parsePage(sp.page);
+  if (page > 1) {
+    // A page past the end will call notFound(): it must not first declare
+    // itself canonical ("?page=999") with a "Page 999" title.
+    const total = await countSearchResults({
+      categoryIds: await getListingCategoryIds(category.id),
+      ...listingFilters(sp),
+    });
+    if ((page - 1) * PAGE_SIZE >= total) return { robots: { index: false, follow: true } };
+  }
+
   const canonical = categoryCanonical(slug, sp);
   const pageSuffix = page > 1 ? ` – Page ${page}` : "";
 
@@ -86,17 +114,17 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { slug } = await params;
-  const sp = await searchParams;
+  const sp = normalizeListingParams(await searchParams);
   const category = await getCategoryCached(slug);
   if (!category) notFound();
 
   const seoContent = getCategorySeoContent(slug);
   const currentPage = parsePage(sp.page);
-  const limit = 20;
+  const limit = PAGE_SIZE;
 
-  const [ancestors, descendantIds, childCategories, siblingSource] = await Promise.all([
+  const [ancestors, allCategoryIds, childCategories, siblingSource] = await Promise.all([
     getCategoryAncestors(category.id),
-    getCategoryDescendantIds(category.id),
+    getListingCategoryIds(category.id),
     getCategoryChildren(category.id),
     category.parent_id ? getCategoryChildren(category.parent_id) : getTopLevelCategories(),
   ]);
@@ -105,15 +133,9 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     .filter((c) => c.id !== category.id)
     .slice(0, 10);
 
-  // Aggregate category IDs: current + all descendants
-  const allCategoryIds = [category.id, ...descendantIds];
-
   const opts: SearchOptions = {
     categoryIds: allCategoryIds,
-    brands: sp.brand ? sp.brand.split(",").filter(Boolean) : undefined,
-    minPrice: sp.min_price ? parseInt(sp.min_price, 10) : undefined,
-    maxPrice: sp.max_price ? parseInt(sp.max_price, 10) : undefined,
-    sort: (sp.sort as SearchOptions["sort"]) || "relevance",
+    ...listingFilters(sp),
     limit,
     offset: (currentPage - 1) * limit,
   };
@@ -136,7 +158,10 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     maxPrice: opts.maxPrice,
     sort: opts.sort,
   };
-  const listKey = `${slug}-${sp.brand ?? ""}-${sp.min_price ?? ""}-${sp.max_price ?? ""}-${sp.sort ?? ""}`;
+  // The page is part of the key: "← Produits précédents" is a client-side
+  // navigation, and without a new key the list would keep the products it
+  // already holds (page 2 shown under the URL of page 1).
+  const listKey = `${slug}-${sp.brand ?? ""}-${sp.min_price ?? ""}-${sp.max_price ?? ""}-${sp.sort ?? ""}-${currentPage}`;
 
   // Build breadcrumb chain: Accueil > ...ancestors > current
   const breadcrumbItems = [
@@ -235,7 +260,9 @@ export default async function CategoryPage({ params, searchParams }: Props) {
               searchOpts={searchOpts}
               limit={limit}
               initialNextOffset={currentPage * limit}
-              pagination={{ basePath: `/c/${slug}`, params: sp }}
+              pagination={
+                isCrawlableListing(sp) ? { basePath: `/c/${slug}`, params: sp } : undefined
+              }
             />
           </div>
         </div>

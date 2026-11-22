@@ -37,6 +37,8 @@ describe("buildStoreSchemas", () => {
 
   it("adresse et téléphone viennent de la table, espaces retirés", () => {
     expect(schema.address).toMatchObject({ streetAddress: "Treichville", addressCountry: "CI" });
+    // No city column in `stores`: none is invented.
+    expect(schema.address).not.toHaveProperty("addressLocality");
     expect(schema.telephone).toBe("+2250576798673");
     expect(schema.geo).toEqual({ "@type": "GeoCoordinates", latitude: 5.2978885, longitude: -4.0074605 });
   });

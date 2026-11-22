@@ -40,7 +40,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProductCached(slug);
-  if (!product) return { title: "Produit non trouvé", robots: { index: false, follow: true } };
+  if (!product) return { title: "Produit non trouvé" };
 
   const price = formatPrice(product.base_price);
   // Au-delà du budget d'affichage SERP, le tail « - Prix X » serait tronqué :
