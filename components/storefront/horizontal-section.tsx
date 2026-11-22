@@ -17,7 +17,7 @@ export function HorizontalSection({
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-bold sm:text-xl">{title}</h2>
+        <h2 data-slot="section-title" className="text-lg font-bold sm:text-xl">{title}</h2>
         {href ? (
           <Link
             href={href}

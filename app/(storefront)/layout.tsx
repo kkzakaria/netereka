@@ -5,6 +5,8 @@ import { Footer } from "@/components/storefront/footer";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
 import { WhatsAppNumberProvider } from "@/components/storefront/whatsapp-number-provider";
 import { getPublicWhatsAppNumber } from "@/lib/whatsapp/public-config";
+import { getEtatSaison } from "@/lib/saison/etat";
+import { BandeauFetes } from "@/components/storefront/saison/bandeau-fetes";
 
 const R2_URL = process.env.NEXT_PUBLIC_R2_URL;
 const HERO_WIDTHS = [256, 384, 640, 750, 828, 1080, 1200];
@@ -34,13 +36,19 @@ export default async function StorefrontLayout({
 }) {
   await maybePreloadHero();
   const whatsappNumber = await getPublicWhatsAppNumber();
+  // Lit des cookies, donc rend toutes les routes de la boutique dynamiques :
+  // la saison est décidée à chaque requête, jamais figée au build.
+  const saison = await getEtatSaison();
 
   return (
     <WhatsAppNumberProvider value={whatsappNumber}>
-      <Header />
-      <main className="min-h-[calc(100dvh-8rem)]">{children}</main>
-      <Footer />
-      <CartDrawer />
+      <div data-saison={saison.festif ? "fetes" : undefined}>
+        {saison.bandeauVisible && <BandeauFetes apercu={saison.apercu} />}
+        <Header festif={saison.festif} />
+        <main className="min-h-[calc(100dvh-8rem)]">{children}</main>
+        <Footer festif={saison.festif} />
+        <CartDrawer />
+      </div>
     </WhatsAppNumberProvider>
   );
 }
