@@ -67,7 +67,7 @@
     "@lexical/selection": "^0.51.0",
     "@lexical/utils": "^0.51.0",
     "@modelcontextprotocol/server": "^2.3.0",
-    "@opennextjs/cloudflare": "^1.20.7",
+    "@opennextjs/cloudflare": "^1.20.18",
     "@tailwindcss/typography": "^0.5.20",
     "better-auth": "~1.7.15",
     "class-variance-authority": "^0.7.1",
