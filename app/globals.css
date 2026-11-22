@@ -151,6 +151,24 @@
   --festif-rouge: oklch(0.68 0.18 25);
   --festif-bandeau: oklch(0.26 0.07 262);
 }
+/* Scintillement des étoiles (components/storefront/saison/decor.tsx) :
+ * opacité et échelle seulement, pour rester bon marché ; chaque étoile a son
+ * délai, si bien que la lumière court le long de la guirlande. La période
+ * (2.4s) doit rester égale à PERIODE dans decor.tsx. */
+@keyframes festif-scintille {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+[data-saison="fetes"] .festif-scintille {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: festif-scintille 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-saison="fetes"] .festif-scintille {
+    animation: none;
+  }
+}
 [data-saison="fetes"] [data-slot="section-title"] {
   text-decoration: underline;
   text-decoration-color: var(--festif-or);
