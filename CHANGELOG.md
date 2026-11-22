@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.1.0](https://github.com/kkzakaria/netereka/compare/v3.0.0...v3.1.0) (2026-11-22)
+
+
+### Features
+
+* **storefront:** guirlande des fetes qui scintille ([#451](https://github.com/kkzakaria/netereka/issues/451)) ([bd7a470](https://github.com/kkzakaria/netereka/commit/bd7a47047751a30524facc2403804496f73341ba))
+* **storefront:** theme des fetes de fin d'annee ([#446](https://github.com/kkzakaria/netereka/issues/446)) ([f720ac4](https://github.com/kkzakaria/netereka/commit/f720ac4a608ee457c89cf52181bb71ce82407c77))
+
+
+### Bug Fixes
+
+* **storefront:** centrer le message du bandeau des fetes ([#449](https://github.com/kkzakaria/netereka/issues/449)) ([d73f003](https://github.com/kkzakaria/netereka/commit/d73f0032ebcd74da781e2bff2b17970c700c7c71))
+
 ## [3.0.0](https://github.com/kkzakaria/netereka/compare/v2.1.0...v3.0.0) (2026-11-22)
 
 
