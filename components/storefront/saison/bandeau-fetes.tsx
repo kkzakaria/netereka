@@ -17,11 +17,13 @@ export function BandeauFetes({ apercu }: { apercu: boolean }) {
       aria-label="Message des fêtes"
       className="bg-festif-bandeau text-festif-bandeau-foreground"
     >
-      <div className="mx-auto flex max-w-7xl items-center gap-2 py-0.5 pl-4 pr-1 text-sm">
-        <span aria-hidden="true" className="text-festif-or">
-          ✦
-        </span>
-        <p className="flex-1 py-2">
+      {/* Marges égales des deux côtés (≥ la largeur du bouton) : le message
+          reste centré sur la page, le bouton ne le pousse pas. */}
+      <div className="relative mx-auto max-w-7xl px-12 py-0.5 text-sm">
+        <p className="py-2 text-center">
+          <span aria-hidden="true" className="mr-2 text-festif-or">
+            ✦
+          </span>
           {messageBandeau()}
           {apercu && (
             <span className="ml-2 rounded bg-festif-or px-1.5 py-0.5 text-xs font-semibold text-black">
@@ -29,7 +31,9 @@ export function BandeauFetes({ apercu }: { apercu: boolean }) {
             </span>
           )}
         </p>
-        <FermerBandeau nomCookie={nomCookieBandeau()} maxAgeSecondes={dureeJusquaFinDeSaison()} />
+        <div className="absolute top-1/2 right-1 -translate-y-1/2">
+          <FermerBandeau nomCookie={nomCookieBandeau()} maxAgeSecondes={dureeJusquaFinDeSaison()} />
+        </div>
       </div>
     </div>
   );
