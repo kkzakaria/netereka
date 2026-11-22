@@ -20,6 +20,7 @@
     "check:migrations": "node scripts/check-migration-safety.mjs",
     "check:drift": "tsx scripts/drift/index.ts",
     "observe": "tsx scripts/observer-version.ts",
+    "check:demarrage": "tsx scripts/verifier-demarrage.ts",
     "content:convert": "tsx scripts/convert-content-to-html.ts",
     "test": "vitest run",
     "test:watch": "vitest",

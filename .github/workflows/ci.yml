@@ -71,3 +71,49 @@ jobs:
 
       - name: Migration safety lint
         run: node scripts/check-migration-safety.mjs
+
+  worker-boot:
+    # LE WORKER CONSTRUIT DÉMARRE-T-IL ? Le 2026-11-22, Next 16.4.6 avec
+    # OpenNext 1.20.7 a passé types, lint, tests et `build:worker` au vert,
+    # puis répondu 500 / erreur 1101 sur TOUTES les routes du canari : le
+    # défaut vivait dans le code d'OpenNext, qu'aucun test unitaire n'exécute.
+    # Ce job lance le bundle sous `wrangler dev --local` et lui demande des
+    # pages (sondes et raisons : lib/release/demarrage.ts).
+    #
+    # AUCUN SECRET, À DESSEIN. Le défaut est arrivé par une PR de Dependabot,
+    # qui n'a pas accès aux secrets du dépôt : ce job doit donc tourner sans.
+    # `--local` coupe les liaisons distantes, la base est une D1 jetable
+    # migrée depuis drizzle/, les secrets d'exécution sont factices.
+    name: Démarrage du Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build worker
+        run: npm run build:worker
+        env:
+          # NON VIDE, et c'est tout ce qui compte ici : sans elle, le layout de
+          # la vitrine n'appelle pas `headers()`, toutes les routes deviennent
+          # statiques, et le pré-rendu échoue sur D1 — un build qui ne
+          # ressemble plus à celui de production. Valeur publique en repli,
+          # pour une PR qui ne verrait pas les variables du dépôt.
+          NEXT_PUBLIC_R2_URL: ${{ vars.NEXT_PUBLIC_R2_URL || 'https://r2.netereka.ci' }}
+          # Clé de site de TEST publiée par Cloudflare : la vraie n'a rien à
+          # faire dans une vérification.
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+
+      - name: Le Worker démarre et sert ses routes témoins
+        run: npm run check:demarrage
