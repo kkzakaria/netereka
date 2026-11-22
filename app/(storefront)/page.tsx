@@ -14,6 +14,10 @@ import { CategoryNav } from "@/components/storefront/category-nav";
 import { HeroBanner } from "@/components/storefront/hero-banner";
 import { HorizontalSection } from "@/components/storefront/horizontal-section";
 import { TrustBadges } from "@/components/storefront/trust-badges";
+import { JsonLd } from "@/components/seo/json-ld";
+import { getActiveStores } from "@/lib/db/stores";
+import { buildStoreSchemas } from "@/lib/seo/store-schema";
+import { SITE_URL } from "@/lib/utils/constants";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -41,7 +45,7 @@ export default async function HomePage() {
   );
 
   // Run all independent fetches in parallel
-  const [categories, featured, latest, activeBanners, categorySections] =
+  const [categories, featured, latest, activeBanners, categorySections, stores] =
     await Promise.all([
       categoriesPromise,
       getFeaturedProducts(PRODUCTS_PER_SECTION),
@@ -51,6 +55,11 @@ export default async function HomePage() {
         return [] as Banner[];
       }),
       categorySectionsPromise,
+      // Structured data only: a failure must never take the homepage down.
+      getActiveStores().catch((error) => {
+        console.error("[homepage] Failed to fetch stores:", error);
+        return [];
+      }),
     ]);
 
   const featuredCards = featured.map(toProductCardData);
@@ -58,6 +67,9 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-6">
+      {buildStoreSchemas(stores, SITE_URL, `${SITE_URL}/logo.png`).map((schema) => (
+        <JsonLd key={String(schema["@id"])} data={schema} />
+      ))}
       <h1 className="sr-only">NETEREKA - Électronique &amp; High-Tech en Côte d&apos;Ivoire</h1>
       <HeroBanner banners={activeBanners} fallbackProducts={featuredCards.slice(0, 3)} />
 

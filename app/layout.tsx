@@ -41,12 +41,12 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
   },
+  // No `index`/`follow` here on purpose: both are the default, and an explicit
+  // `index: true` at the root was rendered next to the `noindex` that Next
+  // injects on every notFound() — two contradictory robots tags on each 404 of
+  // every route. Pages that must not be indexed set `index: false` themselves.
   robots: {
-    index: true,
-    follow: true,
     googleBot: {
-      index: true,
-      follow: true,
       "max-video-preview": -1,
       "max-image-preview": "large",
       "max-snippet": -1,

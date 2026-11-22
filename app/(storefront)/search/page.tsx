@@ -32,7 +32,10 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     title,
     description,
     alternates: { canonical: "/search" },
-    ...(sort && { robots: { index: false, follow: true } }),
+    // A results page is not content: Google's guidelines ask that internal
+    // search results stay out of the index. `follow` keeps the product links
+    // crawlable. Only the bare catalogue (/search, no query, no sort) is indexed.
+    ...((q || sort) && { robots: { index: false, follow: true } }),
   };
 }
 

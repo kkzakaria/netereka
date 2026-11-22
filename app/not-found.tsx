@@ -1,6 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
+import type { Metadata } from "next";
 import { SITE_NAME } from "@/lib/utils/constants";
+
+// Next injects the `noindex` itself on a 404 (and the root layout no longer
+// says `index`), so only the title needs setting here.
+export const metadata: Metadata = {
+  title: "Page introuvable",
+};
 
 export default function NotFound() {
   return (
