@@ -10,11 +10,15 @@ const { BASE, RESOURCE, mocks } = vi.hoisted(() => ({
 
 // requireMcpAuth (réel, @better-auth/mcp) lit auth.$context pour l'émetteur et
 // l'URL du JWKS ; le stockage anti-rejeu DPoP n'est touché que par les jetons DPoP.
+// Depuis 1.7.x il appelle aussi, sans condition, `getPlugin("jwt")` (pour un
+// éventuel `jwks.remoteUrl`) : sans ce membre, tout appel lève un TypeError.
+// Renvoyer `undefined` reste fidèle ici, car la route passe son propre `jwksUrl`,
+// qui l'emporte sur la valeur du plugin.
 vi.mock("@/lib/auth", () => ({
   initAuth: vi.fn().mockResolvedValue({
     options: {},
     api: { getJwks: mocks.getJwks },
-    $context: Promise.resolve({ baseURL: BASE, internalAdapter: {} }),
+    $context: Promise.resolve({ baseURL: BASE, internalAdapter: {}, getPlugin: () => undefined }),
   }),
   getMcpResource: vi.fn().mockResolvedValue(RESOURCE),
 }));
