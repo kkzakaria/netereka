@@ -108,7 +108,13 @@ export default async function ApercuRevisionBanniere({ params }: Props) {
           photo de la page de connexion comme si c'était la révision. */}
       <ApercuEntete revisionId={revisionId} type="banniere" />
       <ApercuAvertissements avertissements={avertissements} />
-      <HeroBanner banners={assainies} fallbackProducts={[]} />
+      {/* ÉPINGLÉ sur la bannière révisée, et donc immobile : sans cela le
+          carrousel défile toutes les cinq secondes et la photo d'une capture
+          montre une diapositive arbitraire — souvent une AUTRE bannière que
+          celle qu'on vient juger, parfois saisie en pleine transition. Mesuré
+          le 2026-10-14 sur deux captures successives de la même révision.
+          Voir `epinglerSur` dans `HeroBanner`. */}
+      <HeroBanner banners={assainies} fallbackProducts={[]} epinglerSur={apres.id} />
     </>
   );
 }
