@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BandeauFetes } from "@/components/storefront/saison/bandeau-fetes";
@@ -48,8 +50,42 @@ describe.each([
     expect(html).toMatch(/^<[a-z]+[^>]*aria-hidden="true"/);
   });
 
-  it("reste statique et léger : ni image raster, ni animation", () => {
+  it("reste léger : ni image raster, ni animation SMIL (que le mouvement réduit ne pourrait pas couper)", () => {
     expect(html).not.toContain("<img");
-    expect(html).not.toMatch(/animate/);
+    expect(html).not.toMatch(/<animate/);
+  });
+
+  it("scintille par la seule classe CSS prévue", () => {
+    expect(html).toContain('class="festif-scintille"');
+  });
+});
+
+describe("GuirlandeEtoiles — jeu de lumière", () => {
+  const html = rendre(createElement(GuirlandeEtoiles));
+  const delais = [...html.matchAll(/animation-delay:(-?[\d.]+)s/g)].map((m) => Number(m[1]));
+
+  it("couvre un écran de 4K en largeur (étoiles posées une à une, pas en motif)", () => {
+    const etoiles = (html.match(/class="festif-scintille"/g) ?? []).length;
+    expect(etoiles * 24).toBeGreaterThanOrEqual(3840);
+  });
+
+  it("décale chaque étoile : la lumière court le long de la guirlande", () => {
+    expect(delais.length).toBe((html.match(/class="festif-scintille"/g) ?? []).length);
+    expect(new Set(delais).size).toBeGreaterThan(5);
+  });
+});
+
+describe("CSS du scintillement", () => {
+  const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf-8");
+
+  it("définit l'animation sous la saison seulement", () => {
+    expect(css).toMatch(/@keyframes festif-scintille\b/);
+    expect(css).toMatch(/\[data-saison="fetes"\] \.festif-scintille\s*\{[^}]*animation:[^}]*festif-scintille/);
+  });
+
+  it("s'arrête pour qui demande moins de mouvement", () => {
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\[data-saison="fetes"\] \.festif-scintille\s*\{\s*animation: none;/,
+    );
   });
 });
